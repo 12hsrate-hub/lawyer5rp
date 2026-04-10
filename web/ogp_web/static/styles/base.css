@@ -1,13 +1,30 @@
 :root {
   --bg: #f5efe4;
-  --panel: rgba(255, 251, 245, 0.92);
-  --ink: #1f1a17;
-  --muted: #6c5f57;
-  --line: #d7c7b2;
+  --surface: #fcfaf7;
+  --surface-soft: rgba(255, 251, 245, 0.92);
+  --surface-contrast: #1f2528;
+  --ink: #2b211c;
+  --muted: #6f6258;
+  --line: #d8cbbe;
+  --line-strong: #cbb8a4;
   --accent: #9d3c24;
-  --accent-2: #264653;
+  --accent-strong: #c35a2f;
+  --brand: #234e52;
+  --brand-strong: #1d4044;
   --error: #a61b1b;
-  --shadow: 0 18px 60px rgba(38, 32, 27, 0.12);
+  --error-soft: rgba(166, 27, 27, 0.08);
+  --success-soft: rgba(38, 70, 83, 0.1);
+  --radius-sm: 14px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --radius-pill: 999px;
+  --shadow-soft: 0 12px 40px rgba(43, 33, 28, 0.06);
+  --shadow-md: 0 18px 60px rgba(38, 32, 27, 0.12);
+  --shadow-strong: 0 24px 80px rgba(38, 32, 27, 0.22);
+  --focus-ring: 0 0 0 4px rgba(35, 78, 82, 0.1);
+  --font-ui: "IBM Plex Sans", "Segoe UI", Tahoma, sans-serif;
+  --font-display: "Merriweather", Georgia, "Times New Roman", serif;
+  --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
 }
 
 * {
@@ -21,7 +38,7 @@
 body {
   margin: 0;
   color: var(--ink);
-  font: 16px/1.5 "Segoe UI", Tahoma, sans-serif;
+  font: 16px/1.5 var(--font-ui);
   background:
     radial-gradient(circle at top left, rgba(157, 60, 36, 0.18), transparent 32%),
     radial-gradient(circle at top right, rgba(38, 70, 83, 0.18), transparent 28%),
@@ -72,7 +89,7 @@ body.modal-open {
 .hero h1,
 .panel h2,
 .dynamic-header h3 {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-display);
 }
 
 .hero h1 {
@@ -88,10 +105,10 @@ body.modal-open {
 
 .hero-card,
 .panel {
-  background: var(--panel);
-  border: 1px solid rgba(215, 199, 178, 0.8);
-  border-radius: 22px;
-  box-shadow: var(--shadow);
+  background: var(--surface-soft);
+  border: 1px solid color-mix(in srgb, var(--line) 86%, white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
   backdrop-filter: blur(10px);
 }
 
@@ -125,7 +142,7 @@ body.modal-open {
   text-decoration: none;
   background: rgba(239, 225, 207, 0.9);
   color: var(--ink);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 12px 18px;
 }
 
@@ -244,7 +261,7 @@ textarea,
 select {
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-sm);
   padding: 12px 14px;
   background: rgba(255, 255, 255, 0.82);
   color: var(--ink);
@@ -258,10 +275,13 @@ textarea {
 button,
 a.button-link {
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 12px 18px;
   cursor: pointer;
-  transition: transform 120ms ease, opacity 120ms ease;
+  transition:
+    transform 120ms ease,
+    opacity 120ms ease,
+    box-shadow 120ms ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -275,10 +295,11 @@ button:disabled {
 button:hover,
 a.button-link:hover {
   transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(43, 33, 28, 0.1);
 }
 
 .primary {
-  background: linear-gradient(135deg, var(--accent), #c35a2f);
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
   color: #fff;
 }
 
@@ -334,9 +355,9 @@ a.button-link:hover {
 .errors {
   margin-bottom: 14px;
   border: 1px solid rgba(166, 27, 27, 0.24);
-  background: rgba(166, 27, 27, 0.08);
+  background: var(--error-soft);
   color: var(--error);
-  border-radius: 14px;
+  border-radius: var(--radius-sm);
   padding: 12px 14px;
   white-space: pre-line;
 }
@@ -357,10 +378,10 @@ a.button-link:hover {
   position: relative;
   width: min(560px, 100%);
   padding: 28px;
-  border-radius: 24px;
-  border: 1px solid rgba(215, 199, 178, 0.8);
-  background: rgba(255, 251, 245, 0.98);
-  box-shadow: 0 24px 80px rgba(38, 32, 27, 0.22);
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--line) 86%, white);
+  background: color-mix(in srgb, var(--surface-soft) 98%, white);
+  box-shadow: var(--shadow-strong);
 }
 
 .modal-card--wide {
@@ -404,7 +425,7 @@ a.button-link:hover {
   border: 1px solid rgba(38, 70, 83, 0.24);
   background: rgba(157, 60, 36, 0.08);
   color: var(--ink);
-  border-radius: 14px;
+  border-radius: var(--radius-sm);
   padding: 12px 14px;
 }
 
@@ -413,7 +434,7 @@ a.button-link:hover {
   height: 16px;
   border-radius: 50%;
   border: 2px solid rgba(38, 70, 83, 0.2);
-  border-top-color: var(--accent-2);
+  border-top-color: var(--brand);
   animation: spin 0.8s linear infinite;
   flex: 0 0 auto;
 }
@@ -421,9 +442,9 @@ a.button-link:hover {
 .success-box {
   margin-bottom: 14px;
   border: 1px solid rgba(38, 70, 83, 0.24);
-  background: rgba(38, 70, 83, 0.1);
-  color: var(--accent-2);
-  border-radius: 14px;
+  background: var(--success-soft);
+  color: var(--brand);
+  border-radius: var(--radius-sm);
   padding: 12px 14px;
   white-space: pre-line;
 }
