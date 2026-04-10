@@ -1,0 +1,46 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.DEPLOY_HOST != '' && secrets.DEPLOY_USER != '' && secrets.DEPLOY_SSH_KEY != '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Trust deploy host
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+        run: |
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" '
+            set -euo pipefail
+            mkdir -p /srv/lawyer5rp-deploy
+            if [ ! -d /srv/lawyer5rp-deploy/repo/.git ]; then
+              git clone https://github.com/12hsrate-hub/lawyer5rp.git /srv/lawyer5rp-deploy/repo
+            fi
+            git -C /srv/lawyer5rp-deploy/repo fetch origin
+            git -C /srv/lawyer5rp-deploy/repo checkout main
+            git -C /srv/lawyer5rp-deploy/repo reset --hard origin/main
+            bash /srv/lawyer5rp-deploy/repo/scripts/deploy_from_checkout.sh
+          '

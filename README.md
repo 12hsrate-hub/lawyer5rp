@@ -50,3 +50,17 @@ cd web
 py -m pip install -r requirements_web.txt
 py run_web.py
 ```
+
+## Production Deploy Flow
+
+Recommended deploy path:
+
+1. Develop and test locally.
+2. Push to GitHub.
+3. Update the server from a GitHub checkout.
+4. Run migrations and restart the web process.
+
+Deploy docs:
+
+- `docs/github_deploy.md`
+- `docs/postgresql_migrations.md`
