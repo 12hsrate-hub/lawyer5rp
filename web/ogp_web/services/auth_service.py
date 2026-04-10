@@ -231,6 +231,15 @@ def require_user(request: Request) -> AuthUser:
 
 def is_admin_user(username: str) -> bool:
     normalized = (username or "").strip().lower()
+    configured_many = os.getenv("OGP_WEB_ADMIN_USERNAMES", "").strip()
+    if configured_many:
+        allowed = {
+            item.strip().lower()
+            for item in configured_many.split(",")
+            if item.strip()
+        }
+        if allowed:
+            return normalized in allowed
     configured = os.getenv("OGP_WEB_ADMIN_USERNAME", "").strip().lower()
     if configured:
         return normalized == configured
