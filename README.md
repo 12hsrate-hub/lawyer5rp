@@ -1,11 +1,10 @@
 # lawyer5rp
 
-OGP Builder for `lawyer5rp`: desktop tooling, shared domain logic, and a FastAPI-based web application.
+OGP Builder for `lawyer5rp`: shared domain logic and a FastAPI-based web application.
 
 ## Project Layout
 
-- `desktop/` - desktop app and local support code
-- `shared/` - shared business logic used by both desktop and web
+- `shared/` - shared business logic used by the web app, tests, and maintenance scripts
 - `web/` - FastAPI web app, templates, static files, database integration
 - `scripts/` - migrations, backups, and maintenance utilities
 - `tests/` - unit and integration-style test coverage

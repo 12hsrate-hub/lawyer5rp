@@ -29,6 +29,13 @@ tmp_backup_check2/
 .claude/
 google docs/
 docker/
+desktop/
+launch_desktop.bat
+launch_desktop.ps1
+page_nav_v2.html
+tmp_nginx_lawyer5rp.conf
+tmp_nginx_lawyer5rp_domains.conf
+ogp_builder/
 .deploy_ts
 0
 
