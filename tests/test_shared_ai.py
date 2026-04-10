@@ -473,10 +473,22 @@ class SharedAiTests(unittest.TestCase):
         self.assertIn("не выдумывай данные", prompt)
 
     def test_exam_scoring_prompt_requires_json_and_conservative_scoring(self):
-        prompt = build_exam_scoring_prompt(user_answer="A", correct_answer="B")
+        prompt = build_exam_scoring_prompt(
+            user_answer="A",
+            correct_answer="B",
+            column="N",
+            question="На каких закрытых территориях адвокат может находиться самостоятельно?",
+            exam_type="Государственный адвокат",
+            key_points=["КПЗ LSPD", "КПЗ LSSD"],
+        )
         self.assertIn("JSON", prompt)
         self.assertIn('"score": 1-100', prompt)
-        self.assertIn("Evaluate by meaning, legal conclusion, and completeness", prompt)
+        self.assertIn("draft reference answer", prompt)
+        self.assertIn("Compare by legal meaning and core conclusion", prompt)
+        self.assertIn("Exam type:", prompt)
+        self.assertIn("Государственный адвокат", prompt)
+        self.assertIn("Minimal required points", prompt)
+        self.assertIn("КПЗ LSPD", prompt)
         self.assertIn("The rationale must be one short sentence", prompt)
 
     def test_exam_prompt_builders_are_defined_once(self):

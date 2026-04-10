@@ -5,8 +5,8 @@ from dataclasses import dataclass
 
 SUGGEST_PROMPT_VERSION = "suggest.v25"
 PRINCIPAL_SCAN_PROMPT_VERSION = "principal_scan.v2"
-EXAM_SCORING_PROMPT_VERSION = "exam_scoring.v4"
-EXAM_BATCH_SCORING_PROMPT_VERSION = "exam_batch_scoring.v4"
+EXAM_SCORING_PROMPT_VERSION = "exam_scoring.v6"
+EXAM_BATCH_SCORING_PROMPT_VERSION = "exam_batch_scoring.v6"
 
 
 @dataclass(frozen=True)
@@ -446,33 +446,49 @@ def build_principal_scan_prompt() -> str:
 
 def _build_exam_scoring_rules() -> str:
     return """
-Evaluate by meaning, legal conclusion, and completeness, not by exact wording alone.
+Compare by legal meaning and core conclusion, not by wording alone.
+
+This review cycle uses draft reference answers.
+Treat the reference answer as a working skeleton, not as a demand for exact phrasing.
 
 Scoring rubric:
-- 40 points: the final legal conclusion is correct.
-- 20 points: the cited norm, article, source, body, or legal basis is correct when the reference depends on it.
-- 20 points: key conditions, exceptions, limits, or mandatory list elements are preserved.
-- 20 points: the reasoning is logically consistent and does not distort the rule.
+- 40 points: the student's final legal conclusion matches the reference.
+- 20 points: the norm, article, precedent, body, or legal source is correct when the question depends on it.
+- 20 points: key conditions, exceptions, deadlines, or mandatory list items are preserved.
+- 20 points: the reasoning stays legally coherent and does not invent a different rule.
 
-Important rules:
-- Accept paraphrases and synonyms when the legal meaning is preserved.
-- Penalize wrong article numbers, wrong bodies, wrong deadlines, invented legal bases, invented facts, and missing key exceptions.
-- If the answer is broadly correct but less complete, award partial credit instead of marking it fully wrong.
-- If the reference answer clearly relies on a specific article or norm, missing or wrong citation should reduce the score noticeably.
-- If the question implies a list, completeness matters: omitted mandatory items must lower the score.
-- Do not repair the student's answer by assuming hidden meaning that is not actually written.
-- A short but precise answer is acceptable.
+Evaluation rules:
+- Accept paraphrases, concise wording, and different order when the meaning is preserved.
+- exam_type is mandatory context for evaluation.
+- If the question depends on exam_type, an answer for the wrong exam mode is a substantial error.
+- Questions that depend on exam_type: N and S.
+- Ignore framing phrases like "Вопрос с выбором ответа" or "Правильный ответ", and focus on the legal substance.
+- Penalize wrong article numbers, wrong institutions, wrong deadlines, invented legal bases, and contradictions.
+- If the answer is partly right, award partial credit instead of forcing a binary result.
+- If the reference contains a list, omissions of mandatory elements must lower the score.
+- Do not over-credit by guessing unstated meaning from the student's answer.
+- Do not under-credit just because the draft reference answer is longer than the student's answer.
 
 Score bands:
-- 90-100: fully correct or almost fully correct.
-- 75-89: mostly correct, with minor omissions or precision loss.
-- 50-74: partially correct, but important elements are missing or blurred.
+- 90-100: correct in substance, with at most minor precision loss.
+- 75-89: mostly correct, but incomplete or slightly imprecise.
+- 50-74: mixed result, with important omissions or weak legal support.
 - 25-49: mostly incorrect.
-- 1-24: incorrect or misleading.
+- 1-24: incorrect, contradictory, or misleading.
 """.strip()
 
 
-def build_exam_scoring_prompt_spec(*, user_answer: str, correct_answer: str) -> PromptSpec:
+def build_exam_scoring_prompt_spec(
+    *,
+    user_answer: str,
+    correct_answer: str,
+    column: str = "",
+    question: str = "",
+    exam_type: str = "",
+    key_points: list[str] | None = None,
+) -> PromptSpec:
+    normalized_key_points = [str(item).strip() for item in (key_points or []) if str(item).strip()]
+    key_points_text = "\n".join(f"- {item}" for item in normalized_key_points) or "- not provided"
     return PromptSpec(
         name="exam_scoring",
         version=EXAM_SCORING_PROMPT_VERSION,
@@ -480,21 +496,33 @@ def build_exam_scoring_prompt_spec(*, user_answer: str, correct_answer: str) -> 
             (
                 "system",
                 """
-You evaluate legal exam answers against a reference answer.
-Be strict, objective, and concise.
+You evaluate one legal exam answer against a draft reference answer.
+Be objective, conservative, and concise.
 Return only valid JSON.
 """,
             ),
             (
                 "task",
                 f"""
-Check the student's answer against the reference answer.
+Check the student's answer against the draft reference answer.
 
-Reference answer:
+Column:
+{column}
+
+Exam type:
+{exam_type}
+
+Question:
+{question}
+
+Draft reference answer:
 {correct_answer}
 
 Student answer:
 {user_answer}
+
+Minimal required points:
+{key_points_text}
 """,
             ),
             ("scoring_rules", _build_exam_scoring_rules()),
@@ -511,8 +539,23 @@ The rationale must be one short sentence that states the main match or the main 
     )
 
 
-def build_exam_scoring_prompt(*, user_answer: str, correct_answer: str) -> str:
-    return build_exam_scoring_prompt_spec(user_answer=user_answer, correct_answer=correct_answer).text
+def build_exam_scoring_prompt(
+    *,
+    user_answer: str,
+    correct_answer: str,
+    column: str = "",
+    question: str = "",
+    exam_type: str = "",
+    key_points: list[str] | None = None,
+) -> str:
+    return build_exam_scoring_prompt_spec(
+        user_answer=user_answer,
+        correct_answer=correct_answer,
+        column=column,
+        question=question,
+        exam_type=exam_type,
+        key_points=key_points,
+    ).text
 
 
 def build_batch_exam_scoring_prompt_spec(*, prompt_items: str) -> PromptSpec:
@@ -523,16 +566,16 @@ def build_batch_exam_scoring_prompt_spec(*, prompt_items: str) -> PromptSpec:
             (
                 "system",
                 """
-You evaluate multiple legal exam answers against their reference answers.
+You evaluate multiple legal exam answers against draft reference answers.
 Use one consistent rubric across all items.
-Be strict, objective, and concise.
+Be objective, conservative, and concise.
 Return only valid JSON.
 """,
             ),
             (
                 "task",
                 f"""
-For each item, compare the student answer with the reference answer and return a score plus a brief rationale.
+For each item, compare the student answer with the draft reference answer and return a score plus a brief rationale.
 
 Items:
 {prompt_items}

@@ -72,6 +72,10 @@ def retry_invalid_batch_scores(
                 proxy_url=proxy_url,
                 user_answer=str(item["user_answer"] or ""),
                 correct_answer=str(item["correct_answer"] or ""),
+                column=str(item.get("column") or ""),
+                question=str(item.get("question") or item.get("header") or ""),
+                exam_type=str(item.get("exam_type") or ""),
+                key_points=[str(point).strip() for point in (item.get("key_points") or []) if str(point).strip()],
             )
             stats["llm_calls"] += 1
             stats["llm_count"] += 1

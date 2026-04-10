@@ -156,6 +156,78 @@ class WebServiceTests(unittest.TestCase):
         columns = {item["column"] for item in items}
         self.assertIn("F", columns)
         self.assertIn("G", columns)
+        first_item = next(item for item in items if item["column"] == "F")
+        self.assertEqual(first_item["question"], "QF")
+        self.assertEqual(first_item["key_points"], exam_sheet_service.EXAM_KEY_POINTS["F"])
+
+    def test_exam_sheet_service_build_score_items_includes_ad_when_answer_key_exists(self):
+        payload = {
+            "submitted": "2026-04-08",
+            "full_name": "Student",
+            "discord": "disc",
+            "passport": "123456",
+            "format": "OCHNO",
+        }
+        for suffix in (
+            "F",
+            "G",
+            "H",
+            "I",
+            "J",
+            "K",
+            "L",
+            "M",
+            "N",
+            "O",
+            "P",
+            "Q",
+            "R",
+            "S",
+            "T",
+            "U",
+            "V",
+            "W",
+            "X",
+            "Y",
+            "Z",
+            "AA",
+            "AB",
+            "AC",
+            "AD",
+        ):
+            payload[f"Q{suffix}"] = f"Answer {suffix}"
+
+        items = exam_sheet_service.build_exam_score_items(payload)
+
+        columns = {item["column"] for item in items}
+        self.assertIn("AD", columns)
+        n_item = next(item for item in items if item["column"] == "N")
+        self.assertTrue(n_item["key_points"])
+
+    def test_exam_sheet_service_load_exam_correct_answers_skips_empty_values(self):
+        original_content = exam_sheet_service.EXAM_ANSWER_KEY_PATH.read_text(encoding="utf-8")
+        exam_sheet_service.load_exam_correct_answers.cache_clear()
+        try:
+            exam_sheet_service.EXAM_ANSWER_KEY_PATH.write_text(
+                '{"F": "Valid answer", "G": "", "H": null, "I": "  "}',
+                encoding="utf-8",
+            )
+            answers = exam_sheet_service.load_exam_correct_answers()
+        finally:
+            exam_sheet_service.EXAM_ANSWER_KEY_PATH.write_text(original_content, encoding="utf-8")
+            exam_sheet_service.load_exam_correct_answers.cache_clear()
+
+        self.assertEqual(answers, {"F": "Valid answer"})
+
+    def test_exam_sheet_service_normalizes_exam_type(self):
+        self.assertEqual(
+            exam_sheet_service.normalize_exam_type("Государственный адвокат"),
+            exam_sheet_service.EXAM_STATE_TYPE,
+        )
+        self.assertEqual(
+            exam_sheet_service.normalize_exam_type("Получение лицензии адвоката"),
+            exam_sheet_service.EXAM_LICENSE_TYPE,
+        )
 
     def test_exam_sheet_service_fetch_wraps_http_errors(self):
         original_get = exam_sheet_service.httpx.get

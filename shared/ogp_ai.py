@@ -301,12 +301,20 @@ def _build_exam_score_cache_key(
     *,
     user_answer: str,
     correct_answer: str,
+    column: str = "",
+    question: str = "",
+    exam_type: str = "",
+    key_points: list[str] | None = None,
 ) :
     return cache.build_key(
         operation="score_exam_answer",
         model=OPENAI_EXAM_SCORING_MODEL,
         payload={
             "prompt_version": EXAM_SCORING_PROMPT_VERSION,
+            "column": column,
+            "question": question,
+            "exam_type": exam_type,
+            "key_points": [str(item).strip() for item in (key_points or []) if str(item).strip()],
             "user_answer": user_answer,
             "correct_answer": correct_answer,
             "normalized_user_answer": _normalize_exam_answer(user_answer),
@@ -370,19 +378,39 @@ def _score_exam_answer_cached_or_estimated(
     cache: AiCache,
     user_answer: str,
     correct_answer: str,
+    column: str = "",
+    question: str = "",
+    exam_type: str = "",
+    key_points: list[str] | None = None,
 ) -> tuple[dict[str, object], bool]:
-    heuristic = _estimate_exam_score_without_llm(user_answer=user_answer, correct_answer=correct_answer)
+    use_heuristic = not (str(question).strip() or str(exam_type).strip() or list(key_points or []))
+    heuristic = _estimate_exam_score_without_llm(user_answer=user_answer, correct_answer=correct_answer) if use_heuristic else None
     if heuristic is not None:
         return heuristic, False
 
-    cache_key = _build_exam_score_cache_key(cache, user_answer=user_answer, correct_answer=correct_answer)
+    cache_key = _build_exam_score_cache_key(
+        cache,
+        user_answer=user_answer,
+        correct_answer=correct_answer,
+        column=column,
+        question=question,
+        exam_type=exam_type,
+        key_points=key_points,
+    )
     cached = cache.get(cache_key)
     if isinstance(cached, dict):
         return _normalize_exam_result(cached, fallback_rationale=DEFAULT_EXAM_RATIONALE), False
 
     response = client.responses.create(
         model=OPENAI_EXAM_SCORING_MODEL,
-        input=build_exam_scoring_prompt(user_answer=user_answer, correct_answer=correct_answer),
+        input=build_exam_scoring_prompt(
+            user_answer=user_answer,
+            correct_answer=correct_answer,
+            column=column,
+            question=question,
+            exam_type=exam_type,
+            key_points=key_points,
+        ),
     )
     payload = _extract_json_object(response.output_text or "")
     result = _normalize_exam_result(payload, fallback_rationale=DEFAULT_EXAM_RATIONALE)
@@ -400,13 +428,26 @@ def _empty_exam_batch_stats() -> dict[str, int]:
     }
 
 
-def score_exam_answer(client, *, user_answer: str, correct_answer: str) -> dict[str, object]:
+def score_exam_answer(
+    client,
+    *,
+    user_answer: str,
+    correct_answer: str,
+    column: str = "",
+    question: str = "",
+    exam_type: str = "",
+    key_points: list[str] | None = None,
+) -> dict[str, object]:
     cache = get_ai_cache()
     result, _ = _score_exam_answer_cached_or_estimated(
         client,
         cache=cache,
         user_answer=user_answer,
         correct_answer=correct_answer,
+        column=column,
+        question=question,
+        exam_type=exam_type,
+        key_points=key_points,
     )
     return result
 
@@ -470,13 +511,25 @@ def score_exam_answer_with_proxy_fallback(
     proxy_url: str,
     user_answer: str,
     correct_answer: str,
+    column: str = "",
+    question: str = "",
+    exam_type: str = "",
+    key_points: list[str] | None = None,
 ) -> dict[str, object]:
     return _run_with_proxy_fallback(
         api_key=api_key,
         proxy_url=proxy_url,
         operation_name="single exam scoring",
         operation_kind="exam_single",
-        operation=lambda client: score_exam_answer(client=client, user_answer=user_answer, correct_answer=correct_answer),
+        operation=lambda client: score_exam_answer(
+            client=client,
+            user_answer=user_answer,
+            correct_answer=correct_answer,
+            column=column,
+            question=question,
+            exam_type=exam_type,
+            key_points=key_points,
+        ),
     )
 
 
@@ -484,7 +537,7 @@ def score_exam_answers_batch_with_proxy_fallback(
     *,
     api_key: str,
     proxy_url: str,
-    items: list[dict[str, str]],
+    items: list[dict[str, object]],
     return_stats: bool = False,
 ) -> dict[str, dict[str, object]] | tuple[dict[str, dict[str, object]], dict[str, int]]:
     stats = _empty_exam_batch_stats()
@@ -499,7 +552,12 @@ def score_exam_answers_batch_with_proxy_fallback(
         column = item["column"]
         user_answer = item["user_answer"]
         correct_answer = item["correct_answer"]
-        heuristic = _estimate_exam_score_without_llm(user_answer=user_answer, correct_answer=correct_answer)
+        use_heuristic = not (
+            str(item.get("question") or "").strip()
+            or str(item.get("exam_type") or "").strip()
+            or list(item.get("key_points") or [])
+        )
+        heuristic = _estimate_exam_score_without_llm(user_answer=user_answer, correct_answer=correct_answer) if use_heuristic else None
         if heuristic is not None:
             exact_results[column] = heuristic
             stats["heuristic_count"] += 1
@@ -518,7 +576,15 @@ def score_exam_answers_batch_with_proxy_fallback(
 
     def _chunk_items(chunk_items: list[dict[str, str]]) -> str:
         return "\n".join(
-            f'[{item["column"]}] Q:{item["header"]}\nA:{item["user_answer"]}\nK:{item["correct_answer"]}'
+            (
+                f'[{item["column"]}]'
+                f'\nExam type: {item.get("exam_type", "")}'
+                f'\nQuestion: {item.get("question") or item["header"]}'
+                f'\nStudent answer: {item["user_answer"]}'
+                f'\nDraft reference answer: {item["correct_answer"]}'
+                f'\nMinimal required points:\n'
+                + "\n".join(f'- {point}' for point in (item.get("key_points") or []))
+            )
             for item in chunk_items
         )
 
@@ -535,6 +601,9 @@ def score_exam_answers_batch_with_proxy_fallback(
                         {
                             "column": item["column"],
                             "header": item["header"],
+                            "question": item.get("question", ""),
+                            "exam_type": item.get("exam_type", ""),
+                            "key_points": [str(point).strip() for point in (item.get("key_points") or []) if str(point).strip()],
                             "normalized_user_answer": _normalize_exam_answer(item["user_answer"]),
                             "normalized_correct_answer": _normalize_exam_answer(item["correct_answer"]),
                         }
@@ -563,6 +632,10 @@ def score_exam_answers_batch_with_proxy_fallback(
                     cache,
                     user_answer=item["user_answer"],
                     correct_answer=item["correct_answer"],
+                    column=str(item.get("column") or ""),
+                    question=str(item.get("question") or item.get("header") or ""),
+                    exam_type=str(item.get("exam_type") or ""),
+                    key_points=[str(point).strip() for point in (item.get("key_points") or []) if str(point).strip()],
                 )
                 cache.set(per_item_cache_key, normalized_result)
             cache.set(cache_key, chunk_results)
