@@ -25,6 +25,10 @@
   </header>
 
   {% include "partials/page_nav.html" %}
+  <nav class="legal-section-jump" aria-label="Навигация по разделам профиля">
+    <a class="legal-section-jump__link" href="#profile-section-main">Основные данные</a>
+    <a class="legal-section-jump__link" href="#profile-section-password">Смена пароля</a>
+  </nav>
 
   <div id="app-message" class="success-box legal-message" hidden></div>
   <div id="profile-errors" class="errors legal-message" hidden></div>
@@ -35,7 +39,7 @@
   <div class="legal-workspace legal-workspace--wide">
     <div class="legal-workspace__main">
       <form id="profile-form" novalidate>
-        <section class="panel legal-card legal-section">
+        <section id="profile-section-main" class="panel legal-card legal-section">
           <div class="legal-section__header">
             <div>
               <p class="legal-section__eyebrow">Раздел 1</p>
@@ -94,7 +98,7 @@
         </section>
       </form>
 
-      <section class="panel legal-card legal-section">
+      <section id="profile-section-password" class="panel legal-card legal-section">
         <div class="legal-section__header">
           <div>
             <p class="legal-section__eyebrow">Раздел 3</p>

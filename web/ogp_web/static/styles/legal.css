@@ -29,6 +29,87 @@
   padding-bottom: 112px;
 }
 
+.legal-section-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.legal-section-jump__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--line) 90%, white);
+  background: color-mix(in srgb, var(--surface) 82%, #f4ece3);
+  color: var(--ink);
+  text-decoration: none;
+  transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
+}
+
+.legal-section-jump__link:hover {
+  transform: translateY(-1px);
+  border-color: var(--line-strong);
+  background: color-mix(in srgb, var(--surface) 68%, #e7d8c6);
+}
+
+.legal-form-progress-card {
+  padding: 18px 20px;
+  margin-bottom: 2px;
+}
+
+.legal-form-progress-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px 14px;
+}
+
+.legal-form-progress-card__value {
+  color: var(--brand);
+  font-size: 14px;
+}
+
+.legal-form-progress-card__hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.legal-form-progress {
+  margin-top: 10px;
+  width: 100%;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(215, 203, 190, 0.45);
+  overflow: hidden;
+}
+
+.legal-form-progress__bar {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--brand), color-mix(in srgb, var(--brand) 75%, #4f7b7f));
+  transition: width 160ms ease;
+}
+
+.legal-form-progress-card kbd {
+  display: inline-block;
+  min-width: 24px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--line) 92%, white);
+  background: color-mix(in srgb, var(--surface) 75%, #f4ece3);
+  color: var(--ink);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .legal-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
@@ -900,6 +981,11 @@
   .segmented-tabs {
     width: 100%;
     grid-auto-flow: row;
+  }
+
+  .legal-section-jump {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .legal-user-card__actions,

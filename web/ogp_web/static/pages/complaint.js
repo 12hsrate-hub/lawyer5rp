@@ -27,6 +27,9 @@ const eventDateTimeField = document.getElementById("event-dt");
 const complaintBasisField = document.getElementById("complaint-basis");
 const mainFocusField = document.getElementById("main-focus");
 const aiFocusHint = document.getElementById("ai-focus-hint");
+const complaintProgressText = document.getElementById("complaint-progress-text");
+const complaintProgressBar = document.getElementById("complaint-progress-bar");
+const complaintProgressHost = document.querySelector(".legal-form-progress");
 
 const { apiFetch, parsePayload, showText, clearText, redirectIfUnauthorized, createModalController } = window.OGPWeb;
 const { wireSingleUsePrincipalOcr, bindFilePickerLabel, createUiResetter } = window.OGPOcr;
@@ -203,6 +206,35 @@ function syncEventDateTimeField() {
   const dateValue = eventDateField?.value || "";
   const timeValue = eventTimeField?.value || "";
   eventDateTimeField.value = dateValue && timeValue ? `${dateValue}T${timeValue}` : "";
+}
+
+function updateRequiredProgress() {
+  if (!form || !complaintProgressText || !complaintProgressBar) {
+    return;
+  }
+
+  const requiredFields = [...form.querySelectorAll("[required]")]
+    .filter((field) => field instanceof HTMLElement)
+    .filter((field) => field.type !== "hidden");
+
+  if (!requiredFields.length) {
+    complaintProgressText.textContent = "Обязательные поля: 0/0";
+    complaintProgressBar.style.width = "0%";
+    complaintProgressHost?.setAttribute("aria-valuenow", "0");
+    return;
+  }
+
+  const filled = requiredFields.filter((field) => {
+    if (field instanceof HTMLInputElement && field.type === "checkbox") {
+      return field.checked;
+    }
+    return String(field.value || "").trim() !== "";
+  }).length;
+
+  const percent = Math.round((filled / requiredFields.length) * 100);
+  complaintProgressText.textContent = `Обязательные поля: ${filled}/${requiredFields.length}`;
+  complaintProgressBar.style.width = `${percent}%`;
+  complaintProgressHost?.setAttribute("aria-valuenow", String(percent));
 }
 
 function persistDraft() {
@@ -387,6 +419,7 @@ function applyComplaintOcrResult(payload) {
 function handleFormChange() {
   syncEventDateTimeField();
   setAiFocusHint();
+  updateRequiredProgress();
   scheduleDraftSave();
   scheduleRemoteDraftSave();
 }
@@ -522,6 +555,15 @@ function bindEscToModals(...controllers) {
 }
 
 form.addEventListener("submit", generateBbcode);
+form.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    const target = event.target;
+    if (target instanceof HTMLTextAreaElement) {
+      event.preventDefault();
+      generateBbcode();
+    }
+  }
+});
 generateBbcodeBtn?.addEventListener("click", generateBbcode);
 copyBtn.addEventListener("click", copyResult);
 aiBtn.addEventListener("click", requestAiSuggestion);
@@ -565,6 +607,7 @@ bindDigitsOnly(form, "appeal_no", 4);
   setCurrentDate(form);
   resetComplaintOcrUi();
   setAiFocusHint();
+  updateRequiredProgress();
 })();
 
 wireSingleUsePrincipalOcr({

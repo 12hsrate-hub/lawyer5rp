@@ -8,11 +8,29 @@
 <div class="legal-page legal-page--complaint">
   {% include "partials/complaint/header.html" %}
   {% include "partials/complaint/tabs.html" %}
+  <nav class="legal-section-jump" aria-label="Навигация по разделам жалобы">
+    <a class="legal-section-jump__link" href="#complaint-section-victim">Потерпевший</a>
+    <a class="legal-section-jump__link" href="#complaint-section-context">Контекст</a>
+    <a class="legal-section-jump__link" href="#complaint-section-description">Описание</a>
+    <a class="legal-section-jump__link" href="#complaint-section-evidence">Доказательства</a>
+    <a class="legal-section-jump__link" href="#complaint-result-card">Результат</a>
+  </nav>
 
   <div id="app-message" class="success-box legal-message" hidden></div>
   <div id="errors" class="errors legal-message" hidden></div>
 
   <form id="complaint-form" class="legal-workspace legal-workspace--wide" novalidate data-username="{{ username }}">
+    <section class="panel legal-card legal-form-progress-card" aria-live="polite">
+      <div class="legal-form-progress-card__head">
+        <p class="legal-section__eyebrow">Навигация и контроль</p>
+        <strong id="complaint-progress-text" class="legal-form-progress-card__value">Обязательные поля: 0/0</strong>
+      </div>
+      <div class="legal-form-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <span id="complaint-progress-bar" class="legal-form-progress__bar"></span>
+      </div>
+      <p class="legal-form-progress-card__hint">Быстрая отправка: <kbd>Ctrl</kbd> + <kbd>Enter</kbd> в любом большом текстовом поле.</p>
+    </section>
+
     <div class="legal-workspace__main">
       {% include "partials/complaint/victim_section.html" %}
       {% include "partials/complaint/context_section.html" %}
