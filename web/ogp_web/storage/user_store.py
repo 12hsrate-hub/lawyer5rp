@@ -998,8 +998,15 @@ class UserStore:
         return admin_reset_password(self, username, new_password)
 
 
-USER_STORE = UserStore(
-    DB_PATH,
-    LEGACY_USERS_PATH,
-    repository=UserRepository(get_database_backend()),
-)
+_DEFAULT_USER_STORE: UserStore | None = None
+
+
+def get_default_user_store() -> UserStore:
+    global _DEFAULT_USER_STORE
+    if _DEFAULT_USER_STORE is None:
+        _DEFAULT_USER_STORE = UserStore(
+            DB_PATH,
+            LEGACY_USERS_PATH,
+            repository=UserRepository(get_database_backend()),
+        )
+    return _DEFAULT_USER_STORE

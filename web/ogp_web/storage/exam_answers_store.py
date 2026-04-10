@@ -620,4 +620,11 @@ class ExamAnswersStore:
             conn.commit()
 
 
-EXAM_ANSWERS_STORE = ExamAnswersStore(DB_PATH, backend=get_database_backend())
+_DEFAULT_EXAM_ANSWERS_STORE: ExamAnswersStore | None = None
+
+
+def get_default_exam_answers_store() -> ExamAnswersStore:
+    global _DEFAULT_EXAM_ANSWERS_STORE
+    if _DEFAULT_EXAM_ANSWERS_STORE is None:
+        _DEFAULT_EXAM_ANSWERS_STORE = ExamAnswersStore(DB_PATH, backend=get_database_backend())
+    return _DEFAULT_EXAM_ANSWERS_STORE

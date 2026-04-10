@@ -3,30 +3,30 @@ from __future__ import annotations
 from fastapi import Request
 
 from ogp_web.server_config import PermissionSet, build_permission_set, get_server_config
-from ogp_web.storage.admin_metrics_store import ADMIN_METRICS_STORE, AdminMetricsStore
+from ogp_web.storage.admin_metrics_store import AdminMetricsStore, get_default_admin_metrics_store
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
-from ogp_web.storage.exam_answers_store import EXAM_ANSWERS_STORE, ExamAnswersStore
-from ogp_web.storage.user_store import USER_STORE, UserStore
+from ogp_web.storage.exam_answers_store import ExamAnswersStore, get_default_exam_answers_store
+from ogp_web.storage.user_store import UserStore, get_default_user_store
 
 
 def get_user_store(request: Request) -> UserStore:
     store = getattr(request.app.state, "user_store", None)
     if store is None:
-        return USER_STORE
+        return get_default_user_store()
     return store
 
 
 def get_exam_answers_store(request: Request) -> ExamAnswersStore:
     store = getattr(request.app.state, "exam_answers_store", None)
     if store is None:
-        return EXAM_ANSWERS_STORE
+        return get_default_exam_answers_store()
     return store
 
 
 def get_admin_metrics_store(request: Request) -> AdminMetricsStore:
     store = getattr(request.app.state, "admin_metrics_store", None)
     if store is None:
-        return ADMIN_METRICS_STORE
+        return get_default_admin_metrics_store()
     return store
 
 

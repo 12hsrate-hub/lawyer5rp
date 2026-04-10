@@ -31,9 +31,9 @@ from ogp_web.routes.profile import router as profile_router
 from ogp_web.server_config import get_server_config
 from ogp_web.services.auth_service import _get_secret_key, get_current_user
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
-from ogp_web.storage.admin_metrics_store import ADMIN_METRICS_STORE, AdminMetricsStore
-from ogp_web.storage.exam_answers_store import EXAM_ANSWERS_STORE, ExamAnswersStore
-from ogp_web.storage.user_store import USER_STORE, UserStore
+from ogp_web.storage.admin_metrics_store import AdminMetricsStore, get_default_admin_metrics_store
+from ogp_web.storage.exam_answers_store import ExamAnswersStore, get_default_exam_answers_store
+from ogp_web.storage.user_store import UserStore, get_default_user_store
 from ogp_web.web import STATIC_DIR, _normalized_url
 
 
@@ -93,28 +93,6 @@ def _configure_web_logging() -> None:
 
     if root_logger.level == logging.NOTSET or root_logger.level > logging.INFO:
         root_logger.setLevel(logging.INFO)
-
-
-def _check_sqlite_health(path: Path) -> dict[str, object]:
-    import sqlite3
-
-    details: dict[str, object] = {"path": str(path), "exists": path.exists(), "ok": False}
-    if not path.exists():
-        details["error"] = "missing"
-        return details
-
-    try:
-        conn = sqlite3.connect(str(path))
-        try:
-            conn.execute("SELECT 1").fetchone()
-        finally:
-            conn.close()
-    except sqlite3.Error as exc:
-        details["error"] = str(exc)
-        return details
-
-    details["ok"] = True
-    return details
 
 
 def _check_tcp_dependency(name: str, host: str, port: int, *, timeout: float = 3.0) -> dict[str, object]:
@@ -193,9 +171,9 @@ def create_app(
 
     app = FastAPI(title="OGP Builder Web", version="1.3.0")
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-    app.state.user_store = user_store or USER_STORE
-    app.state.exam_answers_store = exam_answers_store or EXAM_ANSWERS_STORE
-    app.state.admin_metrics_store = admin_metrics_store or ADMIN_METRICS_STORE
+    app.state.user_store = user_store or get_default_user_store()
+    app.state.exam_answers_store = exam_answers_store or get_default_exam_answers_store()
+    app.state.admin_metrics_store = admin_metrics_store or get_default_admin_metrics_store()
     app.state.rate_limiter = create_rate_limiter(app.state.user_store.backend)
     exam_import_tasks_db_path = (
         admin_metrics_store.db_path.parent / "exam_import_tasks.db"

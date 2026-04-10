@@ -11,4 +11,3 @@ from ogp_web.services.auth_service import (
     require_user,
     set_auth_cookie,
 )
-from ogp_web.storage.user_store import USER_STORE

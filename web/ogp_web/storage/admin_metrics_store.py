@@ -825,4 +825,11 @@ class AdminMetricsStore:
         return output.getvalue()
 
 
-ADMIN_METRICS_STORE = AdminMetricsStore(DB_PATH, backend=get_database_backend())
+_DEFAULT_ADMIN_METRICS_STORE: AdminMetricsStore | None = None
+
+
+def get_default_admin_metrics_store() -> AdminMetricsStore:
+    global _DEFAULT_ADMIN_METRICS_STORE
+    if _DEFAULT_ADMIN_METRICS_STORE is None:
+        _DEFAULT_ADMIN_METRICS_STORE = AdminMetricsStore(DB_PATH, backend=get_database_backend())
+    return _DEFAULT_ADMIN_METRICS_STORE
