@@ -7,9 +7,46 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  preflight:
     runs-on: ubuntu-latest
-    if: ${{ secrets.DEPLOY_HOST != '' && secrets.DEPLOY_USER != '' && secrets.DEPLOY_SSH_KEY != '' }}
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - name: Check deploy secrets
+        id: check
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          missing=0
+
+          if [ -z "$DEPLOY_HOST" ]; then
+            echo "Missing secret: DEPLOY_HOST"
+            missing=1
+          fi
+
+          if [ -z "$DEPLOY_USER" ]; then
+            echo "Missing secret: DEPLOY_USER"
+            missing=1
+          fi
+
+          if [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "Missing secret: DEPLOY_SSH_KEY"
+            missing=1
+          fi
+
+          if [ "$missing" -eq 1 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: preflight
+    runs-on: ubuntu-latest
+    if: ${{ needs.preflight.outputs.ready == 'true' }}
 
     steps:
       - name: Checkout
