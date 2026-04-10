@@ -1,0 +1,22 @@
+<section class="panel legal-card legal-section">
+  <div class="legal-section__header">
+    <div>
+      <p class="legal-section__eyebrow">Источник</p>
+      <h2 class="legal-section__title">Google Sheets</h2>
+      <p class="legal-section__description">Используется публичная таблица с ответами на экзамены. При импорте строки читаются последовательно и сохраняются в настроенный backend базы данных.</p>
+    </div>
+  </div>
+
+  <div class="legal-subcard">
+    <div class="legal-meta-list">
+      <div class="legal-meta-list__item">
+        <span class="legal-field__label">Таблица</span>
+        <a class="legal-inline-link" href="{{ exam_sheet_url }}" target="_blank" rel="noopener noreferrer">{{ exam_sheet_url }}</a>
+      </div>
+      <div class="legal-meta-list__item">
+        <span class="legal-field__label">Сохранено в базе</span>
+        <span id="exam-db-count">{{ exam_total_rows }}</span>
+      </div>
+    </div>
+  </div>
+</section>

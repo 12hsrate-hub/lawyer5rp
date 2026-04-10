@@ -1,0 +1,45 @@
+<section id="complaint-result-card" class="panel legal-card legal-section legal-section--result">
+  <div class="legal-section__header">
+    <div>
+      <p class="legal-section__eyebrow">Финальный блок</p>
+      <h2 class="legal-section__title">Результат</h2>
+      <p class="legal-section__description">Итоговый документ для дальнейшей работы.</p>
+    </div>
+  </div>
+
+  <div class="legal-status-row">
+    <article class="legal-status-card">
+      <span class="legal-status-card__label">Режим</span>
+      <strong class="legal-status-card__value">{{ "Тестовый" if is_test_mode else "Рабочий" }}</strong>
+    </article>
+
+    <article class="legal-status-card">
+      <span class="legal-status-card__label">Черновик</span>
+      <strong class="legal-status-card__value">{{ "Не сохраняется" if is_test_mode else "Автосохранение" }}</strong>
+    </article>
+  </div>
+
+  <label class="legal-result">
+    <span class="legal-field__label">BBCode</span>
+    <textarea id="result" rows="18" readonly></textarea>
+  </label>
+
+  <div id="bbcode-status" class="progress-box legal-ai-progress">
+    <span class="spinner" aria-hidden="true"></span>
+    <span id="bbcode-status-text">Статус: готово к формированию BBCode.</span>
+  </div>
+
+  <div class="actions legal-toolbar legal-toolbar--result">
+    <button type="button" id="generate-bbcode-btn" class="primary-button">Сгенерировать BBCode</button>
+    {% if not is_test_mode %}
+    <button type="button" id="save-draft-btn" class="secondary-button">Сохранить жалобу</button>
+    {% endif %}
+    <button type="button" id="copy-btn" class="secondary-button">Копировать результат</button>
+    {% if complaint_forum_url %}
+    <a class="button-link ghost-button" href="{{ complaint_forum_url }}" target="_blank" rel="noopener noreferrer">Создать тему</a>
+    {% endif %}
+    {% if not is_test_mode %}
+    <button type="button" id="reset-draft-btn" class="ghost-button">Очистить жалобу</button>
+    {% endif %}
+  </div>
+</section>

@@ -1,0 +1,203 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}{{ app_title }} - Вход{% endblock %}
+{% block main_class %}page auth-page{% endblock %}
+
+{% block content %}
+<div class="legal-page legal-page--auth">
+  <header class="legal-header legal-header--auth">
+    <div class="legal-header__main">
+      <p class="legal-header__eyebrow">OGP Builder</p>
+      <h1 class="legal-header__title">Вход</h1>
+      <p class="legal-header__description">Один кабинет для регистрации, подтверждения email, восстановления пароля и перехода к рабочим формам без лишних шагов.</p>
+    </div>
+
+    <aside class="legal-user-card legal-user-card--auth">
+      <div class="legal-user-card__top">
+        <span class="legal-user-card__label">Статус OpenAI</span>
+        <strong class="legal-user-card__value legal-user-card__value--status">{{ "Ключ найден" if openai_enabled else "Ключ не задан" }}</strong>
+      </div>
+      <p class="legal-user-card__text">Регистрация и работа с аккаунтом доступны отдельно от AI-функций, поэтому войти в кабинет можно и без генерации текста.</p>
+    </aside>
+  </header>
+
+  <section class="legal-auth-shell">
+    <div class="legal-auth-shell__main">
+      <section id="active-session-card" class="panel legal-user-card legal-user-card--auth" hidden>
+        <div class="legal-user-card__top">
+          <span class="legal-user-card__label">Текущая сессия</span>
+          <strong id="active-session-username" class="legal-user-card__value"></strong>
+        </div>
+        <p class="legal-user-card__text">На этом домене уже выполнен вход. Можно продолжить работу или выйти и войти под другим пользователем.</p>
+        <div class="legal-user-card__actions">
+          <a href="/complaint" class="primary-button">Продолжить</a>
+          <button id="active-session-logout" type="button" class="ghost-button">Выйти и сменить аккаунт</button>
+        </div>
+      </section>
+
+      <section class="panel legal-card legal-section legal-section--auth">
+        <div class="legal-section__header">
+          <div>
+            <p class="legal-section__eyebrow">Основной сценарий</p>
+            <h2 class="legal-section__title">Войти в кабинет</h2>
+            <p class="legal-section__description">Используйте логин или email, который привязан к аккаунту.</p>
+          </div>
+        </div>
+
+        <form id="login-form" class="legal-auth-form">
+          <div class="legal-field-grid">
+            <label class="legal-field">
+              <span class="legal-field__label">Логин или email</span>
+              <input name="username" autocomplete="username" placeholder="nickname или you@example.com" required>
+            </label>
+
+            <label class="legal-field">
+              <span class="legal-field__label">Пароль</span>
+              <input name="password" type="password" autocomplete="current-password" placeholder="Введите пароль" required>
+            </label>
+          </div>
+
+          <div class="actions legal-toolbar legal-toolbar--result">
+            <button type="submit" class="primary-button">Войти</button>
+            <button id="forgot-password-toggle" type="button" class="ghost-button">Забыли пароль?</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel legal-card legal-section legal-section--auth">
+        <div class="legal-section__header">
+          <div>
+            <p class="legal-section__eyebrow">Новый аккаунт</p>
+            <h2 class="legal-section__title">Регистрация</h2>
+            <p class="legal-section__description">Пароль должен содержать минимум 10 символов, заглавную и строчную буквы, цифру и спецсимвол.</p>
+          </div>
+        </div>
+
+        <form id="register-form" class="legal-auth-form">
+          <div class="legal-field-grid legal-field-grid--two">
+            <label class="legal-field">
+              <span class="legal-field__label">Логин</span>
+              <input name="username" autocomplete="username" placeholder="Например, lawyer5rp" required>
+            </label>
+
+            <label class="legal-field">
+              <span class="legal-field__label">Email</span>
+              <input name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+            </label>
+
+            <label class="legal-field legal-field--full">
+              <span class="legal-field__label">Пароль</span>
+              <input name="password" type="password" autocomplete="new-password" placeholder="Создайте надежный пароль" required>
+            </label>
+          </div>
+
+          <div class="actions legal-toolbar legal-toolbar--result">
+            <button type="submit" class="primary-button">Создать аккаунт</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <aside class="legal-auth-shell__side">
+      <section class="panel legal-card legal-section legal-section--auth-side">
+        <div class="legal-section__header">
+          <div>
+            <p class="legal-section__eyebrow">Подтверждение email</p>
+            <h2 class="legal-section__title">Повторная отправка</h2>
+            <p class="legal-section__description">Если письмо не пришло, отправьте ссылку повторно на тот же email.</p>
+          </div>
+        </div>
+
+        <form id="resend-form" class="legal-auth-form">
+          <div class="legal-field-grid">
+            <label class="legal-field">
+              <span class="legal-field__label">Email</span>
+              <input name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+            </label>
+          </div>
+
+          <div class="actions legal-toolbar legal-toolbar--result">
+            <button type="submit" class="secondary-button">Отправить ссылку еще раз</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="forgot-password-form" class="panel legal-card legal-section legal-section--auth-side" hidden>
+        <div class="legal-section__header">
+          <div>
+            <p class="legal-section__eyebrow">Восстановление</p>
+            <h2 class="legal-section__title">Сброс пароля</h2>
+            <p class="legal-section__description">Мы отправим ссылку для установки нового пароля. Если SMTP временно недоступен, ссылка появится в модальном окне.</p>
+          </div>
+        </div>
+
+        <form class="legal-auth-form">
+          <div class="legal-field-grid">
+            <label class="legal-field">
+              <span class="legal-field__label">Email</span>
+              <input name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+            </label>
+          </div>
+
+          <div class="actions legal-toolbar legal-toolbar--result">
+            <button type="submit" class="primary-button">Сбросить пароль</button>
+            <button id="forgot-password-cancel" type="button" class="ghost-button">Отмена</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel legal-card legal-section legal-section--auth-note">
+        <div class="legal-section__header">
+          <div>
+            <p class="legal-section__eyebrow">Как начать</p>
+            <h2 class="legal-section__title">Порядок работы</h2>
+          </div>
+        </div>
+
+        <div class="legal-auth-note">
+          <article class="legal-auth-note__item">
+            <strong>01</strong>
+            <span>Создайте аккаунт с логином, email и надежным паролем.</span>
+          </article>
+          <article class="legal-auth-note__item">
+            <strong>02</strong>
+            <span>Подтвердите email по ссылке из письма или из fallback-окна.</span>
+          </article>
+          <article class="legal-auth-note__item">
+            <strong>03</strong>
+            <span>После входа заполните профиль и переходите к рабочим формам.</span>
+          </article>
+        </div>
+      </section>
+    </aside>
+  </section>
+</div>
+
+<div id="success-modal" class="modal-backdrop" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="success-modal-title">
+    <button id="success-modal-close" class="modal-close" type="button" aria-label="Закрыть окно">×</button>
+    <p class="eyebrow">Регистрация</p>
+    <h2 id="success-modal-title">Аккаунт создан</h2>
+    <div id="success-modal-text" class="success-box modal-message"></div>
+    <div class="actions modal-actions">
+      <button id="success-modal-ok" class="primary-button" type="button">Понятно</button>
+    </div>
+  </div>
+</div>
+
+<div id="error-modal" class="modal-backdrop" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="error-modal-title">
+    <button id="error-modal-close" class="modal-close" type="button" aria-label="Закрыть окно">×</button>
+    <p class="eyebrow">Ошибка</p>
+    <h2 id="error-modal-title">Не удалось выполнить действие</h2>
+    <div id="error-modal-text" class="errors modal-message"></div>
+    <div class="actions modal-actions">
+      <button id="error-modal-ok" class="primary-button" type="button">Понятно</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', path='pages/login.js') }}" defer></script>
+{% endblock %}

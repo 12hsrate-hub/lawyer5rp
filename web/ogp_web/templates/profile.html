@@ -1,0 +1,137 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}{{ app_title }} - Личный кабинет{% endblock %}
+
+{% block content %}
+<div class="legal-page legal-page--profile">
+  <header class="legal-header">
+    <div class="legal-header__main">
+      <p class="legal-header__eyebrow">OGP Builder</p>
+      <h1 class="legal-header__title">Личный кабинет</h1>
+      <p class="legal-header__description">Данные представителя хранятся здесь и автоматически используются в жалобах и реабилитации.</p>
+    </div>
+
+    <aside class="legal-user-card">
+      <div class="legal-user-card__top">
+        <span class="legal-user-card__label">Пользователь</span>
+        <strong class="legal-user-card__value">{{ username }}</strong>
+      </div>
+      <p class="legal-user-card__text">Проверьте и обновите данные представителя перед формированием итоговых документов.</p>
+      <div class="legal-user-card__actions">
+        <a class="button-link secondary-button" href="/complaint">К жалобе</a>
+        <button type="button" id="logout-btn" class="ghost-button">Выйти</button>
+      </div>
+    </aside>
+  </header>
+
+  {% include "partials/page_nav.html" %}
+
+  <div id="app-message" class="success-box legal-message" hidden></div>
+  <div id="profile-errors" class="errors legal-message" hidden></div>
+  <div id="profile-message" class="success-box legal-message" hidden></div>
+  <div id="password-errors" class="errors legal-message" hidden></div>
+  <div id="password-message" class="success-box legal-message" hidden></div>
+
+  <div class="legal-workspace legal-workspace--wide">
+    <div class="legal-workspace__main">
+      <form id="profile-form" novalidate>
+        <section class="panel legal-card legal-section">
+          <div class="legal-section__header">
+            <div>
+              <p class="legal-section__eyebrow">Раздел 1</p>
+              <h2 class="legal-section__title">Основные данные</h2>
+              <p class="legal-section__description">Укажите сведения представителя, которые будут подставляться в итоговые документы.</p>
+            </div>
+          </div>
+
+          <div class="legal-field-grid legal-field-grid--two">
+            <label class="legal-field">
+              <span class="legal-field__label">ФИО представителя</span>
+              <input name="name" placeholder="Имя Фамилия">
+            </label>
+
+            <label class="legal-field">
+              <span class="legal-field__label">Паспорт</span>
+              <input name="passport" placeholder="123456" maxlength="6">
+            </label>
+
+            <label class="legal-field legal-field--full">
+              <span class="legal-field__label">Адрес</span>
+              <input name="address" placeholder="Los Santos, Vespucci Blvd, 1">
+            </label>
+          </div>
+        </section>
+
+        <section class="panel legal-card legal-section">
+          <div class="legal-section__header">
+            <div>
+              <p class="legal-section__eyebrow">Раздел 2</p>
+              <h2 class="legal-section__title">Контакты и профиль</h2>
+              <p class="legal-section__description">Эти поля используются при генерации итогового документа.</p>
+            </div>
+          </div>
+
+          <div class="legal-field-grid legal-field-grid--two">
+            <label class="legal-field">
+              <span class="legal-field__label">Телефон</span>
+              <input name="phone" placeholder="1234567" inputmode="numeric" maxlength="7" pattern="\d{7}">
+            </label>
+
+            <label class="legal-field">
+              <span class="legal-field__label">Discord</span>
+              <input name="discord" placeholder="nickname">
+            </label>
+
+            <label class="legal-field legal-field--full">
+              <span class="legal-field__label">Скан паспорта URL</span>
+              <input name="passport_scan_url" type="url" placeholder="https://example.com/passport">
+            </label>
+          </div>
+
+          <div class="actions legal-toolbar legal-toolbar--result">
+            <button type="submit" class="primary-button">Сохранить профиль</button>
+          </div>
+        </section>
+      </form>
+
+      <section class="panel legal-card legal-section">
+        <div class="legal-section__header">
+          <div>
+            <p class="legal-section__eyebrow">Раздел 3</p>
+            <h2 class="legal-section__title">Смена пароля</h2>
+            <p class="legal-section__description">Укажите текущий пароль и придумайте новый. Новый пароль должен отличаться от текущего.</p>
+          </div>
+        </div>
+
+        <form id="password-form" class="legal-auth-form" novalidate>
+          <div class="legal-field-grid legal-field-grid--two">
+            <label class="legal-field legal-field--full">
+              <span class="legal-field__label">Текущий пароль</span>
+              <input name="current_password" type="password" autocomplete="current-password" required>
+            </label>
+
+            <label class="legal-field">
+              <span class="legal-field__label">Новый пароль</span>
+              <input name="new_password" type="password" autocomplete="new-password" required>
+            </label>
+
+            <label class="legal-field">
+              <span class="legal-field__label">Подтвердите новый пароль</span>
+              <input name="confirm_password" type="password" autocomplete="new-password" required>
+            </label>
+          </div>
+
+          <div class="actions legal-toolbar legal-toolbar--result">
+            <button type="submit" class="secondary-button">Сменить пароль</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', path='shared/form_helpers.js') }}?v={{ static_asset_version }}" defer></script>
+<script src="{{ url_for('static', path='pages/profile.js') }}?v={{ static_asset_version }}" defer></script>
+{% endblock %}

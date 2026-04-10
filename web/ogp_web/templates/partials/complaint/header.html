@@ -1,0 +1,31 @@
+<header class="legal-header">
+  <div class="legal-header__main">
+    <p class="legal-header__eyebrow">OGP Builder</p>
+    <h1 class="legal-header__title">{{ "Жалоба тест" if is_test_mode else "Жалоба" }}</h1>
+    <p class="legal-header__description">
+      {% if is_test_mode %}
+      Проверка интерфейса и сценария жалобы на заранее подготовленных данных.
+      {% else %}
+      Создание обращения в ОГП по готовой структуре.
+      {% endif %}
+    </p>
+  </div>
+
+  <aside class="legal-user-card">
+    <div class="legal-user-card__top">
+      <span class="legal-user-card__label">Пользователь</span>
+      <strong class="legal-user-card__value">{{ username }}</strong>
+    </div>
+    <p class="legal-user-card__text">
+      {% if is_test_mode %}
+      Тестовый режим доступен только выбранным пользователям.
+      {% else %}
+      Данные представителя берутся из личного кабинета и автоматически используются в готовом документе.
+      {% endif %}
+    </p>
+    <div class="legal-user-card__actions">
+      <a class="button-link secondary-button" href="/profile">Личный кабинет</a>
+      <button type="button" id="logout-btn" class="ghost-button">Выйти</button>
+    </div>
+  </aside>
+</header>

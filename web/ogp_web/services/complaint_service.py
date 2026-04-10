@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+from datetime import datetime
+
+from fastapi import HTTPException, status
+
+from ogp_web.schemas import ComplaintPayload, RehabPayload
+from ogp_web.services.auth_service import AuthUser
+from ogp_web.services.profile_service import get_profile_payload
+from ogp_web.storage.user_store import UserStore
+from shared.ogp_core import (
+    ComplaintInput,
+    DEFAULT_SITUATION_PLACEHOLDER,
+    DEFAULT_VIOLATION_PLACEHOLDER,
+    RehabInput,
+    Representative,
+    Victim,
+    build_bbcode,
+    build_rehab_bbcode,
+    collect_evidence_items,
+    validate_complaint_input,
+    validate_rehab_input,
+)
+
+
+def to_domain_model(store: UserStore, payload: ComplaintPayload, user: AuthUser) -> ComplaintInput:
+    representative = payload.representative or get_profile_payload(store, user.username)
+    today_date = payload.today_date.strip() or datetime.now().strftime("%d.%m.%Y")
+    return ComplaintInput(
+        appeal_no=payload.appeal_no.strip(),
+        org=payload.org.strip(),
+        subject_names=payload.subject_names.strip(),
+        situation_description=(payload.situation_description or "").strip() or DEFAULT_SITUATION_PLACEHOLDER,
+        violation_short=(payload.violation_short or "").strip() or DEFAULT_VIOLATION_PLACEHOLDER,
+        event_dt=payload.event_dt.strip(),
+        today_date=today_date,
+        representative=Representative(**representative.model_dump()),
+        victim=Victim(**payload.victim.model_dump()),
+        evidence_items=collect_evidence_items(
+            contract_url=payload.contract_url,
+            bar_request_url=payload.bar_request_url,
+            official_answer_url=payload.official_answer_url,
+            mail_notice_url=payload.mail_notice_url,
+            arrest_record_url=payload.arrest_record_url,
+            personnel_file_url=payload.personnel_file_url,
+            video_fix_urls=payload.video_fix_urls,
+            provided_video_urls=payload.provided_video_urls,
+        ),
+    )
+
+
+def generate_bbcode_text(store: UserStore, payload: ComplaintPayload, user: AuthUser) -> str:
+    complaint = to_domain_model(store, payload, user)
+    errors = validate_complaint_input(complaint)
+    if errors:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=errors)
+    return build_bbcode(complaint)
+
+
+def generate_rehab_bbcode_text(store: UserStore, payload: RehabPayload, user: AuthUser) -> str:
+    representative = get_profile_payload(store, user.username)
+    today_date = payload.today_date.strip() or datetime.now().strftime("%d.%m.%Y")
+    rehab = RehabInput(
+        representative=Representative(**representative.model_dump()),
+        principal_name=payload.principal_name.strip(),
+        principal_passport=payload.principal_passport.strip(),
+        principal_passport_scan_url=payload.principal_passport_scan_url.strip(),
+        served_seven_days=payload.served_seven_days,
+        contract_url=payload.contract_url.strip(),
+        today_date=today_date,
+    )
+    errors = validate_rehab_input(rehab)
+    if errors:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=errors)
+    return build_rehab_bbcode(rehab)

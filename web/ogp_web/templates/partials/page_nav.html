@@ -1,0 +1,5 @@
+<nav class="page-nav">
+  {% for item in page_nav_items %}
+  <a class="nav-link{% if nav_active == item.key %} active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
+  {% endfor %}
+</nav>

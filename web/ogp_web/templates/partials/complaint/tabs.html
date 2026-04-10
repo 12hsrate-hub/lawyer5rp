@@ -1,0 +1,5 @@
+<nav class="segmented-tabs" aria-label="Разделы OGP Builder">
+  {% for item in complaint_nav_items %}
+  <a class="segmented-tabs__item{% if nav_active == item.key or (item.key == 'complaint' and nav_active == 'complaint_test') %} is-active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
+  {% endfor %}
+</nav>

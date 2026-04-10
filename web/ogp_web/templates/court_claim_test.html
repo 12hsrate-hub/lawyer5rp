@@ -1,0 +1,288 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}{{ app_title }} - Судебные обращения{% endblock %}
+
+{% block content %}
+<div class="legal-page legal-page--court-claim">
+  <section class="legal-header">
+    <div class="legal-header__main">
+      <p class="legal-header__eyebrow">Тестовый раздел</p>
+      <h1 class="legal-header__title">Судебные обращения</h1>
+      <p class="legal-header__description">
+        Конструктор процессуальных документов для подачи в судебные инстанции. Данные представителя,
+        дата составления и подпись подставляются автоматически из профиля пользователя.
+      </p>
+    </div>
+    <aside class="legal-user-card">
+      <div class="legal-user-card__top">
+        <span class="legal-user-card__label">Источник данных</span>
+        <strong class="legal-user-card__value">Профиль представителя</strong>
+      </div>
+      <p class="legal-user-card__text">
+        Перед подготовкой документа проверьте сведения о представителе в личном кабинете. Они используются
+        при формировании итогового текста обращения.
+      </p>
+      <div class="legal-user-card__actions">
+        <a class="button-link secondary-button" href="/profile">Личный кабинет</a>
+      </div>
+    </aside>
+  </section>
+
+  {% include "partials/complaint/tabs.html" %}
+
+  <div id="court-claim-message" class="success-box legal-message" hidden></div>
+  <div id="court-claim-errors" class="errors legal-message" hidden></div>
+
+  <form id="court-claim-form" class="legal-workspace legal-workspace--wide" novalidate data-username="{{ username }}">
+    <div class="legal-workspace__main">
+      <section class="panel legal-card legal-section">
+        <div class="legal-section__header">
+          <div>
+            <p class="legal-section__eyebrow">Параметры обращения</p>
+            <h2 class="legal-section__title">Судебная инстанция и вид обращения</h2>
+            <p id="court-claim-kind-description" class="legal-section__description">
+              Выберите судебную инстанцию и соответствующий вид обращения.
+            </p>
+          </div>
+        </div>
+        <div class="legal-field-grid legal-field-grid--two">
+          <label class="legal-field">
+            <span class="legal-field__label">Судебная инстанция</span>
+            <select id="court-type" name="court_type">
+              <option value="">Выберите судебную инстанцию</option>
+              <option value="supreme">Верховный суд</option>
+              <option value="appeal">Апелляционный суд</option>
+              <option value="federal">Федеральный суд</option>
+            </select>
+          </label>
+          <label class="legal-field">
+            <span class="legal-field__label">Вид обращения</span>
+            <select id="court-claim-kind" name="claim_kind" disabled>
+              <option value="">Сначала выберите судебную инстанцию</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section id="court-claim-in-development" class="panel legal-card legal-section" hidden>
+        <div class="legal-section__header">
+          <div>
+            <p class="legal-section__eyebrow">Статус шаблона</p>
+            <h2 class="legal-section__title">Форма находится в разработке</h2>
+            <p id="court-claim-in-development-text" class="legal-section__description">
+              Для выбранного вида обращения форма подготовки документа еще не реализована.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <div id="court-claim-fields" hidden>
+        <section class="panel legal-card legal-section">
+          <div class="legal-section__header">
+            <div>
+              <p class="legal-section__eyebrow">Раздел I</p>
+              <h2 class="legal-section__title">Сведения о сторонах</h2>
+            </div>
+          </div>
+
+          <section id="court-claim-plaintiff-card" class="legal-subcard legal-subcard--ocr">
+            <div class="legal-subcard__header">
+              <div>
+                <h3 class="legal-subcard__title">Данные доверителя</h3>
+                <p class="legal-subcard__description">
+                  Сведения о доверителе можно внести вручную либо автоматически извлечь из 4-й страницы договора.
+                </p>
+              </div>
+            </div>
+
+            <div class="legal-ocr">
+              <div class="legal-ocr__controls">
+                <label class="legal-file-field">
+                  <span class="legal-field__label">Изображение страницы договора</span>
+                  <div class="legal-file-picker">
+                    <label class="secondary-button legal-file-picker__button" for="court-claim-plaintiff-ocr-file">Файл</label>
+                    <span id="court-claim-plaintiff-ocr-file-name" class="legal-file-picker__name is-empty">Файл не выбран</span>
+                    <input id="court-claim-plaintiff-ocr-file" class="legal-file-picker__input" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+                  </div>
+                </label>
+                <button type="button" id="court-claim-plaintiff-ocr-btn" class="secondary-button">Извлечь данные из договора</button>
+              </div>
+
+              <div id="court-claim-plaintiff-ocr-status" class="legal-ocr__status">Статус: ожидается файл для распознавания.</div>
+              <div id="court-claim-plaintiff-ocr-progress" class="progress-box legal-ocr__progress" hidden>
+                <span class="spinner" aria-hidden="true"></span>
+                <span id="court-claim-plaintiff-ocr-progress-text"></span>
+              </div>
+            </div>
+          </section>
+
+          <div class="legal-field-grid legal-field-grid--two">
+            <label class="legal-field">
+              <span class="legal-field__label">Доверитель: ФИО</span>
+              <input name="plaintiff_name" type="text" placeholder="Например: Vic Vega" />
+            </label>
+            <label class="legal-field">
+              <span class="legal-field__label">Доверитель: адрес места жительства</span>
+              <input name="plaintiff_address" type="text" value="без места проживания" placeholder="Например: Los Santos, без места проживания" />
+            </label>
+            <label class="legal-field">
+              <span class="legal-field__label">Доверитель: номер телефона</span>
+              <input name="plaintiff_phone" type="text" placeholder="Например: 1234567" />
+            </label>
+            <label class="legal-field">
+              <span class="legal-field__label">Доверитель: паспорт</span>
+              <input name="plaintiff_passport" type="text" placeholder="Например: 123456" />
+            </label>
+            <label class="legal-field legal-field--full">
+              <span class="legal-field__label">Доверитель: адрес электронной почты</span>
+              <input name="plaintiff_email" type="email" placeholder="Например: example@sa.com" />
+            </label>
+
+            <label id="court-claim-defendant-name-field" class="legal-field">
+              <span class="legal-field__label">Ответчик: ФИО</span>
+              <input name="defendant_name" type="text" placeholder="Например: Angel Bradley" />
+            </label>
+            <label id="court-claim-defendant-address-field" class="legal-field">
+              <span class="legal-field__label">Ответчик: адрес места жительства</span>
+              <input name="defendant_address" type="text" value="без места проживания" placeholder="Например: без места проживания" />
+            </label>
+            <label id="court-claim-defendant-phone-field" class="legal-field">
+              <span class="legal-field__label">Ответчик: номер телефона</span>
+              <input name="defendant_phone" type="text" placeholder="Например: 1234567" />
+            </label>
+            <label id="court-claim-defendant-passport-field" class="legal-field">
+              <span class="legal-field__label">Ответчик: паспорт</span>
+              <input name="defendant_passport" type="text" placeholder="Например: 456789" />
+            </label>
+            <label id="court-claim-defendant-email-field" class="legal-field legal-field--full">
+              <span class="legal-field__label">Ответчик: адрес электронной почты</span>
+              <input name="defendant_email" type="email" placeholder="Например: 1example@sa.com" />
+            </label>
+
+            <label id="court-claim-defendant-representative-name-field" class="legal-field" hidden>
+              <span class="legal-field__label">Представитель ответчика: ФИО</span>
+              <input name="defendant_representative_name" type="text" placeholder="Например: John Carter" />
+            </label>
+            <label id="court-claim-defendant-representative-address-field" class="legal-field" hidden>
+              <span class="legal-field__label">Представитель ответчика: адрес места жительства</span>
+              <input name="defendant_representative_address" type="text" value="без места проживания" placeholder="Например: без места проживания" />
+            </label>
+            <label id="court-claim-defendant-representative-phone-field" class="legal-field" hidden>
+              <span class="legal-field__label">Представитель ответчика: номер телефона</span>
+              <input name="defendant_representative_phone" type="text" placeholder="Например: 1234567" />
+            </label>
+            <label id="court-claim-defendant-representative-passport-field" class="legal-field" hidden>
+              <span class="legal-field__label">Представитель ответчика: паспорт</span>
+              <input name="defendant_representative_passport" type="text" placeholder="Например: 456789" />
+            </label>
+            <label id="court-claim-defendant-representative-email-field" class="legal-field legal-field--full" hidden>
+              <span class="legal-field__label">Представитель ответчика: адрес электронной почты</span>
+              <input name="defendant_representative_email" type="email" placeholder="Например: counsel@sa.com" />
+            </label>
+          </div>
+        </section>
+
+        <section class="panel legal-card legal-section">
+          <div class="legal-section__header">
+            <div>
+              <p class="legal-section__eyebrow">Раздел II</p>
+              <h2 class="legal-section__title">Фактические обстоятельства</h2>
+            </div>
+          </div>
+          <div class="legal-field-grid">
+            <label class="legal-field legal-field--full">
+              <span class="legal-field__label">Изложение обстоятельств дела</span>
+              <span id="court-claim-situation-hint" class="legal-field__hint">
+                Пример: 23.12.2024 ответчик применил силу к доверителю и, по мнению стороны истца, превысил служебные полномочия. Для проверки полноты обстоятельств требуется видеофиксация ответчика, доступ к которой возможен только после выдачи ордера AI.
+              </span>
+              <textarea class="legal-textarea" name="situation_description" placeholder="Опишите дату, действия ответчика, нарушение, зачем суду необходимо вмешательство и какой документ либо доступ требуется получить."></textarea>
+            </label>
+          </div>
+        </section>
+
+        <section class="panel legal-card legal-section">
+          <div class="legal-section__header">
+            <div>
+              <p class="legal-section__eyebrow">Раздел III</p>
+              <h2 class="legal-section__title">Доказательства и материалы</h2>
+              <p id="court-claim-evidence-hint" class="legal-section__description">
+                Добавьте доказательства: название документа и ссылку. В BBCode они вставятся одно под другим.
+              </p>
+            </div>
+          </div>
+          <div id="court-claim-evidence-list" class="court-evidence-list"></div>
+          <div class="legal-toolbar">
+            <button type="button" id="court-claim-evidence-add" class="ghost-button">+ Добавить доказательство</button>
+          </div>
+        </section>
+
+        <section class="panel legal-card legal-section">
+          <div class="legal-section__header">
+            <div>
+              <p class="legal-section__eyebrow">Раздел IV</p>
+              <h2 class="legal-section__title">Просительная часть</h2>
+            </div>
+          </div>
+          <div class="legal-field-grid">
+            <label class="legal-field legal-field--full">
+              <span class="legal-field__label">Сформулируйте требования к суду</span>
+              <textarea class="legal-textarea legal-textarea--compact" name="closing_request" placeholder="Например: прошу суд предоставить стороне истца ордер в формате AI / истребовать материалы / отменить судебный акт."></textarea>
+            </label>
+          </div>
+        </section>
+
+        <section id="court-previous-decision-card" class="panel legal-card legal-section" hidden>
+          <div class="legal-section__header">
+            <div>
+              <p class="legal-section__eyebrow">Обжалуемый судебный акт</p>
+              <h2 class="legal-section__title">Сведения о ранее принятом решении</h2>
+            </div>
+          </div>
+          <div class="legal-field-grid legal-field-grid--two">
+            <label class="legal-field">
+              <span class="legal-field__label">Суд нижестоящей инстанции</span>
+              <input name="previous_court_name" type="text" />
+            </label>
+            <label class="legal-field">
+              <span class="legal-field__label">Номер дела</span>
+              <input name="previous_case_number" type="text" />
+            </label>
+            <label class="legal-field">
+              <span class="legal-field__label">Дата судебного акта</span>
+              <input name="previous_decision_date" type="text" />
+            </label>
+            <label class="legal-field">
+              <span class="legal-field__label">Предмет обжалования</span>
+              <input name="previous_decision_subject" type="text" />
+            </label>
+          </div>
+        </section>
+
+        <section class="panel legal-card legal-section legal-section--result">
+          <div class="legal-section__header">
+            <div>
+              <p class="legal-section__eyebrow">Результат</p>
+              <h2 class="legal-section__title">Текст обращения в BBCode</h2>
+              <p class="legal-section__description">
+                После заполнения формы система сформирует черновик обращения в формате BBCode для дальнейшей подачи.
+              </p>
+            </div>
+            <div class="legal-toolbar">
+              <button id="court-claim-build-btn" type="button" class="primary-button">Сформировать BBCode</button>
+              <button id="court-claim-copy-btn" type="button" class="secondary-button">Копировать текст</button>
+              <button id="court-claim-clear-btn" type="button" class="ghost-button">Очистить форму</button>
+            </div>
+          </div>
+          <div class="legal-result">
+            <textarea id="court-claim-result" readonly spellcheck="false"></textarea>
+          </div>
+        </section>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', path='pages/court_claim_test.js') }}?v={{ static_asset_version }}" defer></script>
+{% endblock %}
