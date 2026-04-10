@@ -55,7 +55,7 @@ chown -R "${RUN_AS_USER}:${RUN_AS_USER}" "${APP_ROOT}/shared" "${APP_ROOT}/web"
 
 "${PYTHON_BIN}" "${APP_ROOT}/scripts/run_db_migrations.py" --backend postgres
 
-pkill -f "${APP_ROOT}/web/server.py --host ${WEB_HOST} --port ${WEB_PORT}" || true
+pkill -f "${APP_ROOT}/web/server.py" || true
 sleep 2
 
 su -s /bin/bash -c "nohup ${SERVER_CMD} >${APP_ROOT}/web/data/logs/server.out 2>&1 </dev/null &" "${RUN_AS_USER}"
