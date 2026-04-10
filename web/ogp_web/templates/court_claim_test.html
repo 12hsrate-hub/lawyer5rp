@@ -29,13 +29,21 @@
   </section>
 
   {% include "partials/complaint/tabs.html" %}
+  <nav class="legal-section-jump" aria-label="Навигация по разделам судебного обращения">
+    <a class="legal-section-jump__link" href="#court-section-params">Параметры</a>
+    <a class="legal-section-jump__link" href="#court-section-parties">Стороны</a>
+    <a class="legal-section-jump__link" href="#court-section-facts">Факты</a>
+    <a class="legal-section-jump__link" href="#court-section-evidence">Доказательства</a>
+    <a class="legal-section-jump__link" href="#court-section-request">Просьба</a>
+    <a class="legal-section-jump__link" href="#court-section-result">Результат</a>
+  </nav>
 
   <div id="court-claim-message" class="success-box legal-message" hidden></div>
   <div id="court-claim-errors" class="errors legal-message" hidden></div>
 
   <form id="court-claim-form" class="legal-workspace legal-workspace--wide" novalidate data-username="{{ username }}">
     <div class="legal-workspace__main">
-      <section class="panel legal-card legal-section">
+      <section id="court-section-params" class="panel legal-card legal-section">
         <div class="legal-section__header">
           <div>
             <p class="legal-section__eyebrow">Параметры обращения</p>
@@ -77,7 +85,7 @@
       </section>
 
       <div id="court-claim-fields" hidden>
-        <section class="panel legal-card legal-section">
+        <section id="court-section-parties" class="panel legal-card legal-section">
           <div class="legal-section__header">
             <div>
               <p class="legal-section__eyebrow">Раздел I</p>
@@ -182,7 +190,7 @@
           </div>
         </section>
 
-        <section class="panel legal-card legal-section">
+        <section id="court-section-facts" class="panel legal-card legal-section">
           <div class="legal-section__header">
             <div>
               <p class="legal-section__eyebrow">Раздел II</p>
@@ -200,7 +208,7 @@
           </div>
         </section>
 
-        <section class="panel legal-card legal-section">
+        <section id="court-section-evidence" class="panel legal-card legal-section">
           <div class="legal-section__header">
             <div>
               <p class="legal-section__eyebrow">Раздел III</p>
@@ -216,7 +224,7 @@
           </div>
         </section>
 
-        <section class="panel legal-card legal-section">
+        <section id="court-section-request" class="panel legal-card legal-section">
           <div class="legal-section__header">
             <div>
               <p class="legal-section__eyebrow">Раздел IV</p>
@@ -258,7 +266,7 @@
           </div>
         </section>
 
-        <section class="panel legal-card legal-section legal-section--result">
+        <section id="court-section-result" class="panel legal-card legal-section legal-section--result">
           <div class="legal-section__header">
             <div>
               <p class="legal-section__eyebrow">Результат</p>

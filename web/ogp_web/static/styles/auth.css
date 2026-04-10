@@ -33,10 +33,10 @@
   display: grid;
   gap: 8px;
   padding: 20px 22px;
-  border-radius: 24px;
+  border-radius: var(--radius-lg);
   background: linear-gradient(145deg, rgba(255, 248, 239, 0.95), rgba(246, 235, 219, 0.92));
   border: 1px solid rgba(215, 199, 178, 0.88);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-md);
 }
 
 .auth-landing__status-label {
@@ -48,7 +48,7 @@
 
 .auth-landing__status strong {
   font-size: clamp(24px, 3vw, 34px);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-display);
 }
 
 .auth-landing__status p {
@@ -67,7 +67,7 @@
   gap: 14px;
   align-items: start;
   padding: 16px 18px;
-  border-radius: 20px;
+  border-radius: var(--radius-md);
   background: rgba(255, 252, 247, 0.78);
   border: 1px solid rgba(215, 199, 178, 0.7);
 }
@@ -78,7 +78,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 18px;
+  border-radius: var(--radius-md);
   background: linear-gradient(135deg, rgba(157, 60, 36, 0.14), rgba(195, 90, 47, 0.26));
   color: var(--accent);
   font-weight: 700;
@@ -110,10 +110,10 @@
   display: grid;
   gap: 12px;
   padding: 22px;
-  border-radius: 24px;
+  border-radius: var(--radius-lg);
   background: rgba(255, 251, 245, 0.88);
   border: 1px solid rgba(215, 199, 178, 0.8);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-md);
 }
 
 .auth-card-wide {
@@ -226,10 +226,10 @@
   gap: 12px;
   align-items: start;
   padding: 14px 16px;
-  border-radius: 18px;
+  border-radius: var(--radius-md);
   border: 1px solid rgba(216, 203, 190, 0.9);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(249, 244, 237, 0.85));
-  color: #6f6258;
+  color: var(--muted);
 }
 
 .legal-auth-note__item strong {
@@ -238,9 +238,9 @@
   justify-content: center;
   min-width: 40px;
   min-height: 40px;
-  border-radius: 14px;
-  background: #eaf2f1;
-  color: #234e52;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--brand) 14%, white);
+  color: var(--brand);
   font-size: 13px;
   letter-spacing: 0.08em;
 }

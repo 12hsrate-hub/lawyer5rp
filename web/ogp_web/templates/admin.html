@@ -10,6 +10,13 @@
   <section class="page-shell legal-page legal-page--admin">
     {% include "partials/page_hero.html" %}
     {% include "partials/page_nav.html" %}
+    <nav class="legal-section-jump" aria-label="Навигация по разделам админ-панели">
+      <a class="legal-section-jump__link" href="#admin-section-filters">Фильтры</a>
+      <a class="legal-section-jump__link" href="#admin-section-totals">Сводка</a>
+      <a class="legal-section-jump__link" href="#admin-section-import">Импорт экзаменов</a>
+      <a class="legal-section-jump__link" href="#admin-section-users">Пользователи</a>
+      <a class="legal-section-jump__link" href="#admin-section-events">События</a>
+    </nav>
 
     <section class="panel legal-card">
       <div class="legal-section__header">
@@ -25,7 +32,7 @@
       <div id="admin-errors" class="errors" hidden></div>
       <div id="admin-message" class="success-box legal-message" hidden></div>
 
-      <section class="legal-subcard admin-collapsible" data-collapsible-section="filters">
+      <section id="admin-section-filters" class="legal-subcard admin-collapsible" data-collapsible-section="filters">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
             <span class="legal-field__label">Поиск и фильтры</span>
@@ -83,7 +90,7 @@
         </div>
       </section>
 
-      <section class="legal-subcard admin-collapsible" data-collapsible-section="totals">
+      <section id="admin-section-totals" class="legal-subcard admin-collapsible" data-collapsible-section="totals">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
             <span class="legal-field__label">Сводные показатели</span>
@@ -105,7 +112,7 @@
         </div>
       </section>
 
-      <section class="legal-subcard admin-collapsible" data-collapsible-section="exam-import">
+      <section id="admin-section-import" class="legal-subcard admin-collapsible" data-collapsible-section="exam-import">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
             <span class="legal-field__label">Операционный блок экзаменов</span>
@@ -151,7 +158,7 @@
         </div>
       </section>
 
-      <section class="legal-subcard admin-collapsible" data-collapsible-section="users">
+      <section id="admin-section-users" class="legal-subcard admin-collapsible" data-collapsible-section="users">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
             <span class="legal-field__label">Пользователи</span>
@@ -197,7 +204,7 @@
         </div>
       </section>
 
-      <section class="legal-subcard admin-collapsible" data-collapsible-section="events">
+      <section id="admin-section-events" class="legal-subcard admin-collapsible" data-collapsible-section="events">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
             <span class="legal-field__label">Последние события</span>

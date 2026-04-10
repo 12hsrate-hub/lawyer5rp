@@ -25,13 +25,18 @@
   </header>
 
   {% include "partials/page_nav.html" %}
+  <nav class="legal-section-jump" aria-label="Навигация по разделам реабилитации">
+    <a class="legal-section-jump__link" href="#rehab-section-principal">Доверитель</a>
+    <a class="legal-section-jump__link" href="#rehab-section-basis">Основание</a>
+    <a class="legal-section-jump__link" href="#rehab-section-result">Результат</a>
+  </nav>
 
   <div id="app-message" class="success-box legal-message" hidden></div>
   <div id="errors" class="errors legal-message" hidden></div>
 
   <form id="rehab-form" class="legal-workspace legal-workspace--wide" novalidate>
     <div class="legal-workspace__main">
-      <section class="panel legal-card legal-section">
+      <section id="rehab-section-principal" class="panel legal-card legal-section">
         <div class="legal-section__header">
           <div>
             <p class="legal-section__eyebrow">Раздел 1</p>
@@ -87,7 +92,7 @@
         </section>
       </section>
 
-      <section class="panel legal-card legal-section">
+      <section id="rehab-section-basis" class="panel legal-card legal-section">
         <div class="legal-section__header">
           <div>
             <p class="legal-section__eyebrow">Раздел 2</p>
@@ -112,7 +117,7 @@
         </div>
       </section>
 
-      <section class="panel legal-card legal-section legal-section--result">
+      <section id="rehab-section-result" class="panel legal-card legal-section legal-section--result">
         <div class="legal-section__header">
           <div>
             <p class="legal-section__eyebrow">Финальный блок</p>

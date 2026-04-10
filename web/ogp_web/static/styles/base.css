@@ -21,6 +21,7 @@
   --shadow-soft: 0 12px 40px rgba(43, 33, 28, 0.06);
   --shadow-md: 0 18px 60px rgba(38, 32, 27, 0.12);
   --shadow-strong: 0 24px 80px rgba(38, 32, 27, 0.22);
+  --shadow: var(--shadow-md);
   --focus-ring: 0 0 0 4px rgba(35, 78, 82, 0.1);
   --font-ui: "IBM Plex Sans", "Segoe UI", Tahoma, sans-serif;
   --font-display: "Merriweather", Georgia, "Times New Roman", serif;
