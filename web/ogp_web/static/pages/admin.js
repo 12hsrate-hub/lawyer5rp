@@ -200,14 +200,14 @@ function renderTotals(totals) {
     ["Реабилитации", totals.rehabs_total, "Сгенерированные реабилитации"],
     ["AI suggest", totals.ai_suggest_total, "Текстовые AI-операции"],
     ["AI OCR", totals.ai_ocr_total, "Распознавание документов"],
-    ["AI exam runs", totals.ai_exam_scoring_total || 0, "Сколько раз запускалась AI-проверка экзаменов"],
-    ["Exam rows", totals.ai_exam_scoring_rows || 0, "Сколько строк экзамена реально проверено"],
-    ["Exam answers", totals.ai_exam_scoring_answers || 0, "Сколько ответов прошло через scoring"],
-    ["Rule-based", totals.ai_exam_heuristic_total || 0, "Ответы, закрытые без LLM"],
-    ["Cache hits", totals.ai_exam_cache_total || 0, "Ответы, взятые из кэша"],
-    ["LLM answers", totals.ai_exam_llm_total || 0, "Ответы, реально ушедшие в модель"],
-    ["LLM calls", totals.ai_exam_llm_calls_total || 0, "Сколько batch-вызовов сделали к модели"],
-    ["Exam failures", totals.ai_exam_failure_total || 0, "Ошибки exam scoring и импорта"],
+    ["AI-проверки экзаменов", totals.ai_exam_scoring_total || 0, "Сколько раз запускалась AI-проверка экзаменов"],
+    ["Строки экзамена", totals.ai_exam_scoring_rows || 0, "Сколько строк экзамена реально проверено"],
+    ["Ответы экзамена", totals.ai_exam_scoring_answers || 0, "Сколько ответов прошло через оценивание"],
+    ["Без LLM", totals.ai_exam_heuristic_total || 0, "Ответы, закрытые без обращения к модели"],
+    ["Попадания в кэш", totals.ai_exam_cache_total || 0, "Ответы, взятые из кэша"],
+    ["Ответы через LLM", totals.ai_exam_llm_total || 0, "Ответы, реально ушедшие в модель"],
+    ["Вызовы LLM", totals.ai_exam_llm_calls_total || 0, "Сколько batch-вызовов сделали к модели"],
+    ["Ошибки экзамена", totals.ai_exam_failure_total || 0, "Ошибки оценивания экзаменов и импорта"],
     ["Входящий трафик", `${formatNumber(totals.request_bytes_total)} B`, "Суммарный размер запросов"],
     ["Исходящий трафик", `${formatNumber(totals.response_bytes_total)} B`, "Суммарный размер ответов"],
     ["Ресурсные единицы", formatNumber(totals.resource_units_total), "Условная нагрузка"],
@@ -262,7 +262,7 @@ function renderExamImport(summary) {
   }
 
   if (!summary) {
-    examImportHost.innerHTML = '<p class="legal-section__description">Пока нет данных по exam import.</p>';
+    examImportHost.innerHTML = '<p class="legal-section__description">Пока нет данных по импорту экзаменов.</p>';
     return;
   }
 
@@ -273,15 +273,15 @@ function renderExamImport(summary) {
   examImportHost.innerHTML = `
     <div class="admin-exam-grid">
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Ожидают scoring</span>
+        <span class="legal-status-card__label">Ожидают оценивания</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary.pending_scores || 0))}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Последний sync</span>
+        <span class="legal-status-card__label">Последняя синхронизация</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(lastSync.created_at || "—")}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Последний scoring</span>
+        <span class="legal-status-card__label">Последнее оценивание</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(lastScore.created_at || "—")}</strong>
       </article>
     </div>
@@ -320,7 +320,7 @@ function renderExamImport(summary) {
             </table>
           </div>
         `
-        : '<p class="legal-section__description">Последних ошибок exam import и AI-scoring не найдено.</p>'
+        : '<p class="legal-section__description">Последних ошибок импорта экзаменов и AI-оценивания не найдено.</p>'
     }
   `;
 }
@@ -344,7 +344,7 @@ function renderActiveFilters(filters) {
   if (filters.blocked_only) chips.push(renderFilterChip("Только заблокированные", "blocked_only"));
   if (filters.tester_only) chips.push(renderFilterChip("Только тестеры", "tester_only"));
   if (filters.gka_only) chips.push(renderFilterChip("Только ГКА-ЗГКА", "gka_only"));
-  if (filters.unverified_only) chips.push(renderFilterChip("Только без email verify", "unverified_only"));
+  if (filters.unverified_only) chips.push(renderFilterChip("Только без подтверждения email", "unverified_only"));
   if (filters.event_search) chips.push(renderFilterChip(`События: ${filters.event_search}`, "event_search"));
   if (filters.event_type) chips.push(renderFilterChip(`Тип: ${filters.event_type}`, "event_type"));
   if (filters.failed_events_only) chips.push(renderFilterChip("Только ошибки", "failed_events_only"));

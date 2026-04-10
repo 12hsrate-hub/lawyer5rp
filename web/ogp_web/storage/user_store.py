@@ -759,8 +759,23 @@ class UserStore:
         if rowcount <= 0:
             raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
 
-    def list_users(self) -> list[dict[str, Any]]:
+    def list_users(self, *, limit: int | None = None) -> list[dict[str, Any]]:
+        safe_limit = None
+        if limit is not None:
+            try:
+                safe_limit = int(limit)
+                if safe_limit <= 0:
+                    safe_limit = None
+            except (TypeError, ValueError):
+                safe_limit = None
+
         if self.is_postgres_backend:
+            limit_clause = ""
+            if safe_limit:
+                limit_clause = " LIMIT %s"
+                params: tuple[Any, ...] = (DEFAULT_SERVER_CODE, safe_limit)
+            else:
+                params = (DEFAULT_SERVER_CODE,)
             rows = self._pg_fetchall(
                 f"""
                 SELECT
@@ -777,11 +792,15 @@ class UserStore:
                 LEFT JOIN user_server_roles usr
                     ON usr.user_id = u.id AND usr.server_code = %s
                 ORDER BY u.created_at DESC, u.username ASC
+                {limit_clause}
                 """,
-                (DEFAULT_SERVER_CODE,),
+                params,
             )
             return [dict(row) for row in rows]
         from ogp_web.services.user_admin_store_service import list_users
+
+        if safe_limit:
+            return list_users(self, limit=safe_limit)
 
         return list_users(self)
 

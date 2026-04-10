@@ -160,6 +160,14 @@ class ExamAnswersStore:
                     columns.add(column_name)
             self._normalize_import_keys(conn)
             self._ensure_import_key_index(conn)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_exam_answers_source_row_import_key "
+                "ON exam_answers(source_row, import_key)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_exam_answers_pending_scores "
+                "ON exam_answers(source_row, average_score, needs_rescore)"
+            )
             conn.commit()
 
     def _normalize_import_keys(self, conn) -> None:

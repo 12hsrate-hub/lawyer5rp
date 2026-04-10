@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ast
 import os
 import unittest
+from pathlib import Path
 
 from shared import ogp_ai
 from shared.ogp_ai_prompts import (
@@ -474,7 +476,32 @@ class SharedAiTests(unittest.TestCase):
         prompt = build_exam_scoring_prompt(user_answer="A", correct_answer="B")
         self.assertIn("JSON", prompt)
         self.assertIn('"score": 1-100', prompt)
-        self.assertIn("верно лишь частично", prompt)
+        self.assertIn("Evaluate by meaning, legal conclusion, and completeness", prompt)
+        self.assertIn("The rationale must be one short sentence", prompt)
+
+    def test_exam_prompt_builders_are_defined_once(self):
+        module_path = Path(__file__).resolve().parents[1] / "shared" / "ogp_ai_prompts.py"
+        tree = ast.parse(module_path.read_text(encoding="utf-8"))
+        target_names = {
+            "build_exam_scoring_prompt_spec",
+            "build_exam_scoring_prompt",
+            "build_batch_exam_scoring_prompt_spec",
+            "build_batch_exam_scoring_prompt",
+        }
+        counts = {name: 0 for name in target_names}
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef) and node.name in counts:
+                counts[node.name] += 1
+
+        self.assertEqual(
+            counts,
+            {
+                "build_exam_scoring_prompt_spec": 1,
+                "build_exam_scoring_prompt": 1,
+                "build_batch_exam_scoring_prompt_spec": 1,
+                "build_batch_exam_scoring_prompt": 1,
+            },
+        )
 
     def test_prompt_specs_expose_versioned_metadata(self):
         suggest = build_suggest_prompt_spec(

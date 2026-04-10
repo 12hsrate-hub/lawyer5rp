@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import threading
+from copy import deepcopy
+from typing import Any
+from time import monotonic
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, Response
+from datetime import datetime, timezone
 
 from ogp_web.dependencies import get_admin_metrics_store, get_exam_answers_store, get_user_store
 from ogp_web.server_config import build_permission_set, get_server_config
@@ -14,6 +19,32 @@ from ogp_web.web import page_context, templates
 
 
 router = APIRouter(tags=["admin"])
+_PERFORMANCE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_PERFORMANCE_CACHE_TTL_SECONDS = 10
+_PERFORMANCE_CACHE_LOCK = threading.Lock()
+
+
+def _cache_key(*, window_minutes: int, top_endpoints: int) -> str:
+    return f"{window_minutes}:{top_endpoints}"
+
+
+def _load_cached_performance_payload(cache_key: str) -> dict[str, Any] | None:
+    with _PERFORMANCE_CACHE_LOCK:
+        now = monotonic()
+        cached = _PERFORMANCE_CACHE.get(cache_key)
+        if not cached:
+            return None
+        cached_at, payload = cached
+        if now - cached_at > _PERFORMANCE_CACHE_TTL_SECONDS:
+            _PERFORMANCE_CACHE.pop(cache_key, None)
+            return None
+        payload["cached"] = True
+        return deepcopy(payload)
+
+
+def _store_performance_payload(cache_key: str, payload: dict[str, Any]) -> None:
+    with _PERFORMANCE_CACHE_LOCK:
+        _PERFORMANCE_CACHE[cache_key] = (monotonic(), deepcopy(payload))
 
 
 @router.get("/admin", response_class=HTMLResponse)
@@ -56,11 +87,19 @@ async def admin_overview(
     event_search: str = "",
     event_type: str = "",
     failed_events_only: bool = False,
+    users_limit: int = 0,
     user_sort: str = "complaints",
 ):
     _ = user
+    safe_user_limit = None
+    try:
+        safe_user_limit = int(users_limit)
+        if safe_user_limit <= 0:
+            safe_user_limit = None
+    except (TypeError, ValueError):
+        safe_user_limit = None
     payload = metrics_store.get_overview(
-        users=user_store.list_users(),
+        users=user_store.list_users(limit=safe_user_limit),
         search=search,
         blocked_only=blocked_only,
         tester_only=tester_only,
@@ -77,6 +116,33 @@ async def admin_overview(
     return payload
 
 
+@router.get("/api/admin/performance")
+async def admin_performance(
+    user: AuthUser = Depends(require_admin_user),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    window_minutes: int = 15,
+    top_endpoints: int = 10,
+):
+    _ = user
+    safe_window = max(1, min(int(window_minutes or 1), 60 * 24))
+    safe_endpoints = max(1, min(int(top_endpoints or 10), 50))
+    cache_key = _cache_key(window_minutes=safe_window, top_endpoints=safe_endpoints)
+    cached_payload = _load_cached_performance_payload(cache_key)
+    if cached_payload is not None:
+        return cached_payload
+
+    payload = metrics_store.get_performance_overview(
+        window_minutes=safe_window,
+        top_endpoints=safe_endpoints,
+    )
+    payload["window_minutes"] = safe_window
+    payload["top_endpoints_limit"] = safe_endpoints
+    payload["snapshot_at"] = datetime.now(timezone.utc).isoformat()
+    payload["cached"] = False
+    _store_performance_payload(cache_key, payload)
+    return payload
+
+
 @router.get("/api/admin/users.csv")
 async def admin_users_csv(
     user: AuthUser = Depends(require_admin_user),
@@ -87,11 +153,19 @@ async def admin_users_csv(
     tester_only: bool = False,
     gka_only: bool = False,
     unverified_only: bool = False,
+    users_limit: int = 0,
     user_sort: str = "complaints",
 ) -> Response:
     _ = user
+    safe_user_limit = None
+    try:
+        safe_user_limit = int(users_limit)
+        if safe_user_limit <= 0:
+            safe_user_limit = None
+    except (TypeError, ValueError):
+        safe_user_limit = None
     content = metrics_store.export_users_csv(
-        users=user_store.list_users(),
+        users=user_store.list_users(limit=safe_user_limit),
         search=search,
         blocked_only=blocked_only,
         tester_only=tester_only,

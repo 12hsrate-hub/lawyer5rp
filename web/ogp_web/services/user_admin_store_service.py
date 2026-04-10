@@ -17,14 +17,30 @@ if TYPE_CHECKING:
     from ogp_web.storage.user_store import UserStore
 
 
-def list_users(store: UserStore) -> list[dict[str, Any]]:
+def list_users(store: UserStore, *, limit: int | None = None) -> list[dict[str, Any]]:
+    safe_limit = None
+    if limit is not None:
+        try:
+            safe_limit = int(limit)
+            if safe_limit <= 0:
+                safe_limit = None
+        except (TypeError, ValueError):
+            safe_limit = None
+
+    limit_clause = ""
+    if safe_limit:
+        limit_clause = " LIMIT ?"
+
     with store._connect() as conn:
         rows = conn.execute(
             """
             SELECT username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka
             FROM users
             ORDER BY created_at DESC, username ASC
+            {limit_clause}
             """
+            .format(limit_clause=limit_clause),
+            (safe_limit,) if safe_limit else (),
         ).fetchall()
     return [dict(row) for row in rows]
 

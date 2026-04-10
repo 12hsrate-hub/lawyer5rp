@@ -6,6 +6,7 @@ import logging
 import sqlite3
 from contextlib import closing
 from io import StringIO
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +55,165 @@ class AdminMetricsStore:
             return {}
         return parsed if isinstance(parsed, dict) else {}
 
+    @staticmethod
+    def _percentile(values: list[int], quantile: float) -> int | None:
+        if not values:
+            return None
+        if not 0 <= quantile <= 1:
+            raise ValueError("quantile must be in [0, 1]")
+        ordered = sorted(values)
+        if len(ordered) == 1:
+            return int(ordered[0])
+        index = (len(ordered) - 1) * quantile
+        lower = int(index)
+        upper = lower + 1
+        if upper >= len(ordered):
+            return int(ordered[-1])
+        weight = index - lower
+        return int(round((1 - weight) * ordered[lower] + weight * ordered[upper]))
+
+    @staticmethod
+    def _safe_request_count(value: int | float | None) -> int:
+        if value in (None, ""):
+            return 0
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _safe_duration(value: Any) -> int | None:
+        try:
+            if value is None:
+                return None
+            value_int = int(value)
+        except (TypeError, ValueError):
+            return None
+        return value_int if value_int >= 0 else None
+
+    def get_performance_overview(
+        self,
+        *,
+        window_minutes: int = 15,
+        top_endpoints: int = 10,
+    ) -> dict[str, Any]:
+        window = max(1, int(window_minutes or 1))
+        endpoint_limit = max(1, int(top_endpoints or 10))
+        start_at = datetime.utcnow() - timedelta(minutes=window)
+
+        if self.is_postgres_backend:
+            created_at_filter = "created_at >= %s"
+            created_at_param = start_at.isoformat()
+        else:
+            created_at_filter = "datetime(created_at) >= datetime(?)"
+            created_at_param = start_at.strftime("%Y-%m-%d %H:%M:%S")
+
+        with closing(self._connect()) as conn:
+            totals = conn.execute(
+                f"""
+                SELECT
+                    COUNT(*) AS request_count,
+                    SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_count,
+                    COALESCE(SUM(CASE WHEN event_type = 'api_request' THEN 1 ELSE 0 END), 0) AS api_requests_total,
+                    COALESCE(AVG(CASE WHEN event_type = 'api_request' AND duration_ms IS NOT NULL THEN duration_ms END), 0) AS avg_duration_ms,
+                    COALESCE(SUM(CASE WHEN event_type = 'api_request' THEN COALESCE(request_bytes, 0) ELSE 0 END), 0) AS request_bytes,
+                    COALESCE(SUM(CASE WHEN event_type = 'api_request' THEN COALESCE(response_bytes, 0) ELSE 0 END), 0) AS response_bytes,
+                    COALESCE(SUM(CASE WHEN event_type = 'api_request' THEN COALESCE(resource_units, 0) ELSE 0 END), 0) AS resource_units
+                FROM metric_events
+                WHERE event_type = 'api_request'
+                  AND {created_at_filter}
+                """,
+                (created_at_param,),
+            ).fetchone()
+
+            endpoint_rows = conn.execute(
+                f"""
+                SELECT path, duration_ms, status_code
+                FROM metric_events
+                WHERE event_type = 'api_request'
+                  AND path IS NOT NULL
+                  AND {created_at_filter}
+                """,
+                (created_at_param,),
+            ).fetchall()
+
+        total_events = self._safe_request_count(totals["request_count"])
+        all_durations: list[int] = []
+        endpoint_aggregates: dict[str, dict[str, list[int] | int]] = {}
+
+        for row in endpoint_rows:
+            path = str(row["path"] or "").strip()
+            if not path:
+                continue
+            duration = self._safe_duration(row["duration_ms"])
+            status_code = row["status_code"]
+            entry = endpoint_aggregates.setdefault(
+                path,
+                {
+                    "count": 0,
+                    "errors": 0,
+                    "durations": [],
+                },
+            )
+            entry["count"] = int(entry["count"]) + 1
+            entry["errors"] = int(entry["errors"]) + (
+                1 if isinstance(status_code, int) and status_code >= 400 else 0
+            )
+            if duration is not None:
+                all_durations.append(duration)
+                entry_durations = entry["durations"]
+                if isinstance(entry_durations, list):
+                    entry_durations.append(duration)
+
+        sorted_endpoints = sorted(
+            endpoint_aggregates.items(),
+            key=lambda item: int(item[1]["count"]),
+            reverse=True,
+        )
+        top_endpoints_payload: list[dict[str, Any]] = []
+
+        for path, values in sorted_endpoints[:endpoint_limit]:
+            durations = values["durations"]
+            assert isinstance(durations, list)
+            durations_int = [int(item) for item in durations]
+            endpoint_errors = int(values["errors"])
+            endpoint_count = int(values["count"])
+            top_endpoints_payload.append(
+                {
+                    "path": path,
+                    "count": endpoint_count,
+                    "error_count": endpoint_errors,
+                    "error_rate": round(endpoint_errors / endpoint_count, 4) if endpoint_count else 0,
+                    "p50_ms": self._percentile(durations_int, 0.5),
+                    "p95_ms": self._percentile(durations_int, 0.95),
+                    "avg_ms": round(sum(durations_int) / len(durations_int), 2) if durations_int else 0,
+                }
+            )
+
+        error_count = self._safe_request_count(totals["error_count"])
+        duration_avg = float(totals["avg_duration_ms"] or 0)
+        throughput_window_seconds = max(1, window * 60)
+
+        return {
+            "window_minutes": window,
+            "total_api_requests": total_events,
+            "error_count": error_count,
+            "error_rate": round(error_count / total_events, 4) if total_events else 0,
+            "throughput_rps": round(total_events / throughput_window_seconds, 4),
+            "p50_ms": self._percentile(all_durations, 0.5),
+            "p95_ms": self._percentile(all_durations, 0.95),
+            "avg_ms": round(duration_avg, 2),
+            "endpoint_overview": top_endpoints_payload,
+            "totals": {
+                "api_requests_total": self._safe_request_count(totals["api_requests_total"]),
+                "request_bytes_total": self._safe_request_count(totals["request_bytes"]),
+                "response_bytes_total": self._safe_request_count(totals["response_bytes"]),
+                "resource_units_total": self._safe_request_count(totals["resource_units"]),
+            },
+            "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "backend": "postgres" if self.is_postgres_backend else "sqlite",
+        }
+
     def healthcheck(self) -> dict[str, object]:
         return self.backend.healthcheck()
 
@@ -101,6 +261,18 @@ class AdminMetricsStore:
                 )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_created_at ON metric_events(created_at DESC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_username ON metric_events(username)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_metric_events_event_type_created_at "
+                "ON metric_events(event_type, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_metric_events_path_created_at "
+                "ON metric_events(path, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_metric_events_username_created_at "
+                "ON metric_events(username, created_at DESC)"
+            )
             if not self.is_postgres_backend:
                 existing_columns = {
                     str(row["name"])

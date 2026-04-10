@@ -21,19 +21,19 @@ OGP Builder for `lawyer5rp`: desktop tooling, shared domain logic, and a FastAPI
 
 If you are reviewing the recent infrastructure/runtime changes, start here:
 
-- [web/ogp_web/app.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/app.py)
-- [web/ogp_web/rate_limit.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/rate_limit.py)
-- [web/ogp_web/db/config.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/db/config.py)
-- [web/ogp_web/db/factory.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/db/factory.py)
-- [web/ogp_web/routes/auth.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/routes/auth.py)
-- [web/ogp_web/storage/user_store.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/storage/user_store.py)
-- [web/ogp_web/storage/exam_answers_store.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/storage/exam_answers_store.py)
-- [web/ogp_web/storage/admin_metrics_store.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/storage/admin_metrics_store.py)
-- [web/ogp_web/services/exam_import_tasks.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/services/exam_import_tasks.py)
+- `web/ogp_web/app.py`
+- `web/ogp_web/rate_limit.py`
+- `web/ogp_web/db/config.py`
+- `web/ogp_web/db/factory.py`
+- `web/ogp_web/routes/auth.py`
+- `web/ogp_web/storage/user_store.py`
+- `web/ogp_web/storage/exam_answers_store.py`
+- `web/ogp_web/storage/admin_metrics_store.py`
+- `web/ogp_web/services/exam_import_tasks.py`
 
 ## Local Web Run
 
-See [web/README_WEB.md](/c:/Users/12hs/Desktop/VS/web/README_WEB.md) for the full web setup.
+See `web/README_WEB.md` for the full web setup.
 
 Minimal expectation:
 
@@ -50,4 +50,3 @@ cd web
 py -m pip install -r requirements_web.txt
 py run_web.py
 ```
-

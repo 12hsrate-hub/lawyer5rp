@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import threading
 import sys
 import time
 import unittest
@@ -897,6 +898,70 @@ class WebApiTests(unittest.TestCase):
         finally:
             exam_import_route.score_exam_answers_batch_with_proxy_fallback = original_score
             exam_import_route.score_exam_answer_with_proxy_fallback = original_single_score
+
+    def test_exam_import_task_concurrency_limit_is_enforced(self):
+        self._register_verify_and_login("tester", "tester13@example.com")
+        self.exam_store.import_rows(
+            [
+                {
+                    "source_row": 2,
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "full_name": "Student One",
+                    "discord_tag": "student1",
+                    "passport": "111111",
+                    "exam_format": "РћС‡РЅo",
+                    "payload": {"Р’РѕРїСЂРѕСЃ F": "РћС‚РІРµС‚ F", "Р’РѕРїСЂРѕСЃ G": "РћС‚РІРµС‚ G"},
+                    "answer_count": 2,
+                },
+            ]
+        )
+
+        original_bulk_score = exam_import_route._build_bulk_scoring_result
+        block = threading.Event()
+        resume = threading.Event()
+        task_registry = self.client.app.state.exam_import_task_registry
+        original_limit = task_registry.max_concurrent_tasks
+        task_registry.max_concurrent_tasks = 1
+
+        def slow_bulk_score(*, user, store, metrics_store, progress_callback=None):
+            block.set()
+            progress_callback({"state": "running"})
+            resume.wait(timeout=2.0)
+            return {
+                "sheet_url": "https://example.com",
+                "total_rows": 1,
+                "inserted_count": 0,
+                "updated_count": 0,
+                "skipped_count": 0,
+                "scored_count": 0,
+                "latest_entries": [],
+            }
+
+        exam_import_route._build_bulk_scoring_result = slow_bulk_score
+        try:
+            first = self.client.post("/api/exam-import/score/tasks")
+            self.assertEqual(first.status_code, 200)
+            first_task_id = first.json()["task_id"]
+
+            task_status = {}
+            for _ in range(40):
+                poll = self.client.get(f"/api/exam-import/tasks/{first_task_id}")
+                self.assertEqual(poll.status_code, 200)
+                task_status = poll.json()
+                if task_status.get("status") == "running":
+                    break
+                time.sleep(0.05)
+            self.assertEqual(task_status.get("status"), "running")
+            self.assertTrue(block.wait(1.0))
+
+            second = self.client.post("/api/exam-import/score/tasks")
+            self.assertEqual(second.status_code, 429)
+            self.assertTrue(second.json().get("detail"))
+        finally:
+            resume.set()
+            time.sleep(0.05)
+            exam_import_route._build_bulk_scoring_result = original_bulk_score
+            task_registry.max_concurrent_tasks = original_limit
 
     def test_exam_import_task_registry_persists_and_marks_interrupted_tasks(self):
         local_tmpdir = make_temporary_directory()

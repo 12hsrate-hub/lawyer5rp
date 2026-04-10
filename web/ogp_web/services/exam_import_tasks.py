@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import uuid
 from contextlib import closing
@@ -11,6 +12,30 @@ from typing import Any, Callable
 
 from ogp_web.db.factory import get_database_backend
 from ogp_web.db.types import DatabaseBackend
+
+MAX_CONCURRENT_TASKS_ENV_VAR = "OGP_EXAM_IMPORT_MAX_CONCURRENT_TASKS"
+ALLOW_QUEUED_TASKS_OVER_LIMIT_ENV_VAR = "OGP_EXAM_IMPORT_ALLOW_QUEUED_OVER_LIMIT"
+
+
+def _parse_positive_int(value: str | None, *, default: int, max_value: int = 1000) -> int:
+    try:
+        parsed = int((value or "").strip())
+    except (TypeError, ValueError):
+        return default
+    if parsed <= 0:
+        return default
+    return min(parsed, max_value)
+
+
+def _parse_bool(value: str | None, *, default: bool) -> bool:
+    if value is None:
+        return default
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "on", "yes", "y", "t"}:
+        return True
+    if normalized in {"0", "false", "off", "no", "n", "f"}:
+        return False
+    return default
 
 
 def _utc_now() -> str:
@@ -45,6 +70,10 @@ class ExamTaskRecord:
         }
 
 
+class ExamImportTaskCapacityError(RuntimeError):
+    """Raised when exam-import background task concurrency limit is exceeded."""
+
+
 class ExamImportTaskRegistry:
     INTERRUPTION_ERROR = "Сервис был перезапущен до завершения задачи."
     _ALLOWED_COLUMNS = frozenset({"status", "started_at", "finished_at", "error", "progress_json", "result_json"})
@@ -54,6 +83,15 @@ class ExamImportTaskRegistry:
         self.backend = backend or get_database_backend()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        self.max_concurrent_tasks = _parse_positive_int(
+            os.getenv(MAX_CONCURRENT_TASKS_ENV_VAR),
+            default=2,
+            max_value=20,
+        )
+        self._allow_over_limit = _parse_bool(
+            os.getenv(ALLOW_QUEUED_TASKS_OVER_LIMIT_ENV_VAR),
+            default=False,
+        )
         self._ensure_schema()
         self._mark_interrupted_tasks()
 
@@ -151,6 +189,26 @@ class ExamImportTaskRegistry:
             )
             conn.commit()
 
+    def _count_running_tasks(self, conn) -> int:
+        placeholder = self._placeholder()
+        row = conn.execute(
+            f"SELECT COUNT(*) AS active_count FROM exam_import_tasks WHERE status = {placeholder}",
+            ("running",),
+        ).fetchone()
+        if row is None:
+            return 0
+        return int(row["active_count"] or 0)
+
+    def _raise_if_capacity_exceeded(self, conn) -> None:
+        if self._allow_over_limit:
+            return
+        running_count = self._count_running_tasks(conn)
+        if running_count >= self.max_concurrent_tasks:
+            raise ExamImportTaskCapacityError(
+                "Превышен лимит одновременных фоновых задач проверки экзамена. "
+                f"Текущий лимит: {self.max_concurrent_tasks}."
+            )
+
     def create_task(
         self,
         *,
@@ -162,6 +220,7 @@ class ExamImportTaskRegistry:
         placeholder = self._placeholder()
         empty_json = "{}" if self.is_postgres_backend else ""
         with self._lock, closing(self._connect()) as conn:
+            self._raise_if_capacity_exceeded(conn)
             conn.execute(
                 f"""
                 INSERT INTO exam_import_tasks (

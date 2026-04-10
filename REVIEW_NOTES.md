@@ -21,8 +21,8 @@ Focus areas:
 
 Primary files:
 
-- [web/ogp_web/db/config.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/db/config.py)
-- [web/ogp_web/db/factory.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/db/factory.py)
+- `web/ogp_web/db/config.py`
+- `web/ogp_web/db/factory.py`
 
 ### 2. Rate limiting is no longer single-process only
 
@@ -31,27 +31,27 @@ Primary files:
 
 Primary files:
 
-- [web/ogp_web/rate_limit.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/rate_limit.py)
-- [web/ogp_web/app.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/app.py)
-- [web/ogp_web/routes/auth.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/routes/auth.py)
+- `web/ogp_web/rate_limit.py`
+- `web/ogp_web/app.py`
+- `web/ogp_web/routes/auth.py`
 
 ### 3. Store defaults no longer silently prefer SQLite
 
 Primary files:
 
-- [web/ogp_web/storage/user_store.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/storage/user_store.py)
-- [web/ogp_web/storage/exam_answers_store.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/storage/exam_answers_store.py)
-- [web/ogp_web/storage/admin_metrics_store.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/storage/admin_metrics_store.py)
-- [web/ogp_web/services/exam_import_tasks.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/services/exam_import_tasks.py)
+- `web/ogp_web/storage/user_store.py`
+- `web/ogp_web/storage/exam_answers_store.py`
+- `web/ogp_web/storage/admin_metrics_store.py`
+- `web/ogp_web/services/exam_import_tasks.py`
 
 ### 4. Test harness was adjusted to keep explicit SQLite fixtures where needed
 
 Primary files:
 
-- [tests/test_web_api.py](/c:/Users/12hs/Desktop/VS/tests/test_web_api.py)
-- [tests/test_web_pages.py](/c:/Users/12hs/Desktop/VS/tests/test_web_pages.py)
-- [tests/test_web_storage.py](/c:/Users/12hs/Desktop/VS/tests/test_web_storage.py)
-- [tests/test_web_services.py](/c:/Users/12hs/Desktop/VS/tests/test_web_services.py)
+- `tests/test_web_api.py`
+- `tests/test_web_pages.py`
+- `tests/test_web_storage.py`
+- `tests/test_web_services.py`
 
 ## Verified During This Pass
 
@@ -64,6 +64,5 @@ Primary files:
 ## Known Remaining Follow-Up
 
 - `web` still contains some dual-path code branches for PostgreSQL vs SQLite internals
-- there is a separate production bug in exam import task timestamp handling that should be handled next
+- there is a separate production bug in exam import timestamp handling that should be handled next
 - FastAPI shutdown wiring still uses deprecated `on_event`
-

@@ -9,7 +9,10 @@ from ogp_web.env import is_test_user
 from ogp_web.schemas import ExamAnswerScore, ExamImportDetail, ExamImportResponse, ExamImportTaskStatus
 from ogp_web.services import exam_import_service
 from ogp_web.services.auth_service import AuthUser, require_user
-from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
+from ogp_web.services.exam_import_tasks import (
+    ExamImportTaskCapacityError,
+    ExamImportTaskRegistry,
+)
 from ogp_web.services.exam_sheet_service import EXAM_SHEET_URL, build_exam_score_items, fetch_exam_sheet_rows
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
@@ -256,15 +259,18 @@ async def create_exam_import_score_task(
     if not is_test_user(user.username):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
-    record = task_registry.create_task(
-        task_type="bulk_score",
-        runner=lambda progress_callback: _build_bulk_scoring_result(
-            user=user,
-            store=store,
-            metrics_store=metrics_store,
-            progress_callback=progress_callback,
-        ),
-    )
+    try:
+        record = task_registry.create_task(
+            task_type="bulk_score",
+            runner=lambda progress_callback: _build_bulk_scoring_result(
+                user=user,
+                store=store,
+                metrics_store=metrics_store,
+                progress_callback=progress_callback,
+            ),
+        )
+    except ExamImportTaskCapacityError as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=[str(exc)]) from exc
     return ExamImportTaskStatus(**record.to_dict())
 
 
@@ -278,15 +284,18 @@ async def create_exam_import_failed_rescore_task(
     if not is_test_user(user.username):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["РўРµСЃС‚РѕРІР°СЏ СЃС‚СЂР°РЅРёС†Р° РЅРµРґРѕСЃС‚СѓРїРЅР°."])
 
-    record = task_registry.create_task(
-        task_type="bulk_rescore_failed",
-        runner=lambda progress_callback: _build_failed_rescoring_result(
-            user=user,
-            store=store,
-            metrics_store=metrics_store,
-            progress_callback=progress_callback,
-        ),
-    )
+    try:
+        record = task_registry.create_task(
+            task_type="bulk_rescore_failed",
+            runner=lambda progress_callback: _build_failed_rescoring_result(
+                user=user,
+                store=store,
+                metrics_store=metrics_store,
+                progress_callback=progress_callback,
+            ),
+        )
+    except ExamImportTaskCapacityError as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=[str(exc)]) from exc
     return ExamImportTaskStatus(**record.to_dict())
 
 
@@ -304,16 +313,19 @@ async def create_exam_import_row_score_task(
     if store.get_entry(source_row) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Строка не найдена в базе импорта."])
 
-    record = task_registry.create_task(
-        task_type="row_score",
-        source_row=source_row,
-        runner=lambda progress_callback: _build_row_scoring_result(
+    try:
+        record = task_registry.create_task(
+            task_type="row_score",
             source_row=source_row,
-            user=user,
-            store=store,
-            metrics_store=metrics_store,
-        ),
-    )
+            runner=lambda progress_callback: _build_row_scoring_result(
+                source_row=source_row,
+                user=user,
+                store=store,
+                metrics_store=metrics_store,
+            ),
+        )
+    except ExamImportTaskCapacityError as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=[str(exc)]) from exc
     return ExamImportTaskStatus(**record.to_dict())
 
 
