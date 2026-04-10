@@ -22,15 +22,21 @@ const activeSessionLogout = document.getElementById("active-session-logout");
 const { apiFetch, parsePayload, showText, clearText, setBodyScrollLock } = window.OGPWeb;
 
 function showAuthErrors(lines) {
+  if (!errorModal || !errorModalText) {
+    return;
+  }
   showText(errorModalText, lines);
   errorModal.hidden = false;
   setBodyScrollLock(true);
 }
 
 function clearAuthErrors() {
+  if (!errorModal || !errorModalText) {
+    return;
+  }
   errorModal.hidden = true;
   clearText(errorModalText);
-  if (successModal.hidden) {
+  if (!successModal || successModal.hidden) {
     setBodyScrollLock(false);
   }
 }
@@ -44,14 +50,20 @@ function buildSuccessLines(payload, fallback) {
 }
 
 function closeSuccessModal() {
+  if (!successModal || !successModalText) {
+    return;
+  }
   successModal.hidden = true;
   clearText(successModalText);
-  if (errorModal.hidden) {
+  if (!errorModal || errorModal.hidden) {
     setBodyScrollLock(false);
   }
 }
 
 function showAuthSuccess(lines) {
+  if (!successModal || !successModalText) {
+    return;
+  }
   showText(successModalText, lines);
   successModal.hidden = false;
   setBodyScrollLock(true);
@@ -96,12 +108,18 @@ function hideSupportForms() {
 }
 
 function openResendForm() {
+  if (!resendForm) {
+    return;
+  }
   hideSupportForms();
   resendForm.hidden = false;
   resendForm.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function openForgotPasswordForm() {
+  if (!forgotPasswordForm) {
+    return;
+  }
   hideSupportForms();
   forgotPasswordForm.hidden = false;
   forgotPasswordForm.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -165,7 +183,9 @@ async function handleResendSubmit(event) {
 
   showAuthSuccess(buildSuccessLines(payload, "Письмо с подтверждением отправлено."));
   event.currentTarget.reset();
-  resendForm.hidden = true;
+  if (resendForm) {
+    resendForm.hidden = true;
+  }
 }
 
 async function handleForgotPasswordSubmit(event) {
@@ -188,7 +208,9 @@ async function handleForgotPasswordSubmit(event) {
 
   showAuthSuccess(buildSuccessLines(payload, "Инструкция по сбросу пароля отправлена."));
   event.currentTarget.reset();
-  forgotPasswordForm.hidden = true;
+  if (forgotPasswordForm) {
+    forgotPasswordForm.hidden = true;
+  }
 }
 
 async function bootstrapSession() {
@@ -210,10 +232,10 @@ async function bootstrapSession() {
   }
 }
 
-loginForm.addEventListener("submit", (event) => handleAuthSubmit(event, "/api/auth/login"));
-registerForm.addEventListener("submit", (event) => handleAuthSubmit(event, "/api/auth/register"));
-resendForm.addEventListener("submit", handleResendSubmit);
-forgotPasswordForm.addEventListener("submit", handleForgotPasswordSubmit);
+loginForm?.addEventListener("submit", (event) => handleAuthSubmit(event, "/api/auth/login"));
+registerForm?.addEventListener("submit", (event) => handleAuthSubmit(event, "/api/auth/register"));
+resendForm?.addEventListener("submit", handleResendSubmit);
+forgotPasswordForm?.addEventListener("submit", handleForgotPasswordSubmit);
 
 activeSessionLogout?.addEventListener("click", async () => {
   const response = await apiFetch("/api/auth/logout", { method: "POST" });
@@ -232,27 +254,27 @@ resendToggleSide?.addEventListener("click", openResendForm);
 forgotPasswordCancel?.addEventListener("click", hideSupportForms);
 resendCancel?.addEventListener("click", hideSupportForms);
 
-successModalClose.addEventListener("click", closeSuccessModal);
-successModalOk.addEventListener("click", closeSuccessModal);
-successModal.addEventListener("click", (event) => {
+successModalClose?.addEventListener("click", closeSuccessModal);
+successModalOk?.addEventListener("click", closeSuccessModal);
+successModal?.addEventListener("click", (event) => {
   if (event.target === successModal) {
     closeSuccessModal();
   }
 });
 
-errorModalClose.addEventListener("click", clearAuthErrors);
-errorModalOk.addEventListener("click", clearAuthErrors);
-errorModal.addEventListener("click", (event) => {
+errorModalClose?.addEventListener("click", clearAuthErrors);
+errorModalOk?.addEventListener("click", clearAuthErrors);
+errorModal?.addEventListener("click", (event) => {
   if (event.target === errorModal) {
     clearAuthErrors();
   }
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !successModal.hidden) {
+  if (event.key === "Escape" && successModal && !successModal.hidden) {
     closeSuccessModal();
   }
-  if (event.key === "Escape" && !errorModal.hidden) {
+  if (event.key === "Escape" && errorModal && !errorModal.hidden) {
     clearAuthErrors();
   }
 });

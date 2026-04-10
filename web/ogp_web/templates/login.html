@@ -184,5 +184,5 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', path='pages/login.js') }}" defer></script>
+<script src="{{ url_for('static', path='pages/login.js') }}?v={{ static_asset_version }}" defer></script>
 {% endblock %}

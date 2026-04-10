@@ -11,7 +11,7 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-STATIC_ASSET_VERSION = "20260410-exam-task-resume-1"
+STATIC_ASSET_VERSION = os.getenv("OGP_STATIC_ASSET_VERSION", "20260411-frontend-review-1")
 
 
 def _normalized_url(value: str) -> str:

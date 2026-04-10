@@ -161,5 +161,5 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', path='pages/rehab.js') }}" defer></script>
+<script src="{{ url_for('static', path='pages/rehab.js') }}?v={{ static_asset_version }}" defer></script>
 {% endblock %}
