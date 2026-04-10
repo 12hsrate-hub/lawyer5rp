@@ -31,11 +31,16 @@ mkdir -p "${backup_root}"
 if [[ -d "${APP_ROOT}/shared" ]]; then
   cp -a "${APP_ROOT}/shared" "${backup_root}/"
 fi
-if [[ -d "${APP_ROOT}/web" ]]; then
-  cp -a "${APP_ROOT}/web" "${backup_root}/"
-fi
 if [[ -d "${APP_ROOT}/scripts" ]]; then
   cp -a "${APP_ROOT}/scripts" "${backup_root}/"
+fi
+if [[ -d "${APP_ROOT}/web" ]]; then
+  mkdir -p "${backup_root}/web"
+  rsync -a \
+    --exclude ".env" \
+    --exclude "data/" \
+    --exclude ".venv/" \
+    "${APP_ROOT}/web/" "${backup_root}/web/"
 fi
 
 rsync -a --delete "${REPO_ROOT}/shared/" "${APP_ROOT}/shared/"

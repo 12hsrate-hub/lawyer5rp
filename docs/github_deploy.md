@@ -62,7 +62,7 @@ bash /srv/lawyer5rp-deploy/repo/scripts/deploy_from_checkout.sh
 
 What the deploy script does:
 
-- backs up current `shared`, `web`, and `scripts`
+- backs up current deploy-managed files from `shared`, `web`, and `scripts`
 - syncs fresh files from the Git checkout
 - preserves `web/.env`, `web/.venv`, and `web/data`
 - runs PostgreSQL migrations
