@@ -1,0 +1,22 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}{{ app_title }} - Подтверждение email{% endblock %}
+{% block main_class %}page auth-page{% endblock %}
+
+{% block content %}
+{% set hero_title = "Подтверждение email" %}
+{% set hero_description = "Завершите регистрацию и после этого входите в аккаунт." %}
+{% set hero_card_label = "Статус" %}
+{% set hero_card_value = "успешно" if verification_success else "ошибка" %}
+{% set hero_card_text = verification_message %}
+{% include "partials/page_hero.html" %}
+
+<section class="panel auth-shell">
+  <div class="{{ 'success-box' if verification_success else 'errors' }}">
+    {{ verification_message }}
+  </div>
+  <div class="actions">
+    <a class="nav-link active" href="/login">Перейти ко входу</a>
+  </div>
+</section>
+{% endblock %}

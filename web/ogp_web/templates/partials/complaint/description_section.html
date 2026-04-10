@@ -1,0 +1,67 @@
+<section class="panel legal-card legal-section legal-section--description">
+  <div class="legal-section__header">
+    <div>
+      <p class="legal-section__eyebrow">Раздел 3</p>
+      <h2 class="legal-section__title">Описание нарушения</h2>
+      <p class="legal-section__description">Подробно изложите обстоятельства и кратко сформулируйте суть нарушения.</p>
+    </div>
+  </div>
+
+  <div class="legal-description">
+    <article class="legal-subcard legal-subcard--story">
+      <div class="legal-subcard__header legal-subcard__header--inline">
+        <div>
+          <span class="legal-field__label">Что произошло</span>
+        </div>
+        <button type="button" id="ai-btn" class="ghost-button legal-inline-action">Предложить нейтральный вариант</button>
+      </div>
+
+      <div class="legal-field-grid legal-field-grid--two">
+        <label class="legal-field">
+          <span class="legal-field__label">Вариант для AI</span>
+          <select name="complaint_basis" id="complaint-basis">
+            <option value="">Не обязательно</option>
+            {% for basis in complaint_bases %}
+            <option value="{{ basis.code }}">{{ basis.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="legal-field">
+          <span class="legal-field__label">Акцент для AI</span>
+          <input id="main-focus" name="main_focus" maxlength="180" placeholder="Коротко: вокруг чего строить текст">
+        </label>
+      </div>
+
+      <p id="ai-focus-hint" class="legal-field__hint" hidden></p>
+
+      <textarea
+        name="situation_description"
+        rows="8"
+        class="legal-textarea legal-textarea--primary"
+        placeholder="Опишите, что произошло, кто участвовал и в чем выражалось нарушение."
+      ></textarea>
+
+      <div id="ai-status" class="progress-box legal-ai-progress" hidden>
+        <span class="spinner" aria-hidden="true"></span>
+        <span id="ai-status-text"></span>
+      </div>
+      <div id="ai-errors" class="errors" hidden></div>
+    </article>
+
+    <article class="legal-subcard legal-subcard--summary">
+      <div class="legal-subcard__header">
+        <div>
+          <span class="legal-field__label">Краткая формулировка</span>
+        </div>
+      </div>
+
+      <textarea
+        name="violation_short"
+        rows="3"
+        class="legal-textarea legal-textarea--compact"
+        placeholder="Кратко сформулируйте суть нарушения одним предложением."
+      ></textarea>
+    </article>
+  </div>
+</section>

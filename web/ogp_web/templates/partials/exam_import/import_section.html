@@ -1,0 +1,44 @@
+<section class="panel legal-card legal-section">
+  <div class="legal-section__header">
+    <div>
+      <p class="legal-section__eyebrow">Импорт</p>
+      <h2 class="legal-section__title">Загрузка строк</h2>
+      <p class="legal-section__description">Импорт добавляет только новые уникальные строки. Проверка ответов и выставление баллов запускаются отдельно.</p>
+    </div>
+  </div>
+
+  <div class="legal-subcard legal-subcard--import">
+    <div class="actions legal-toolbar legal-toolbar--result">
+      <button id="exam-import-btn" type="button" class="primary-button">Импортировать ответы</button>
+      <button id="exam-score-btn" type="button" class="secondary-button">Проверить тесты</button>
+      <button id="exam-rescore-failed-btn" type="button" class="ghost-button">Перепроверить некорректные</button>
+    </div>
+
+    <div id="exam-import-progress" class="progress-box" hidden>
+      <span class="spinner" aria-hidden="true"></span>
+      <span id="exam-import-progress-text"></span>
+    </div>
+    <p id="exam-import-progress-hint" class="legal-field__hint" hidden>
+      AI-проверка может занять до нескольких минут. Не закрывайте вкладку и дождитесь ответа сервера.
+    </p>
+
+    <div class="legal-status-row legal-status-row--three">
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Всего импортировано</span>
+        <strong id="exam-total-rows" class="legal-status-card__value legal-status-card__value--small">{{ exam_total_rows }}</strong>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Обработано строк</span>
+        <strong id="exam-last-imported" class="legal-status-card__value legal-status-card__value--small">—</strong>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Добавлено / пропущено</span>
+        <strong id="exam-last-delta" class="legal-status-card__value legal-status-card__value--small">—</strong>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Проверено тестов</span>
+        <strong id="exam-last-scored" class="legal-status-card__value legal-status-card__value--small">—</strong>
+      </article>
+    </div>
+  </div>
+</section>

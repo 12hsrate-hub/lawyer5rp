@@ -1,0 +1,656 @@
+from __future__ import annotations
+
+import csv
+import json
+import logging
+import sqlite3
+from contextlib import closing
+from io import StringIO
+from pathlib import Path
+from typing import Any
+
+from ogp_web.db.errors import DatabaseUnavailableError
+from ogp_web.db.factory import get_database_backend
+from ogp_web.db.types import DatabaseBackend
+
+ROOT_DIR = Path(__file__).resolve().parents[3]
+DATA_DIR = ROOT_DIR / "web" / "data"
+DB_PATH = DATA_DIR / "admin_metrics.db"
+logger = logging.getLogger(__name__)
+USER_SORT_OPTIONS = {"complaints", "api_requests", "last_seen", "created_at", "username"}
+
+
+class AdminMetricsStore:
+    def __init__(self, db_path: Path, backend: DatabaseBackend | None = None):
+        self.db_path = db_path
+        self.backend = backend or get_database_backend()
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        self._ensure_schema()
+
+    def _connect(self):
+        return self.backend.connect()
+
+    @property
+    def is_postgres_backend(self) -> bool:
+        backend = getattr(self, "backend", None)
+        if backend is None:
+            return False
+        name = backend.__class__.__name__
+        return name == "PostgresBackend" or name.endswith("PostgresBackend")
+
+    def _placeholder(self) -> str:
+        return "%s" if self.is_postgres_backend else "?"
+
+    def _decode_json_field(self, raw: Any) -> dict[str, Any]:
+        if isinstance(raw, dict):
+            return raw
+        if raw in (None, ""):
+            return {}
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode("utf-8", errors="ignore")
+        try:
+            parsed = json.loads(str(raw))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    def healthcheck(self) -> dict[str, object]:
+        return self.backend.healthcheck()
+
+    def _ensure_schema(self) -> None:
+        with closing(self._connect()) as conn:
+            if self.is_postgres_backend:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS metric_events (
+                        id BIGSERIAL PRIMARY KEY,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        username TEXT,
+                        server_code TEXT,
+                        event_type TEXT NOT NULL,
+                        path TEXT,
+                        method TEXT,
+                        status_code INTEGER,
+                        duration_ms INTEGER,
+                        request_bytes INTEGER,
+                        response_bytes INTEGER,
+                        resource_units INTEGER,
+                        meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+                    )
+                    """
+                )
+            else:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS metric_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        username TEXT,
+                        server_code TEXT,
+                        event_type TEXT NOT NULL,
+                        path TEXT,
+                        method TEXT,
+                        status_code INTEGER,
+                        duration_ms INTEGER,
+                        request_bytes INTEGER,
+                        response_bytes INTEGER,
+                        resource_units INTEGER,
+                        meta_json TEXT NOT NULL DEFAULT '{}'
+                    )
+                    """
+                )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_created_at ON metric_events(created_at DESC)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_username ON metric_events(username)")
+            if not self.is_postgres_backend:
+                existing_columns = {
+                    str(row["name"])
+                    for row in conn.execute("PRAGMA table_info(metric_events)").fetchall()
+                }
+                if "server_code" not in existing_columns:
+                    conn.execute("ALTER TABLE metric_events ADD COLUMN server_code TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_server_code ON metric_events(server_code)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_event_type ON metric_events(event_type)")
+            conn.commit()
+
+    def log_event(
+        self,
+        *,
+        event_type: str,
+        username: str = "",
+        server_code: str = "",
+        path: str = "",
+        method: str = "",
+        status_code: int | None = None,
+        duration_ms: int | None = None,
+        request_bytes: int | None = None,
+        response_bytes: int | None = None,
+        resource_units: int | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> bool:
+        placeholder = self._placeholder()
+        meta_value = json.dumps(meta or {}, ensure_ascii=False)
+        if self.is_postgres_backend:
+            insert_sql = f"""
+                INSERT INTO metric_events (
+                    username,
+                    server_code,
+                    event_type,
+                    path,
+                    method,
+                    status_code,
+                    duration_ms,
+                    request_bytes,
+                    response_bytes,
+                    resource_units,
+                    meta_json
+                )
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}::jsonb)
+            """
+        else:
+            insert_sql = f"""
+                INSERT INTO metric_events (
+                    username,
+                    server_code,
+                    event_type,
+                    path,
+                    method,
+                    status_code,
+                    duration_ms,
+                    request_bytes,
+                    response_bytes,
+                    resource_units,
+                    meta_json
+                )
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            """
+        try:
+            with closing(self._connect()) as conn:
+                conn.execute(
+                    insert_sql,
+                    (
+                        username.strip().lower() or None,
+                        server_code.strip().lower() or None,
+                        event_type,
+                        path or None,
+                        method or None,
+                        status_code,
+                        duration_ms,
+                        request_bytes,
+                        response_bytes,
+                        resource_units,
+                        meta_value,
+                    ),
+                )
+                conn.commit()
+        except (sqlite3.Error, DatabaseUnavailableError, Exception):
+            logger.exception("Failed to write admin metric event: %s %s", event_type, path)
+            return False
+        return True
+
+    def _build_event_filters(
+        self,
+        *,
+        event_search: str = "",
+        event_type: str = "",
+        failed_events_only: bool = False,
+    ) -> tuple[list[str], list[Any]]:
+        placeholder = self._placeholder()
+        where_clauses: list[str] = []
+        params: list[Any] = []
+        normalized_event_search = str(event_search or "").strip().lower()
+        normalized_event_type = str(event_type or "").strip().lower()
+        if normalized_event_search:
+            where_clauses.append(
+                f"(LOWER(COALESCE(username, '')) LIKE {placeholder} OR LOWER(COALESCE(path, '')) LIKE {placeholder})"
+            )
+            search_pattern = f"%{normalized_event_search}%"
+            params.extend([search_pattern, search_pattern])
+        if normalized_event_type:
+            where_clauses.append(f"LOWER(event_type) = {placeholder}")
+            params.append(normalized_event_type)
+        if failed_events_only:
+            where_clauses.append("status_code IS NOT NULL AND status_code >= 400")
+        return where_clauses, params
+
+    def _load_recent_events(
+        self,
+        conn,
+        *,
+        event_search: str = "",
+        event_type: str = "",
+        failed_events_only: bool = False,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        where_clauses, params = self._build_event_filters(
+            event_search=event_search,
+            event_type=event_type,
+            failed_events_only=failed_events_only,
+        )
+        query = """
+            SELECT created_at, username, server_code, event_type, path, method, status_code, duration_ms, request_bytes, response_bytes, resource_units, meta_json
+            FROM metric_events
+        """
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
+        query += f" ORDER BY id DESC LIMIT {self._placeholder()}"
+        rows = conn.execute(query, (*params, limit)).fetchall()
+        events: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["meta"] = self._decode_json_field(item.pop("meta_json", None))
+            events.append(item)
+        return events
+
+    def _load_top_endpoints(self, conn) -> list[dict[str, Any]]:
+        return [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT path, COUNT(*) AS count
+                FROM metric_events
+                WHERE event_type = 'api_request' AND path IS NOT NULL
+                GROUP BY path
+                ORDER BY count DESC, path ASC
+                LIMIT 10
+                """
+            ).fetchall()
+        ]
+
+    def _load_user_metrics(self, conn) -> dict[str, dict[str, Any]]:
+        return {
+            str(row["username"] or ""): dict(row)
+            for row in conn.execute(
+                """
+                SELECT
+                    username,
+                    MAX(server_code) AS server_code,
+                    SUM(CASE WHEN event_type = 'api_request' THEN 1 ELSE 0 END) AS api_requests,
+                    SUM(CASE WHEN event_type = 'complaint_generated' THEN 1 ELSE 0 END) AS complaints,
+                    SUM(CASE WHEN event_type = 'rehab_generated' THEN 1 ELSE 0 END) AS rehabs,
+                    SUM(CASE WHEN event_type = 'ai_suggest' THEN 1 ELSE 0 END) AS ai_suggestions,
+                    SUM(CASE WHEN event_type = 'ai_extract_principal' THEN 1 ELSE 0 END) AS ai_ocr_requests,
+                    COALESCE(SUM(request_bytes), 0) AS request_bytes,
+                    COALESCE(SUM(response_bytes), 0) AS response_bytes,
+                    COALESCE(SUM(resource_units), 0) AS resource_units,
+                    MAX(created_at) AS last_seen_at
+                FROM metric_events
+                WHERE username IS NOT NULL AND username <> ''
+                GROUP BY username
+                """
+            ).fetchall()
+        }
+
+    def _load_ai_exam_stats(self, conn) -> dict[str, int]:
+        stats = {
+            "ai_exam_scoring_total": 0,
+            "ai_exam_scoring_rows": 0,
+            "ai_exam_scoring_answers": 0,
+            "ai_exam_heuristic_total": 0,
+            "ai_exam_cache_total": 0,
+            "ai_exam_llm_total": 0,
+            "ai_exam_llm_calls_total": 0,
+            "ai_exam_failure_total": 0,
+        }
+        rows = conn.execute(
+            """
+            SELECT event_type, meta_json
+            FROM metric_events
+            WHERE event_type IN ('ai_exam_scoring', 'exam_import_score_failures', 'exam_import_row_score_error')
+            """
+        ).fetchall()
+        for row in rows:
+            event_type = str(row["event_type"] or "")
+            meta = self._decode_json_field(row["meta_json"])
+            if event_type == "ai_exam_scoring":
+                stats["ai_exam_scoring_total"] += 1
+                stats["ai_exam_scoring_rows"] += int(meta.get("rows_scored") or 0)
+                stats["ai_exam_scoring_answers"] += int(meta.get("answer_count") or 0)
+                stats["ai_exam_heuristic_total"] += int(meta.get("heuristic_count") or 0)
+                stats["ai_exam_cache_total"] += int(meta.get("cache_hit_count") or 0)
+                stats["ai_exam_llm_total"] += int(meta.get("llm_count") or 0)
+                stats["ai_exam_llm_calls_total"] += int(meta.get("llm_calls") or 0)
+            else:
+                stats["ai_exam_failure_total"] += 1
+        return stats
+
+    def _load_latest_event(self, conn, event_types: tuple[str, ...]) -> dict[str, Any] | None:
+        placeholders = ", ".join(self._placeholder() for _ in event_types)
+        row = conn.execute(
+            f"""
+            SELECT created_at, username, server_code, event_type, path, status_code, meta_json
+            FROM metric_events
+            WHERE event_type IN ({placeholders})
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            event_types,
+        ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["meta"] = self._decode_json_field(item.pop("meta_json", None))
+        return item
+
+    def get_exam_import_summary(self, *, pending_scores: int = 0) -> dict[str, Any]:
+        with closing(self._connect()) as conn:
+            last_sync = self._load_latest_event(conn, ("api_request", "exam_import_sync_error"))
+            if last_sync and last_sync.get("path") != "/api/exam-import/sync":
+                last_sync = None
+            last_score = self._load_latest_event(
+                conn,
+                ("ai_exam_scoring", "exam_import_score_failures", "exam_import_row_score_error"),
+            )
+            recent_failures = self._load_recent_events(
+                conn,
+                event_type="exam_import_score_failures",
+                failed_events_only=False,
+                limit=5,
+            )
+            row_failures = self._load_recent_events(
+                conn,
+                event_type="exam_import_row_score_error",
+                failed_events_only=False,
+                limit=5,
+            )
+        return {
+            "pending_scores": int(pending_scores or 0),
+            "last_sync": last_sync,
+            "last_score": last_score,
+            "recent_failures": recent_failures,
+            "recent_row_failures": row_failures,
+        }
+
+    def _build_users_with_metrics(self, users: list[dict[str, Any]], user_metrics: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        users_with_metrics: list[dict[str, Any]] = []
+        for user in users:
+            username = str(user.get("username", "")).strip().lower()
+            metrics = user_metrics.get(username, {})
+            users_with_metrics.append(
+                {
+                    **user,
+                    "email_verified": bool(user.get("email_verified_at")),
+                    "access_blocked": bool(user.get("access_blocked_at")),
+                    "is_tester": bool(int(user.get("is_tester") or 0)),
+                    "is_gka": bool(int(user.get("is_gka") or 0)),
+                    "api_requests": int(metrics.get("api_requests") or 0),
+                    "complaints": int(metrics.get("complaints") or 0),
+                    "rehabs": int(metrics.get("rehabs") or 0),
+                    "ai_suggestions": int(metrics.get("ai_suggestions") or 0),
+                    "ai_ocr_requests": int(metrics.get("ai_ocr_requests") or 0),
+                    "request_bytes": int(metrics.get("request_bytes") or 0),
+                    "response_bytes": int(metrics.get("response_bytes") or 0),
+                    "resource_units": int(metrics.get("resource_units") or 0),
+                    "last_seen_at": metrics.get("last_seen_at") or "",
+                }
+            )
+        return users_with_metrics
+
+    def _filter_users(
+        self,
+        users_with_metrics: list[dict[str, Any]],
+        *,
+        search: str = "",
+        blocked_only: bool = False,
+        tester_only: bool = False,
+        gka_only: bool = False,
+        unverified_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        normalized_search = str(search or "").strip().lower()
+        filtered = list(users_with_metrics)
+        if normalized_search:
+            filtered = [
+                item
+                for item in filtered
+                if normalized_search in str(item.get("username", "")).lower()
+                or normalized_search in str(item.get("email", "")).lower()
+            ]
+        if blocked_only:
+            filtered = [item for item in filtered if item.get("access_blocked")]
+        if tester_only:
+            filtered = [item for item in filtered if item.get("is_tester")]
+        if gka_only:
+            filtered = [item for item in filtered if item.get("is_gka")]
+        if unverified_only:
+            filtered = [item for item in filtered if not item.get("email_verified")]
+        return filtered
+
+    def _sort_users(self, users_with_metrics: list[dict[str, Any]], *, user_sort: str = "complaints") -> None:
+        normalized_sort = str(user_sort or "complaints").strip().lower()
+        if normalized_sort not in USER_SORT_OPTIONS:
+            normalized_sort = "complaints"
+
+        if normalized_sort == "username":
+            users_with_metrics.sort(key=lambda item: str(item.get("username") or "").lower())
+            return
+        if normalized_sort == "created_at":
+            users_with_metrics.sort(
+                key=lambda item: (
+                    str(item.get("created_at") or "") == "",
+                    str(item.get("created_at") or ""),
+                    str(item.get("username") or "").lower(),
+                ),
+                reverse=True,
+            )
+            return
+        if normalized_sort == "last_seen":
+            users_with_metrics.sort(
+                key=lambda item: (
+                    str(item.get("last_seen_at") or "") == "",
+                    str(item.get("last_seen_at") or ""),
+                    str(item.get("username") or "").lower(),
+                ),
+                reverse=True,
+            )
+            return
+
+        users_with_metrics.sort(
+            key=lambda item: (
+                -int(item.get(normalized_sort) or 0),
+                -int(item.get("complaints") or 0),
+                -int(item.get("api_requests") or 0),
+                str(item.get("username") or "").lower(),
+            )
+        )
+
+    def get_overview(
+        self,
+        *,
+        users: list[dict[str, Any]],
+        search: str = "",
+        blocked_only: bool = False,
+        tester_only: bool = False,
+        gka_only: bool = False,
+        unverified_only: bool = False,
+        event_search: str = "",
+        event_type: str = "",
+        failed_events_only: bool = False,
+        user_sort: str = "complaints",
+    ) -> dict[str, Any]:
+        events_last_24h_sql = (
+            "COALESCE(SUM(CASE WHEN created_at >= NOW() - INTERVAL '1 day' THEN 1 ELSE 0 END), 0)"
+            if self.is_postgres_backend
+            else "COALESCE(SUM(CASE WHEN created_at >= datetime('now', '-1 day') THEN 1 ELSE 0 END), 0)"
+        )
+        with closing(self._connect()) as conn:
+            totals = conn.execute(
+                f"""
+                SELECT
+                    COUNT(*) AS total_events,
+                    SUM(CASE WHEN event_type = 'api_request' THEN 1 ELSE 0 END) AS api_requests_total,
+                    SUM(CASE WHEN event_type = 'complaint_generated' THEN 1 ELSE 0 END) AS complaints_total,
+                    SUM(CASE WHEN event_type = 'rehab_generated' THEN 1 ELSE 0 END) AS rehab_total,
+                    SUM(CASE WHEN event_type = 'ai_suggest' THEN 1 ELSE 0 END) AS ai_suggest_total,
+                    SUM(CASE WHEN event_type = 'ai_extract_principal' THEN 1 ELSE 0 END) AS ai_ocr_total,
+                    COALESCE(SUM(request_bytes), 0) AS request_bytes_total,
+                    COALESCE(SUM(response_bytes), 0) AS response_bytes_total,
+                    COALESCE(SUM(resource_units), 0) AS resource_units_total,
+                    COALESCE(AVG(CASE WHEN event_type = 'api_request' THEN duration_ms END), 0) AS avg_api_duration_ms,
+                    {events_last_24h_sql} AS events_last_24h
+                FROM metric_events
+                """
+            ).fetchone()
+            top_endpoints = self._load_top_endpoints(conn)
+            recent_events = self._load_recent_events(
+                conn,
+                event_search=event_search,
+                event_type=event_type,
+                failed_events_only=failed_events_only,
+            )
+            user_metrics = self._load_user_metrics(conn)
+            ai_exam_stats = self._load_ai_exam_stats(conn)
+
+        users_with_metrics = self._build_users_with_metrics(users, user_metrics)
+        users_with_metrics = self._filter_users(
+            users_with_metrics,
+            search=search,
+            blocked_only=blocked_only,
+            tester_only=tester_only,
+            gka_only=gka_only,
+            unverified_only=unverified_only,
+        )
+        self._sort_users(users_with_metrics, user_sort=user_sort)
+
+        return {
+            "totals": {
+                "users_total": len(users),
+                "events_total": int(totals["total_events"] or 0),
+                "api_requests_total": int(totals["api_requests_total"] or 0),
+                "complaints_total": int(totals["complaints_total"] or 0),
+                "rehabs_total": int(totals["rehab_total"] or 0),
+                "ai_suggest_total": int(totals["ai_suggest_total"] or 0),
+                "ai_ocr_total": int(totals["ai_ocr_total"] or 0),
+                "request_bytes_total": int(totals["request_bytes_total"] or 0),
+                "response_bytes_total": int(totals["response_bytes_total"] or 0),
+                "resource_units_total": int(totals["resource_units_total"] or 0),
+                "avg_api_duration_ms": round(float(totals["avg_api_duration_ms"] or 0), 1),
+                "events_last_24h": int(totals["events_last_24h"] or 0),
+                **ai_exam_stats,
+            },
+            "users": users_with_metrics,
+            "users_filtered_total": len(users_with_metrics),
+            "top_endpoints": top_endpoints,
+            "recent_events": recent_events,
+            "recent_events_filtered_total": len(recent_events),
+            "filters": {"user_sort": user_sort if user_sort in USER_SORT_OPTIONS else "complaints"},
+        }
+
+    def export_users_csv(
+        self,
+        *,
+        users: list[dict[str, Any]],
+        search: str = "",
+        blocked_only: bool = False,
+        tester_only: bool = False,
+        gka_only: bool = False,
+        unverified_only: bool = False,
+        user_sort: str = "complaints",
+    ) -> str:
+        with closing(self._connect()) as conn:
+            user_metrics = self._load_user_metrics(conn)
+        users_with_metrics = self._build_users_with_metrics(users, user_metrics)
+        users_with_metrics = self._filter_users(
+            users_with_metrics,
+            search=search,
+            blocked_only=blocked_only,
+            tester_only=tester_only,
+            gka_only=gka_only,
+            unverified_only=unverified_only,
+        )
+        self._sort_users(users_with_metrics, user_sort=user_sort)
+
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(
+            [
+                "username",
+                "email",
+                "created_at",
+                "email_verified",
+                "access_blocked",
+                "access_blocked_reason",
+                "is_tester",
+                "is_gka",
+                "complaints",
+                "rehabs",
+                "api_requests",
+                "ai_suggestions",
+                "ai_ocr_requests",
+                "resource_units",
+                "last_seen_at",
+            ]
+        )
+        for item in users_with_metrics:
+            writer.writerow(
+                [
+                    item.get("username", ""),
+                    item.get("email", ""),
+                    item.get("created_at", ""),
+                    "yes" if item.get("email_verified") else "no",
+                    "yes" if item.get("access_blocked") else "no",
+                    item.get("access_blocked_reason", ""),
+                    "yes" if item.get("is_tester") else "no",
+                    "yes" if item.get("is_gka") else "no",
+                    int(item.get("complaints") or 0),
+                    int(item.get("rehabs") or 0),
+                    int(item.get("api_requests") or 0),
+                    int(item.get("ai_suggestions") or 0),
+                    int(item.get("ai_ocr_requests") or 0),
+                    int(item.get("resource_units") or 0),
+                    item.get("last_seen_at", ""),
+                ]
+            )
+        return output.getvalue()
+
+    def export_events_csv(
+        self,
+        *,
+        event_search: str = "",
+        event_type: str = "",
+        failed_events_only: bool = False,
+        limit: int = 500,
+    ) -> str:
+        with closing(self._connect()) as conn:
+            events = self._load_recent_events(
+                conn,
+                event_search=event_search,
+                event_type=event_type,
+                failed_events_only=failed_events_only,
+                limit=limit,
+            )
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(
+            [
+                "created_at",
+                "username",
+                "event_type",
+                "path",
+                "method",
+                "status_code",
+                "duration_ms",
+                "request_bytes",
+                "response_bytes",
+                "resource_units",
+                "meta_json",
+            ]
+        )
+        for item in events:
+            writer.writerow(
+                [
+                    item.get("created_at", ""),
+                    item.get("username", ""),
+                    item.get("event_type", ""),
+                    item.get("path", ""),
+                    item.get("method", ""),
+                    item.get("status_code", ""),
+                    item.get("duration_ms", ""),
+                    item.get("request_bytes", ""),
+                    item.get("response_bytes", ""),
+                    item.get("resource_units", ""),
+                    json.dumps(item.get("meta") or {}, ensure_ascii=False),
+                ]
+            )
+        return output.getvalue()
+
+
+ADMIN_METRICS_STORE = AdminMetricsStore(DB_PATH, backend=get_database_backend())

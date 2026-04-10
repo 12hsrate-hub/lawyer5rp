@@ -1,0 +1,28 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}{{ app_title }} - Импорт экзаменов{% endblock %}
+
+{% block content %}
+<div class="legal-page legal-page--exam-import">
+  {% include "partials/exam_import/header.html" %}
+  {% include "partials/complaint/tabs.html" %}
+
+  <div id="exam-import-message" class="success-box legal-message" hidden></div>
+  <div id="exam-import-errors" class="errors legal-message" hidden></div>
+
+  <div class="legal-workspace legal-workspace--wide">
+    <div class="legal-workspace__main">
+      {% include "partials/exam_import/source_section.html" %}
+      {% include "partials/exam_import/import_section.html" %}
+      {% include "partials/exam_import/table_section.html" %}
+    </div>
+  </div>
+</div>
+
+{% include "partials/exam_import/detail_modal.html" %}
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', path='shared/exam_import_view.js') }}" defer></script>
+<script src="{{ url_for('static', path='pages/exam_import.js') }}?v={{ static_asset_version }}" defer></script>
+{% endblock %}

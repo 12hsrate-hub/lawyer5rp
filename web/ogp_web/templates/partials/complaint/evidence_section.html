@@ -1,0 +1,48 @@
+<section class="panel legal-card legal-section legal-section--evidence">
+  <div class="legal-section__header">
+    <div>
+      <p class="legal-section__eyebrow">Раздел 4</p>
+      <h2 class="legal-section__title">Доказательства</h2>
+      <p class="legal-section__description">Добавьте документы, видеозаписи и иные материалы, подтверждающие изложенные обстоятельства.</p>
+    </div>
+  </div>
+
+  <div class="legal-evidence">
+    <article class="legal-subcard legal-subcard--documents">
+      <div class="legal-subcard__header">
+        <div>
+          <h3 class="legal-subcard__title">Документы</h3>
+        </div>
+      </div>
+
+      <div class="legal-field-grid legal-field-grid--two">
+        {% for item in evidence_fields %}
+        <label class="legal-field">
+          <span class="legal-field__label">{{ item.label }}</span>
+          <input name="{{ item.field_name }}" type="url" placeholder="https://example.com/material" {% if item.required %}required{% endif %}>
+        </label>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="legal-subcard legal-subcard--repeatable">
+      <div class="legal-subcard__header legal-subcard__header--inline">
+        <div>
+          <h3 class="legal-subcard__title">Видеофиксация процессуальных действий</h3>
+        </div>
+        <button type="button" class="secondary-button" data-add="video_fix_urls">Добавить поле</button>
+      </div>
+      <div id="video_fix_urls" class="stack legal-repeat-list"></div>
+    </article>
+
+    <article class="legal-subcard legal-subcard--repeatable">
+      <div class="legal-subcard__header legal-subcard__header--inline">
+        <div>
+          <h3 class="legal-subcard__title">Предоставленная запись процессуальных действий</h3>
+        </div>
+        <button type="button" class="secondary-button" data-add="provided_video_urls">Добавить поле</button>
+      </div>
+      <div id="provided_video_urls" class="stack legal-repeat-list"></div>
+    </article>
+  </div>
+</section>

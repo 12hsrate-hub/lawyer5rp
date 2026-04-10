@@ -1,0 +1,27 @@
+<section class="hero">
+  <div>
+    <p class="eyebrow">OGP Builder</p>
+    <h1>{{ hero_title }}</h1>
+    <p class="lede">{{ hero_description }}</p>
+  </div>
+  <div class="hero-card">
+    <div>{{ hero_card_label }}</div>
+    <strong>{{ hero_card_value }}</strong>
+    <span>{{ hero_card_text }}</span>
+    {% if alternate_public_base_url %}
+    <span>Резервный адрес: <a class="legal-inline-link" href="{{ alternate_public_base_url }}">{{ alternate_public_base_url }}</a></span>
+    {% endif %}
+    {% if hero_card_value %}
+    <div class="hero-card-actions">
+      {% if alternate_public_base_url %}
+      <a class="button-link ghost" href="{{ alternate_public_base_url }}">Резервный домен</a>
+      {% endif %}
+      {% if is_admin %}
+      <a class="button-link ghost" href="/admin">Админ-панель</a>
+      {% endif %}
+      <a class="button-link ghost" href="/profile">Личный кабинет</a>
+      <button type="button" id="logout-btn" class="ghost">Выйти</button>
+    </div>
+    {% endif %}
+  </div>
+</section>

@@ -1,0 +1,165 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}{{ app_title }} - Реабилитация{% endblock %}
+
+{% block content %}
+<div class="legal-page legal-page--rehab">
+  <header class="legal-header">
+    <div class="legal-header__main">
+      <p class="legal-header__eyebrow">OGP Builder</p>
+      <h1 class="legal-header__title">Реабилитация</h1>
+      <p class="legal-header__description">Подготовка документа для иска о возмещении вреда по итогам реабилитации.</p>
+    </div>
+
+    <aside class="legal-user-card">
+      <div class="legal-user-card__top">
+        <span class="legal-user-card__label">Пользователь</span>
+        <strong class="legal-user-card__value">{{ username }}</strong>
+      </div>
+      <p class="legal-user-card__text">Данные представителя используются при формировании итогового документа и автоматически подставляются из профиля.</p>
+      <div class="legal-user-card__actions">
+        <a class="button-link secondary-button" href="/profile">Личный кабинет</a>
+        <button type="button" id="logout-btn" class="ghost-button">Выйти</button>
+      </div>
+    </aside>
+  </header>
+
+  {% include "partials/page_nav.html" %}
+
+  <div id="app-message" class="success-box legal-message" hidden></div>
+  <div id="errors" class="errors legal-message" hidden></div>
+
+  <form id="rehab-form" class="legal-workspace legal-workspace--wide" novalidate>
+    <div class="legal-workspace__main">
+      <section class="panel legal-card legal-section">
+        <div class="legal-section__header">
+          <div>
+            <p class="legal-section__eyebrow">Раздел 1</p>
+            <h2 class="legal-section__title">Доверитель</h2>
+            <p class="legal-section__description">Укажите данные лица, в интересах которого подаётся иск о реабилитации.</p>
+          </div>
+        </div>
+
+        <div class="legal-field-grid legal-field-grid--two">
+          <label class="legal-field">
+            <span class="legal-field__label">ФИО доверителя</span>
+            <input name="principal_name" placeholder="Имя Фамилия" required>
+          </label>
+
+          <label class="legal-field">
+            <span class="legal-field__label">Паспорт доверителя</span>
+            <input name="principal_passport" placeholder="123456" maxlength="6" required>
+          </label>
+
+          <label class="legal-field legal-field--full">
+            <span class="legal-field__label">Скан паспорта доверителя URL</span>
+            <input name="principal_passport_scan_url" type="url" placeholder="https://example.com/principal-passport" required>
+          </label>
+        </div>
+
+        <section class="legal-subcard legal-subcard--ocr">
+          <div class="legal-subcard__header">
+            <div>
+              <h3 class="legal-subcard__title">Автозаполнение по договору</h3>
+              <p class="legal-subcard__description">Загрузите 4-ю страницу договора, чтобы автоматически заполнить данные доверителя.</p>
+            </div>
+          </div>
+
+          <div class="legal-ocr">
+            <div class="legal-ocr__controls">
+              <label class="legal-file-field">
+                <span class="legal-field__label">Файл договора</span>
+                <div class="legal-file-picker">
+                  <label class="secondary-button legal-file-picker__button" for="rehab-ocr-file">Файл</label>
+                  <span id="rehab-ocr-file-name" class="legal-file-picker__name is-empty">Файл не выбран</span>
+                  <input id="rehab-ocr-file" class="legal-file-picker__input" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+                </div>
+              </label>
+              <button type="button" id="rehab-ocr-btn" class="secondary-button">Распознать данные</button>
+            </div>
+
+            <div id="rehab-ocr-status" class="legal-ocr__status">Статус: ожидает изображение.</div>
+            <div id="rehab-ocr-progress" class="progress-box legal-ocr__progress" hidden>
+              <span class="spinner" aria-hidden="true"></span>
+              <span id="rehab-ocr-progress-text"></span>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel legal-card legal-section">
+        <div class="legal-section__header">
+          <div>
+            <p class="legal-section__eyebrow">Раздел 2</p>
+            <h2 class="legal-section__title">Основание требования</h2>
+            <p class="legal-section__description">Укажите, истёк ли срок, и приложите договор, на основании которого подаётся требование.</p>
+          </div>
+        </div>
+
+        <div class="legal-field-grid legal-field-grid--two">
+          <label class="legal-field">
+            <span class="legal-field__label">Истёк срок 7 дней</span>
+            <select name="served_seven_days" required>
+              <option value="true">Да</option>
+              <option value="false">Нет</option>
+            </select>
+          </label>
+
+          <label class="legal-field">
+            <span class="legal-field__label">Договор URL</span>
+            <input name="contract_url" type="url" placeholder="https://example.com/contract" required>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel legal-card legal-section legal-section--result">
+        <div class="legal-section__header">
+          <div>
+            <p class="legal-section__eyebrow">Финальный блок</p>
+            <h2 class="legal-section__title">Результат</h2>
+            <p class="legal-section__description">Итоговый документ для дальнейшей работы.</p>
+          </div>
+        </div>
+
+        <div class="legal-status-row">
+          <article class="legal-status-card">
+            <span class="legal-status-card__label">Режим</span>
+            <strong class="legal-status-card__value">Рабочий</strong>
+          </article>
+
+          <article class="legal-status-card">
+            <span class="legal-status-card__label">Шаблон</span>
+            <strong class="legal-status-card__value legal-status-card__value--small">Реабилитация</strong>
+          </article>
+        </div>
+
+        <label class="legal-result">
+          <span class="legal-field__label">BBCode</span>
+          <textarea id="result" rows="18" readonly></textarea>
+        </label>
+
+        <div class="actions legal-toolbar legal-toolbar--result">
+          <button type="submit" class="primary-button">Сгенерировать BBCode</button>
+          <button type="button" id="copy-btn" class="secondary-button">Копировать результат</button>
+        </div>
+      </section>
+    </div>
+  </form>
+</div>
+
+<div id="rehab-ocr-modal" class="modal-backdrop" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="rehab-ocr-modal-title">
+    <button id="rehab-ocr-modal-close" class="modal-close" type="button" aria-label="Закрыть окно">×</button>
+    <p class="eyebrow">Проверьте данные</p>
+    <h2 id="rehab-ocr-modal-title">Данные доверителя подставлены</h2>
+    <div id="rehab-ocr-modal-text" class="success-box modal-message"></div>
+    <div class="actions modal-actions">
+      <button id="rehab-ocr-modal-ok" class="primary-button" type="button">Понятно</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', path='pages/rehab.js') }}" defer></script>
+{% endblock %}

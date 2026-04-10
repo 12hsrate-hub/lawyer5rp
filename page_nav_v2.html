@@ -1,0 +1,13 @@
+<nav class="page-nav">
+  <a class="nav-link{% if nav_active == 'complaint' %} active{% endif %}" href="/complaint">Жалоба</a>
+  <a class="nav-link{% if nav_active == 'rehab' %} active{% endif %}" href="/rehab">Реабилитация</a>
+  {% if show_tester_pages %}
+  <a class="nav-link{% if nav_active == 'court_claim_test' %} active{% endif %}" href="/court-claim-test">Судебный иск</a>
+  {% endif %}
+  {% if show_test_pages %}
+  <a class="nav-link{% if nav_active == 'exam_import' %} active{% endif %}" href="/exam-import-test">Импорт экзаменов</a>
+  {% endif %}
+  {% if is_admin %}
+  <a class="nav-link{% if nav_active == 'admin' %} active{% endif %}" href="/admin">Админ</a>
+  {% endif %}
+</nav>

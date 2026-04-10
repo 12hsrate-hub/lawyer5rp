@@ -1,0 +1,255 @@
+from __future__ import annotations
+
+from dataclasses import fields
+from typing import Any, List
+
+from pydantic import BaseModel, Field, create_model, field_validator
+
+from shared.ogp_core import DEFAULT_SITUATION_PLACEHOLDER, DEFAULT_VIOLATION_PLACEHOLDER
+from shared.ogp_models import Representative, Victim
+
+
+def _normalize_passport(value: str) -> str:
+    raw = str(value or "").strip()
+    if len(raw) > 6:
+        raise ValueError("Паспорт не должен содержать более 6 символов.")
+    return raw
+
+
+def _normalize_phone(value: str) -> str:
+    raw = str(value or "").strip()
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if raw and len(digits) != 7:
+        raise ValueError("Телефон должен содержать ровно 7 цифр.")
+    return digits
+
+
+def _build_payload_base(model_cls: type[Representative] | type[Victim], model_name: str) -> type[BaseModel]:
+    payload_fields = {
+        field.name: (str, field.default)
+        for field in fields(model_cls)
+    }
+    return create_model(model_name, __base__=BaseModel, **payload_fields)
+
+
+RepresentativePayloadBase = _build_payload_base(Representative, "RepresentativePayloadBase")
+VictimPayloadBase = _build_payload_base(Victim, "VictimPayloadBase")
+
+
+class RepresentativePayload(RepresentativePayloadBase):
+    @field_validator("passport")
+    @classmethod
+    def validate_passport(cls, value: str) -> str:
+        return _normalize_passport(value)
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str) -> str:
+        return _normalize_phone(value)
+
+
+class VictimPayload(VictimPayloadBase):
+    @field_validator("passport")
+    @classmethod
+    def validate_passport(cls, value: str) -> str:
+        return _normalize_passport(value)
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str) -> str:
+        return _normalize_phone(value)
+
+
+class ComplaintPayload(BaseModel):
+    appeal_no: str = ""
+    org: str = ""
+    subject_names: str = ""
+    situation_description: str = DEFAULT_SITUATION_PLACEHOLDER
+    violation_short: str = DEFAULT_VIOLATION_PLACEHOLDER
+    event_dt: str = ""
+    today_date: str = ""
+    representative: RepresentativePayload | None = None
+    victim: VictimPayload
+    contract_url: str = ""
+    bar_request_url: str = ""
+    official_answer_url: str = ""
+    mail_notice_url: str = ""
+    arrest_record_url: str = ""
+    personnel_file_url: str = ""
+    video_fix_urls: List[str] = Field(default_factory=list)
+    provided_video_urls: List[str] = Field(default_factory=list)
+
+
+class GenerateResponse(BaseModel):
+    bbcode: str
+
+
+class ComplaintDraftPayload(BaseModel):
+    draft: dict = Field(default_factory=dict)
+
+
+class ComplaintDraftResponse(BaseModel):
+    draft: dict = Field(default_factory=dict)
+    updated_at: str = ""
+    message: str = ""
+
+
+class RehabPayload(BaseModel):
+    principal_name: str = ""
+    principal_passport: str = ""
+    principal_passport_scan_url: str = ""
+    served_seven_days: bool = False
+    contract_url: str = ""
+    today_date: str = ""
+
+    @field_validator("principal_passport")
+    @classmethod
+    def validate_principal_passport(cls, value: str) -> str:
+        return _normalize_passport(value)
+
+
+class SuggestPayload(BaseModel):
+    victim_name: str = ""
+    org: str = ""
+    subject: str = ""
+    event_dt: str = ""
+    raw_desc: str = ""
+    complaint_basis: str = ""
+    main_focus: str = ""
+
+    @field_validator("complaint_basis")
+    @classmethod
+    def validate_complaint_basis(cls, value: str) -> str:
+        return str(value or "").strip()
+
+
+class SuggestResponse(BaseModel):
+    text: str
+
+
+class PrincipalScanPayload(BaseModel):
+    image_data_url: str = ""
+
+
+class PrincipalScanResult(BaseModel):
+    principal_name: str = ""
+    principal_passport: str = ""
+    principal_phone: str = ""
+    principal_address: str = ""
+    principal_discord: str = ""
+    source_summary: str = ""
+    confidence: str = ""
+    missing_fields: List[str] = Field(default_factory=list)
+
+    @field_validator("principal_passport")
+    @classmethod
+    def validate_principal_passport(cls, value: str) -> str:
+        return _normalize_passport(value)
+
+    @field_validator("principal_phone")
+    @classmethod
+    def validate_principal_phone(cls, value: str) -> str:
+        return _normalize_phone(value)
+
+
+class AuthPayload(BaseModel):
+    username: str = ""
+    email: str = ""
+    password: str = ""
+
+
+class AuthResponse(BaseModel):
+    username: str
+    message: str
+    server_code: str = ""
+    requires_email_verification: bool = False
+    verification_url: str | None = None
+
+
+class EmailPayload(BaseModel):
+    email: str = ""
+
+
+class PasswordResetPayload(BaseModel):
+    token: str = ""
+    password: str = ""
+
+
+class PasswordChangePayload(BaseModel):
+    current_password: str = ""
+    new_password: str = ""
+
+
+class AdminBlockPayload(BaseModel):
+    reason: str = ""
+
+
+class AdminEmailUpdatePayload(BaseModel):
+    email: str = ""
+
+
+class AdminPasswordResetPayload(BaseModel):
+    password: str = ""
+
+
+class ProfileResponse(BaseModel):
+    representative: RepresentativePayload
+    server_code: str = ""
+    message: str = ""
+
+
+class ExamImportEntry(BaseModel):
+    source_row: int
+    submitted_at: str = ""
+    full_name: str = ""
+    discord_tag: str = ""
+    passport: str = ""
+    exam_format: str = ""
+    answer_count: int = 0
+    average_score: float | None = None
+    average_score_answer_count: int = 0
+    imported_at: str = ""
+
+
+class ExamAnswerScore(BaseModel):
+    column: str
+    header: str
+    user_answer: str = ""
+    correct_answer: str = ""
+    score: int | None = None
+    rationale: str = ""
+
+
+class ExamImportDetail(ExamImportEntry):
+    updated_at: str = ""
+    average_score_scored_at: str = ""
+    payload: dict[str, str] = Field(default_factory=dict)
+    question_g_header: str = ""
+    question_g_answer: str = ""
+    question_g_score: int | None = None
+    question_g_rationale: str = ""
+    exam_scores: List[ExamAnswerScore] = Field(default_factory=list)
+
+
+class ExamImportResponse(BaseModel):
+    sheet_url: str
+    total_rows: int = 0
+    imported_count: int = 0
+    inserted_count: int = 0
+    updated_count: int = 0
+    skipped_count: int = 0
+    scored_count: int = 0
+    latest_entries: List[ExamImportEntry] = Field(default_factory=list)
+
+
+class ExamImportTaskStatus(BaseModel):
+    task_id: str
+    task_type: str
+    source_row: int | None = None
+    status: str
+    created_at: str = ""
+    started_at: str = ""
+    finished_at: str = ""
+    error: str = ""
+    progress: dict[str, Any] | None = None
+    result: dict[str, Any] | None = None

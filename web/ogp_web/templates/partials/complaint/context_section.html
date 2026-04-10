@@ -1,0 +1,48 @@
+<section class="panel legal-card legal-section legal-section--context">
+  <div class="legal-section__header">
+    <div>
+      <p class="legal-section__eyebrow">Раздел 2</p>
+      <h2 class="legal-section__title">{{ "Контекст тестовой жалобы" if is_test_mode else "Контекст обращения" }}</h2>
+      <p class="legal-section__description">Служебные сведения о жалобе, организации и событии.</p>
+    </div>
+  </div>
+
+  <div class="legal-field-grid legal-field-grid--two">
+    <label class="legal-field">
+      <span class="legal-field__label">Номер обращения</span>
+      <input name="appeal_no" placeholder="1234" inputmode="numeric" maxlength="4" pattern="\d{4}" required>
+    </label>
+
+    <label class="legal-field">
+      <span class="legal-field__label">Организация</span>
+      <select name="org" required>
+        <option value="">Выберите организацию</option>
+        <option value="GOV">GOV</option>
+        <option value="FIB">FIB</option>
+        <option value="LSSD">LSSD</option>
+        <option value="LSPD">LSPD</option>
+        <option value="SASPA">SASPA</option>
+        <option value="SANG">SANG</option>
+        <option value="EMS">EMS</option>
+      </select>
+    </label>
+
+    <label class="legal-field legal-field--full">
+      <span class="legal-field__label">Объект заявления</span>
+      <input name="subject_names" placeholder="Имя Фамилия" required>
+    </label>
+
+    <label class="legal-field">
+      <span class="legal-field__label">Дата</span>
+      <input id="event-date" name="event_date" type="date" required>
+    </label>
+
+    <label class="legal-field">
+      <span class="legal-field__label">Время</span>
+      <input id="event-time" name="event_time" type="time" required>
+    </label>
+  </div>
+
+  <input id="event-dt" name="event_dt" type="hidden" required>
+  <input name="today_date" type="hidden">
+</section>

@@ -1,0 +1,927 @@
+const errorsHost = document.getElementById("admin-errors");
+const messageHost = document.getElementById("admin-message");
+const totalsHost = document.getElementById("admin-totals");
+const examImportHost = document.getElementById("admin-exam-import");
+const usersHost = document.getElementById("admin-users");
+const eventsHost = document.getElementById("admin-events");
+const adminEventsHost = document.getElementById("admin-admin-events");
+const endpointsHost = document.getElementById("admin-top-endpoints");
+const activeFiltersHost = document.getElementById("admin-active-filters");
+const userSearchField = document.getElementById("admin-user-search");
+const userSortField = document.getElementById("admin-user-sort");
+const blockedOnlyField = document.getElementById("admin-filter-blocked");
+const testerOnlyField = document.getElementById("admin-filter-tester");
+const gkaOnlyField = document.getElementById("admin-filter-gka");
+const unverifiedOnlyField = document.getElementById("admin-filter-unverified");
+const resetFiltersButton = document.getElementById("admin-reset-filters");
+const exportUsersButton = document.getElementById("admin-export-users");
+const eventSearchField = document.getElementById("admin-event-search");
+const eventTypeField = document.getElementById("admin-event-type");
+const failedEventsOnlyField = document.getElementById("admin-filter-failed-events");
+const exportEventsButton = document.getElementById("admin-export-events");
+const userModalBody = document.getElementById("admin-user-modal-body");
+
+const { apiFetch, parsePayload, showText, clearText, escapeHtml, createModalController } = window.OGPWeb;
+const ADMIN_COLLAPSE_STORAGE_KEY = "ogp_admin_collapsible_sections";
+
+let adminSearchTimer = null;
+let selectedUser = null;
+const userIndex = new Map();
+
+const userModal = createModalController({
+  modal: document.getElementById("admin-user-modal"),
+});
+
+function loadCollapsibleState() {
+  try {
+    return JSON.parse(window.localStorage.getItem(ADMIN_COLLAPSE_STORAGE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveCollapsibleState(state) {
+  try {
+    window.localStorage.setItem(ADMIN_COLLAPSE_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function setCollapsibleExpanded(button, expanded, state = null) {
+  const targetId = button?.getAttribute("data-collapsible-target") || "";
+  const content = targetId ? document.getElementById(targetId) : null;
+  const section = button?.closest("[data-collapsible-section]");
+  const sectionKey = section?.getAttribute("data-collapsible-section") || targetId;
+
+  if (!button || !content || !sectionKey) {
+    return;
+  }
+
+  button.setAttribute("aria-expanded", expanded ? "true" : "false");
+  button.textContent = expanded ? "Скрыть" : "Показать";
+  content.hidden = !expanded;
+  section.dataset.collapsibleOpen = expanded ? "true" : "false";
+
+  const nextState = state || loadCollapsibleState();
+  nextState[sectionKey] = expanded;
+  saveCollapsibleState(nextState);
+}
+
+function initCollapsibles() {
+  const savedState = loadCollapsibleState();
+  const buttons = Array.from(document.querySelectorAll("[data-collapsible-target]"));
+
+  buttons.forEach((button) => {
+    const targetId = button.getAttribute("data-collapsible-target") || "";
+    const content = targetId ? document.getElementById(targetId) : null;
+    const section = button.closest("[data-collapsible-section]");
+    const sectionKey = section?.getAttribute("data-collapsible-section") || targetId;
+    if (!content || !sectionKey) {
+      return;
+    }
+
+    const defaultExpanded = button.getAttribute("data-expanded-default") !== "false";
+    const expanded = Object.prototype.hasOwnProperty.call(savedState, sectionKey)
+      ? Boolean(savedState[sectionKey])
+      : defaultExpanded;
+
+    setCollapsibleExpanded(button, expanded, savedState);
+
+    button.addEventListener("click", () => {
+      const isExpanded = button.getAttribute("aria-expanded") === "true";
+      setCollapsibleExpanded(button, !isExpanded);
+    });
+  });
+}
+
+function describeApiPath(path) {
+  const normalized = String(path || "").trim();
+  if (!normalized) {
+    return "Системный запрос без указанного пути.";
+  }
+
+  const patterns = [
+    [/^\/api\/admin\/overview$/, "Загрузка всей админ-панели: сводка, пользователи, события и статистика."],
+    [/^\/api\/admin\/users\.csv$/, "Выгрузка CSV со списком пользователей по текущим фильтрам."],
+    [/^\/api\/admin\/events\.csv$/, "Выгрузка CSV со списком событий по текущим фильтрам."],
+    [/^\/api\/admin\/users\/[^/]+\/verify-email$/, "Администратор вручную подтверждает email выбранного пользователя."],
+    [/^\/api\/admin\/users\/[^/]+\/block$/, "Администратор блокирует доступ пользователя к аккаунту."],
+    [/^\/api\/admin\/users\/[^/]+\/unblock$/, "Администратор снимает блокировку и возвращает доступ к аккаунту."],
+    [/^\/api\/admin\/users\/[^/]+\/grant-tester$/, "Администратор выдает пользователю статус тестера."],
+    [/^\/api\/admin\/users\/[^/]+\/revoke-tester$/, "Администратор снимает у пользователя статус тестера."],
+    [/^\/api\/admin\/users\/[^/]+\/grant-gka$/, "Администратор присваивает пользователю тип ГКА-ЗГКА."],
+    [/^\/api\/admin\/users\/[^/]+\/revoke-gka$/, "Администратор снимает у пользователя тип ГКА-ЗГКА."],
+    [/^\/api\/admin\/users\/[^/]+\/email$/, "Администратор вручную меняет email пользователя."],
+    [/^\/api\/admin\/users\/[^/]+\/reset-password$/, "Администратор вручную задает новый пароль пользователю."],
+    [/^\/api\/complaint-draft$/, "Сохранение, загрузка или очистка черновика жалобы пользователя."],
+    [/^\/api\/generate$/, "Генерация итоговой жалобы по заполненной форме."],
+    [/^\/api\/generate-rehab$/, "Генерация заявления на реабилитацию."],
+    [/^\/api\/ai\/suggest$/, "AI улучшает и переписывает описание жалобы."],
+    [/^\/api\/ai\/extract-principal$/, "AI распознает данные доверителя с изображения документа."],
+    [/^\/api\/auth\/login$/, "Вход пользователя в аккаунт."],
+    [/^\/api\/auth\/register$/, "Регистрация нового аккаунта."],
+    [/^\/api\/auth\/logout$/, "Выход пользователя из аккаунта."],
+    [/^\/api\/auth\/forgot-password$/, "Запуск восстановления пароля."],
+    [/^\/api\/auth\/reset-password$/, "Сброс пароля по токену восстановления."],
+    [/^\/api\/profile$/, "Загрузка или сохранение данных профиля пользователя."],
+    [/^\/api\/exam-import\/sync$/, "Импорт новых ответов на экзамены из Google Sheets."],
+    [/^\/api\/exam-import\/score$/, "Массовая проверка импортированных экзаменационных ответов."],
+    [/^\/api\/exam-import\/rows\/\d+$/, "Просмотр деталей по одной импортированной строке экзамена."],
+    [/^\/api\/exam-import\/rows\/\d+\/score$/, "Проверка и оценка одной конкретной строки экзамена."],
+  ];
+
+  for (const [pattern, description] of patterns) {
+    if (pattern.test(normalized)) {
+      return description;
+    }
+  }
+
+  return "Технический API-запрос. Для этого пути еще не добавлено человекочитаемое описание.";
+}
+
+function describeEventType(eventType) {
+  const normalized = String(eventType || "").trim().toLowerCase();
+  const descriptions = {
+    api_request: "Обычный запрос к API приложения.",
+    complaint_generated: "Пользователь сгенерировал жалобу.",
+    rehab_generated: "Пользователь сгенерировал заявление на реабилитацию.",
+    complaint_draft_saved: "Пользователь сохранил черновик жалобы.",
+    complaint_draft_cleared: "Пользователь очистил черновик жалобы.",
+    ai_suggest: "AI обработал и улучшил текст жалобы.",
+    ai_extract_principal: "AI распознал данные с документа.",
+    ai_exam_scoring: "AI проверил экзаменационные ответы и вернул статистику по cache, эвристикам и LLM.",
+    exam_import_sync_error: "Импорт из Google Sheets завершился ошибкой.",
+    exam_import_score_failures: "Во время массовой проверки экзаменов часть строк не обработалась.",
+    exam_import_row_score_error: "Проверка одной строки экзамена завершилась ошибкой.",
+    admin_verify_email: "Администратор подтвердил email пользователя.",
+    admin_block_user: "Администратор заблокировал пользователя.",
+    admin_unblock_user: "Администратор разблокировал пользователя.",
+    admin_grant_tester: "Администратор выдал статус тестера.",
+    admin_revoke_tester: "Администратор снял статус тестера.",
+    admin_grant_gka: "Администратор присвоил тип ГКА-ЗГКА.",
+    admin_revoke_gka: "Администратор снял тип ГКА-ЗГКА.",
+    admin_update_email: "Администратор изменил email пользователя.",
+    admin_reset_password: "Администратор задал новый пароль пользователю.",
+  };
+  return descriptions[normalized] || "Системное событие без дополнительного описания.";
+}
+
+function showMessage(text) {
+  showText(messageHost, text);
+}
+
+function clearMessage() {
+  clearText(messageHost);
+}
+
+function formatNumber(value) {
+  return new Intl.NumberFormat("ru-RU").format(Number(value || 0));
+}
+
+function renderBadge(text, tone = "neutral") {
+  return `<span class="admin-badge admin-badge--${tone}">${escapeHtml(text)}</span>`;
+}
+
+function renderFilterChip(label, key) {
+  return `
+    <button type="button" class="admin-filter-chip" data-clear-filter="${escapeHtml(key)}">
+      <span>${escapeHtml(label)}</span>
+      <span class="admin-filter-chip__close" aria-hidden="true">×</span>
+    </button>
+  `;
+}
+
+function renderTotals(totals) {
+  const items = [
+    ["Пользователи", totals.users_total, "Всего аккаунтов в системе"],
+    ["API-запросы", totals.api_requests_total, "Накопленная активность API"],
+    ["Жалобы", totals.complaints_total, "Сгенерированные жалобы"],
+    ["Реабилитации", totals.rehabs_total, "Сгенерированные реабилитации"],
+    ["AI suggest", totals.ai_suggest_total, "Текстовые AI-операции"],
+    ["AI OCR", totals.ai_ocr_total, "Распознавание документов"],
+    ["AI exam runs", totals.ai_exam_scoring_total || 0, "Сколько раз запускалась AI-проверка экзаменов"],
+    ["Exam rows", totals.ai_exam_scoring_rows || 0, "Сколько строк экзамена реально проверено"],
+    ["Exam answers", totals.ai_exam_scoring_answers || 0, "Сколько ответов прошло через scoring"],
+    ["Rule-based", totals.ai_exam_heuristic_total || 0, "Ответы, закрытые без LLM"],
+    ["Cache hits", totals.ai_exam_cache_total || 0, "Ответы, взятые из кэша"],
+    ["LLM answers", totals.ai_exam_llm_total || 0, "Ответы, реально ушедшие в модель"],
+    ["LLM calls", totals.ai_exam_llm_calls_total || 0, "Сколько batch-вызовов сделали к модели"],
+    ["Exam failures", totals.ai_exam_failure_total || 0, "Ошибки exam scoring и импорта"],
+    ["Входящий трафик", `${formatNumber(totals.request_bytes_total)} B`, "Суммарный размер запросов"],
+    ["Исходящий трафик", `${formatNumber(totals.response_bytes_total)} B`, "Суммарный размер ответов"],
+    ["Ресурсные единицы", formatNumber(totals.resource_units_total), "Условная нагрузка"],
+    ["Средний API ответ", `${formatNumber(totals.avg_api_duration_ms)} ms`, "Средняя длительность API"],
+    ["События за 24 часа", totals.events_last_24h, "Последняя суточная активность"],
+  ];
+
+  totalsHost.innerHTML = items
+    .map(
+      ([label, value, hint]) => `
+        <article class="legal-subcard admin-total-card">
+          <div class="legal-field__label">${escapeHtml(label)}</div>
+          <div class="legal-section__title">${escapeHtml(String(value))}</div>
+          <p class="legal-section__description">${escapeHtml(hint)}</p>
+        </article>
+      `,
+    )
+    .join("");
+}
+
+function renderTopEndpoints(items) {
+  if (!items.length) {
+    endpointsHost.innerHTML = '<p class="legal-section__description">Пока нет данных по API-запросам.</p>';
+    return;
+  }
+
+  endpointsHost.innerHTML = `
+    <div class="legal-table-shell">
+      <table class="legal-table admin-table admin-table--compact">
+        <thead><tr><th>Эндпоинт</th><th>Что делает</th><th>Запросов</th></tr></thead>
+        <tbody>
+          ${items
+            .map(
+              (item) => `
+                <tr>
+                  <td class="admin-table__path" title="${escapeHtml(item.path || "-")}">${escapeHtml(item.path || "-")}</td>
+                  <td>${escapeHtml(describeApiPath(item.path || ""))}</td>
+                  <td>${escapeHtml(String(item.count || 0))}</td>
+                </tr>
+              `,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderExamImport(summary) {
+  if (!examImportHost) {
+    return;
+  }
+
+  if (!summary) {
+    examImportHost.innerHTML = '<p class="legal-section__description">Пока нет данных по exam import.</p>';
+    return;
+  }
+
+  const lastSync = summary.last_sync || {};
+  const lastScore = summary.last_score || {};
+  const recentFailures = [...(summary.recent_failures || []), ...(summary.recent_row_failures || [])];
+
+  examImportHost.innerHTML = `
+    <div class="admin-exam-grid">
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Ожидают scoring</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary.pending_scores || 0))}</strong>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Последний sync</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(lastSync.created_at || "—")}</strong>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Последний scoring</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(lastScore.created_at || "—")}</strong>
+      </article>
+    </div>
+    <div class="admin-exam-meta">
+      <div class="admin-user-cell">
+        <strong>${escapeHtml(lastSync.path || "/api/exam-import/sync")}</strong>
+        <span class="admin-user-cell__secondary">${escapeHtml(lastSync.status_code ? `Статус ${lastSync.status_code}` : "Запусков пока не было")}</span>
+      </div>
+      <div class="admin-user-cell">
+        <strong>${escapeHtml(lastScore.path || "/api/exam-import/score")}</strong>
+        <span class="admin-user-cell__secondary">${escapeHtml(lastScore.status_code ? `Статус ${lastScore.status_code}` : "Проверок пока не было")}</span>
+      </div>
+    </div>
+    ${
+      recentFailures.length
+        ? `
+          <div class="legal-table-shell">
+            <table class="legal-table admin-table admin-table--compact">
+              <thead>
+                <tr><th>Время</th><th>Тип</th><th>Путь</th><th>Что случилось</th></tr>
+              </thead>
+              <tbody>
+                ${recentFailures
+                  .map(
+                    (event) => `
+                      <tr>
+                        <td>${escapeHtml(event.created_at || "-")}</td>
+                        <td>${renderBadge(event.event_type || "-", "danger")}</td>
+                        <td class="admin-table__path" title="${escapeHtml(event.path || "-")}">${escapeHtml(event.path || "-")}</td>
+                        <td>${escapeHtml((event.meta && (event.meta.error || event.meta.error_type)) || describeEventType(event.event_type || ""))}</td>
+                      </tr>
+                    `,
+                  )
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        `
+        : '<p class="legal-section__description">Последних ошибок exam import и AI-scoring не найдено.</p>'
+    }
+  `;
+}
+
+function renderActiveFilters(filters) {
+  if (!activeFiltersHost) {
+    return;
+  }
+
+  const chips = [];
+  if (filters.search) chips.push(renderFilterChip(`Пользователь: ${filters.search}`, "search"));
+  if (filters.user_sort && filters.user_sort !== "complaints") {
+    const sortLabels = {
+      api_requests: "Сортировка: API-активность",
+      last_seen: "Сортировка: последняя активность",
+      created_at: "Сортировка: дата регистрации",
+      username: "Сортировка: username",
+    };
+    chips.push(renderFilterChip(sortLabels[filters.user_sort] || `Сортировка: ${filters.user_sort}`, "user_sort"));
+  }
+  if (filters.blocked_only) chips.push(renderFilterChip("Только заблокированные", "blocked_only"));
+  if (filters.tester_only) chips.push(renderFilterChip("Только тестеры", "tester_only"));
+  if (filters.gka_only) chips.push(renderFilterChip("Только ГКА-ЗГКА", "gka_only"));
+  if (filters.unverified_only) chips.push(renderFilterChip("Только без email verify", "unverified_only"));
+  if (filters.event_search) chips.push(renderFilterChip(`События: ${filters.event_search}`, "event_search"));
+  if (filters.event_type) chips.push(renderFilterChip(`Тип: ${filters.event_type}`, "event_type"));
+  if (filters.failed_events_only) chips.push(renderFilterChip("Только ошибки", "failed_events_only"));
+
+  if (!chips.length) {
+    activeFiltersHost.innerHTML = "";
+    activeFiltersHost.hidden = true;
+    return;
+  }
+
+  activeFiltersHost.innerHTML = chips.join("");
+  activeFiltersHost.hidden = false;
+}
+
+function renderUserStatuses(user) {
+  const badges = [
+    user.email_verified ? renderBadge("Email OK", "success") : renderBadge("Email не подтвержден", "muted"),
+    user.access_blocked ? renderBadge("Заблокирован", "danger") : renderBadge("Активен", "success-soft"),
+    user.is_tester ? renderBadge("Тестер", "info") : renderBadge("Обычный", "neutral"),
+    user.is_gka ? renderBadge("ГКА-ЗГКА", "info") : null,
+  ];
+  return `<div class="admin-badge-row">${badges.filter(Boolean).join("")}</div>`;
+}
+
+function renderUserActivity(user) {
+  return `
+    <div class="admin-activity">
+      <div class="admin-activity__main">
+        <strong>${escapeHtml(String(user.complaints || 0))}</strong><span>жалоб</span>
+        <strong>${escapeHtml(String(user.rehabs || 0))}</strong><span>rehab</span>
+      </div>
+      <div class="admin-activity__meta">
+        <span>AI: ${escapeHtml(String((user.ai_suggestions || 0) + (user.ai_ocr_requests || 0)))}</span>
+        <span>API: ${escapeHtml(String(user.api_requests || 0))}</span>
+        <span>RU: ${escapeHtml(String(user.resource_units || 0))}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderUsers(users, userSort = "complaints") {
+  userIndex.clear();
+  users.forEach((user) => {
+    userIndex.set(String(user.username || "").toLowerCase(), user);
+  });
+
+  if (!users.length) {
+    usersHost.innerHTML = '<p class="legal-section__description">По текущему фильтру пользователи не найдены.</p>';
+    return;
+  }
+
+  usersHost.innerHTML = `
+    <div class="admin-section-toolbar">
+      <p class="legal-section__description">Показано пользователей: ${escapeHtml(String(users.length))}. Сортировка: ${escapeHtml(String(userSort))}</p>
+    </div>
+    <div class="legal-table-shell">
+      <table class="legal-table admin-table">
+        <thead>
+          <tr>
+            <th>Пользователь</th>
+            <th>Статусы</th>
+            <th>Активность</th>
+            <th>Последняя активность</th>
+            <th>Управление</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${users
+            .map(
+              (user) => `
+                <tr class="admin-user-row">
+                  <td>
+                    <div class="admin-user-cell">
+                      <strong class="admin-user-cell__name">${escapeHtml(user.username || "-")}</strong>
+                      <span class="admin-user-cell__secondary" title="${escapeHtml(user.email || "-")}">${escapeHtml(user.email || "-")}</span>
+                    </div>
+                  </td>
+                  <td>${renderUserStatuses(user)}</td>
+                  <td>${renderUserActivity(user)}</td>
+                  <td>
+                    <div class="admin-user-cell">
+                      <strong>${escapeHtml(user.last_seen_at || "—")}</strong>
+                      <span class="admin-user-cell__secondary">${escapeHtml(user.access_blocked_reason || "Без причины блокировки")}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <button type="button" class="secondary-button admin-user-open-btn" data-open-user="${escapeHtml(user.username || "")}">Управление</button>
+                  </td>
+                </tr>
+              `,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderEvents(events) {
+  if (!events.length) {
+    eventsHost.innerHTML = '<p class="legal-section__description">Событий по текущему фильтру нет.</p>';
+    return;
+  }
+
+  eventsHost.innerHTML = `
+    <div class="admin-section-toolbar">
+      <p class="legal-section__description">Показано событий: ${escapeHtml(String(events.length))}</p>
+    </div>
+    <div class="legal-table-shell">
+      <table class="legal-table admin-table admin-table--compact">
+        <thead>
+          <tr>
+            <th>Время</th>
+            <th>Пользователь</th>
+            <th>Тип</th>
+            <th>Путь</th>
+            <th>Статус</th>
+            <th>ms</th>
+            <th>Ресурсы</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${events
+            .map((event) => {
+              const statusValue = event.status_code ?? "—";
+              const statusTone = Number(event.status_code || 0) >= 400 ? "danger" : "neutral";
+              return `
+                <tr>
+                  <td>${escapeHtml(event.created_at || "-")}</td>
+                  <td>${escapeHtml(event.username || "-")}</td>
+                  <td>
+                    <div class="admin-user-cell">
+                      ${renderBadge(event.event_type || "-", "neutral")}
+                      <span class="admin-user-cell__secondary">${escapeHtml(describeEventType(event.event_type || ""))}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="admin-user-cell">
+                      <strong class="admin-table__path" title="${escapeHtml(event.path || "-")}">${escapeHtml(event.path || "-")}</strong>
+                      <span class="admin-user-cell__secondary">${escapeHtml(describeApiPath(event.path || ""))}</span>
+                    </div>
+                  </td>
+                  <td>${renderBadge(String(statusValue), statusTone)}</td>
+                  <td>${escapeHtml(String(event.duration_ms ?? "-"))}</td>
+                  <td>${escapeHtml(String(event.resource_units ?? 0))}</td>
+                </tr>
+              `;
+            })
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderAdminAudit(events) {
+  if (!adminEventsHost) {
+    return;
+  }
+
+  const adminEvents = events.filter((event) => String(event.event_type || "").startsWith("admin_"));
+  if (!adminEvents.length) {
+    adminEventsHost.innerHTML = '<p class="legal-section__description">Админ-действий по текущему фильтру пока не видно.</p>';
+    return;
+  }
+
+  adminEventsHost.innerHTML = `
+    <div class="admin-section-toolbar">
+      <p class="legal-section__description">Показано админ-действий: ${escapeHtml(String(adminEvents.length))}</p>
+    </div>
+    <div class="legal-table-shell">
+      <table class="legal-table admin-table admin-table--compact">
+        <thead>
+          <tr>
+            <th>Время</th>
+            <th>Администратор</th>
+            <th>Действие</th>
+            <th>Запрос</th>
+            <th>Статус</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${adminEvents
+            .map((event) => {
+              const statusValue = event.status_code ?? "—";
+              const statusTone = Number(event.status_code || 0) >= 400 ? "danger" : "success-soft";
+              return `
+                <tr>
+                  <td>${escapeHtml(event.created_at || "-")}</td>
+                  <td>${escapeHtml(event.username || "-")}</td>
+                  <td>
+                    <div class="admin-user-cell">
+                      ${renderBadge(event.event_type || "-", "info")}
+                      <span class="admin-user-cell__secondary">${escapeHtml(describeEventType(event.event_type || ""))}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="admin-user-cell">
+                      <strong class="admin-table__path" title="${escapeHtml(event.path || "-")}">${escapeHtml(event.path || "-")}</strong>
+                      <span class="admin-user-cell__secondary">${escapeHtml(describeApiPath(event.path || ""))}</span>
+                    </div>
+                  </td>
+                  <td>${renderBadge(String(statusValue), statusTone)}</td>
+                </tr>
+              `;
+            })
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function currentFilters() {
+  return {
+    search: userSearchField?.value?.trim() || "",
+    user_sort: userSortField?.value?.trim() || "complaints",
+    blocked_only: Boolean(blockedOnlyField?.checked),
+    tester_only: Boolean(testerOnlyField?.checked),
+    gka_only: Boolean(gkaOnlyField?.checked),
+    unverified_only: Boolean(unverifiedOnlyField?.checked),
+    event_search: eventSearchField?.value?.trim() || "",
+    event_type: eventTypeField?.value?.trim() || "",
+    failed_events_only: Boolean(failedEventsOnlyField?.checked),
+  };
+}
+
+function buildQuery(paramsObject, allowedKeys) {
+  const params = new URLSearchParams();
+  allowedKeys.forEach((key) => {
+    const value = paramsObject[key];
+    if (value === undefined || value === null || value === "" || value === false) {
+      return;
+    }
+    params.set(key, value === true ? "true" : String(value));
+  });
+  return params.toString();
+}
+
+function buildOverviewUrl() {
+  const query = buildQuery(currentFilters(), [
+    "search",
+    "user_sort",
+    "blocked_only",
+    "tester_only",
+    "gka_only",
+    "unverified_only",
+    "event_search",
+    "event_type",
+    "failed_events_only",
+  ]);
+  return query ? `/api/admin/overview?${query}` : "/api/admin/overview";
+}
+
+function buildUsersCsvUrl() {
+  const query = buildQuery(currentFilters(), [
+    "search",
+    "user_sort",
+    "blocked_only",
+    "tester_only",
+    "gka_only",
+    "unverified_only",
+  ]);
+  return query ? `/api/admin/users.csv?${query}` : "/api/admin/users.csv";
+}
+
+function buildEventsCsvUrl() {
+  const query = buildQuery(currentFilters(), ["event_search", "event_type", "failed_events_only"]);
+  return query ? `/api/admin/events.csv?${query}` : "/api/admin/events.csv";
+}
+
+function renderUserModal(user) {
+  if (!userModalBody || !user) {
+    return;
+  }
+
+  userModalBody.innerHTML = `
+    <div class="legal-status-row legal-status-row--three">
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Пользователь</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(user.username || "-")}</strong>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Email</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(user.email || "-")}</strong>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Последняя активность</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(user.last_seen_at || "—")}</strong>
+      </article>
+    </div>
+
+    <div class="legal-subcard admin-user-detail-card">
+      <div class="legal-subcard__header">
+        <div>
+          <span class="legal-field__label">Статусы</span>
+          <p class="legal-section__description">Ключевые флаги и причина блокировки.</p>
+        </div>
+      </div>
+      ${renderUserStatuses(user)}
+      <div class="admin-user-detail-grid">
+        <div><span class="legal-field__label">Причина блокировки</span><div class="admin-user-detail-text">${escapeHtml(user.access_blocked_reason || "Не указана")}</div></div>
+        <div><span class="legal-field__label">Создан</span><div class="admin-user-detail-text">${escapeHtml(user.created_at || "—")}</div></div>
+      </div>
+    </div>
+
+    <div class="legal-subcard admin-user-detail-card">
+      <div class="legal-subcard__header">
+        <div>
+          <span class="legal-field__label">Активность</span>
+          <p class="legal-section__description">Краткая сводка по действиям пользователя.</p>
+        </div>
+      </div>
+      <div class="admin-user-summary-grid">
+        <article class="legal-status-card"><span class="legal-status-card__label">Жалобы</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.complaints || 0))}</strong></article>
+        <article class="legal-status-card"><span class="legal-status-card__label">Rehab</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.rehabs || 0))}</strong></article>
+        <article class="legal-status-card"><span class="legal-status-card__label">AI</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String((user.ai_suggestions || 0) + (user.ai_ocr_requests || 0)))}</strong></article>
+        <article class="legal-status-card"><span class="legal-status-card__label">API</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.api_requests || 0))}</strong></article>
+        <article class="legal-status-card"><span class="legal-status-card__label">Ресурсы</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.resource_units || 0))}</strong></article>
+      </div>
+    </div>
+
+    <div class="legal-subcard admin-user-detail-card">
+      <div class="legal-subcard__header">
+        <div>
+          <span class="legal-field__label">Быстрые действия</span>
+          <p class="legal-section__description">Управление доступом и учетной записью пользователя.</p>
+        </div>
+      </div>
+      <div class="admin-user-actions">
+        <button type="button" class="ghost-button" data-verify-email="${escapeHtml(user.username || "")}">Подтвердить email</button>
+        <button type="button" class="ghost-button" data-change-email="${escapeHtml(user.username || "")}" data-current-email="${escapeHtml(user.email || "")}">Сменить email</button>
+        <button type="button" class="ghost-button" data-reset-password="${escapeHtml(user.username || "")}">Сбросить пароль</button>
+        ${
+          user.is_tester
+            ? `<button type="button" class="ghost-button" data-revoke-tester="${escapeHtml(user.username || "")}">Снять тестера</button>`
+            : `<button type="button" class="ghost-button" data-grant-tester="${escapeHtml(user.username || "")}">Выдать тестера</button>`
+        }
+        ${
+          user.is_gka
+            ? `<button type="button" class="ghost-button" data-revoke-gka="${escapeHtml(user.username || "")}">Снять ГКА-ЗГКА</button>`
+            : `<button type="button" class="ghost-button" data-grant-gka="${escapeHtml(user.username || "")}">Выдать ГКА-ЗГКА</button>`
+        }
+        ${
+          user.access_blocked
+            ? `<button type="button" class="ghost-button" data-unblock-user="${escapeHtml(user.username || "")}">Разблокировать</button>`
+            : `<button type="button" class="ghost-button" data-block-user="${escapeHtml(user.username || "")}">Заблокировать</button>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+function openUserModal(username) {
+  const user = userIndex.get(String(username || "").toLowerCase());
+  if (!user) {
+    return;
+  }
+  selectedUser = user.username || "";
+  renderUserModal(user);
+  userModal.open();
+}
+
+async function loadAdminOverview() {
+  clearText(errorsHost);
+  clearMessage();
+  try {
+    const response = await apiFetch(buildOverviewUrl());
+    if (!response.ok) {
+      const payload = await parsePayload(response);
+      showText(errorsHost, payload.detail || "Не удалось загрузить данные админ-панели.");
+      return;
+    }
+
+    const payload = await parsePayload(response);
+    renderActiveFilters(currentFilters());
+    renderTotals(payload.totals || {});
+    renderExamImport(payload.exam_import || null);
+    renderTopEndpoints(payload.top_endpoints || []);
+    renderUsers(payload.users || [], payload.filters?.user_sort || "complaints");
+    renderAdminAudit(payload.recent_events || []);
+    renderEvents(payload.recent_events || []);
+
+    if (selectedUser && userIndex.has(String(selectedUser).toLowerCase())) {
+      renderUserModal(userIndex.get(String(selectedUser).toLowerCase()));
+    }
+  } catch (error) {
+    showText(errorsHost, error?.message || "Не удалось загрузить данные админ-панели.");
+  }
+}
+
+function scheduleOverviewReload() {
+  if (adminSearchTimer) {
+    clearTimeout(adminSearchTimer);
+  }
+  adminSearchTimer = window.setTimeout(() => {
+    loadAdminOverview();
+  }, 300);
+}
+
+function resetFilters() {
+  if (userSearchField) userSearchField.value = "";
+  if (userSortField) userSortField.value = "complaints";
+  if (blockedOnlyField) blockedOnlyField.checked = false;
+  if (testerOnlyField) testerOnlyField.checked = false;
+  if (gkaOnlyField) gkaOnlyField.checked = false;
+  if (unverifiedOnlyField) unverifiedOnlyField.checked = false;
+  if (eventSearchField) eventSearchField.value = "";
+  if (eventTypeField) eventTypeField.value = "";
+  if (failedEventsOnlyField) failedEventsOnlyField.checked = false;
+  loadAdminOverview();
+}
+
+function clearFilter(key) {
+  if (key === "search" && userSearchField) userSearchField.value = "";
+  if (key === "user_sort" && userSortField) userSortField.value = "complaints";
+  if (key === "blocked_only" && blockedOnlyField) blockedOnlyField.checked = false;
+  if (key === "tester_only" && testerOnlyField) testerOnlyField.checked = false;
+  if (key === "gka_only" && gkaOnlyField) gkaOnlyField.checked = false;
+  if (key === "unverified_only" && unverifiedOnlyField) unverifiedOnlyField.checked = false;
+  if (key === "event_search" && eventSearchField) eventSearchField.value = "";
+  if (key === "event_type" && eventTypeField) eventTypeField.value = "";
+  if (key === "failed_events_only" && failedEventsOnlyField) failedEventsOnlyField.checked = false;
+  loadAdminOverview();
+}
+
+function downloadCsv(url) {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+async function performAdminAction(url, successText, body = null) {
+  clearText(errorsHost);
+  clearMessage();
+  try {
+    const response = await apiFetch(url, {
+      method: "POST",
+      body: body ? JSON.stringify(body) : null,
+    });
+    if (!response.ok) {
+      const payload = await parsePayload(response);
+      showText(errorsHost, payload.detail || "Не удалось выполнить действие администратора.");
+      return;
+    }
+    showMessage(successText);
+    await loadAdminOverview();
+  } catch (error) {
+    showText(errorsHost, error?.message || "Не удалось выполнить действие администратора.");
+  }
+}
+
+async function handleAdminAction(target) {
+  const verifyUsername = target.getAttribute("data-verify-email");
+  if (verifyUsername) {
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(verifyUsername)}/verify-email`, "Email пользователя подтвержден администратором.");
+    return true;
+  }
+
+  const unblockUsername = target.getAttribute("data-unblock-user");
+  if (unblockUsername) {
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(unblockUsername)}/unblock`, "Доступ пользователя восстановлен.");
+    return true;
+  }
+
+  const blockUsername = target.getAttribute("data-block-user");
+  if (blockUsername) {
+    const reason = window.prompt("Причина блокировки (необязательно):", "") || "";
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(blockUsername)}/block`, "Доступ пользователя заблокирован.", { reason });
+    return true;
+  }
+
+  const grantTesterUsername = target.getAttribute("data-grant-tester");
+  if (grantTesterUsername) {
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(grantTesterUsername)}/grant-tester`, "Статус тестера выдан.");
+    return true;
+  }
+
+  const revokeTesterUsername = target.getAttribute("data-revoke-tester");
+  if (revokeTesterUsername) {
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(revokeTesterUsername)}/revoke-tester`, "Статус тестера снят.");
+    return true;
+  }
+
+  const grantGkaUsername = target.getAttribute("data-grant-gka");
+  if (grantGkaUsername) {
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(grantGkaUsername)}/grant-gka`, "Тип ГКА-ЗГКА присвоен.");
+    return true;
+  }
+
+  const revokeGkaUsername = target.getAttribute("data-revoke-gka");
+  if (revokeGkaUsername) {
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(revokeGkaUsername)}/revoke-gka`, "Тип ГКА-ЗГКА снят.");
+    return true;
+  }
+
+  const changeEmailUsername = target.getAttribute("data-change-email");
+  if (changeEmailUsername) {
+    const currentEmail = target.getAttribute("data-current-email") || "";
+    const email = window.prompt("Новый email пользователя:", currentEmail) || "";
+    if (!email.trim()) {
+      return true;
+    }
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(changeEmailUsername)}/email`, "Email пользователя обновлен.", { email });
+    return true;
+  }
+
+  const resetPasswordUsername = target.getAttribute("data-reset-password");
+  if (resetPasswordUsername) {
+    const password = window.prompt("Новый пароль пользователя:") || "";
+    if (!password.trim()) {
+      return true;
+    }
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(resetPasswordUsername)}/reset-password`, "Пароль пользователя обновлен.", { password });
+    return true;
+  }
+
+  return false;
+}
+
+usersHost.addEventListener("click", async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const openUser = target.getAttribute("data-open-user");
+  if (openUser) {
+    openUserModal(openUser);
+  }
+});
+
+userModalBody?.addEventListener("click", async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  await handleAdminAction(target);
+});
+
+userSearchField?.addEventListener("input", scheduleOverviewReload);
+userSortField?.addEventListener("change", loadAdminOverview);
+blockedOnlyField?.addEventListener("change", loadAdminOverview);
+testerOnlyField?.addEventListener("change", loadAdminOverview);
+gkaOnlyField?.addEventListener("change", loadAdminOverview);
+unverifiedOnlyField?.addEventListener("change", loadAdminOverview);
+eventSearchField?.addEventListener("input", scheduleOverviewReload);
+eventTypeField?.addEventListener("change", loadAdminOverview);
+failedEventsOnlyField?.addEventListener("change", loadAdminOverview);
+resetFiltersButton?.addEventListener("click", resetFilters);
+exportUsersButton?.addEventListener("click", () => downloadCsv(buildUsersCsvUrl()));
+exportEventsButton?.addEventListener("click", () => downloadCsv(buildEventsCsvUrl()));
+activeFiltersHost?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  const chip = target.closest("[data-clear-filter]");
+  if (!(chip instanceof HTMLElement)) {
+    return;
+  }
+  clearFilter(chip.getAttribute("data-clear-filter") || "");
+});
+
+userModal.bind(
+  document.getElementById("admin-user-modal-close"),
+  document.getElementById("admin-user-modal-ok"),
+);
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    userModal.close();
+  }
+});
+
+initCollapsibles();
+loadAdminOverview();

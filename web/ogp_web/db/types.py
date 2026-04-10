@@ -1,0 +1,33 @@
+from __future__ import annotations
+
+from typing import Any, Mapping, Protocol
+
+
+RowMapping = Mapping[str, Any]
+
+
+class DbCursorLike(Protocol):
+    @property
+    def rowcount(self) -> int: ...
+
+    def fetchone(self) -> RowMapping | None: ...
+
+    def fetchall(self) -> list[RowMapping]: ...
+
+
+class DbConnectionLike(Protocol):
+    def execute(self, query: str, params: tuple[Any, ...] = ()) -> DbCursorLike: ...
+
+    def commit(self) -> None: ...
+
+    def rollback(self) -> None: ...
+
+    def close(self) -> None: ...
+
+
+class DatabaseBackend(Protocol):
+    def connect(self) -> DbConnectionLike: ...
+
+    def healthcheck(self) -> dict[str, object]: ...
+
+    def map_exception(self, exc: Exception) -> Exception: ...

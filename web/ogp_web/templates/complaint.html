@@ -1,0 +1,43 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}{{ app_title }} - {{ "Жалоба тест" if complaint_mode == "test" else "Жалоба" }}{% endblock %}
+
+{% block content %}
+{% set is_test_mode = complaint_mode == "test" %}
+
+<div class="legal-page legal-page--complaint">
+  {% include "partials/complaint/header.html" %}
+  {% include "partials/complaint/tabs.html" %}
+
+  <div id="app-message" class="success-box legal-message" hidden></div>
+  <div id="errors" class="errors legal-message" hidden></div>
+
+  <form id="complaint-form" class="legal-workspace legal-workspace--wide" novalidate data-username="{{ username }}">
+    <div class="legal-workspace__main">
+      {% include "partials/complaint/victim_section.html" %}
+      {% include "partials/complaint/context_section.html" %}
+      {% include "partials/complaint/description_section.html" %}
+      {% include "partials/complaint/evidence_section.html" %}
+      {% include "partials/complaint/result_section.html" %}
+    </div>
+  </form>
+</div>
+
+{% include "partials/complaint/modals.html" %}
+
+<template id="url-field-template">
+  <label class="inline-field legal-repeat-field">
+    <input type="url" placeholder="https://example.com/material">
+    <button type="button" class="ghost-button remove-field">Удалить</button>
+  </label>
+</template>
+{% if preset_payload_json %}
+<script id="complaint-preset" type="application/json">{{ preset_payload_json|safe }}</script>
+{% endif %}
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', path='shared/form_helpers.js') }}?v={{ static_asset_version }}" defer></script>
+<script src="{{ url_for('static', path='shared/complaint_payload.js') }}?v={{ static_asset_version }}" defer></script>
+<script src="{{ url_for('static', path='pages/complaint.js') }}?v={{ static_asset_version }}" defer></script>
+{% endblock %}
