@@ -9,16 +9,8 @@
     <div class="legal-header__main">
       <p class="legal-header__eyebrow">OGP Builder</p>
       <h1 class="legal-header__title">Вход</h1>
-      <p class="legal-header__description">Один кабинет для регистрации, подтверждения email, восстановления пароля и перехода к рабочим формам без лишних шагов.</p>
+      <p class="legal-header__description">Только основные действия на виду: вход и регистрация. Восстановление доступа и повторная отправка email открываются отдельно, когда они действительно нужны.</p>
     </div>
-
-    <aside class="legal-user-card legal-user-card--auth">
-      <div class="legal-user-card__top">
-        <span class="legal-user-card__label">Статус OpenAI</span>
-        <strong class="legal-user-card__value legal-user-card__value--status">{{ "Ключ найден" if openai_enabled else "Ключ не задан" }}</strong>
-      </div>
-      <p class="legal-user-card__text">Регистрация и работа с аккаунтом доступны отдельно от AI-функций, поэтому войти в кабинет можно и без генерации текста.</p>
-    </aside>
   </header>
 
   <section class="legal-auth-shell">
@@ -28,7 +20,7 @@
           <span class="legal-user-card__label">Текущая сессия</span>
           <strong id="active-session-username" class="legal-user-card__value"></strong>
         </div>
-        <p class="legal-user-card__text">На этом домене уже выполнен вход. Можно продолжить работу или выйти и войти под другим пользователем.</p>
+        <p class="legal-user-card__text">На этом домене вход уже выполнен. Можно продолжить работу или выйти и сменить аккаунт.</p>
         <div class="legal-user-card__actions">
           <a href="/complaint" class="primary-button">Продолжить</a>
           <button id="active-session-logout" type="button" class="ghost-button">Выйти и сменить аккаунт</button>
@@ -38,7 +30,7 @@
       <section class="panel legal-card legal-section legal-section--auth">
         <div class="legal-section__header">
           <div>
-            <p class="legal-section__eyebrow">Основной сценарий</p>
+            <p class="legal-section__eyebrow">Основное</p>
             <h2 class="legal-section__title">Войти в кабинет</h2>
             <p class="legal-section__description">Используйте логин или email, который привязан к аккаунту.</p>
           </div>
@@ -60,6 +52,7 @@
           <div class="actions legal-toolbar legal-toolbar--result">
             <button type="submit" class="primary-button">Войти</button>
             <button id="forgot-password-toggle" type="button" class="ghost-button">Забыли пароль?</button>
+            <button id="resend-toggle" type="button" class="ghost-button">Нет письма?</button>
           </div>
         </form>
       </section>
@@ -69,7 +62,7 @@
           <div>
             <p class="legal-section__eyebrow">Новый аккаунт</p>
             <h2 class="legal-section__title">Регистрация</h2>
-            <p class="legal-section__description">Пароль должен содержать минимум 10 символов, заглавную и строчную буквы, цифру и спецсимвол.</p>
+            <p class="legal-section__description">Логин, email и надежный пароль.</p>
           </div>
         </div>
 
@@ -99,16 +92,31 @@
     </div>
 
     <aside class="legal-auth-shell__side">
-      <section class="panel legal-card legal-section legal-section--auth-side">
+      <section class="panel legal-card legal-section legal-section--auth-side legal-section--auth-compact">
+        <div class="legal-section__header">
+          <div>
+            <p class="legal-section__eyebrow">Помощь</p>
+            <h2 class="legal-section__title">Дополнительные действия</h2>
+            <p class="legal-section__description">Открывайте только тот сценарий, который нужен сейчас.</p>
+          </div>
+        </div>
+
+        <div class="legal-auth-support-actions">
+          <button id="resend-toggle-side" type="button" class="secondary-button">Повторно отправить email</button>
+          <button id="forgot-password-toggle-side" type="button" class="ghost-button">Сбросить пароль</button>
+        </div>
+      </section>
+
+      <section id="resend-form" class="panel legal-card legal-section legal-section--auth-side" hidden>
         <div class="legal-section__header">
           <div>
             <p class="legal-section__eyebrow">Подтверждение email</p>
             <h2 class="legal-section__title">Повторная отправка</h2>
-            <p class="legal-section__description">Если письмо не пришло, отправьте ссылку повторно на тот же email.</p>
+            <p class="legal-section__description">Отправим ссылку еще раз на тот же email.</p>
           </div>
         </div>
 
-        <form id="resend-form" class="legal-auth-form">
+        <form class="legal-auth-form">
           <div class="legal-field-grid">
             <label class="legal-field">
               <span class="legal-field__label">Email</span>
@@ -118,6 +126,7 @@
 
           <div class="actions legal-toolbar legal-toolbar--result">
             <button type="submit" class="secondary-button">Отправить ссылку еще раз</button>
+            <button id="resend-cancel" type="button" class="ghost-button">Скрыть</button>
           </div>
         </form>
       </section>
@@ -127,7 +136,7 @@
           <div>
             <p class="legal-section__eyebrow">Восстановление</p>
             <h2 class="legal-section__title">Сброс пароля</h2>
-            <p class="legal-section__description">Мы отправим ссылку для установки нового пароля. Если SMTP временно недоступен, ссылка появится в модальном окне.</p>
+            <p class="legal-section__description">Мы отправим ссылку для установки нового пароля.</p>
           </div>
         </div>
 
@@ -141,33 +150,9 @@
 
           <div class="actions legal-toolbar legal-toolbar--result">
             <button type="submit" class="primary-button">Сбросить пароль</button>
-            <button id="forgot-password-cancel" type="button" class="ghost-button">Отмена</button>
+            <button id="forgot-password-cancel" type="button" class="ghost-button">Скрыть</button>
           </div>
         </form>
-      </section>
-
-      <section class="panel legal-card legal-section legal-section--auth-note">
-        <div class="legal-section__header">
-          <div>
-            <p class="legal-section__eyebrow">Как начать</p>
-            <h2 class="legal-section__title">Порядок работы</h2>
-          </div>
-        </div>
-
-        <div class="legal-auth-note">
-          <article class="legal-auth-note__item">
-            <strong>01</strong>
-            <span>Создайте аккаунт с логином, email и надежным паролем.</span>
-          </article>
-          <article class="legal-auth-note__item">
-            <strong>02</strong>
-            <span>Подтвердите email по ссылке из письма или из fallback-окна.</span>
-          </article>
-          <article class="legal-auth-note__item">
-            <strong>03</strong>
-            <span>После входа заполните профиль и переходите к рабочим формам.</span>
-          </article>
-        </div>
       </section>
     </aside>
   </section>
@@ -177,7 +162,7 @@
   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="success-modal-title">
     <button id="success-modal-close" class="modal-close" type="button" aria-label="Закрыть окно">×</button>
     <p class="eyebrow">Регистрация</p>
-    <h2 id="success-modal-title">Аккаунт создан</h2>
+    <h2 id="success-modal-title">Действие выполнено</h2>
     <div id="success-modal-text" class="success-box modal-message"></div>
     <div class="actions modal-actions">
       <button id="success-modal-ok" class="primary-button" type="button">Понятно</button>

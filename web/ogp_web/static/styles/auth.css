@@ -174,7 +174,7 @@
 }
 
 .legal-header--auth {
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  grid-template-columns: minmax(0, 880px);
 }
 
 .legal-user-card--auth .legal-user-card__value--status {
@@ -193,6 +193,15 @@
 .legal-auth-shell__side {
   display: grid;
   gap: 22px;
+}
+
+.legal-section--auth-compact {
+  gap: 18px;
+}
+
+.legal-auth-support-actions {
+  display: grid;
+  gap: 12px;
 }
 
 .legal-section--auth .legal-section__title,

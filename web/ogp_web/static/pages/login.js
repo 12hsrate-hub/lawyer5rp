@@ -1,8 +1,12 @@
 const loginForm = document.getElementById("login-form");
 const registerForm = document.getElementById("register-form");
 const resendForm = document.getElementById("resend-form");
+const resendToggle = document.getElementById("resend-toggle");
+const resendToggleSide = document.getElementById("resend-toggle-side");
+const resendCancel = document.getElementById("resend-cancel");
 const forgotPasswordForm = document.getElementById("forgot-password-form");
 const forgotPasswordToggle = document.getElementById("forgot-password-toggle");
+const forgotPasswordToggleSide = document.getElementById("forgot-password-toggle-side");
 const forgotPasswordCancel = document.getElementById("forgot-password-cancel");
 const successModal = document.getElementById("success-modal");
 const successModalText = document.getElementById("success-modal-text");
@@ -34,7 +38,7 @@ function clearAuthErrors() {
 function buildSuccessLines(payload, fallback) {
   const lines = [payload.message || fallback];
   if (payload.verification_url) {
-    lines.push(`Ссылка для подтверждения: ${payload.verification_url}`);
+    lines.push(`Ссылка: ${payload.verification_url}`);
   }
   return lines;
 }
@@ -82,6 +86,27 @@ function hideActiveSession() {
   setAuthFormsDisabled(false);
 }
 
+function hideSupportForms() {
+  if (resendForm) {
+    resendForm.hidden = true;
+  }
+  if (forgotPasswordForm) {
+    forgotPasswordForm.hidden = true;
+  }
+}
+
+function openResendForm() {
+  hideSupportForms();
+  resendForm.hidden = false;
+  resendForm.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function openForgotPasswordForm() {
+  hideSupportForms();
+  forgotPasswordForm.hidden = false;
+  forgotPasswordForm.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
 async function handleAuthSubmit(event, endpoint) {
   event.preventDefault();
   clearAuthErrors();
@@ -101,7 +126,7 @@ async function handleAuthSubmit(event, endpoint) {
   const payload = await parsePayload(response);
   if (!response.ok) {
     if (endpoint.endsWith("/login")) {
-      showAuthErrors(payload.detail || "Вход не выполнен. Проверьте логин/email и пароль.");
+      showAuthErrors(payload.detail || "Вход не выполнен. Проверьте логин или пароль.");
     } else if (endpoint.endsWith("/forgot-password")) {
       showAuthErrors(payload.detail || "Не удалось отправить ссылку для сброса пароля.");
     } else {
@@ -116,7 +141,7 @@ async function handleAuthSubmit(event, endpoint) {
     return;
   }
 
-  showAuthSuccess(buildSuccessLines(payload, "Проверьте email для завершения регистрации."));
+  showAuthSuccess(buildSuccessLines(payload, "Проверьте email для завершения действия."));
   event.currentTarget.reset();
 }
 
@@ -140,6 +165,7 @@ async function handleResendSubmit(event) {
 
   showAuthSuccess(buildSuccessLines(payload, "Письмо с подтверждением отправлено."));
   event.currentTarget.reset();
+  resendForm.hidden = true;
 }
 
 async function handleForgotPasswordSubmit(event) {
@@ -188,6 +214,7 @@ loginForm.addEventListener("submit", (event) => handleAuthSubmit(event, "/api/au
 registerForm.addEventListener("submit", (event) => handleAuthSubmit(event, "/api/auth/register"));
 resendForm.addEventListener("submit", handleResendSubmit);
 forgotPasswordForm.addEventListener("submit", handleForgotPasswordSubmit);
+
 activeSessionLogout?.addEventListener("click", async () => {
   const response = await apiFetch("/api/auth/logout", { method: "POST" });
   if (!response.ok) {
@@ -197,13 +224,14 @@ activeSessionLogout?.addEventListener("click", async () => {
   }
   hideActiveSession();
 });
-forgotPasswordToggle.addEventListener("click", () => {
-  forgotPasswordForm.hidden = false;
-  forgotPasswordForm.scrollIntoView({ behavior: "smooth", block: "center" });
-});
-forgotPasswordCancel.addEventListener("click", () => {
-  forgotPasswordForm.hidden = true;
-});
+
+forgotPasswordToggle?.addEventListener("click", openForgotPasswordForm);
+forgotPasswordToggleSide?.addEventListener("click", openForgotPasswordForm);
+resendToggle?.addEventListener("click", openResendForm);
+resendToggleSide?.addEventListener("click", openResendForm);
+forgotPasswordCancel?.addEventListener("click", hideSupportForms);
+resendCancel?.addEventListener("click", hideSupportForms);
+
 successModalClose.addEventListener("click", closeSuccessModal);
 successModalOk.addEventListener("click", closeSuccessModal);
 successModal.addEventListener("click", (event) => {
@@ -211,6 +239,7 @@ successModal.addEventListener("click", (event) => {
     closeSuccessModal();
   }
 });
+
 errorModalClose.addEventListener("click", clearAuthErrors);
 errorModalOk.addEventListener("click", clearAuthErrors);
 errorModal.addEventListener("click", (event) => {
@@ -218,6 +247,7 @@ errorModal.addEventListener("click", (event) => {
     clearAuthErrors();
   }
 });
+
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !successModal.hidden) {
     closeSuccessModal();
