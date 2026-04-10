@@ -57,6 +57,8 @@ class PersistentRateLimiter:
         self.backend = backend
         self.repository = UserRepository(backend)
         self._fallback = InMemoryRateLimiter()
+        self._fallback_lock = threading.Lock()
+        self._fallback_reason = ""
         self._ensure_schema()
 
     @property
@@ -104,20 +106,27 @@ class PersistentRateLimiter:
                 conn.rollback()
             except Exception:
                 pass
+            self._activate_fallback(str(exc))
             LOGGER.warning("Rate limit storage init failed, using in-memory fallback: %s", exc)
 
     def healthcheck(self) -> dict[str, object]:
         details = self.backend.healthcheck()
         details = dict(details)
         details["component"] = "rate_limiter"
-        if details.get("ok"):
+        fallback_reason = self._get_fallback_reason()
+        if details.get("ok") and not fallback_reason:
             details["storage"] = "database"
             return details
         details["storage"] = "in-memory-fallback"
+        details["ok"] = False
+        if fallback_reason:
+            details["fallback_reason"] = fallback_reason
         return details
 
     def reset(self) -> None:
         self._fallback.reset()
+        with self._fallback_lock:
+            self._fallback_reason = ""
         conn = self.repository.connect()
         try:
             conn.execute("DELETE FROM auth_rate_limit_events")
@@ -134,6 +143,7 @@ class PersistentRateLimiter:
         except RateLimitExceeded:
             raise
         except Exception as exc:
+            self._activate_fallback(str(exc))
             LOGGER.warning("Rate limit storage unavailable, using in-memory fallback: %s", exc)
             self._fallback.check(f"{action}:{key}", max_requests, window_seconds)
 
@@ -173,6 +183,7 @@ class PersistentRateLimiter:
                     (action, key),
                 )
                 conn.commit()
+                self._clear_fallback()
                 return
 
             now = time.time()
@@ -206,6 +217,7 @@ class PersistentRateLimiter:
                 (action, key, now),
             )
             conn.commit()
+            self._clear_fallback()
         except RateLimitExceeded:
             raise
         except Exception:
@@ -214,6 +226,18 @@ class PersistentRateLimiter:
             except Exception:
                 pass
             raise
+
+    def _activate_fallback(self, reason: str) -> None:
+        with self._fallback_lock:
+            self._fallback_reason = reason or "fallback_activated"
+
+    def _clear_fallback(self) -> None:
+        with self._fallback_lock:
+            self._fallback_reason = ""
+
+    def _get_fallback_reason(self) -> str:
+        with self._fallback_lock:
+            return self._fallback_reason
 
 
 _default_limiter: PersistentRateLimiter | None = None

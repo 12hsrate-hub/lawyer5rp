@@ -117,7 +117,38 @@ class UserStore:
         return self.backend.__class__.__name__ == "PostgresBackend"
 
     def healthcheck(self) -> dict[str, object]:
-        return self.backend.healthcheck()
+        details = dict(self.backend.healthcheck())
+        if not details.get("ok") or not self.is_postgres_backend:
+            return details
+
+        required_tables = (
+            "users",
+            "servers",
+            "user_server_roles",
+            "complaint_drafts",
+        )
+        conn = self._connect()
+        missing: list[str] = []
+        try:
+            for table_name in required_tables:
+                row = conn.execute(
+                    "SELECT to_regclass(%s) AS regclass",
+                    (f"public.{table_name}",),
+                ).fetchone()
+                if not row or not row.get("regclass"):
+                    missing.append(table_name)
+        except Exception as exc:
+            details["ok"] = False
+            details["error"] = str(exc)
+            details["schema_ok"] = False
+            return details
+
+        details["schema_ok"] = not missing
+        if missing:
+            details["ok"] = False
+            details["missing_tables"] = missing
+            details["error"] = "missing_required_tables"
+        return details
 
     def _fetchone(self, query: str, params: tuple[Any, ...] = ()):
         return self.repository.fetch_one(query, params)

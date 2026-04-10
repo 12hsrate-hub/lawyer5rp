@@ -19,7 +19,7 @@ from ogp_web.env import load_web_env
 load_web_env()
 
 from fastapi import FastAPI
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from ogp_web.rate_limit import create_rate_limiter
 from ogp_web.routes.admin import router as admin_router
@@ -275,7 +275,7 @@ def create_app(
         return response
 
     @app.get("/health")
-    async def health() -> dict[str, object]:
+    async def health() -> JSONResponse:
         checks = {
             "user_store": app.state.user_store.healthcheck(),
             "exam_answers_store": app.state.exam_answers_store.healthcheck(),
@@ -294,13 +294,16 @@ def create_app(
         )
         overall_ok = all(bool(checks[name].get("ok")) for name in required_checks)
         active_backend = str(checks["user_store"].get("backend") or "unknown")
-        return {
-            "status": "ok" if overall_ok else "degraded",
-            "version": app.version,
-            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-            "database_backend": active_backend,
-            "checks": checks,
-        }
+        return JSONResponse(
+            status_code=200 if overall_ok else 503,
+            content={
+                "status": "ok" if overall_ok else "degraded",
+                "version": app.version,
+                "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                "database_backend": active_backend,
+                "checks": checks,
+            },
+        )
 
     @app.on_event("shutdown")
     def close_user_store_repository() -> None:

@@ -22,6 +22,7 @@ from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.db.backends.sqlite import SQLiteBackend
+from ogp_web.rate_limit import PersistentRateLimiter
 from ogp_web.services.auth_service import AuthError
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -46,7 +47,7 @@ class UniqueViolation(Exception):
 
 
 class PostgresBackend:
-    def __init__(self):
+    def __init__(self, *, missing_tables: set[str] | None = None):
         self._state = {
             "next_user_id": 1,
             "servers": {},
@@ -54,6 +55,7 @@ class PostgresBackend:
             "roles": {},
             "drafts": {},
             "clock": 0,
+            "missing_tables": set(missing_tables or set()),
         }
 
     def connect(self):
@@ -88,6 +90,10 @@ class FakePostgresConnection:
 
         if normalized == "SELECT 1":
             return FakeCursor(rowcount=1, one={"?column?": 1})
+        if normalized == "SELECT to_regclass(%s) AS regclass":
+            table_name = str(params[0]).split(".", 1)[-1]
+            present = table_name not in self.state["missing_tables"]
+            return FakeCursor(rowcount=1, one={"regclass": params[0] if present else None})
         if normalized == "SELECT COUNT(*) AS total FROM users":
             return FakeCursor(rowcount=1, one={"total": len(self.state["users"])})
         if normalized.startswith("INSERT INTO servers"):
@@ -1187,6 +1193,52 @@ class PostgresUserStoreTests(unittest.TestCase):
         verified = store.admin_mark_email_verified("admin_pg")
         self.assertTrue(verified["email_verified_at"])
         self.assertEqual(store.authenticate("admin_pg_new@example.com", "AdminReset789!").username, "admin_pg")
+
+    def test_postgres_healthcheck_reports_missing_required_tables(self):
+        repository = UserRepository(PostgresBackend(missing_tables={"complaint_drafts"}))
+        store = UserStore(Path("ignored.db"), Path("ignored.json"), repository=repository)
+        try:
+            details = store.healthcheck()
+        finally:
+            repository.close()
+
+        self.assertFalse(details["ok"])
+        self.assertFalse(details["schema_ok"])
+        self.assertIn("complaint_drafts", details["missing_tables"])
+
+
+class RateLimiterHealthTests(unittest.TestCase):
+    def test_healthcheck_reports_in_memory_fallback_after_storage_failure(self):
+        class BrokenConnection:
+            def execute(self, query: str, params=()):
+                raise RuntimeError("db write failed")
+
+            def commit(self) -> None:
+                return None
+
+            def rollback(self) -> None:
+                return None
+
+            def close(self) -> None:
+                return None
+
+        class BrokenBackend:
+            def connect(self):
+                return BrokenConnection()
+
+            def healthcheck(self) -> dict[str, object]:
+                return {"backend": "postgres", "ok": True}
+
+            def map_exception(self, exc: Exception) -> Exception:
+                return exc
+
+        limiter = PersistentRateLimiter(BrokenBackend())
+        limiter.check("127.0.0.1", 5, 60, action="login")
+        details = limiter.healthcheck()
+
+        self.assertFalse(details["ok"])
+        self.assertEqual(details["storage"], "in-memory-fallback")
+        self.assertIn("fallback_reason", details)
 
 
 class PostgresAdminMetricsStoreTests(unittest.TestCase):
