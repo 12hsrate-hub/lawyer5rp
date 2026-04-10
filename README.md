@@ -61,5 +61,6 @@ Recommended deploy path:
 
 Deploy docs:
 
+- `AGENTS.md`
 - `docs/github_deploy.md`
 - `docs/postgresql_migrations.md`
