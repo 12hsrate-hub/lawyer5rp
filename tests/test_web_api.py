@@ -270,6 +270,29 @@ class WebApiTests(unittest.TestCase):
         self.assertTrue(payload["checks"]["exam_import_tasks_store"]["ok"])
         self.assertTrue(payload["checks"]["rate_limiter"]["ok"])
 
+    def test_health_endpoint_returns_503_when_required_check_fails(self):
+        tmp_path = Path(self.tmpdir.name)
+
+        class UnhealthyAdminMetricsStore:
+            def __init__(self):
+                self.db_path = tmp_path / "unhealthy_admin_metrics.db"
+
+            def healthcheck(self) -> dict[str, object]:
+                return {"backend": "sqlite", "ok": False, "error": "forced_failure"}
+
+            def log_event(self, *args, **kwargs) -> bool:
+                return False
+
+        client = TestClient(create_app(self.store, self.exam_store, UnhealthyAdminMetricsStore()), base_url="https://testserver")
+        try:
+            response = client.get("/health")
+            self.assertEqual(response.status_code, 503)
+            payload = response.json()
+            self.assertEqual(payload["status"], "degraded")
+            self.assertFalse(payload["checks"]["admin_metrics_store"]["ok"])
+        finally:
+            client.close()
+
     def test_complaint_draft_can_be_saved_loaded_and_cleared(self):
         self._register_verify_and_login("tester", "draft@example.com")
 
