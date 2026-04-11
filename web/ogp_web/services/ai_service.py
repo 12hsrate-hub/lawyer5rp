@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 from functools import lru_cache
 import logging
 import os
@@ -28,6 +29,197 @@ LOGGER = logging.getLogger(__name__)
 _LawChunk = LawChunk
 
 
+LAW_QA_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "by",
+    "for",
+    "from",
+    "how",
+    "if",
+    "in",
+    "is",
+    "of",
+    "or",
+    "that",
+    "the",
+    "then",
+    "what",
+    "when",
+    "where",
+    "which",
+    "with",
+    "без",
+    "вопрос",
+    "для",
+    "его",
+    "ее",
+    "ему",
+    "если",
+    "или",
+    "как",
+    "когда",
+    "кто",
+    "ли",
+    "лица",
+    "лицо",
+    "мне",
+    "можно",
+    "надо",
+    "нет",
+    "нужно",
+    "него",
+    "нее",
+    "них",
+    "оно",
+    "они",
+    "она",
+    "про",
+    "просто",
+    "считается",
+    "стат",
+    "стать",
+    "статей",
+    "статье",
+    "статьи",
+    "статью",
+    "статьям",
+    "статья",
+    "тогда",
+    "это",
+    "этого",
+}
+LAW_QA_SHORT_TERMS = {"ук", "пк", "ак", "дк", "огп", "фбр", "lspd", "lssd"}
+LAW_QA_STEM_SUFFIXES = (
+    "иями",
+    "ями",
+    "ами",
+    "иями",
+    "ости",
+    "ение",
+    "ения",
+    "енией",
+    "ению",
+    "енного",
+    "енного",
+    "ировать",
+    "ировать",
+    "ющего",
+    "ющая",
+    "яющие",
+    "яющая",
+    "яющий",
+    "овать",
+    "ировать",
+    "ность",
+    "ности",
+    "иями",
+    "ение",
+    "ений",
+    "енного",
+    "ания",
+    "ение",
+    "ении",
+    "анием",
+    "овать",
+    "ировать",
+    "аться",
+    "яться",
+    "ение",
+    "ения",
+    "иями",
+    "ыми",
+    "ими",
+    "ого",
+    "его",
+    "ому",
+    "ему",
+    "ыми",
+    "ими",
+    "ать",
+    "ять",
+    "ить",
+    "еть",
+    "ать",
+    "ять",
+    "ить",
+    "еть",
+    "ого",
+    "ему",
+    "ому",
+    "ия",
+    "ий",
+    "ие",
+    "иям",
+    "иях",
+    "ов",
+    "ев",
+    "ах",
+    "ях",
+    "ой",
+    "ей",
+    "ом",
+    "ем",
+    "ам",
+    "ям",
+    "ы",
+    "и",
+    "а",
+    "я",
+    "у",
+    "ю",
+    "е",
+    "о",
+)
+LAW_QA_PHRASE_ALIASES: dict[str, tuple[str, ...]] = {
+    "не считается преступлением": (
+        "обстоятельства исключающие преступность деяния",
+        "уголовный кодекс",
+        "исключают преступность деяния",
+    ),
+    "что не считается преступлением": (
+        "обстоятельства исключающие преступность деяния",
+        "уголовный кодекс",
+    ),
+    "какие обстоятельства исключают преступность деяния": (
+        "обстоятельства исключающие преступность деяния",
+        "уголовный кодекс",
+    ),
+    "обязаны отпустить": (
+        "освобождение задержанного",
+        "основания освобождения задержанного",
+    ),
+    "после задержания": (
+        "освобождение задержанного",
+        "задержанный",
+    ),
+    "освобождение задержанного": (
+        "статья 20",
+        "процессуальный кодекс",
+    ),
+    "по ук": ("уголовный кодекс",),
+    "по пк": ("процессуальный кодекс",),
+    "по ак": ("административный кодекс",),
+    "по дк": ("дорожный кодекс",),
+    "сумма залога": (
+        "залог",
+        "санкция",
+        "статья 14",
+    ),
+    "как считается залог": (
+        "сумма залога",
+        "санкция",
+        "статья 14",
+    ),
+    "по нескольким административным статьям": (
+        "административный кодекс",
+        "залог",
+        "несколько статей",
+        "статья 14",
+    ),
+}
 LAW_QA_QUERY_ALIASES: dict[str, tuple[str, ...]] = {
     "освобождение": ("освободить", "освобождения", "выпустить", "отпустить", "release"),
     "задержанный": ("задержание", "задержанного", "detention", "detainee", "удержание"),
@@ -35,9 +227,15 @@ LAW_QA_QUERY_ALIASES: dict[str, tuple[str, ...]] = {
     "адвокат": ("защитник", "защита"),
     "обыск": ("досмотр", "осмотр"),
     "залог": ("залога", "bail"),
+    "санкция": ("наказание", "размер", "сумма"),
     "преступность": ("преступления", "уголовный", "уголовного"),
+    "преступление": ("преступления", "преступностью", "уголовное"),
     "исключают": ("исключается", "исключающие", "исключение"),
     "деяние": ("действие", "бездействие"),
+    "ук": ("уголовный", "уголовного", "уголовный кодекс"),
+    "пк": ("процессуальный", "процессуального", "процессуальный кодекс"),
+    "ак": ("административный", "административного", "административный кодекс"),
+    "дк": ("дорожный", "дорожного", "дорожный кодекс"),
 }
 
 def _humanize_ai_exception(exc: Exception) -> str:
@@ -144,12 +342,65 @@ def _clean_law_document_text(text: str) -> str:
     return normalized.strip()
 
 
+def _tokenize_normalized_text(text: str) -> tuple[str, ...]:
+    tokens: list[str] = []
+    for token in str(text or "").split():
+        normalized = token.strip()
+        if not normalized:
+            continue
+        if len(normalized) >= 3 or normalized in LAW_QA_SHORT_TERMS:
+            tokens.append(normalized)
+    return tuple(dict.fromkeys(tokens))
+
+
+def _stem_law_token(token: str) -> str:
+    normalized = str(token or "").strip().lower()
+    if len(normalized) <= 4:
+        return normalized
+    for suffix in LAW_QA_STEM_SUFFIXES:
+        if normalized.endswith(suffix) and len(normalized) - len(suffix) >= 4:
+            return normalized[: -len(suffix)]
+    return normalized
+
+
+@lru_cache(maxsize=32768)
+def _token_similarity(left: str, right: str) -> float:
+    normalized_left = _normalize_law_text(left)
+    normalized_right = _normalize_law_text(right)
+    if not normalized_left or not normalized_right:
+        return 0.0
+    if normalized_left == normalized_right:
+        return 1.0
+
+    left_stem = _stem_law_token(normalized_left)
+    right_stem = _stem_law_token(normalized_right)
+    if left_stem and left_stem == right_stem:
+        return 0.96
+    if normalized_left in normalized_right or normalized_right in normalized_left:
+        shorter, longer = sorted((normalized_left, normalized_right), key=len)
+        if len(shorter) >= 4:
+            return max(len(shorter) / max(len(longer), 1), 0.88)
+    if abs(len(normalized_left) - len(normalized_right)) > 4:
+        return 0.0
+    if normalized_left[:1] != normalized_right[:1] and left_stem[:2] != right_stem[:2]:
+        return 0.0
+    return SequenceMatcher(None, normalized_left, normalized_right).ratio()
+
+
+def _best_token_similarity(term: str, candidates: tuple[str, ...]) -> float:
+    normalized_term = _normalize_law_text(term)
+    if not normalized_term or not candidates:
+        return 0.0
+    return max((_token_similarity(normalized_term, candidate) for candidate in candidates), default=0.0)
+
+
 def _extract_keywords(question: str) -> set[str]:
     return {
         token
-        for token in re.findall(r"\w{4,}", question.lower(), flags=re.UNICODE)
-        if token not in {"когда", "если", "или", "тогда", "where", "what", "which", "with"}
+        for token in _tokenize_normalized_text(_normalize_law_text(question))
+        if token not in LAW_QA_STOPWORDS and (len(token) >= 4 or token in LAW_QA_SHORT_TERMS)
     }
+
 
 def _normalize_law_text(text: str) -> str:
     normalized = str(text or "").lower().replace("ё", "е")
@@ -170,16 +421,63 @@ def _expand_question_terms(question: str) -> set[str]:
     normalized_question = _normalize_law_text(question)
     tokens = {
         token
-        for token in normalized_question.split()
-        if len(token) >= 3 and token not in {"что", "это", "для", "как", "или", "при", "нет"}
+        for token in _tokenize_normalized_text(normalized_question)
+        if token not in LAW_QA_STOPWORDS
     }
     expanded = set(tokens)
+
+    for phrase, aliases in LAW_QA_PHRASE_ALIASES.items():
+        normalized_phrase = _normalize_law_text(phrase)
+        phrase_tokens = tuple(token for token in _tokenize_normalized_text(normalized_phrase) if token not in LAW_QA_STOPWORDS)
+        matched = normalized_phrase in normalized_question
+        if not matched and phrase_tokens:
+            present = sum(1 for token in phrase_tokens if token in tokens)
+            required = len(phrase_tokens) if len(phrase_tokens) <= 2 else len(phrase_tokens) - 1
+            matched = present >= required
+        if matched:
+            for item in (phrase, *aliases):
+                expanded.update(_tokenize_normalized_text(_normalize_law_text(item)))
+
     for token in list(tokens):
+        token_stem = _stem_law_token(token)
         for key, aliases in LAW_QA_QUERY_ALIASES.items():
-            alias_terms = {_normalize_law_text(key), *(_normalize_law_text(item) for item in aliases)}
-            if token in alias_terms or any(token in alias for alias in alias_terms):
-                expanded.update(alias_terms)
-    return {item for item in expanded if item}
+            alias_tokens = {
+                alias_token
+                for item in (key, *aliases)
+                for alias_token in _tokenize_normalized_text(_normalize_law_text(item))
+            }
+            if not alias_tokens:
+                continue
+            if token in alias_tokens or (token_stem and token_stem in {_stem_law_token(alias) for alias in alias_tokens}):
+                expanded.update(alias_tokens)
+                continue
+            if _best_token_similarity(token, tuple(alias_tokens)) >= 0.86:
+                expanded.update(alias_tokens)
+
+    expanded_with_stems = set(expanded)
+    for item in list(expanded):
+        stem = _stem_law_token(item)
+        if stem and len(stem) >= 4:
+            expanded_with_stems.add(stem)
+    return {
+        item
+        for item in expanded_with_stems
+        if item and item not in LAW_QA_STOPWORDS and (len(item) >= 3 or item in LAW_QA_SHORT_TERMS)
+    }
+
+
+@lru_cache(maxsize=4096)
+def _chunk_search_payload(chunk: _LawChunk) -> tuple[str, str, tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    normalized_title = _normalize_law_text(chunk.document_title)
+    normalized_label = _normalize_law_text(chunk.article_label)
+    normalized_text = _normalize_law_text(f"{chunk.document_title} {chunk.article_label} {chunk.text}")
+    title_tokens = _tokenize_normalized_text(normalized_title)
+    label_tokens = _tokenize_normalized_text(normalized_label)
+    text_tokens = _tokenize_normalized_text(normalized_text)
+    title_stems = tuple(dict.fromkeys(_stem_law_token(token) for token in title_tokens if len(_stem_law_token(token)) >= 4))
+    label_stems = tuple(dict.fromkeys(_stem_law_token(token) for token in label_tokens if len(_stem_law_token(token)) >= 4))
+    text_stems = tuple(dict.fromkeys(_stem_law_token(token) for token in text_tokens if len(_stem_law_token(token)) >= 4))
+    return normalized_text, normalized_label, title_tokens, label_tokens, text_tokens, title_stems, label_stems, text_stems
 
 def _extract_document_title(text: str, url: str) -> str:
     normalized = str(text or "").strip()
@@ -224,28 +522,124 @@ def _split_law_document_into_chunks(document: dict[str, str]) -> list[_LawChunk]
 
 
 def _score_law_chunk(chunk: _LawChunk, question: str) -> int:
-    normalized_text = _normalize_law_text(f"{chunk.document_title} {chunk.article_label} {chunk.text}")
-    normalized_label = _normalize_law_text(chunk.article_label)
+    (
+        normalized_text,
+        normalized_label,
+        title_tokens,
+        label_tokens,
+        text_tokens,
+        title_stems,
+        label_stems,
+        text_stems,
+    ) = _chunk_search_payload(chunk)
     terms = _expand_question_terms(question)
     score = 0
+
+    code_hint_tokens = {
+        token
+        for token in terms
+        if token
+        in {
+            "ук",
+            "пк",
+            "ак",
+            "дк",
+            "уголовный",
+            "уголовного",
+            "процессуальный",
+            "процессуального",
+            "административный",
+            "административного",
+            "дорожный",
+            "дорожного",
+            "кодекс",
+        }
+    }
+    if code_hint_tokens:
+        score += sum(1 for token in code_hint_tokens if token in title_tokens) * 12
+        score += sum(1 for token in code_hint_tokens if _stem_law_token(token) in title_stems) * 6
+
     for term in terms:
         if not term:
             continue
-        if term in normalized_label:
-            score += 16
-        if f" {term} " in f" {normalized_text} ":
+        term_stem = _stem_law_token(term)
+        if term in label_tokens:
+            score += 20
+        elif term_stem and term_stem in label_stems:
+            score += 12
+        else:
+            label_similarity = _best_token_similarity(term, label_tokens)
+            if label_similarity >= 0.92:
+                score += 12
+            elif label_similarity >= 0.86:
+                score += 8
+
+        if term in text_tokens:
             score += 10
+        elif term_stem and term_stem in text_stems:
+            score += 6
+        else:
+            text_similarity = _best_token_similarity(term, text_tokens)
+            if text_similarity >= 0.92:
+                score += 6
+            elif text_similarity >= 0.86:
+                score += 3
+
+        if f" {term} " in f" {normalized_text} ":
+            score += 3
         elif term in normalized_text:
-            score += 5
+            score += 1
 
     for article_number in _extract_article_numbers(question):
-        if re.search(rf"(?i)(?:article|ст\.?|статья)\s*{re.escape(article_number)}\b", normalized_text):
+        article_pattern = rf"(?i)(?:article|ст\.?|статья)\s*{re.escape(article_number)}(?:\.\d+)?\b"
+        if re.search(article_pattern, normalized_label):
+            score += 55
+        elif re.search(article_pattern, normalized_text):
             score += 40
 
     if terms:
-        score += sum(1 for term in terms if term in normalized_text) * 3
-        score += sum(1 for term in terms if term in normalized_label) * 8
+        matched_terms = sum(
+            1
+            for term in terms
+            if term in text_tokens
+            or term in label_tokens
+            or (len(term) >= 5 and _best_token_similarity(term, text_tokens + label_tokens + title_tokens) >= 0.86)
+        )
+        score += matched_terms * 2
+        if matched_terms >= max(2, min(4, len(terms) // 3 or 1)):
+            score += 8
     return score
+
+
+def _classify_law_qa_confidence(scores: list[int], question: str) -> str:
+    if not scores:
+        return "low"
+    top = scores[0]
+    nonzero = sum(1 for score in scores if score > 0)
+    terms = _expand_question_terms(question)
+    article_numbers = _extract_article_numbers(question)
+    if article_numbers and top >= 50:
+        return "high"
+    if top >= 65 and nonzero >= 3:
+        return "high"
+    if top >= 40 and (nonzero >= 2 or len(terms) <= 4):
+        return "medium"
+    return "low"
+
+
+def _select_law_qa_chunks(chunks: list[_LawChunk], question: str) -> tuple[list[_LawChunk], str]:
+    scored = [(item, _score_law_chunk(item, question)) for item in chunks]
+    ranked = sorted(scored, key=lambda pair: pair[1], reverse=True)
+    positive = [item for item, score in ranked if score > 0]
+    confidence = _classify_law_qa_confidence([score for _, score in ranked], question)
+    if confidence == "high":
+        target_count = 5
+    elif confidence == "medium":
+        target_count = 6
+    else:
+        target_count = 7
+    selected = positive[:target_count] or [item for item, _ in ranked[:4]]
+    return selected, confidence
 
 
 @lru_cache(maxsize=16)
@@ -327,13 +721,15 @@ def _extract_relevant_law_excerpt(text: str, question: str, *, max_chars: int = 
     if len(normalized_text) <= max_chars:
         return normalized_text
 
-    keywords = sorted(_extract_keywords(question), key=len, reverse=True)
+    direct_keywords = sorted(_extract_keywords(question), key=len, reverse=True)
+    expanded_keywords = sorted((_expand_question_terms(question) - set(direct_keywords)), key=len, reverse=True)
+    keywords = direct_keywords + expanded_keywords
     if not keywords:
         return normalized_text[:max_chars].strip()
 
     lower_text = normalized_text.lower()
     hit_positions: list[int] = []
-    for keyword in keywords[:6]:
+    for keyword in keywords[:12]:
         index = lower_text.find(keyword.lower())
         if index >= 0:
             hit_positions.append(index)
@@ -360,6 +756,40 @@ def _extract_relevant_law_excerpt(text: str, question: str, *, max_chars: int = 
     if end < len(normalized_text):
         snippet = snippet + " ..."
     return snippet
+
+
+def _build_law_qa_prompt(
+    *,
+    server_name: str,
+    server_code: str,
+    model_name: str,
+    question: str,
+    max_answer_chars: int,
+    context_blocks: list[str],
+    retrieval_confidence: str,
+) -> str:
+    confidence_guidance = {
+        "high": "Релевантность подобранных норм высокая: можно отвечать уверенно, но только в пределах переданного корпуса.",
+        "medium": "Релевантность подобранных норм средняя: если есть сомнения в формулировке вопроса, прямо обозначь их и не достраивай выводы.",
+        "low": "Релевантность подобранных норм низкая: отвечай особенно осторожно, не делай категоричных выводов и прямо укажи, если норма не подтверждает предпосылку вопроса.",
+    }.get(retrieval_confidence, "Релевантность подобранных норм неизвестна.")
+    return (
+        "Ты юридический ассистент игрового сервера. Отвечай только на основе переданной внутриигровой законодательной базы.\n"
+        "Если данных недостаточно, прямо так и скажи.\n"
+        "Не добавляй никакие реальные законы, нормы, судебную практику или фоновые знания из внешнего мира.\n"
+        "Если во внутриигровой законодательной базе нет оснований для ответа, так и напиши.\n"
+        "Если вопрос содержит неверную предпосылку, смешивает разные кодексы или прямо не подтверждается переданными нормами, сначала коротко укажи это.\n"
+        "Если формулировка вопроса разговорная, с опечатками или перефразирована, трактуй ее только по ближайшему смыслу в рамках переданных норм.\n"
+        "Обязательно укажи ссылки на источники в конце каждого смыслового абзаца.\n"
+        "Ответ должен быть точным, прикладным и без воды.\n"
+        f"{confidence_guidance}\n\n"
+        f"Сервер: {server_name} ({server_code})\n"
+        f"Модель: {model_name}\n\n"
+        f"Вопрос:\n{question}\n\n"
+        f"Ограничение длины ответа: не более {max_answer_chars} символов.\n\n"
+        "Законодательная база:\n"
+        + "\n\n".join(context_blocks)
+    )
 
 
 def _response_diagnostics(response: object) -> str:
@@ -439,8 +869,7 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
             detail=["Не удалось загрузить законы для выбранного сервера. Проверьте настройку law base."],
         )
 
-    ranked = sorted(chunks, key=lambda item: _score_law_chunk(item, question), reverse=True)
-    selected = [item for item in ranked[:6] if _score_law_chunk(item, question) > 0] or ranked[:4]
+    selected, retrieval_confidence = _select_law_qa_chunks(chunks, question)
     context_blocks = [
         (
             f"[Источник: {item.url}]\n"
@@ -450,19 +879,14 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
         )
         for item in selected
     ]
-    prompt = (
-        "Ты юридический ассистент игрового сервера. Отвечай только на основе переданной внутриигровой законодательной базы.\n"
-        "Если данных недостаточно, прямо так и скажи.\n"
-        "Не добавляй никакие реальные законы, нормы, судебную практику или фоновые знания из внешнего мира.\n"
-        "Если во внутриигровой законодательной базе нет оснований для ответа, так и напиши.\n"
-        "Обязательно укажи ссылки на источники в конце каждого смыслового абзаца.\n"
-        "Ответ должен быть точным, прикладным и без воды.\n\n"
-        f"Сервер: {server_config.name} ({server_config.code})\n"
-        f"Модель: {model_name}\n\n"
-        f"Вопрос:\n{question}\n\n"
-        f"Ограничение длины ответа: не более {payload.max_answer_chars} символов.\n\n"
-        "Законодательная база:\n"
-        + "\n\n".join(context_blocks)
+    prompt = _build_law_qa_prompt(
+        server_name=server_config.name,
+        server_code=server_config.code,
+        model_name=model_name,
+        question=question,
+        max_answer_chars=payload.max_answer_chars,
+        context_blocks=context_blocks,
+        retrieval_confidence=retrieval_confidence,
     )
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()

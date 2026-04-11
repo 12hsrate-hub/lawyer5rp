@@ -654,6 +654,88 @@ class WebServiceTests(unittest.TestCase):
         self.assertGreater(relevant_score, unrelated_score)
         self.assertGreater(relevant_score, 0)
 
+    def test_law_qa_handles_typo_and_paraphrase_in_release_question(self):
+        question = "когда человека надо отпусить после задержания"
+        relevant_chunk = ai_service._LawChunk(
+            url="https://laws.example/processual",
+            document_title="Процессуальный кодекс",
+            article_label="Статья 20. Основания для освобождения задержанного",
+            text="Статья 20. Основания для освобождения задержанного. Задержанный подлежит освобождению при отсутствии оснований для дальнейшего удержания.",
+        )
+        unrelated_chunk = ai_service._LawChunk(
+            url="https://laws.example/admin",
+            document_title="Административный кодекс",
+            article_label="Статья 10. Общие положения",
+            text="Статья 10. Общие положения административного права.",
+        )
+
+        relevant_score = ai_service._score_law_chunk(relevant_chunk, question)
+        unrelated_score = ai_service._score_law_chunk(unrelated_chunk, question)
+
+        self.assertGreater(relevant_score, unrelated_score)
+        self.assertGreater(relevant_score, 0)
+
+    def test_law_qa_expands_short_uk_question_into_criminal_code_terms(self):
+        terms = ai_service._expand_question_terms("что не считается преступлением по ук")
+        self.assertIn("уголовный", terms)
+        self.assertIn("кодекс", terms)
+        self.assertIn("преступность", terms)
+
+    def test_law_qa_prefers_bail_article_for_multi_article_bail_question(self):
+        question = "как считается залог по нескольким административным статьям"
+        relevant_chunk = ai_service._LawChunk(
+            url="https://laws.example/admin",
+            document_title="Административный кодекс",
+            article_label="Статья 14. Освобождение под залог",
+            text="Статья 14. Освобождение под залог. Сумма залога устанавливается по санкции инкриминируемой статьи.",
+        )
+        unrelated_chunk = ai_service._LawChunk(
+            url="https://laws.example/criminal",
+            document_title="Уголовный кодекс",
+            article_label="Статья 23. Необходимая оборона",
+            text="Статья 23. Необходимая оборона.",
+        )
+
+        relevant_score = ai_service._score_law_chunk(relevant_chunk, question)
+        unrelated_score = ai_service._score_law_chunk(unrelated_chunk, question)
+
+        self.assertGreater(relevant_score, unrelated_score)
+        self.assertGreater(relevant_score, 0)
+
+    def test_law_qa_selects_criminal_code_context_for_short_uk_question(self):
+        chunks = [
+            ai_service._LawChunk(
+                url="https://laws.example/criminal",
+                document_title="Уголовный кодекс",
+                article_label="Статья 23. Необходимая оборона",
+                text="Статья 23. Необходимая оборона. Обстоятельство, исключающее преступность деяния.",
+            ),
+            ai_service._LawChunk(
+                url="https://laws.example/processual",
+                document_title="Процессуальный кодекс",
+                article_label="Статья 20. Основания освобождения",
+                text="Статья 20. Основания для освобождения задержанного.",
+            ),
+        ]
+        selected, confidence = ai_service._select_law_qa_chunks(chunks, "что не считается преступлением по ук")
+
+        self.assertIn(confidence, {"medium", "high"})
+        self.assertIn("Уголовный кодекс", selected[0].document_title)
+
+    def test_law_qa_prompt_warns_about_false_premise_on_low_confidence(self):
+        prompt = ai_service._build_law_qa_prompt(
+            server_name="BlackBerry",
+            server_code="blackberry",
+            model_name="gpt-5.4",
+            question="Можно ли придумать норму без статьи?",
+            max_answer_chars=2000,
+            context_blocks=["[Источник: https://laws.example]\n[Документ: Кодекс]\n[Норма: Статья 1]\nТекст"],
+            retrieval_confidence="low",
+        )
+        self.assertIn("неверную предпосылку", prompt)
+        self.assertIn("опечатками", prompt)
+        self.assertIn("Релевантность подобранных норм низкая", prompt)
+
 
     def test_extract_relevant_law_excerpt_uses_hit_window_not_only_document_start(self):
         text = (
