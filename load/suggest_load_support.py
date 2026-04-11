@@ -40,6 +40,22 @@ def build_artifact_dir(*, artifacts_root: str | Path, run_id: str, profile: str)
     return Path(artifacts_root).expanduser().resolve() / normalized_run_id / normalized_profile
 
 
+def build_parallel_artifact_dir(*, artifacts_root: str | Path, run_id: str) -> Path:
+    normalized_run_id = str(run_id or "").strip() or new_run_id()
+    return Path(artifacts_root).expanduser().resolve() / normalized_run_id / "parallel"
+
+
+def default_profile_vus_map(profiles: tuple[str, ...] | list[str]) -> dict[str, int]:
+    mapping: dict[str, int] = {}
+    normalized_profiles = [normalize_profile_name(profile) for profile in profiles]
+    if not normalized_profiles:
+        return mapping
+    last_tier = DEFAULT_CONCURRENCY_TIERS[-1]
+    for index, profile in enumerate(normalized_profiles):
+        mapping[profile] = DEFAULT_CONCURRENCY_TIERS[index] if index < len(DEFAULT_CONCURRENCY_TIERS) else last_tier
+    return mapping
+
+
 def build_k6_env(
     *,
     base_url: str,
@@ -83,6 +99,135 @@ def extract_metric_value(summary: dict[str, Any], metric_name: str, nested_key: 
     if isinstance(value, (int, float)):
         return value
     return None
+
+
+def summarize_profile_run(
+    summary: dict[str, Any],
+    *,
+    profile: str,
+    vus: int,
+    duration: str,
+    base_url: str,
+    artifact_dir: str | Path,
+    exit_code: int = 0,
+) -> dict[str, Any]:
+    normalized_profile = normalize_profile_name(profile)
+    normalized_vus = normalize_vus(vus)
+    return {
+        "profile": normalized_profile,
+        "vus": normalized_vus,
+        "duration": str(duration or DEFAULT_DURATION).strip() or DEFAULT_DURATION,
+        "base_url": str(base_url or "").rstrip("/"),
+        "artifact_dir": str(Path(artifact_dir)),
+        "exit_code": int(exit_code),
+        "p95_ms": extract_metric_value(summary, "http_req_duration", "p(95)"),
+        "p99_ms": extract_metric_value(summary, "http_req_duration", "p(99)"),
+        "avg_ms": extract_metric_value(summary, "http_req_duration", "avg"),
+        "fail_rate": extract_metric_value(summary, "http_req_failed", "rate"),
+        "suggest_ok": extract_metric_value(summary, "suggest_ok", "count"),
+        "suggest_overload": extract_metric_value(summary, "suggest_overload", "count"),
+        "suggest_error": extract_metric_value(summary, "suggest_error", "count"),
+    }
+
+
+def evaluate_sla(
+    profile_summary: dict[str, Any],
+    *,
+    threshold_p95_ms: int | None = None,
+    threshold_error_rate: float | None = None,
+) -> dict[str, Any]:
+    breaches: list[str] = []
+    exit_code = int(profile_summary.get("exit_code") or 0)
+    p95_ms = profile_summary.get("p95_ms")
+    fail_rate = profile_summary.get("fail_rate")
+
+    if exit_code != 0:
+        breaches.append("runner_exit_nonzero")
+    if threshold_p95_ms is not None:
+        if not isinstance(p95_ms, (int, float)):
+            breaches.append("missing_p95")
+        elif float(p95_ms) > float(threshold_p95_ms):
+            breaches.append("p95_exceeded")
+    if threshold_error_rate is not None:
+        if not isinstance(fail_rate, (int, float)):
+            breaches.append("missing_fail_rate")
+        elif float(fail_rate) > float(threshold_error_rate):
+            breaches.append("error_rate_exceeded")
+
+    return {
+        "pass": not breaches,
+        "breaches": breaches,
+        "threshold_p95_ms": threshold_p95_ms,
+        "threshold_error_rate": threshold_error_rate,
+    }
+
+
+def build_parallel_summary(
+    *,
+    run_id: str,
+    profile_runs: list[dict[str, Any]],
+    base_url: str,
+    duration: str,
+    artifacts_root: str | Path,
+) -> dict[str, Any]:
+    failing_profiles: list[str] = []
+    for item in profile_runs:
+        if not isinstance(item, dict):
+            continue
+        sla = item.get("sla")
+        if isinstance(sla, dict) and not sla.get("pass", False):
+            failing_profiles.append(str(item.get("profile") or "unknown"))
+    return {
+        "run_id": str(run_id or "").strip(),
+        "base_url": str(base_url or "").rstrip("/"),
+        "duration": str(duration or DEFAULT_DURATION).strip() or DEFAULT_DURATION,
+        "artifacts_root": str(Path(artifacts_root)),
+        "profile_run_count": len(profile_runs),
+        "all_sla_pass": not failing_profiles,
+        "failing_profiles": failing_profiles,
+        "profiles": profile_runs,
+    }
+
+
+def build_parallel_report_markdown(summary: dict[str, Any]) -> str:
+    lines = [
+        "# Parallel Suggest Load Report",
+        "",
+        f"- Run ID: `{summary.get('run_id')}`",
+        f"- Base URL: `{summary.get('base_url')}`",
+        f"- Duration: `{summary.get('duration')}`",
+        f"- Profile runs: `{summary.get('profile_run_count')}`",
+        f"- All SLA pass: `{summary.get('all_sla_pass')}`",
+        f"- Failing profiles: `{', '.join(summary.get('failing_profiles', [])) or 'none'}`",
+        "",
+        "## Per-profile results",
+        "",
+    ]
+
+    for item in summary.get("profiles", []):
+        if not isinstance(item, dict):
+            continue
+        sla = item.get("sla") if isinstance(item.get("sla"), dict) else {}
+        lines.extend(
+            [
+                f"### {item.get('profile')} ({item.get('vus')} VUs)",
+                "",
+                f"- Exit code: `{item.get('exit_code')}`",
+                f"- `p95`: `{item.get('p95_ms')}`",
+                f"- `p99`: `{item.get('p99_ms')}`",
+                f"- `avg`: `{item.get('avg_ms')}`",
+                f"- `fail_rate`: `{item.get('fail_rate')}`",
+                f"- `suggest_ok`: `{item.get('suggest_ok')}`",
+                f"- `suggest_overload`: `{item.get('suggest_overload')}`",
+                f"- `suggest_error`: `{item.get('suggest_error')}`",
+                f"- SLA pass: `{sla.get('pass')}`",
+                f"- SLA breaches: `{', '.join(sla.get('breaches', [])) or 'none'}`",
+                f"- Artifact dir: `{item.get('artifact_dir')}`",
+                "",
+            ]
+        )
+
+    return "\n".join(lines).strip() + "\n"
 
 
 def build_report_markdown(
