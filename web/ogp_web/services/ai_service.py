@@ -92,28 +92,47 @@ def _fetch_source_text(url: str, *, max_doc_chars: int = 12000) -> str:
 
 
 def _ensure_law_documents_loaded(store: LawQaStore, server_code: str) -> list[dict[str, str]]:
-    existing = store.list_documents(server_code)
-    if existing:
-        return existing
-    sources = get_law_sources(server_code)
+    normalized_server = str(server_code or "").strip().lower()
+    sources = get_law_sources(normalized_server)
     if not sources:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Для выбранного сервера база законов не настроена."])
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["??? ?????????? ??????? ???? ??????? ?? ?????????."])
+
+    existing = store.list_documents(normalized_server)
+    existing_by_url = {
+        str(item.get("url") or "").strip(): item
+        for item in existing
+        if str(item.get("url") or "").strip()
+    }
+    if len(existing_by_url) >= len(sources) and all(source.url in existing_by_url for source in sources):
+        return existing
+
     documents: list[dict[str, str]] = []
+    missing_sources: list[str] = []
     for source in sources:
+        cached = existing_by_url.get(source.url)
+        cached_text = str(cached.get("text") or "").strip() if cached else ""
+        if cached_text:
+            documents.append({"title": source.title, "source_url": source.url, "content": cached_text})
+            continue
         try:
             text = _fetch_source_text(source.url)
         except Exception:
-            continue
+            text = ""
         if not text:
+            missing_sources.append(source.url)
             continue
         documents.append({"title": source.title, "source_url": source.url, "content": text})
-    if not documents:
+
+    if missing_sources:
+        if documents:
+            store.replace_server_documents(normalized_server, documents)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=["Не удалось загрузить законодательную базу сервера. Попробуйте позже или обратитесь к администратору."],
+            detail=[f"?? ??????? ????????? ??????????????? ???? ??????? ?????????. ?????????? ??????????: {len(missing_sources)}."],
         )
-    store.replace_server_documents(server_code, documents)
-    return store.list_documents(server_code)
+
+    store.replace_server_documents(normalized_server, documents)
+    return store.list_documents(normalized_server)
 
 
 def answer_law_question(payload: LawQaPayload, law_qa_store: LawQaStore) -> tuple[str, list[str], int]:
