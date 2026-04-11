@@ -37,8 +37,9 @@ const detailModal = createModalController({
   modal: document.getElementById("exam-detail-modal"),
 });
 
-const ACTIVE_TASK_STORAGE_KEY = "ogp_exam_import_active_task";
+const ACTIVE_TASK_STORAGE_KEY = "ogp_exam_import_active_task_v2";
 const TASK_INTERRUPTION_MARKER = "сервис был перезапущен до завершения задачи";
+const ACTIVE_TASK_MAX_AGE_MS = 15 * 60 * 1000;
 
 let progressHintTimer = null;
 let progressElapsedTimer = null;
@@ -75,6 +76,7 @@ function saveActiveTask(task) {
         task_id: String(task.task_id),
         task_type: String(task.task_type || ""),
         source_row: task.source_row ?? null,
+        saved_at: Date.now(),
       }),
     );
   } catch {
@@ -90,6 +92,11 @@ function loadActiveTask() {
     }
     const parsed = JSON.parse(raw);
     if (!parsed?.task_id) {
+      window.localStorage.removeItem(ACTIVE_TASK_STORAGE_KEY);
+      return null;
+    }
+    const savedAt = Number(parsed.saved_at || 0);
+    if (savedAt > 0 && Date.now() - savedAt > ACTIVE_TASK_MAX_AGE_MS) {
       window.localStorage.removeItem(ACTIVE_TASK_STORAGE_KEY);
       return null;
     }
