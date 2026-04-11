@@ -4,19 +4,41 @@
 {% block main_class %}page auth-page{% endblock %}
 
 {% block content %}
-{% set hero_title = "Подтверждение email" %}
-{% set hero_description = "Завершите регистрацию и после этого входите в аккаунт." %}
-{% set hero_card_label = "Статус" %}
-{% set hero_card_value = "успешно" if verification_success else "ошибка" %}
-{% set hero_card_text = verification_message %}
-{% include "partials/page_hero.html" %}
+<div class="legal-page legal-page--auth">
+  <header class="legal-header legal-header--auth">
+    <div class="legal-header__main">
+      <p class="legal-header__eyebrow">OGP Builder</p>
+      <h1 class="legal-header__title">Подтверждение email</h1>
+      <p class="legal-header__description">Завершите регистрацию и затем входите в аккаунт.</p>
+    </div>
 
-<section class="panel auth-shell">
-  <div class="{{ 'success-box' if verification_success else 'errors' }}">
-    {{ verification_message }}
-  </div>
-  <div class="actions">
-    <a class="nav-link active" href="/login">Перейти ко входу</a>
-  </div>
-</section>
+    <aside class="legal-user-card legal-user-card--auth">
+      <div class="legal-user-card__top">
+        <span class="legal-user-card__label">Статус</span>
+        <strong class="legal-user-card__value legal-user-card__value--status">
+          {{ "успешно" if verification_success else "ошибка" }}
+        </strong>
+      </div>
+      <p class="legal-user-card__text">{{ verification_message }}</p>
+    </aside>
+  </header>
+
+  <section class="panel legal-card legal-section legal-section--auth">
+    <div class="legal-section__header">
+      <div>
+        <p class="legal-section__eyebrow">Результат</p>
+        <h2 class="legal-section__title">Проверка адреса</h2>
+        <p class="legal-section__description">Статус подтверждения для текущей ссылки.</p>
+      </div>
+    </div>
+
+    <div class="{{ 'success-box' if verification_success else 'errors' }}">
+      {{ verification_message }}
+    </div>
+
+    <div class="actions legal-toolbar legal-toolbar--result">
+      <a class="button-link primary-button" href="/login">Перейти ко входу</a>
+    </div>
+  </section>
+</div>
 {% endblock %}
