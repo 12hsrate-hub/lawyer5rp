@@ -18,7 +18,7 @@ from ogp_web.schemas import (
     SuggestResponse,
 )
 from ogp_web.server_config import build_permission_set, get_server_config
-from ogp_web.services.ai_service import answer_law_question, extract_principal_scan, suggest_text
+from ogp_web.services.ai_service import answer_law_question_details, extract_principal_scan, suggest_text
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -228,20 +228,29 @@ async def law_qa_test(
     _ensure_law_qa_permission(store, user)
     effective_server_code = payload.server_code or user.server_code or store.get_server_code(user.username)
     payload = payload.model_copy(update={"server_code": effective_server_code})
-    text, used_sources, indexed_documents = await run_in_threadpool(answer_law_question, payload)
+    result = await run_in_threadpool(answer_law_question_details, payload)
     metrics_store.log_event(
         event_type="ai_law_qa_test",
         username=user.username,
         path="/api/ai/law-qa-test",
         method="POST",
         status_code=200,
-        resource_units=len(payload.question or "") + len(text),
+        resource_units=len(payload.question or "") + len(result.text),
         meta={
             "server_code": effective_server_code,
             "model": payload.model,
-            "indexed_documents": indexed_documents,
-            "used_sources_count": len(used_sources),
+            "indexed_documents": result.indexed_documents,
+            "used_sources_count": len(result.used_sources),
+            "retrieval_confidence": result.retrieval_confidence,
+            "selected_norms_count": len(result.selected_norms),
             "max_answer_chars": payload.max_answer_chars,
         },
     )
-    return LawQaResponse(text=text, used_sources=used_sources, indexed_documents=indexed_documents)
+    return LawQaResponse(
+        text=result.text,
+        used_sources=result.used_sources,
+        indexed_documents=result.indexed_documents,
+        retrieval_confidence=result.retrieval_confidence,
+        retrieval_profile=result.retrieval_profile,
+        selected_norms=result.selected_norms,
+    )

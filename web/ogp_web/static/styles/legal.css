@@ -412,6 +412,15 @@
   padding: 20px 22px;
 }
 
+.legal-subcard--compact {
+  padding: 16px 18px;
+}
+
+.legal-stack {
+  display: grid;
+  gap: 12px;
+}
+
 .legal-subcard--ocr {
   margin-top: 20px;
   box-shadow: 0 10px 26px rgba(107, 82, 59, 0.08);

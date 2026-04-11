@@ -19,6 +19,7 @@ class LawRetrievalMatch:
 class LawRetrievalResult:
     server_code: str
     server_name: str
+    profile: str
     query: str
     confidence: str
     is_configured: bool
@@ -41,6 +42,7 @@ def retrieve_law_context(
     server_code: str,
     query: str,
     excerpt_chars: int,
+    profile: str = "law_qa",
     get_server_config_func: GetServerConfig,
     load_law_bundle_chunks_func: LoadLawBundleChunks,
     build_law_chunk_index_func: BuildLawChunkIndex,
@@ -74,10 +76,13 @@ def retrieve_law_context(
         )
         for item in selected
     )
+    matches = _rerank_matches(matches, retrieval_query, profile)
+    matches = matches[: _profile_target_count(profile, confidence)]
 
     return LawRetrievalResult(
         server_code=str(getattr(server_config, "code", normalized_server_code) or normalized_server_code),
         server_name=str(getattr(server_config, "name", normalized_server_code) or normalized_server_code),
+        profile=profile,
         query=retrieval_query,
         confidence=confidence,
         is_configured=bool(bundle_path or configured_sources),
@@ -91,3 +96,87 @@ def retrieve_law_context(
 def unique_sources(result: LawRetrievalResult) -> tuple[str, ...]:
     return tuple(dict.fromkeys(match.chunk.url for match in result.matches if match.chunk.url))
 
+
+def _profile_target_count(profile: str, confidence: str) -> int:
+    normalized_profile = str(profile or "law_qa").strip().lower()
+    normalized_confidence = str(confidence or "low").strip().lower()
+    if normalized_profile == "suggest":
+        return {"high": 4, "medium": 4, "low": 3}.get(normalized_confidence, 4)
+    return {"high": 5, "medium": 6, "low": 7}.get(normalized_confidence, 6)
+
+
+def _normalize_retrieval_text(text: str) -> str:
+    normalized = str(text or "").lower().replace("ё", "е")
+    return "".join(ch if ch.isalnum() or ch.isspace() or ch == "." else " " for ch in normalized)
+
+
+def _query_tokens(query: str) -> tuple[str, ...]:
+    tokens = []
+    for token in _normalize_retrieval_text(query).split():
+        if len(token) >= 3:
+            tokens.append(token)
+    return tuple(dict.fromkeys(tokens))
+
+
+def _extract_article_numbers(query: str) -> tuple[str, ...]:
+    import re
+
+    return tuple(
+        dict.fromkeys(
+            match
+            for match in re.findall(r"(?:article|ст\.?|статья)\s*(\d{1,3}(?:\.\d+)?)", str(query or ""), flags=re.IGNORECASE)
+            if match
+        )
+    )
+
+
+def _match_bonus(match: LawRetrievalMatch, query: str, profile: str) -> int:
+    import re
+
+    normalized_title = _normalize_retrieval_text(match.chunk.document_title)
+    normalized_label = _normalize_retrieval_text(match.chunk.article_label)
+    article_numbers = _extract_article_numbers(query)
+    query_tokens = _query_tokens(query)
+    bonus = 0
+
+    label_specific = normalized_label and normalized_label != "general"
+    if label_specific:
+        bonus += 4
+    if profile == "suggest" and not label_specific:
+        bonus -= 8
+
+    for article_number in article_numbers:
+        article_pattern = rf"(?:article|ст\.?|статья)\s*{re.escape(article_number)}\b"
+        if re.search(article_pattern, normalized_label, flags=re.IGNORECASE):
+            bonus += 28
+        elif re.search(article_pattern, _normalize_retrieval_text(match.chunk.text[:600]), flags=re.IGNORECASE):
+            bonus += 16
+
+    label_hits = sum(1 for token in query_tokens if token in normalized_label)
+    title_hits = sum(1 for token in query_tokens if token in normalized_title)
+    bonus += label_hits * 6
+    bonus += title_hits * 3
+
+    if profile == "suggest":
+        if label_hits == 0 and title_hits == 0 and not article_numbers:
+            bonus -= 4
+        if len(match.chunk.text or "") > 2500:
+            bonus -= 2
+    else:
+        if label_hits or article_numbers:
+            bonus += 2
+
+    return bonus
+
+
+def _rerank_matches(matches: tuple[LawRetrievalMatch, ...], query: str, profile: str) -> tuple[LawRetrievalMatch, ...]:
+    reranked = [
+        LawRetrievalMatch(
+            chunk=match.chunk,
+            score=max(match.score + _match_bonus(match, query, profile), 0),
+            excerpt=match.excerpt,
+        )
+        for match in matches
+    ]
+    reranked.sort(key=lambda item: item.score, reverse=True)
+    return tuple(reranked)

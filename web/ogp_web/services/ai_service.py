@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 from functools import lru_cache
 import logging
@@ -28,6 +29,16 @@ LOGGER = logging.getLogger(__name__)
 
 
 _LawChunk = LawChunk
+
+
+@dataclass(frozen=True)
+class LawQaAnswerResult:
+    text: str
+    used_sources: list[str]
+    indexed_documents: int
+    retrieval_confidence: str
+    retrieval_profile: str
+    selected_norms: list[dict[str, object]]
 
 
 LAW_QA_STOPWORDS = {
@@ -850,11 +861,12 @@ def _request_law_qa_text(*, client, model_name: str, prompt: str, max_output_tok
     )
 
 
-def _retrieve_law_context(*, server_code: str, query: str, excerpt_chars: int):
+def _retrieve_law_context(*, server_code: str, query: str, excerpt_chars: int, profile: str = "law_qa"):
     return retrieve_law_context(
         server_code=server_code,
         query=query,
         excerpt_chars=excerpt_chars,
+        profile=profile,
         get_server_config_func=get_server_config,
         load_law_bundle_chunks_func=load_law_bundle_chunks,
         build_law_chunk_index_func=_build_law_chunk_index_cached,
@@ -880,6 +892,24 @@ def _build_law_qa_context_blocks(retrieval_result) -> list[str]:
     return context_blocks
 
 
+def _build_law_qa_selected_norms(retrieval_result, *, max_excerpt_chars: int = 240) -> list[dict[str, object]]:
+    items: list[dict[str, object]] = []
+    for match in retrieval_result.matches:
+        preview = str(match.excerpt or "").strip()
+        if len(preview) > max_excerpt_chars:
+            preview = preview[: max_excerpt_chars - 3].rstrip() + "..."
+        items.append(
+            {
+                "source_url": match.chunk.url,
+                "document_title": match.chunk.document_title,
+                "article_label": match.chunk.article_label,
+                "score": int(match.score),
+                "excerpt_preview": preview,
+            }
+        )
+    return items
+
+
 def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: int = 4) -> str:
     retrieval_query = str(question or "").strip()
     if not retrieval_query:
@@ -889,6 +919,7 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
         server_code=server_code,
         query=retrieval_query,
         excerpt_chars=900,
+        profile="suggest",
     )
     if not retrieval_result.indexed_chunk_count or retrieval_result.confidence == "low":
         return ""
@@ -965,7 +996,7 @@ def _clean_suggest_text(text: str) -> str:
     return cleaned.strip()
 
 
-def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
+def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
     question = payload.question.strip()
     if not question:
         raise HTTPException(
@@ -978,6 +1009,7 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
         server_code=payload.server_code or DEFAULT_SERVER_CODE,
         query=question,
         excerpt_chars=1800,
+        profile="law_qa",
     )
     if not retrieval_result.is_configured:
         raise HTTPException(
@@ -1026,7 +1058,19 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
 
     limited = text[: payload.max_answer_chars].strip()
-    return limited, list(unique_sources(retrieval_result)), retrieval_result.indexed_chunk_count
+    return LawQaAnswerResult(
+        text=limited,
+        used_sources=list(unique_sources(retrieval_result)),
+        indexed_documents=retrieval_result.indexed_chunk_count,
+        retrieval_confidence=retrieval_result.confidence,
+        retrieval_profile=retrieval_result.profile,
+        selected_norms=_build_law_qa_selected_norms(retrieval_result),
+    )
+
+
+def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
+    result = answer_law_question_details(payload)
+    return result.text, result.used_sources, result.indexed_documents
 
 
 def suggest_text(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> str:

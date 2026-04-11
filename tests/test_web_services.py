@@ -544,6 +544,53 @@ https://laws.example/article
         self.assertIn("Не используй реальные законы", captured["input"])
         self.assertIn("Право на защиту", captured["input"])
 
+    def test_law_qa_details_include_retrieval_debug(self):
+        original_get_server_config = ai_service.get_server_config
+        original_build_index = ai_service._build_law_chunk_index_cached
+        original_create_client = ai_service.create_openai_client
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ("https://laws.example/base",)
+
+        class DummyResponses:
+            def create(self, **kwargs):
+                return type("DummyResponse", (), {"output_text": "Ответ по закону."})()
+
+        class DummyClient:
+            responses = DummyResponses()
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service._build_law_chunk_index_cached = lambda source_urls: (
+            ai_service._LawChunk(
+                url="https://laws.example/base",
+                document_title="Процессуальный кодекс",
+                article_label="Статья 20",
+                text="Статья 20. Основания освобождения задержанного.",
+            ),
+        )
+        ai_service.create_openai_client = lambda **kwargs: DummyClient()
+        try:
+            result = ai_service.answer_law_question_details(
+                LawQaPayload(
+                    server_code="blackberry",
+                    model="gpt-5.4",
+                    question="Когда обязаны освободить задержанного?",
+                    max_answer_chars=2000,
+                )
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service._build_law_chunk_index_cached = original_build_index
+            ai_service.create_openai_client = original_create_client
+
+        self.assertEqual(result.text, "Ответ по закону.")
+        self.assertEqual(result.retrieval_profile, "law_qa")
+        self.assertTrue(result.retrieval_confidence)
+        self.assertEqual(result.selected_norms[0]["article_label"], "Статья 20")
+        self.assertEqual(result.selected_norms[0]["source_url"], "https://laws.example/base")
+
     def test_law_qa_retries_when_model_returns_empty_text_once(self):
         original_get_server_config = ai_service.get_server_config
         original_build_index = ai_service._build_law_chunk_index_cached

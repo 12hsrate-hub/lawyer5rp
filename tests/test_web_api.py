@@ -662,8 +662,27 @@ class WebApiTests(unittest.TestCase):
     def test_law_qa_test_endpoint_returns_text_and_sources(self):
         self._register_verify_and_login("tester", "tester_law@example.com")
 
-        original = complaint_route.answer_law_question
-        complaint_route.answer_law_question = lambda payload: ("Ответ по нормам", ["https://laws.example/base"], 3)
+        original = complaint_route.answer_law_question_details
+        complaint_route.answer_law_question_details = lambda payload: type(
+            "LawQaAnswerResult",
+            (),
+            {
+                "text": "Ответ по нормам",
+                "used_sources": ["https://laws.example/base"],
+                "indexed_documents": 3,
+                "retrieval_confidence": "high",
+                "retrieval_profile": "law_qa",
+                "selected_norms": [
+                    {
+                        "source_url": "https://laws.example/base",
+                        "document_title": "Кодекс",
+                        "article_label": "Статья 20",
+                        "score": 91,
+                        "excerpt_preview": "Фрагмент",
+                    }
+                ],
+            },
+        )()
         try:
             response = self.client.post(
                 "/api/ai/law-qa-test",
@@ -675,13 +694,16 @@ class WebApiTests(unittest.TestCase):
                 },
             )
         finally:
-            complaint_route.answer_law_question = original
+            complaint_route.answer_law_question_details = original
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["text"], "Ответ по нормам")
         self.assertEqual(payload["indexed_documents"], 3)
         self.assertEqual(payload["used_sources"], ["https://laws.example/base"])
+        self.assertEqual(payload["retrieval_confidence"], "high")
+        self.assertEqual(payload["retrieval_profile"], "law_qa")
+        self.assertEqual(payload["selected_norms"][0]["article_label"], "Статья 20")
 
     def test_law_qa_test_page_available_for_tester(self):
         self._register_verify_and_login("tester", "tester_law_page@example.com")

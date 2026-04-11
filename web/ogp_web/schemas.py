@@ -158,6 +158,9 @@ class LawQaResponse(BaseModel):
     text: str
     used_sources: List[str] = Field(default_factory=list)
     indexed_documents: int = 0
+    retrieval_confidence: str = ""
+    retrieval_profile: str = ""
+    selected_norms: List[dict[str, Any]] = Field(default_factory=list)
 
 
 class PrincipalScanPayload(BaseModel):
