@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from time import monotonic
 from typing import Any
 
 from ogp_web.server_config import DEFAULT_SERVER_CODE
@@ -28,13 +29,16 @@ class LawRetrievalResult:
     configured_sources: tuple[str, ...]
     indexed_chunk_count: int
     bundle_health: BundleHealth
+    prefilter_count: int
+    rerank_candidate_count: int
+    rerank_ms: int
     matches: tuple[LawRetrievalMatch, ...]
 
 
 GetServerConfig = Callable[[str], Any]
 LoadLawBundleChunks = Callable[[str, str], tuple[LawChunk, ...] | list[LawChunk]]
 BuildLawChunkIndex = Callable[[tuple[str, ...]], tuple[LawChunk, ...] | list[LawChunk]]
-SelectLawChunks = Callable[[list[LawChunk], str], tuple[list[LawChunk], str]]
+SelectLawChunks = Callable[..., tuple[list[LawChunk], str]]
 ScoreLawChunk = Callable[[LawChunk, str], int]
 ExtractExcerpt = Callable[..., str]
 
@@ -69,17 +73,28 @@ def retrieve_law_context(
 
     selected: list[LawChunk] = []
     confidence = "low"
+    prefilter_count = 0
+    rerank_candidate_count = 0
+    rerank_ms = 0
     if retrieval_query and chunks:
-        selected, confidence = select_chunks_func(chunks, retrieval_query)
+        try:
+            selected, confidence = select_chunks_func(chunks, retrieval_query, profile)
+        except TypeError:
+            selected, confidence = select_chunks_func(chunks, retrieval_query)
+        prefilter_count = len(selected)
 
+    rerank_candidates = selected[: _profile_rerank_candidate_count(profile, confidence)]
+    rerank_candidate_count = len(rerank_candidates)
+    rerank_started_at = monotonic()
     matches = tuple(
         LawRetrievalMatch(
             chunk=item,
             score=score_chunk_func(item, retrieval_query),
             excerpt=extract_excerpt_func(item.text, retrieval_query, max_chars=excerpt_chars),
         )
-        for item in selected
+        for item in rerank_candidates
     )
+    rerank_ms = int((monotonic() - rerank_started_at) * 1000) if rerank_candidates else 0
     matches = _rerank_matches(matches, retrieval_query, profile)
     matches = matches[: _profile_target_count(profile, confidence)]
     bundle_health = build_bundle_health(
@@ -101,6 +116,9 @@ def retrieve_law_context(
         configured_sources=configured_sources,
         indexed_chunk_count=len(chunks),
         bundle_health=bundle_health,
+        prefilter_count=prefilter_count,
+        rerank_candidate_count=rerank_candidate_count,
+        rerank_ms=rerank_ms,
         matches=matches,
     )
 
@@ -113,8 +131,16 @@ def _profile_target_count(profile: str, confidence: str) -> int:
     normalized_profile = str(profile or "law_qa").strip().lower()
     normalized_confidence = str(confidence or "low").strip().lower()
     if normalized_profile == "suggest":
-        return {"high": 4, "medium": 4, "low": 3}.get(normalized_confidence, 4)
+        return {"high": 4, "medium": 3, "low": 3}.get(normalized_confidence, 4)
     return {"high": 5, "medium": 6, "low": 7}.get(normalized_confidence, 6)
+
+
+def _profile_rerank_candidate_count(profile: str, confidence: str) -> int:
+    normalized_profile = str(profile or "law_qa").strip().lower()
+    normalized_confidence = str(confidence or "low").strip().lower()
+    if normalized_profile == "suggest":
+        return {"high": 8, "medium": 7, "low": 6}.get(normalized_confidence, 7)
+    return {"high": 12, "medium": 14, "low": 16}.get(normalized_confidence, 14)
 
 
 def _normalize_retrieval_text(text: str) -> str:

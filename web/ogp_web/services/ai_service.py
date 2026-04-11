@@ -677,6 +677,87 @@ def _score_law_chunk(chunk: _LawChunk, question: str) -> int:
     return score
 
 
+def _cheap_score_law_chunk(chunk: _LawChunk, question: str) -> int:
+    (
+        normalized_text,
+        normalized_label,
+        title_tokens,
+        label_tokens,
+        text_tokens,
+        title_stems,
+        label_stems,
+        text_stems,
+    ) = _chunk_search_payload(chunk)
+    terms = _expand_question_terms(question)
+    score = 0
+
+    code_hint_tokens = {
+        token
+        for token in terms
+        if token
+        in {
+            "СѓРє",
+            "РїРє",
+            "Р°Рє",
+            "РґРє",
+            "СѓРіРѕР»РѕРІРЅС‹Р№",
+            "СѓРіРѕР»РѕРІРЅРѕРіРѕ",
+            "РїСЂРѕС†РµСЃСЃСѓР°Р»СЊРЅС‹Р№",
+            "РїСЂРѕС†РµСЃСЃСѓР°Р»СЊРЅРѕРіРѕ",
+            "Р°РґРјРёРЅРёСЃС‚СЂР°С‚РёРІРЅС‹Р№",
+            "Р°РґРјРёРЅРёСЃС‚СЂР°С‚РёРІРЅРѕРіРѕ",
+            "РґРѕСЂРѕР¶РЅС‹Р№",
+            "РґРѕСЂРѕР¶РЅРѕРіРѕ",
+            "РєРѕРґРµРєСЃ",
+        }
+    }
+    if code_hint_tokens:
+        score += sum(1 for token in code_hint_tokens if token in title_tokens) * 10
+        score += sum(1 for token in code_hint_tokens if _stem_law_token(token) in title_stems) * 5
+
+    for term in terms:
+        if not term:
+            continue
+        term_stem = _stem_law_token(term)
+        if term in label_tokens:
+            score += 14
+        elif term_stem and term_stem in label_stems:
+            score += 8
+
+        if term in title_tokens:
+            score += 8
+        elif term_stem and term_stem in title_stems:
+            score += 4
+
+        if term in text_tokens:
+            score += 6
+        elif term_stem and term_stem in text_stems:
+            score += 3
+
+        if f" {term} " in f" {normalized_text} ":
+            score += 2
+        elif term in normalized_label:
+            score += 1
+
+    for article_number in _extract_article_numbers(question):
+        article_pattern = rf"(?i)(?:article|СЃС‚\.?|СЃС‚Р°С‚СЊСЏ)\s*{re.escape(article_number)}(?:\.\d+)?\b"
+        if re.search(article_pattern, normalized_label):
+            score += 42
+        elif re.search(article_pattern, normalized_text):
+            score += 28
+
+    if terms:
+        matched_terms = sum(
+            1
+            for term in terms
+            if term in text_tokens or term in label_tokens or term in title_tokens or (_stem_law_token(term) in text_stems)
+        )
+        score += matched_terms * 2
+        if matched_terms >= max(2, min(4, len(terms) // 3 or 1)):
+            score += 6
+    return score
+
+
 def _classify_law_qa_confidence(scores: list[int], question: str) -> str:
     if not scores:
         return "low"
@@ -684,27 +765,27 @@ def _classify_law_qa_confidence(scores: list[int], question: str) -> str:
     nonzero = sum(1 for score in scores if score > 0)
     terms = _expand_question_terms(question)
     article_numbers = _extract_article_numbers(question)
-    if article_numbers and top >= 50:
+    if article_numbers and top >= 40:
         return "high"
-    if top >= 65 and nonzero >= 3:
+    if top >= 48 and nonzero >= 3:
         return "high"
-    if top >= 40 and (nonzero >= 2 or len(terms) <= 4):
+    if top >= 26 and (nonzero >= 2 or len(terms) <= 4):
         return "medium"
     return "low"
 
 
-def _select_law_qa_chunks(chunks: list[_LawChunk], question: str) -> tuple[list[_LawChunk], str]:
-    scored = [(item, _score_law_chunk(item, question)) for item in chunks]
+def _select_law_qa_chunks(chunks: list[_LawChunk], question: str, profile: str = "law_qa") -> tuple[list[_LawChunk], str]:
+    scored = [(item, _cheap_score_law_chunk(item, question)) for item in chunks]
     ranked = sorted(scored, key=lambda pair: pair[1], reverse=True)
     positive = [item for item, score in ranked if score > 0]
     confidence = _classify_law_qa_confidence([score for _, score in ranked], question)
-    if confidence == "high":
-        target_count = 5
-    elif confidence == "medium":
-        target_count = 6
+    if str(profile or "law_qa").strip().lower() == "suggest":
+        target_count = {"high": 8, "medium": 7, "low": 6}.get(confidence, 7)
+        fallback_count = 4
     else:
-        target_count = 7
-    selected = positive[:target_count] or [item for item, _ in ranked[:4]]
+        target_count = {"high": 12, "medium": 14, "low": 16}.get(confidence, 14)
+        fallback_count = 6
+    selected = positive[:target_count] or [item for item, _ in ranked[:fallback_count]]
     return selected, confidence
 
 
