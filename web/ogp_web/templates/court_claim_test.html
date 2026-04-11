@@ -15,7 +15,7 @@
     </div>
     <aside class="legal-user-card">
       <div class="legal-user-card__top">
-        <span class="legal-user-card__label">сточник данных</span>
+        <span class="legal-user-card__label">Источник данных</span>
         <strong class="legal-user-card__value">Профиль представителя</strong>
       </div>
       <p class="legal-user-card__text">
@@ -106,14 +106,14 @@
             <div class="legal-ocr">
               <div class="legal-ocr__controls">
                 <label class="legal-file-field">
-                  <span class="legal-field__label">зображение страницы договора</span>
+                  <span class="legal-field__label">Изображение страницы договора</span>
                   <div class="legal-file-picker">
                     <label class="secondary-button legal-file-picker__button" for="court-claim-plaintiff-ocr-file">Файл</label>
                     <span id="court-claim-plaintiff-ocr-file-name" class="legal-file-picker__name is-empty">Файл не выбран</span>
                     <input id="court-claim-plaintiff-ocr-file" class="legal-file-picker__input" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
                   </div>
                 </label>
-                <button type="button" id="court-claim-plaintiff-ocr-btn" class="secondary-button">звлечь данные из договора</button>
+                <button type="button" id="court-claim-plaintiff-ocr-btn" class="secondary-button">Извлечь данные из договора</button>
               </div>
 
               <div id="court-claim-plaintiff-ocr-status" class="legal-ocr__status">Статус: ожидается файл для распознавания.</div>
@@ -126,7 +126,7 @@
 
           <div class="legal-field-grid legal-field-grid--two">
             <label class="legal-field">
-              <span class="legal-field__label">Доверитель: ФО</span>
+              <span class="legal-field__label">Доверитель: ФИО</span>
               <input name="plaintiff_name" type="text" placeholder="Например: Vic Vega" />
             </label>
             <label class="legal-field">
@@ -147,7 +147,7 @@
             </label>
 
             <label id="court-claim-defendant-name-field" class="legal-field">
-              <span class="legal-field__label">Ответчик: ФО</span>
+              <span class="legal-field__label">Ответчик: ФИО</span>
               <input name="defendant_name" type="text" placeholder="Например: Angel Bradley" />
             </label>
             <label id="court-claim-defendant-address-field" class="legal-field">
@@ -168,7 +168,7 @@
             </label>
 
             <label id="court-claim-defendant-representative-name-field" class="legal-field" hidden>
-              <span class="legal-field__label">Представитель ответчика: ФО</span>
+              <span class="legal-field__label">Представитель ответчика: ФИО</span>
               <input name="defendant_representative_name" type="text" placeholder="Например: John Carter" />
             </label>
             <label id="court-claim-defendant-representative-address-field" class="legal-field" hidden>
@@ -199,7 +199,7 @@
           </div>
           <div class="legal-field-grid">
             <label class="legal-field legal-field--full">
-              <span class="legal-field__label">зложение обстоятельств дела</span>
+              <span class="legal-field__label">Изложение обстоятельств дела</span>
               <span id="court-claim-situation-hint" class="legal-field__hint">
                 Пример: 23.12.2024 ответчик применил силу к доверителю и, по мнению стороны истца, превысил служебные полномочия. Для проверки полноты обстоятельств требуется видеофиксация ответчика, доступ к которой возможен только после выдачи ордера AI.
               </span>
@@ -294,4 +294,3 @@
 {% block page_scripts %}
 <script src="{{ url_for('static', path='pages/court_claim_test.js') }}?v={{ static_asset_version }}" defer></script>
 {% endblock %}
-

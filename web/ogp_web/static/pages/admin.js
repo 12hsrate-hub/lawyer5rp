@@ -131,7 +131,7 @@ function describeApiPath(path) {
     [/^\/api\/auth\/forgot-password$/, "Запуск восстановления пароля."],
     [/^\/api\/auth\/reset-password$/, "Сброс пароля по токену восстановления."],
     [/^\/api\/profile$/, "Загрузка или сохранение данных профиля пользователя."],
-    [/^\/api\/exam-import\/sync$/, "мпорт новых ответов на экзамены из Google Sheets."],
+    [/^\/api\/exam-import\/sync$/, "Импорт новых ответов на экзамены из Google Sheets."],
     [/^\/api\/exam-import\/score$/, "Массовая проверка импортированных экзаменационных ответов."],
     [/^\/api\/exam-import\/rows\/\d+$/, "Просмотр деталей по одной импортированной строке экзамена."],
     [/^\/api\/exam-import\/rows\/\d+\/score$/, "Проверка и оценка одной конкретной строки экзамена."],
@@ -157,7 +157,7 @@ function describeEventType(eventType) {
     ai_suggest: "AI обработал и улучшил текст жалобы.",
     ai_extract_principal: "AI распознал данные с документа.",
     ai_exam_scoring: "AI проверил экзаменационные ответы и вернул статистику по cache, эвристикам и LLM.",
-    exam_import_sync_error: "мпорт из Google Sheets завершился ошибкой.",
+    exam_import_sync_error: "Импорт из Google Sheets завершился ошибкой.",
     exam_import_score_failures: "Во время массовой проверки экзаменов часть строк не обработалась.",
     exam_import_row_score_error: "Проверка одной строки экзамена завершилась ошибкой.",
     admin_verify_email: "Администратор подтвердил email пользователя.",
@@ -193,7 +193,7 @@ function renderFilterChip(label, key) {
   return `
     <button type="button" class="admin-filter-chip" data-clear-filter="${escapeHtml(key)}">
       <span>${escapeHtml(label)}</span>
-      <span class="admin-filter-chip__close" aria-hidden="true">×</span>
+      <span class="admin-filter-chip__close" aria-hidden="true">Г—</span>
     </button>
   `;
 }
@@ -258,7 +258,7 @@ function renderTotals(totals) {
     ["Вызовы LLM", totals.ai_exam_llm_calls_total || 0, "Сколько batch-вызовов сделали к модели"],
     ["Ошибки экзамена", totals.ai_exam_failure_total || 0, "Ошибки оценивания экзаменов и импорта"],
     ["Входящий трафик", `${formatNumber(totals.request_bytes_total)} B`, "Суммарный размер запросов"],
-    ["сходящий трафик", `${formatNumber(totals.response_bytes_total)} B`, "Суммарный размер ответов"],
+    ["Исходящий трафик", `${formatNumber(totals.response_bytes_total)} B`, "Суммарный размер ответов"],
     ["Ресурсные единицы", formatNumber(totals.resource_units_total), "Условная нагрузка"],
     ["Средний API ответ", `${formatNumber(totals.avg_api_duration_ms)} ms`, "Средняя длительность API"],
     ["События за 24 часа", totals.events_last_24h, "Последняя суточная активность"],
@@ -305,7 +305,7 @@ function renderPerformance(payload) {
       <span class="admin-user-cell__secondary">Окно: ${escapeHtml(String(payload?.window_minutes ?? "—"))} мин</span>
     </article>
     <article class="legal-status-card">
-      <span class="legal-status-card__label">Топ endpoint</span>
+      <span class="legal-status-card__label">РўРѕРї endpoint</span>
       <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(top[0]?.path || "—"))}</strong>
       <span class="admin-user-cell__secondary">Запросов: ${escapeHtml(String(top[0]?.count || 0))}</span>
     </article>
@@ -430,7 +430,7 @@ function renderActiveFilters(filters) {
   if (filters.gka_only) chips.push(renderFilterChip("Только ГКА-ЗГКА", "gka_only"));
   if (filters.unverified_only) chips.push(renderFilterChip("Только без подтверждения email", "unverified_only"));
   if (filters.event_search) chips.push(renderFilterChip(`События: ${filters.event_search}`, "event_search"));
-  if (filters.event_type) chips.push(renderFilterChip(`Тип: ${filters.event_type}`, "event_type"));
+  if (filters.event_type) chips.push(renderFilterChip(`РўРёРї: ${filters.event_type}`, "event_type"));
   if (filters.failed_events_only) chips.push(renderFilterChip("Только ошибки", "failed_events_only"));
 
   if (!chips.length) {
@@ -543,7 +543,7 @@ function renderEvents(events) {
           <tr>
             <th>Время</th>
             <th>Пользователь</th>
-            <th>Тип</th>
+            <th>РўРёРї</th>
             <th>Путь</th>
             <th>Статус</th>
             <th>ms</th>
@@ -801,7 +801,7 @@ async function loadAdminPerformance({ silent = false } = {}) {
     if (!response.ok) {
       const payload = await parsePayload(response);
       if (!silent) {
-        showText(errorsHost, payload.detail || "    .");
+        showText(errorsHost, payload.detail || "Не удалось загрузить метрики производительности.");
       }
       return;
     }
@@ -809,7 +809,7 @@ async function loadAdminPerformance({ silent = false } = {}) {
     renderPerformance(payload);
   } catch (error) {
     if (!silent) {
-      showText(errorsHost, error?.message || "    .");
+      showText(errorsHost, error?.message || "Не удалось загрузить метрики производительности.");
     }
   }
 }
@@ -820,7 +820,7 @@ async function loadAdminOverview({ silent = false } = {}) {
     clearMessage();
     showOverviewLoading();
   } else {
-    setLiveStatus("Live: ...", "info");
+    setLiveStatus("Live: обновление...", "info");
   }
 
   try {
@@ -828,9 +828,9 @@ async function loadAdminOverview({ silent = false } = {}) {
     if (!response.ok) {
       const payload = await parsePayload(response);
       if (!silent) {
-        showText(errorsHost, payload.detail || "    -.");
+        showText(errorsHost, payload.detail || "Не удалось загрузить данные админ-панели.");
       } else {
-        setLiveStatus("Live:  ", "danger");
+        setLiveStatus("Live: ошибка обновления", "danger");
       }
       return;
     }
@@ -848,13 +848,13 @@ async function loadAdminOverview({ silent = false } = {}) {
       renderUserModal(userIndex.get(String(selectedUser).toLowerCase()));
     }
     if (silent) {
-      setLiveStatus(`Live:  ${new Date().toLocaleTimeString("ru-RU")}`, "success-soft");
+      setLiveStatus(`Live: синхронно ${new Date().toLocaleTimeString("ru-RU")}`, "success-soft");
     }
   } catch (error) {
     if (!silent) {
-      showText(errorsHost, error?.message || "    -.");
+      showText(errorsHost, error?.message || "Не удалось загрузить данные админ-панели.");
     } else {
-      setLiveStatus("Live:  ", "danger");
+      setLiveStatus("Live: ошибка обновления", "danger");
     }
   }
 }
@@ -878,13 +878,13 @@ function clearLiveTimer() {
 function scheduleLiveRefresh() {
   clearLiveTimer();
   if (!liveRefreshField?.checked) {
-    setLiveStatus("Live: ", "muted");
+    setLiveStatus("Live: выключено", "muted");
     return;
   }
 
   const intervalSeconds = Number(liveIntervalField?.value || 30);
   const safeIntervalMs = Math.max(10, intervalSeconds) * 1000;
-  setLiveStatus(`Live:  ${Math.max(10, intervalSeconds)}`, "info");
+  setLiveStatus(`Live: интервал ${Math.max(10, intervalSeconds)}с`, "info");
 
   adminLiveTimer = window.setInterval(async () => {
     if (document.hidden) {
@@ -1102,4 +1102,3 @@ Promise.all([
 ]).then(() => {
   scheduleLiveRefresh();
 });
-
