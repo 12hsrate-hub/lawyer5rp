@@ -42,7 +42,7 @@ class InMemoryRateLimiter:
     def check(self, key: str, max_requests: int, window_seconds: int) -> None:
         if not self.is_allowed(key, max_requests, window_seconds):
             raise RateLimitExceeded(
-                f"РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ Р·Р°РїСЂРѕСЃРѕРІ. РџРѕРїСЂРѕР±СѓР№С‚Рµ СЃРЅРѕРІР° С‡РµСЂРµР· {window_seconds} СЃРµРєСѓРЅРґ."
+                f"Слишком много запросов. Попробуйте снова через {window_seconds} секунд."
             )
 
     def reset(self) -> None:
@@ -173,7 +173,7 @@ class PersistentRateLimiter:
                 if total >= max_requests:
                     conn.rollback()
                     raise RateLimitExceeded(
-                        f"РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ Р·Р°РїСЂРѕСЃРѕРІ. РџРѕРїСЂРѕР±СѓР№С‚Рµ СЃРЅРѕРІР° С‡РµСЂРµР· {window_seconds} СЃРµРєСѓРЅРґ."
+                        f"Слишком много запросов. Попробуйте снова через {window_seconds} секунд."
                     )
                 conn.execute(
                     """
@@ -207,7 +207,7 @@ class PersistentRateLimiter:
             if total >= max_requests:
                 conn.rollback()
                 raise RateLimitExceeded(
-                    f"РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ Р·Р°РїСЂРѕСЃРѕРІ. РџРѕРїСЂРѕР±СѓР№С‚Рµ СЃРЅРѕРІР° С‡РµСЂРµР· {window_seconds} СЃРµРєСѓРЅРґ."
+                    f"Слишком много запросов. Попробуйте снова через {window_seconds} секунд."
                 )
             conn.execute(
                 """
@@ -266,9 +266,9 @@ def reset_for_testing(limiter: PersistentRateLimiter | None = None) -> None:
 def auth_rate_limit(ip: str, action: str, limiter: PersistentRateLimiter | None = None) -> None:
     """
     Limits:
-      login          вЂ” 10 attempts per 5 minutes
-      register       вЂ” 5 attempts per 10 minutes
-      forgot-password вЂ” 5 attempts per 10 minutes
+      login          — 10 attempts per 5 minutes
+      register       — 5 attempts per 10 minutes
+      forgot-password — 5 attempts per 10 minutes
     """
     limits = {
         "login": (10, 300),

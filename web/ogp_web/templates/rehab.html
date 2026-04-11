@@ -1,34 +1,34 @@
-﻿{% extends "layouts/base.html" %}
+{% extends "layouts/base.html" %}
 
-{% block title %}{{ app_title }} - Р РµР°Р±РёР»РёС‚Р°С†РёСЏ{% endblock %}
+{% block title %}{{ app_title }} - Реабилитация{% endblock %}
 
 {% block content %}
 <div class="legal-page legal-page--rehab">
   <header class="legal-header">
     <div class="legal-header__main">
       <p class="legal-header__eyebrow">OGP Builder</p>
-      <h1 class="legal-header__title">Р РµР°Р±РёР»РёС‚Р°С†РёСЏ</h1>
-      <p class="legal-header__description">РџРѕРґРіРѕС‚РѕРІРєР° РґРѕРєСѓРјРµРЅС‚Р° РґР»СЏ РёСЃРєР° Рѕ РІРѕР·РјРµС‰РµРЅРёРё РІСЂРµРґР° РїРѕ РёС‚РѕРіР°Рј СЂРµР°Р±РёР»РёС‚Р°С†РёРё.</p>
+      <h1 class="legal-header__title">Реабилитация</h1>
+      <p class="legal-header__description">Подготовка документа для иска о возмещении вреда по итогам реабилитации.</p>
     </div>
 
     <aside class="legal-user-card">
       <div class="legal-user-card__top">
-        <span class="legal-user-card__label">РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ</span>
+        <span class="legal-user-card__label">Пользователь</span>
         <strong class="legal-user-card__value">{{ username }}</strong>
       </div>
-      <p class="legal-user-card__text">Р”Р°РЅРЅС‹Рµ РїСЂРµРґСЃС‚Р°РІРёС‚РµР»СЏ РёСЃРїРѕР»СЊР·СѓСЋС‚СЃСЏ РїСЂРё С„РѕСЂРјРёСЂРѕРІР°РЅРёРё РёС‚РѕРіРѕРІРѕРіРѕ РґРѕРєСѓРјРµРЅС‚Р° Рё Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РїРѕРґСЃС‚Р°РІР»СЏСЋС‚СЃСЏ РёР· РїСЂРѕС„РёР»СЏ.</p>
+      <p class="legal-user-card__text">Данные представителя используются при формировании итогового документа и автоматически подставляются из профиля.</p>
       <div class="legal-user-card__actions">
-        <a class="button-link secondary-button" href="/profile">Р›РёС‡РЅС‹Р№ РєР°Р±РёРЅРµС‚</a>
-        <button type="button" id="logout-btn" class="ghost-button">Р’С‹Р№С‚Рё</button>
+        <a class="button-link secondary-button" href="/profile">Личный кабинет</a>
+        <button type="button" id="logout-btn" class="ghost-button">Выйти</button>
       </div>
     </aside>
   </header>
 
   {% include "partials/page_nav.html" %}
-  <nav class="legal-section-jump legal-section-jump--sticky" aria-label="РќР°РІРёРіР°С†РёСЏ РїРѕ СЂР°Р·РґРµР»Р°Рј СЂРµР°Р±РёР»РёС‚Р°С†РёРё">
-    <a class="legal-section-jump__link" href="#rehab-section-principal">Р”РѕРІРµСЂРёС‚РµР»СЊ</a>
-    <a class="legal-section-jump__link" href="#rehab-section-basis">РћСЃРЅРѕРІР°РЅРёРµ</a>
-    <a class="legal-section-jump__link" href="#rehab-section-result">Р РµР·СѓР»СЊС‚Р°С‚</a>
+  <nav class="legal-section-jump legal-section-jump--sticky" aria-label="Навигация по разделам реабилитации">
+    <a class="legal-section-jump__link" href="#rehab-section-principal">Доверитель</a>
+    <a class="legal-section-jump__link" href="#rehab-section-basis">Основание</a>
+    <a class="legal-section-jump__link" href="#rehab-section-result">Результат</a>
   </nav>
 
   <div id="app-message" class="success-box legal-message" hidden></div>
@@ -39,25 +39,25 @@
       <section id="rehab-section-principal" class="panel legal-card legal-section">
         <div class="legal-section__header">
           <div>
-            <p class="legal-section__eyebrow">Р Р°Р·РґРµР» 1</p>
-            <h2 class="legal-section__title">Р”РѕРІРµСЂРёС‚РµР»СЊ</h2>
-            <p class="legal-section__description">РЈРєР°Р¶РёС‚Рµ РґР°РЅРЅС‹Рµ Р»РёС†Р°, РІ РёРЅС‚РµСЂРµСЃР°С… РєРѕС‚РѕСЂРѕРіРѕ РїРѕРґР°С‘С‚СЃСЏ РёСЃРє Рѕ СЂРµР°Р±РёР»РёС‚Р°С†РёРё.</p>
+            <p class="legal-section__eyebrow">Раздел 1</p>
+            <h2 class="legal-section__title">Доверитель</h2>
+            <p class="legal-section__description">Укажите данные лица, в интересах которого подаётся иск о реабилитации.</p>
           </div>
         </div>
 
         <div class="legal-field-grid legal-field-grid--two">
           <label class="legal-field">
-            <span class="legal-field__label">Р¤РРћ РґРѕРІРµСЂРёС‚РµР»СЏ</span>
-            <input name="principal_name" placeholder="РРјСЏ Р¤Р°РјРёР»РёСЏ" required>
+            <span class="legal-field__label">ФО доверителя</span>
+            <input name="principal_name" placeholder="мя Фамилия" required>
           </label>
 
           <label class="legal-field">
-            <span class="legal-field__label">РџР°СЃРїРѕСЂС‚ РґРѕРІРµСЂРёС‚РµР»СЏ</span>
+            <span class="legal-field__label">Паспорт доверителя</span>
             <input name="principal_passport" placeholder="123456" maxlength="6" required>
           </label>
 
           <label class="legal-field legal-field--full">
-            <span class="legal-field__label">РЎРєР°РЅ РїР°СЃРїРѕСЂС‚Р° РґРѕРІРµСЂРёС‚РµР»СЏ URL</span>
+            <span class="legal-field__label">Скан паспорта доверителя URL</span>
             <input name="principal_passport_scan_url" type="url" placeholder="https://example.com/principal-passport" required>
           </label>
         </div>
@@ -65,25 +65,25 @@
         <section class="legal-subcard legal-subcard--ocr">
           <div class="legal-subcard__header">
             <div>
-              <h3 class="legal-subcard__title">РђРІС‚РѕР·Р°РїРѕР»РЅРµРЅРёРµ РїРѕ РґРѕРіРѕРІРѕСЂСѓ</h3>
-              <p class="legal-subcard__description">Р—Р°РіСЂСѓР·РёС‚Рµ 4-СЋ СЃС‚СЂР°РЅРёС†Сѓ РґРѕРіРѕРІРѕСЂР°, С‡С‚РѕР±С‹ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё Р·Р°РїРѕР»РЅРёС‚СЊ РґР°РЅРЅС‹Рµ РґРѕРІРµСЂРёС‚РµР»СЏ.</p>
+              <h3 class="legal-subcard__title">Автозаполнение по договору</h3>
+              <p class="legal-subcard__description">Загрузите 4-ю страницу договора, чтобы автоматически заполнить данные доверителя.</p>
             </div>
           </div>
 
           <div class="legal-ocr">
             <div class="legal-ocr__controls">
               <label class="legal-file-field">
-                <span class="legal-field__label">Р¤Р°Р№Р» РґРѕРіРѕРІРѕСЂР°</span>
+                <span class="legal-field__label">Файл договора</span>
                 <div class="legal-file-picker">
-                  <label class="secondary-button legal-file-picker__button" for="rehab-ocr-file">Р¤Р°Р№Р»</label>
-                  <span id="rehab-ocr-file-name" class="legal-file-picker__name is-empty">Р¤Р°Р№Р» РЅРµ РІС‹Р±СЂР°РЅ</span>
+                  <label class="secondary-button legal-file-picker__button" for="rehab-ocr-file">Файл</label>
+                  <span id="rehab-ocr-file-name" class="legal-file-picker__name is-empty">Файл не выбран</span>
                   <input id="rehab-ocr-file" class="legal-file-picker__input" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
                 </div>
               </label>
-              <button type="button" id="rehab-ocr-btn" class="secondary-button">Р Р°СЃРїРѕР·РЅР°С‚СЊ РґР°РЅРЅС‹Рµ</button>
+              <button type="button" id="rehab-ocr-btn" class="secondary-button">Распознать данные</button>
             </div>
 
-            <div id="rehab-ocr-status" class="legal-ocr__status">РЎС‚Р°С‚СѓСЃ: РѕР¶РёРґР°РµС‚ РёР·РѕР±СЂР°Р¶РµРЅРёРµ.</div>
+            <div id="rehab-ocr-status" class="legal-ocr__status">Статус: ожидает изображение.</div>
             <div id="rehab-ocr-progress" class="progress-box legal-ocr__progress" hidden>
               <span class="spinner" aria-hidden="true"></span>
               <span id="rehab-ocr-progress-text"></span>
@@ -95,23 +95,23 @@
       <section id="rehab-section-basis" class="panel legal-card legal-section">
         <div class="legal-section__header">
           <div>
-            <p class="legal-section__eyebrow">Р Р°Р·РґРµР» 2</p>
-            <h2 class="legal-section__title">РћСЃРЅРѕРІР°РЅРёРµ С‚СЂРµР±РѕРІР°РЅРёСЏ</h2>
-            <p class="legal-section__description">РЈРєР°Р¶РёС‚Рµ, РёСЃС‚С‘Рє Р»Рё СЃСЂРѕРє, Рё РїСЂРёР»РѕР¶РёС‚Рµ РґРѕРіРѕРІРѕСЂ, РЅР° РѕСЃРЅРѕРІР°РЅРёРё РєРѕС‚РѕСЂРѕРіРѕ РїРѕРґР°С‘С‚СЃСЏ С‚СЂРµР±РѕРІР°РЅРёРµ.</p>
+            <p class="legal-section__eyebrow">Раздел 2</p>
+            <h2 class="legal-section__title">Основание требования</h2>
+            <p class="legal-section__description">Укажите, истёк ли срок, и приложите договор, на основании которого подаётся требование.</p>
           </div>
         </div>
 
         <div class="legal-field-grid legal-field-grid--two">
           <label class="legal-field">
-            <span class="legal-field__label">РСЃС‚С‘Рє СЃСЂРѕРє 7 РґРЅРµР№</span>
+            <span class="legal-field__label">стёк срок 7 дней</span>
             <select name="served_seven_days" required>
-              <option value="true">Р”Р°</option>
-              <option value="false">РќРµС‚</option>
+              <option value="true">Да</option>
+              <option value="false">Нет</option>
             </select>
           </label>
 
           <label class="legal-field">
-            <span class="legal-field__label">Р”РѕРіРѕРІРѕСЂ URL</span>
+            <span class="legal-field__label">Договор URL</span>
             <input name="contract_url" type="url" placeholder="https://example.com/contract" required>
           </label>
         </div>
@@ -120,21 +120,21 @@
       <section id="rehab-section-result" class="panel legal-card legal-section legal-section--result">
         <div class="legal-section__header">
           <div>
-            <p class="legal-section__eyebrow">Р¤РёРЅР°Р»СЊРЅС‹Р№ Р±Р»РѕРє</p>
-            <h2 class="legal-section__title">Р РµР·СѓР»СЊС‚Р°С‚</h2>
-            <p class="legal-section__description">РС‚РѕРіРѕРІС‹Р№ РґРѕРєСѓРјРµРЅС‚ РґР»СЏ РґР°Р»СЊРЅРµР№С€РµР№ СЂР°Р±РѕС‚С‹.</p>
+            <p class="legal-section__eyebrow">Финальный блок</p>
+            <h2 class="legal-section__title">Результат</h2>
+            <p class="legal-section__description">тоговый документ для дальнейшей работы.</p>
           </div>
         </div>
 
         <div class="legal-status-row">
           <article class="legal-status-card">
-            <span class="legal-status-card__label">Р РµР¶РёРј</span>
-            <strong class="legal-status-card__value">Р Р°Р±РѕС‡РёР№</strong>
+            <span class="legal-status-card__label">Режим</span>
+            <strong class="legal-status-card__value">Рабочий</strong>
           </article>
 
           <article class="legal-status-card">
-            <span class="legal-status-card__label">РЁР°Р±Р»РѕРЅ</span>
-            <strong class="legal-status-card__value legal-status-card__value--small">Р РµР°Р±РёР»РёС‚Р°С†РёСЏ</strong>
+            <span class="legal-status-card__label">Шаблон</span>
+            <strong class="legal-status-card__value legal-status-card__value--small">Реабилитация</strong>
           </article>
         </div>
 
@@ -144,8 +144,8 @@
         </label>
 
         <div class="actions legal-toolbar legal-toolbar--result">
-          <button type="submit" class="primary-button">РЎРіРµРЅРµСЂРёСЂРѕРІР°С‚СЊ BBCode</button>
-          <button type="button" id="copy-btn" class="secondary-button">РљРѕРїРёСЂРѕРІР°С‚СЊ СЂРµР·СѓР»СЊС‚Р°С‚</button>
+          <button type="submit" class="primary-button">Сгенерировать BBCode</button>
+          <button type="button" id="copy-btn" class="secondary-button">Копировать результат</button>
         </div>
       </section>
     </div>
@@ -154,12 +154,12 @@
 
 <div id="rehab-ocr-modal" class="modal-backdrop" hidden>
   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="rehab-ocr-modal-title">
-    <button id="rehab-ocr-modal-close" class="modal-close" type="button" aria-label="Р—Р°РєСЂС‹С‚СЊ РѕРєРЅРѕ">Г—</button>
-    <p class="eyebrow">РџСЂРѕРІРµСЂСЊС‚Рµ РґР°РЅРЅС‹Рµ</p>
-    <h2 id="rehab-ocr-modal-title">Р”Р°РЅРЅС‹Рµ РґРѕРІРµСЂРёС‚РµР»СЏ РїРѕРґСЃС‚Р°РІР»РµРЅС‹</h2>
+    <button id="rehab-ocr-modal-close" class="modal-close" type="button" aria-label="Закрыть окно">×</button>
+    <p class="eyebrow">Проверьте данные</p>
+    <h2 id="rehab-ocr-modal-title">Данные доверителя подставлены</h2>
     <div id="rehab-ocr-modal-text" class="success-box modal-message"></div>
     <div class="actions modal-actions">
-      <button id="rehab-ocr-modal-ok" class="primary-button" type="button">РџРѕРЅСЏС‚РЅРѕ</button>
+      <button id="rehab-ocr-modal-ok" class="primary-button" type="button">Понятно</button>
     </div>
   </div>
 </div>

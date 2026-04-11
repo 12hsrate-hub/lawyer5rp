@@ -1,41 +1,41 @@
-﻿{% extends "layouts/base.html" %}
+{% extends "layouts/base.html" %}
 
-{% block title %}{{ app_title }} - РЎСѓРґРµР±РЅС‹Рµ РѕР±СЂР°С‰РµРЅРёСЏ{% endblock %}
+{% block title %}{{ app_title }} - Судебные обращения{% endblock %}
 
 {% block content %}
 <div class="legal-page legal-page--court-claim">
   <section class="legal-header">
     <div class="legal-header__main">
-      <p class="legal-header__eyebrow">РўРµСЃС‚РѕРІС‹Р№ СЂР°Р·РґРµР»</p>
-      <h1 class="legal-header__title">РЎСѓРґРµР±РЅС‹Рµ РѕР±СЂР°С‰РµРЅРёСЏ</h1>
+      <p class="legal-header__eyebrow">Тестовый раздел</p>
+      <h1 class="legal-header__title">Судебные обращения</h1>
       <p class="legal-header__description">
-        РљРѕРЅСЃС‚СЂСѓРєС‚РѕСЂ РїСЂРѕС†РµСЃСЃСѓР°Р»СЊРЅС‹С… РґРѕРєСѓРјРµРЅС‚РѕРІ РґР»СЏ РїРѕРґР°С‡Рё РІ СЃСѓРґРµР±РЅС‹Рµ РёРЅСЃС‚Р°РЅС†РёРё. Р”Р°РЅРЅС‹Рµ РїСЂРµРґСЃС‚Р°РІРёС‚РµР»СЏ,
-        РґР°С‚Р° СЃРѕСЃС‚Р°РІР»РµРЅРёСЏ Рё РїРѕРґРїРёСЃСЊ РїРѕРґСЃС‚Р°РІР»СЏСЋС‚СЃСЏ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РёР· РїСЂРѕС„РёР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.
+        Конструктор процессуальных документов для подачи в судебные инстанции. Данные представителя,
+        дата составления и подпись подставляются автоматически из профиля пользователя.
       </p>
     </div>
     <aside class="legal-user-card">
       <div class="legal-user-card__top">
-        <span class="legal-user-card__label">РСЃС‚РѕС‡РЅРёРє РґР°РЅРЅС‹С…</span>
-        <strong class="legal-user-card__value">РџСЂРѕС„РёР»СЊ РїСЂРµРґСЃС‚Р°РІРёС‚РµР»СЏ</strong>
+        <span class="legal-user-card__label">сточник данных</span>
+        <strong class="legal-user-card__value">Профиль представителя</strong>
       </div>
       <p class="legal-user-card__text">
-        РџРµСЂРµРґ РїРѕРґРіРѕС‚РѕРІРєРѕР№ РґРѕРєСѓРјРµРЅС‚Р° РїСЂРѕРІРµСЂСЊС‚Рµ СЃРІРµРґРµРЅРёСЏ Рѕ РїСЂРµРґСЃС‚Р°РІРёС‚РµР»Рµ РІ Р»РёС‡РЅРѕРј РєР°Р±РёРЅРµС‚Рµ. РћРЅРё РёСЃРїРѕР»СЊР·СѓСЋС‚СЃСЏ
-        РїСЂРё С„РѕСЂРјРёСЂРѕРІР°РЅРёРё РёС‚РѕРіРѕРІРѕРіРѕ С‚РµРєСЃС‚Р° РѕР±СЂР°С‰РµРЅРёСЏ.
+        Перед подготовкой документа проверьте сведения о представителе в личном кабинете. Они используются
+        при формировании итогового текста обращения.
       </p>
       <div class="legal-user-card__actions">
-        <a class="button-link secondary-button" href="/profile">Р›РёС‡РЅС‹Р№ РєР°Р±РёРЅРµС‚</a>
+        <a class="button-link secondary-button" href="/profile">Личный кабинет</a>
       </div>
     </aside>
   </section>
 
   {% include "partials/page_nav.html" %}
-  <nav class="legal-section-jump legal-section-jump--sticky" aria-label="РќР°РІРёРіР°С†РёСЏ РїРѕ СЂР°Р·РґРµР»Р°Рј СЃСѓРґРµР±РЅРѕРіРѕ РѕР±СЂР°С‰РµРЅРёСЏ">
-    <a class="legal-section-jump__link" href="#court-section-params">РџР°СЂР°РјРµС‚СЂС‹</a>
-    <a class="legal-section-jump__link" href="#court-section-parties">РЎС‚РѕСЂРѕРЅС‹</a>
-    <a class="legal-section-jump__link" href="#court-section-facts">Р¤Р°РєС‚С‹</a>
-    <a class="legal-section-jump__link" href="#court-section-evidence">Р”РѕРєР°Р·Р°С‚РµР»СЊСЃС‚РІР°</a>
-    <a class="legal-section-jump__link" href="#court-section-request">РџСЂРѕСЃСЊР±Р°</a>
-    <a class="legal-section-jump__link" href="#court-section-result">Р РµР·СѓР»СЊС‚Р°С‚</a>
+  <nav class="legal-section-jump legal-section-jump--sticky" aria-label="Навигация по разделам судебного обращения">
+    <a class="legal-section-jump__link" href="#court-section-params">Параметры</a>
+    <a class="legal-section-jump__link" href="#court-section-parties">Стороны</a>
+    <a class="legal-section-jump__link" href="#court-section-facts">Факты</a>
+    <a class="legal-section-jump__link" href="#court-section-evidence">Доказательства</a>
+    <a class="legal-section-jump__link" href="#court-section-request">Просьба</a>
+    <a class="legal-section-jump__link" href="#court-section-result">Результат</a>
   </nav>
 
   <div id="court-claim-message" class="success-box legal-message" hidden></div>
@@ -46,27 +46,27 @@
       <section id="court-section-params" class="panel legal-card legal-section">
         <div class="legal-section__header">
           <div>
-            <p class="legal-section__eyebrow">РџР°СЂР°РјРµС‚СЂС‹ РѕР±СЂР°С‰РµРЅРёСЏ</p>
-            <h2 class="legal-section__title">РЎСѓРґРµР±РЅР°СЏ РёРЅСЃС‚Р°РЅС†РёСЏ Рё РІРёРґ РѕР±СЂР°С‰РµРЅРёСЏ</h2>
+            <p class="legal-section__eyebrow">Параметры обращения</p>
+            <h2 class="legal-section__title">Судебная инстанция и вид обращения</h2>
             <p id="court-claim-kind-description" class="legal-section__description">
-              Р’С‹Р±РµСЂРёС‚Рµ СЃСѓРґРµР±РЅСѓСЋ РёРЅСЃС‚Р°РЅС†РёСЋ Рё СЃРѕРѕС‚РІРµС‚СЃС‚РІСѓСЋС‰РёР№ РІРёРґ РѕР±СЂР°С‰РµРЅРёСЏ.
+              Выберите судебную инстанцию и соответствующий вид обращения.
             </p>
           </div>
         </div>
         <div class="legal-field-grid legal-field-grid--two">
           <label class="legal-field">
-            <span class="legal-field__label">РЎСѓРґРµР±РЅР°СЏ РёРЅСЃС‚Р°РЅС†РёСЏ</span>
+            <span class="legal-field__label">Судебная инстанция</span>
             <select id="court-type" name="court_type">
-              <option value="">Р’С‹Р±РµСЂРёС‚Рµ СЃСѓРґРµР±РЅСѓСЋ РёРЅСЃС‚Р°РЅС†РёСЋ</option>
-              <option value="supreme">Р’РµСЂС…РѕРІРЅС‹Р№ СЃСѓРґ</option>
-              <option value="appeal">РђРїРµР»Р»СЏС†РёРѕРЅРЅС‹Р№ СЃСѓРґ</option>
-              <option value="federal">Р¤РµРґРµСЂР°Р»СЊРЅС‹Р№ СЃСѓРґ</option>
+              <option value="">Выберите судебную инстанцию</option>
+              <option value="supreme">Верховный суд</option>
+              <option value="appeal">Апелляционный суд</option>
+              <option value="federal">Федеральный суд</option>
             </select>
           </label>
           <label class="legal-field">
-            <span class="legal-field__label">Р’РёРґ РѕР±СЂР°С‰РµРЅРёСЏ</span>
+            <span class="legal-field__label">Вид обращения</span>
             <select id="court-claim-kind" name="claim_kind" disabled>
-              <option value="">РЎРЅР°С‡Р°Р»Р° РІС‹Р±РµСЂРёС‚Рµ СЃСѓРґРµР±РЅСѓСЋ РёРЅСЃС‚Р°РЅС†РёСЋ</option>
+              <option value="">Сначала выберите судебную инстанцию</option>
             </select>
           </label>
         </div>
@@ -75,10 +75,10 @@
       <section id="court-claim-in-development" class="panel legal-card legal-section" hidden>
         <div class="legal-section__header">
           <div>
-            <p class="legal-section__eyebrow">РЎС‚Р°С‚СѓСЃ С€Р°Р±Р»РѕРЅР°</p>
-            <h2 class="legal-section__title">Р¤РѕСЂРјР° РЅР°С…РѕРґРёС‚СЃСЏ РІ СЂР°Р·СЂР°Р±РѕС‚РєРµ</h2>
+            <p class="legal-section__eyebrow">Статус шаблона</p>
+            <h2 class="legal-section__title">Форма находится в разработке</h2>
             <p id="court-claim-in-development-text" class="legal-section__description">
-              Р”Р»СЏ РІС‹Р±СЂР°РЅРЅРѕРіРѕ РІРёРґР° РѕР±СЂР°С‰РµРЅРёСЏ С„РѕСЂРјР° РїРѕРґРіРѕС‚РѕРІРєРё РґРѕРєСѓРјРµРЅС‚Р° РµС‰Рµ РЅРµ СЂРµР°Р»РёР·РѕРІР°РЅР°.
+              Для выбранного вида обращения форма подготовки документа еще не реализована.
             </p>
           </div>
         </div>
@@ -88,17 +88,17 @@
         <section id="court-section-parties" class="panel legal-card legal-section">
           <div class="legal-section__header">
             <div>
-              <p class="legal-section__eyebrow">Р Р°Р·РґРµР» I</p>
-              <h2 class="legal-section__title">РЎРІРµРґРµРЅРёСЏ Рѕ СЃС‚РѕСЂРѕРЅР°С…</h2>
+              <p class="legal-section__eyebrow">Раздел I</p>
+              <h2 class="legal-section__title">Сведения о сторонах</h2>
             </div>
           </div>
 
           <section id="court-claim-plaintiff-card" class="legal-subcard legal-subcard--ocr">
             <div class="legal-subcard__header">
               <div>
-                <h3 class="legal-subcard__title">Р”Р°РЅРЅС‹Рµ РґРѕРІРµСЂРёС‚РµР»СЏ</h3>
+                <h3 class="legal-subcard__title">Данные доверителя</h3>
                 <p class="legal-subcard__description">
-                  РЎРІРµРґРµРЅРёСЏ Рѕ РґРѕРІРµСЂРёС‚РµР»Рµ РјРѕР¶РЅРѕ РІРЅРµСЃС‚Рё РІСЂСѓС‡РЅСѓСЋ Р»РёР±Рѕ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РёР·РІР»РµС‡СЊ РёР· 4-Р№ СЃС‚СЂР°РЅРёС†С‹ РґРѕРіРѕРІРѕСЂР°.
+                  Сведения о доверителе можно внести вручную либо автоматически извлечь из 4-й страницы договора.
                 </p>
               </div>
             </div>
@@ -106,17 +106,17 @@
             <div class="legal-ocr">
               <div class="legal-ocr__controls">
                 <label class="legal-file-field">
-                  <span class="legal-field__label">РР·РѕР±СЂР°Р¶РµРЅРёРµ СЃС‚СЂР°РЅРёС†С‹ РґРѕРіРѕРІРѕСЂР°</span>
+                  <span class="legal-field__label">зображение страницы договора</span>
                   <div class="legal-file-picker">
-                    <label class="secondary-button legal-file-picker__button" for="court-claim-plaintiff-ocr-file">Р¤Р°Р№Р»</label>
-                    <span id="court-claim-plaintiff-ocr-file-name" class="legal-file-picker__name is-empty">Р¤Р°Р№Р» РЅРµ РІС‹Р±СЂР°РЅ</span>
+                    <label class="secondary-button legal-file-picker__button" for="court-claim-plaintiff-ocr-file">Файл</label>
+                    <span id="court-claim-plaintiff-ocr-file-name" class="legal-file-picker__name is-empty">Файл не выбран</span>
                     <input id="court-claim-plaintiff-ocr-file" class="legal-file-picker__input" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
                   </div>
                 </label>
-                <button type="button" id="court-claim-plaintiff-ocr-btn" class="secondary-button">РР·РІР»РµС‡СЊ РґР°РЅРЅС‹Рµ РёР· РґРѕРіРѕРІРѕСЂР°</button>
+                <button type="button" id="court-claim-plaintiff-ocr-btn" class="secondary-button">звлечь данные из договора</button>
               </div>
 
-              <div id="court-claim-plaintiff-ocr-status" class="legal-ocr__status">РЎС‚Р°С‚СѓСЃ: РѕР¶РёРґР°РµС‚СЃСЏ С„Р°Р№Р» РґР»СЏ СЂР°СЃРїРѕР·РЅР°РІР°РЅРёСЏ.</div>
+              <div id="court-claim-plaintiff-ocr-status" class="legal-ocr__status">Статус: ожидается файл для распознавания.</div>
               <div id="court-claim-plaintiff-ocr-progress" class="progress-box legal-ocr__progress" hidden>
                 <span class="spinner" aria-hidden="true"></span>
                 <span id="court-claim-plaintiff-ocr-progress-text"></span>
@@ -126,66 +126,66 @@
 
           <div class="legal-field-grid legal-field-grid--two">
             <label class="legal-field">
-              <span class="legal-field__label">Р”РѕРІРµСЂРёС‚РµР»СЊ: Р¤РРћ</span>
-              <input name="plaintiff_name" type="text" placeholder="РќР°РїСЂРёРјРµСЂ: Vic Vega" />
+              <span class="legal-field__label">Доверитель: ФО</span>
+              <input name="plaintiff_name" type="text" placeholder="Например: Vic Vega" />
             </label>
             <label class="legal-field">
-              <span class="legal-field__label">Р”РѕРІРµСЂРёС‚РµР»СЊ: Р°РґСЂРµСЃ РјРµСЃС‚Р° Р¶РёС‚РµР»СЊСЃС‚РІР°</span>
-              <input name="plaintiff_address" type="text" value="Р±РµР· РјРµСЃС‚Р° РїСЂРѕР¶РёРІР°РЅРёСЏ" placeholder="РќР°РїСЂРёРјРµСЂ: Los Santos, Р±РµР· РјРµСЃС‚Р° РїСЂРѕР¶РёРІР°РЅРёСЏ" />
+              <span class="legal-field__label">Доверитель: адрес места жительства</span>
+              <input name="plaintiff_address" type="text" value="без места проживания" placeholder="Например: Los Santos, без места проживания" />
             </label>
             <label class="legal-field">
-              <span class="legal-field__label">Р”РѕРІРµСЂРёС‚РµР»СЊ: РЅРѕРјРµСЂ С‚РµР»РµС„РѕРЅР°</span>
-              <input name="plaintiff_phone" type="text" placeholder="РќР°РїСЂРёРјРµСЂ: 1234567" />
+              <span class="legal-field__label">Доверитель: номер телефона</span>
+              <input name="plaintiff_phone" type="text" placeholder="Например: 1234567" />
             </label>
             <label class="legal-field">
-              <span class="legal-field__label">Р”РѕРІРµСЂРёС‚РµР»СЊ: РїР°СЃРїРѕСЂС‚</span>
-              <input name="plaintiff_passport" type="text" placeholder="РќР°РїСЂРёРјРµСЂ: 123456" />
+              <span class="legal-field__label">Доверитель: паспорт</span>
+              <input name="plaintiff_passport" type="text" placeholder="Например: 123456" />
             </label>
             <label class="legal-field legal-field--full">
-              <span class="legal-field__label">Р”РѕРІРµСЂРёС‚РµР»СЊ: Р°РґСЂРµСЃ СЌР»РµРєС‚СЂРѕРЅРЅРѕР№ РїРѕС‡С‚С‹</span>
-              <input name="plaintiff_email" type="email" placeholder="РќР°РїСЂРёРјРµСЂ: example@sa.com" />
+              <span class="legal-field__label">Доверитель: адрес электронной почты</span>
+              <input name="plaintiff_email" type="email" placeholder="Например: example@sa.com" />
             </label>
 
             <label id="court-claim-defendant-name-field" class="legal-field">
-              <span class="legal-field__label">РћС‚РІРµС‚С‡РёРє: Р¤РРћ</span>
-              <input name="defendant_name" type="text" placeholder="РќР°РїСЂРёРјРµСЂ: Angel Bradley" />
+              <span class="legal-field__label">Ответчик: ФО</span>
+              <input name="defendant_name" type="text" placeholder="Например: Angel Bradley" />
             </label>
             <label id="court-claim-defendant-address-field" class="legal-field">
-              <span class="legal-field__label">РћС‚РІРµС‚С‡РёРє: Р°РґСЂРµСЃ РјРµСЃС‚Р° Р¶РёС‚РµР»СЊСЃС‚РІР°</span>
-              <input name="defendant_address" type="text" value="Р±РµР· РјРµСЃС‚Р° РїСЂРѕР¶РёРІР°РЅРёСЏ" placeholder="РќР°РїСЂРёРјРµСЂ: Р±РµР· РјРµСЃС‚Р° РїСЂРѕР¶РёРІР°РЅРёСЏ" />
+              <span class="legal-field__label">Ответчик: адрес места жительства</span>
+              <input name="defendant_address" type="text" value="без места проживания" placeholder="Например: без места проживания" />
             </label>
             <label id="court-claim-defendant-phone-field" class="legal-field">
-              <span class="legal-field__label">РћС‚РІРµС‚С‡РёРє: РЅРѕРјРµСЂ С‚РµР»РµС„РѕРЅР°</span>
-              <input name="defendant_phone" type="text" placeholder="РќР°РїСЂРёРјРµСЂ: 1234567" />
+              <span class="legal-field__label">Ответчик: номер телефона</span>
+              <input name="defendant_phone" type="text" placeholder="Например: 1234567" />
             </label>
             <label id="court-claim-defendant-passport-field" class="legal-field">
-              <span class="legal-field__label">РћС‚РІРµС‚С‡РёРє: РїР°СЃРїРѕСЂС‚</span>
-              <input name="defendant_passport" type="text" placeholder="РќР°РїСЂРёРјРµСЂ: 456789" />
+              <span class="legal-field__label">Ответчик: паспорт</span>
+              <input name="defendant_passport" type="text" placeholder="Например: 456789" />
             </label>
             <label id="court-claim-defendant-email-field" class="legal-field legal-field--full">
-              <span class="legal-field__label">РћС‚РІРµС‚С‡РёРє: Р°РґСЂРµСЃ СЌР»РµРєС‚СЂРѕРЅРЅРѕР№ РїРѕС‡С‚С‹</span>
-              <input name="defendant_email" type="email" placeholder="РќР°РїСЂРёРјРµСЂ: 1example@sa.com" />
+              <span class="legal-field__label">Ответчик: адрес электронной почты</span>
+              <input name="defendant_email" type="email" placeholder="Например: 1example@sa.com" />
             </label>
 
             <label id="court-claim-defendant-representative-name-field" class="legal-field" hidden>
-              <span class="legal-field__label">РџСЂРµРґСЃС‚Р°РІРёС‚РµР»СЊ РѕС‚РІРµС‚С‡РёРєР°: Р¤РРћ</span>
-              <input name="defendant_representative_name" type="text" placeholder="РќР°РїСЂРёРјРµСЂ: John Carter" />
+              <span class="legal-field__label">Представитель ответчика: ФО</span>
+              <input name="defendant_representative_name" type="text" placeholder="Например: John Carter" />
             </label>
             <label id="court-claim-defendant-representative-address-field" class="legal-field" hidden>
-              <span class="legal-field__label">РџСЂРµРґСЃС‚Р°РІРёС‚РµР»СЊ РѕС‚РІРµС‚С‡РёРєР°: Р°РґСЂРµСЃ РјРµСЃС‚Р° Р¶РёС‚РµР»СЊСЃС‚РІР°</span>
-              <input name="defendant_representative_address" type="text" value="Р±РµР· РјРµСЃС‚Р° РїСЂРѕР¶РёРІР°РЅРёСЏ" placeholder="РќР°РїСЂРёРјРµСЂ: Р±РµР· РјРµСЃС‚Р° РїСЂРѕР¶РёРІР°РЅРёСЏ" />
+              <span class="legal-field__label">Представитель ответчика: адрес места жительства</span>
+              <input name="defendant_representative_address" type="text" value="без места проживания" placeholder="Например: без места проживания" />
             </label>
             <label id="court-claim-defendant-representative-phone-field" class="legal-field" hidden>
-              <span class="legal-field__label">РџСЂРµРґСЃС‚Р°РІРёС‚РµР»СЊ РѕС‚РІРµС‚С‡РёРєР°: РЅРѕРјРµСЂ С‚РµР»РµС„РѕРЅР°</span>
-              <input name="defendant_representative_phone" type="text" placeholder="РќР°РїСЂРёРјРµСЂ: 1234567" />
+              <span class="legal-field__label">Представитель ответчика: номер телефона</span>
+              <input name="defendant_representative_phone" type="text" placeholder="Например: 1234567" />
             </label>
             <label id="court-claim-defendant-representative-passport-field" class="legal-field" hidden>
-              <span class="legal-field__label">РџСЂРµРґСЃС‚Р°РІРёС‚РµР»СЊ РѕС‚РІРµС‚С‡РёРєР°: РїР°СЃРїРѕСЂС‚</span>
-              <input name="defendant_representative_passport" type="text" placeholder="РќР°РїСЂРёРјРµСЂ: 456789" />
+              <span class="legal-field__label">Представитель ответчика: паспорт</span>
+              <input name="defendant_representative_passport" type="text" placeholder="Например: 456789" />
             </label>
             <label id="court-claim-defendant-representative-email-field" class="legal-field legal-field--full" hidden>
-              <span class="legal-field__label">РџСЂРµРґСЃС‚Р°РІРёС‚РµР»СЊ РѕС‚РІРµС‚С‡РёРєР°: Р°РґСЂРµСЃ СЌР»РµРєС‚СЂРѕРЅРЅРѕР№ РїРѕС‡С‚С‹</span>
-              <input name="defendant_representative_email" type="email" placeholder="РќР°РїСЂРёРјРµСЂ: counsel@sa.com" />
+              <span class="legal-field__label">Представитель ответчика: адрес электронной почты</span>
+              <input name="defendant_representative_email" type="email" placeholder="Например: counsel@sa.com" />
             </label>
           </div>
         </section>
@@ -193,17 +193,17 @@
         <section id="court-section-facts" class="panel legal-card legal-section">
           <div class="legal-section__header">
             <div>
-              <p class="legal-section__eyebrow">Р Р°Р·РґРµР» II</p>
-              <h2 class="legal-section__title">Р¤Р°РєС‚РёС‡РµСЃРєРёРµ РѕР±СЃС‚РѕСЏС‚РµР»СЊСЃС‚РІР°</h2>
+              <p class="legal-section__eyebrow">Раздел II</p>
+              <h2 class="legal-section__title">Фактические обстоятельства</h2>
             </div>
           </div>
           <div class="legal-field-grid">
             <label class="legal-field legal-field--full">
-              <span class="legal-field__label">РР·Р»РѕР¶РµРЅРёРµ РѕР±СЃС‚РѕСЏС‚РµР»СЊСЃС‚РІ РґРµР»Р°</span>
+              <span class="legal-field__label">зложение обстоятельств дела</span>
               <span id="court-claim-situation-hint" class="legal-field__hint">
-                РџСЂРёРјРµСЂ: 23.12.2024 РѕС‚РІРµС‚С‡РёРє РїСЂРёРјРµРЅРёР» СЃРёР»Сѓ Рє РґРѕРІРµСЂРёС‚РµР»СЋ Рё, РїРѕ РјРЅРµРЅРёСЋ СЃС‚РѕСЂРѕРЅС‹ РёСЃС‚С†Р°, РїСЂРµРІС‹СЃРёР» СЃР»СѓР¶РµР±РЅС‹Рµ РїРѕР»РЅРѕРјРѕС‡РёСЏ. Р”Р»СЏ РїСЂРѕРІРµСЂРєРё РїРѕР»РЅРѕС‚С‹ РѕР±СЃС‚РѕСЏС‚РµР»СЊСЃС‚РІ С‚СЂРµР±СѓРµС‚СЃСЏ РІРёРґРµРѕС„РёРєСЃР°С†РёСЏ РѕС‚РІРµС‚С‡РёРєР°, РґРѕСЃС‚СѓРї Рє РєРѕС‚РѕСЂРѕР№ РІРѕР·РјРѕР¶РµРЅ С‚РѕР»СЊРєРѕ РїРѕСЃР»Рµ РІС‹РґР°С‡Рё РѕСЂРґРµСЂР° AI.
+                Пример: 23.12.2024 ответчик применил силу к доверителю и, по мнению стороны истца, превысил служебные полномочия. Для проверки полноты обстоятельств требуется видеофиксация ответчика, доступ к которой возможен только после выдачи ордера AI.
               </span>
-              <textarea class="legal-textarea" name="situation_description" placeholder="РћРїРёС€РёС‚Рµ РґР°С‚Сѓ, РґРµР№СЃС‚РІРёСЏ РѕС‚РІРµС‚С‡РёРєР°, РЅР°СЂСѓС€РµРЅРёРµ, Р·Р°С‡РµРј СЃСѓРґСѓ РЅРµРѕР±С…РѕРґРёРјРѕ РІРјРµС€Р°С‚РµР»СЊСЃС‚РІРѕ Рё РєР°РєРѕР№ РґРѕРєСѓРјРµРЅС‚ Р»РёР±Рѕ РґРѕСЃС‚СѓРї С‚СЂРµР±СѓРµС‚СЃСЏ РїРѕР»СѓС‡РёС‚СЊ."></textarea>
+              <textarea class="legal-textarea" name="situation_description" placeholder="Опишите дату, действия ответчика, нарушение, зачем суду необходимо вмешательство и какой документ либо доступ требуется получить."></textarea>
             </label>
           </div>
         </section>
@@ -211,30 +211,30 @@
         <section id="court-section-evidence" class="panel legal-card legal-section">
           <div class="legal-section__header">
             <div>
-              <p class="legal-section__eyebrow">Р Р°Р·РґРµР» III</p>
-              <h2 class="legal-section__title">Р”РѕРєР°Р·Р°С‚РµР»СЊСЃС‚РІР° Рё РјР°С‚РµСЂРёР°Р»С‹</h2>
+              <p class="legal-section__eyebrow">Раздел III</p>
+              <h2 class="legal-section__title">Доказательства и материалы</h2>
               <p id="court-claim-evidence-hint" class="legal-section__description">
-                Р”РѕР±Р°РІСЊС‚Рµ РґРѕРєР°Р·Р°С‚РµР»СЊСЃС‚РІР°: РЅР°Р·РІР°РЅРёРµ РґРѕРєСѓРјРµРЅС‚Р° Рё СЃСЃС‹Р»РєСѓ. Р’ BBCode РѕРЅРё РІСЃС‚Р°РІСЏС‚СЃСЏ РѕРґРЅРѕ РїРѕРґ РґСЂСѓРіРёРј.
+                Добавьте доказательства: название документа и ссылку. В BBCode они вставятся одно под другим.
               </p>
             </div>
           </div>
           <div id="court-claim-evidence-list" class="court-evidence-list"></div>
           <div class="legal-toolbar">
-            <button type="button" id="court-claim-evidence-add" class="ghost-button">+ Р”РѕР±Р°РІРёС‚СЊ РґРѕРєР°Р·Р°С‚РµР»СЊСЃС‚РІРѕ</button>
+            <button type="button" id="court-claim-evidence-add" class="ghost-button">+ Добавить доказательство</button>
           </div>
         </section>
 
         <section id="court-section-request" class="panel legal-card legal-section">
           <div class="legal-section__header">
             <div>
-              <p class="legal-section__eyebrow">Р Р°Р·РґРµР» IV</p>
-              <h2 class="legal-section__title">РџСЂРѕСЃРёС‚РµР»СЊРЅР°СЏ С‡Р°СЃС‚СЊ</h2>
+              <p class="legal-section__eyebrow">Раздел IV</p>
+              <h2 class="legal-section__title">Просительная часть</h2>
             </div>
           </div>
           <div class="legal-field-grid">
             <label class="legal-field legal-field--full">
-              <span class="legal-field__label">РЎС„РѕСЂРјСѓР»РёСЂСѓР№С‚Рµ С‚СЂРµР±РѕРІР°РЅРёСЏ Рє СЃСѓРґСѓ</span>
-              <textarea class="legal-textarea legal-textarea--compact" name="closing_request" placeholder="РќР°РїСЂРёРјРµСЂ: РїСЂРѕС€Сѓ СЃСѓРґ РїСЂРµРґРѕСЃС‚Р°РІРёС‚СЊ СЃС‚РѕСЂРѕРЅРµ РёСЃС‚С†Р° РѕСЂРґРµСЂ РІ С„РѕСЂРјР°С‚Рµ AI / РёСЃС‚СЂРµР±РѕРІР°С‚СЊ РјР°С‚РµСЂРёР°Р»С‹ / РѕС‚РјРµРЅРёС‚СЊ СЃСѓРґРµР±РЅС‹Р№ Р°РєС‚."></textarea>
+              <span class="legal-field__label">Сформулируйте требования к суду</span>
+              <textarea class="legal-textarea legal-textarea--compact" name="closing_request" placeholder="Например: прошу суд предоставить стороне истца ордер в формате AI / истребовать материалы / отменить судебный акт."></textarea>
             </label>
           </div>
         </section>
@@ -242,25 +242,25 @@
         <section id="court-previous-decision-card" class="panel legal-card legal-section" hidden>
           <div class="legal-section__header">
             <div>
-              <p class="legal-section__eyebrow">РћР±Р¶Р°Р»СѓРµРјС‹Р№ СЃСѓРґРµР±РЅС‹Р№ Р°РєС‚</p>
-              <h2 class="legal-section__title">РЎРІРµРґРµРЅРёСЏ Рѕ СЂР°РЅРµРµ РїСЂРёРЅСЏС‚РѕРј СЂРµС€РµРЅРёРё</h2>
+              <p class="legal-section__eyebrow">Обжалуемый судебный акт</p>
+              <h2 class="legal-section__title">Сведения о ранее принятом решении</h2>
             </div>
           </div>
           <div class="legal-field-grid legal-field-grid--two">
             <label class="legal-field">
-              <span class="legal-field__label">РЎСѓРґ РЅРёР¶РµСЃС‚РѕСЏС‰РµР№ РёРЅСЃС‚Р°РЅС†РёРё</span>
+              <span class="legal-field__label">Суд нижестоящей инстанции</span>
               <input name="previous_court_name" type="text" />
             </label>
             <label class="legal-field">
-              <span class="legal-field__label">РќРѕРјРµСЂ РґРµР»Р°</span>
+              <span class="legal-field__label">Номер дела</span>
               <input name="previous_case_number" type="text" />
             </label>
             <label class="legal-field">
-              <span class="legal-field__label">Р”Р°С‚Р° СЃСѓРґРµР±РЅРѕРіРѕ Р°РєС‚Р°</span>
+              <span class="legal-field__label">Дата судебного акта</span>
               <input name="previous_decision_date" type="text" />
             </label>
             <label class="legal-field">
-              <span class="legal-field__label">РџСЂРµРґРјРµС‚ РѕР±Р¶Р°Р»РѕРІР°РЅРёСЏ</span>
+              <span class="legal-field__label">Предмет обжалования</span>
               <input name="previous_decision_subject" type="text" />
             </label>
           </div>
@@ -269,16 +269,16 @@
         <section id="court-section-result" class="panel legal-card legal-section legal-section--result">
           <div class="legal-section__header">
             <div>
-              <p class="legal-section__eyebrow">Р РµР·СѓР»СЊС‚Р°С‚</p>
-              <h2 class="legal-section__title">РўРµРєСЃС‚ РѕР±СЂР°С‰РµРЅРёСЏ РІ BBCode</h2>
+              <p class="legal-section__eyebrow">Результат</p>
+              <h2 class="legal-section__title">Текст обращения в BBCode</h2>
               <p class="legal-section__description">
-                РџРѕСЃР»Рµ Р·Р°РїРѕР»РЅРµРЅРёСЏ С„РѕСЂРјС‹ СЃРёСЃС‚РµРјР° СЃС„РѕСЂРјРёСЂСѓРµС‚ С‡РµСЂРЅРѕРІРёРє РѕР±СЂР°С‰РµРЅРёСЏ РІ С„РѕСЂРјР°С‚Рµ BBCode РґР»СЏ РґР°Р»СЊРЅРµР№С€РµР№ РїРѕРґР°С‡Рё.
+                После заполнения формы система сформирует черновик обращения в формате BBCode для дальнейшей подачи.
               </p>
             </div>
             <div class="legal-toolbar">
-              <button id="court-claim-build-btn" type="button" class="primary-button">РЎС„РѕСЂРјРёСЂРѕРІР°С‚СЊ BBCode</button>
-              <button id="court-claim-copy-btn" type="button" class="secondary-button">РљРѕРїРёСЂРѕРІР°С‚СЊ С‚РµРєСЃС‚</button>
-              <button id="court-claim-clear-btn" type="button" class="ghost-button">РћС‡РёСЃС‚РёС‚СЊ С„РѕСЂРјСѓ</button>
+              <button id="court-claim-build-btn" type="button" class="primary-button">Сформировать BBCode</button>
+              <button id="court-claim-copy-btn" type="button" class="secondary-button">Копировать текст</button>
+              <button id="court-claim-clear-btn" type="button" class="ghost-button">Очистить форму</button>
             </div>
           </div>
           <div class="legal-result">

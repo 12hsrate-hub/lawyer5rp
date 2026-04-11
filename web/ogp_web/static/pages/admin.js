@@ -1,4 +1,4 @@
-﻿const errorsHost = document.getElementById("admin-errors");
+const errorsHost = document.getElementById("admin-errors");
 const messageHost = document.getElementById("admin-message");
 const totalsHost = document.getElementById("admin-totals");
 const examImportHost = document.getElementById("admin-exam-import");
@@ -65,7 +65,7 @@ function setCollapsibleExpanded(button, expanded, state = null) {
   }
 
   button.setAttribute("aria-expanded", expanded ? "true" : "false");
-  button.textContent = expanded ? "РЎРєСЂС‹С‚СЊ" : "РџРѕРєР°Р·Р°С‚СЊ";
+  button.textContent = expanded ? "Скрыть" : "Показать";
   content.hidden = !expanded;
   section.dataset.collapsibleOpen = expanded ? "true" : "false";
 
@@ -104,37 +104,37 @@ function initCollapsibles() {
 function describeApiPath(path) {
   const normalized = String(path || "").trim();
   if (!normalized) {
-    return "РЎРёСЃС‚РµРјРЅС‹Р№ Р·Р°РїСЂРѕСЃ Р±РµР· СѓРєР°Р·Р°РЅРЅРѕРіРѕ РїСѓС‚Рё.";
+    return "Системный запрос без указанного пути.";
   }
 
   const patterns = [
-    [/^\/api\/admin\/overview$/, "Р—Р°РіСЂСѓР·РєР° РІСЃРµР№ Р°РґРјРёРЅ-РїР°РЅРµР»Рё: СЃРІРѕРґРєР°, РїРѕР»СЊР·РѕРІР°С‚РµР»Рё, СЃРѕР±С‹С‚РёСЏ Рё СЃС‚Р°С‚РёСЃС‚РёРєР°."],
-    [/^\/api\/admin\/users\.csv$/, "Р’С‹РіСЂСѓР·РєР° CSV СЃРѕ СЃРїРёСЃРєРѕРј РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ РїРѕ С‚РµРєСѓС‰РёРј С„РёР»СЊС‚СЂР°Рј."],
-    [/^\/api\/admin\/events\.csv$/, "Р’С‹РіСЂСѓР·РєР° CSV СЃРѕ СЃРїРёСЃРєРѕРј СЃРѕР±С‹С‚РёР№ РїРѕ С‚РµРєСѓС‰РёРј С„РёР»СЊС‚СЂР°Рј."],
-    [/^\/api\/admin\/users\/[^/]+\/verify-email$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РІСЂСѓС‡РЅСѓСЋ РїРѕРґС‚РІРµСЂР¶РґР°РµС‚ email РІС‹Р±СЂР°РЅРЅРѕРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
-    [/^\/api\/admin\/users\/[^/]+\/block$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ Р±Р»РѕРєРёСЂСѓРµС‚ РґРѕСЃС‚СѓРї РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ Рє Р°РєРєР°СѓРЅС‚Сѓ."],
-    [/^\/api\/admin\/users\/[^/]+\/unblock$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅРёРјР°РµС‚ Р±Р»РѕРєРёСЂРѕРІРєСѓ Рё РІРѕР·РІСЂР°С‰Р°РµС‚ РґРѕСЃС‚СѓРї Рє Р°РєРєР°СѓРЅС‚Сѓ."],
-    [/^\/api\/admin\/users\/[^/]+\/grant-tester$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РІС‹РґР°РµС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ СЃС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР°."],
-    [/^\/api\/admin\/users\/[^/]+\/revoke-tester$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅРёРјР°РµС‚ Сѓ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ СЃС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР°."],
-    [/^\/api\/admin\/users\/[^/]+\/grant-gka$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РїСЂРёСЃРІР°РёРІР°РµС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ С‚РёРї Р“РљРђ-Р—Р“РљРђ."],
-    [/^\/api\/admin\/users\/[^/]+\/revoke-gka$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅРёРјР°РµС‚ Сѓ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ С‚РёРї Р“РљРђ-Р—Р“РљРђ."],
-    [/^\/api\/admin\/users\/[^/]+\/email$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РІСЂСѓС‡РЅСѓСЋ РјРµРЅСЏРµС‚ email РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
-    [/^\/api\/admin\/users\/[^/]+\/reset-password$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РІСЂСѓС‡РЅСѓСЋ Р·Р°РґР°РµС‚ РЅРѕРІС‹Р№ РїР°СЂРѕР»СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ."],
-    [/^\/api\/complaint-draft$/, "РЎРѕС…СЂР°РЅРµРЅРёРµ, Р·Р°РіСЂСѓР·РєР° РёР»Рё РѕС‡РёСЃС‚РєР° С‡РµСЂРЅРѕРІРёРєР° Р¶Р°Р»РѕР±С‹ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
-    [/^\/api\/generate$/, "Р“РµРЅРµСЂР°С†РёСЏ РёС‚РѕРіРѕРІРѕР№ Р¶Р°Р»РѕР±С‹ РїРѕ Р·Р°РїРѕР»РЅРµРЅРЅРѕР№ С„РѕСЂРјРµ."],
-    [/^\/api\/generate-rehab$/, "Р“РµРЅРµСЂР°С†РёСЏ Р·Р°СЏРІР»РµРЅРёСЏ РЅР° СЂРµР°Р±РёР»РёС‚Р°С†РёСЋ."],
-    [/^\/api\/ai\/suggest$/, "AI СѓР»СѓС‡С€Р°РµС‚ Рё РїРµСЂРµРїРёСЃС‹РІР°РµС‚ РѕРїРёСЃР°РЅРёРµ Р¶Р°Р»РѕР±С‹."],
-    [/^\/api\/ai\/extract-principal$/, "AI СЂР°СЃРїРѕР·РЅР°РµС‚ РґР°РЅРЅС‹Рµ РґРѕРІРµСЂРёС‚РµР»СЏ СЃ РёР·РѕР±СЂР°Р¶РµРЅРёСЏ РґРѕРєСѓРјРµРЅС‚Р°."],
-    [/^\/api\/auth\/login$/, "Р’С…РѕРґ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІ Р°РєРєР°СѓРЅС‚."],
-    [/^\/api\/auth\/register$/, "Р РµРіРёСЃС‚СЂР°С†РёСЏ РЅРѕРІРѕРіРѕ Р°РєРєР°СѓРЅС‚Р°."],
-    [/^\/api\/auth\/logout$/, "Р’С‹С…РѕРґ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РёР· Р°РєРєР°СѓРЅС‚Р°."],
-    [/^\/api\/auth\/forgot-password$/, "Р—Р°РїСѓСЃРє РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёСЏ РїР°СЂРѕР»СЏ."],
-    [/^\/api\/auth\/reset-password$/, "РЎР±СЂРѕСЃ РїР°СЂРѕР»СЏ РїРѕ С‚РѕРєРµРЅСѓ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёСЏ."],
-    [/^\/api\/profile$/, "Р—Р°РіСЂСѓР·РєР° РёР»Рё СЃРѕС…СЂР°РЅРµРЅРёРµ РґР°РЅРЅС‹С… РїСЂРѕС„РёР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
-    [/^\/api\/exam-import\/sync$/, "РРјРїРѕСЂС‚ РЅРѕРІС‹С… РѕС‚РІРµС‚РѕРІ РЅР° СЌРєР·Р°РјРµРЅС‹ РёР· Google Sheets."],
-    [/^\/api\/exam-import\/score$/, "РњР°СЃСЃРѕРІР°СЏ РїСЂРѕРІРµСЂРєР° РёРјРїРѕСЂС‚РёСЂРѕРІР°РЅРЅС‹С… СЌРєР·Р°РјРµРЅР°С†РёРѕРЅРЅС‹С… РѕС‚РІРµС‚РѕРІ."],
-    [/^\/api\/exam-import\/rows\/\d+$/, "РџСЂРѕСЃРјРѕС‚СЂ РґРµС‚Р°Р»РµР№ РїРѕ РѕРґРЅРѕР№ РёРјРїРѕСЂС‚РёСЂРѕРІР°РЅРЅРѕР№ СЃС‚СЂРѕРєРµ СЌРєР·Р°РјРµРЅР°."],
-    [/^\/api\/exam-import\/rows\/\d+\/score$/, "РџСЂРѕРІРµСЂРєР° Рё РѕС†РµРЅРєР° РѕРґРЅРѕР№ РєРѕРЅРєСЂРµС‚РЅРѕР№ СЃС‚СЂРѕРєРё СЌРєР·Р°РјРµРЅР°."],
+    [/^\/api\/admin\/overview$/, "Загрузка всей админ-панели: сводка, пользователи, события и статистика."],
+    [/^\/api\/admin\/users\.csv$/, "Выгрузка CSV со списком пользователей по текущим фильтрам."],
+    [/^\/api\/admin\/events\.csv$/, "Выгрузка CSV со списком событий по текущим фильтрам."],
+    [/^\/api\/admin\/users\/[^/]+\/verify-email$/, "Администратор вручную подтверждает email выбранного пользователя."],
+    [/^\/api\/admin\/users\/[^/]+\/block$/, "Администратор блокирует доступ пользователя к аккаунту."],
+    [/^\/api\/admin\/users\/[^/]+\/unblock$/, "Администратор снимает блокировку и возвращает доступ к аккаунту."],
+    [/^\/api\/admin\/users\/[^/]+\/grant-tester$/, "Администратор выдает пользователю статус тестера."],
+    [/^\/api\/admin\/users\/[^/]+\/revoke-tester$/, "Администратор снимает у пользователя статус тестера."],
+    [/^\/api\/admin\/users\/[^/]+\/grant-gka$/, "Администратор присваивает пользователю тип ГКА-ЗГКА."],
+    [/^\/api\/admin\/users\/[^/]+\/revoke-gka$/, "Администратор снимает у пользователя тип ГКА-ЗГКА."],
+    [/^\/api\/admin\/users\/[^/]+\/email$/, "Администратор вручную меняет email пользователя."],
+    [/^\/api\/admin\/users\/[^/]+\/reset-password$/, "Администратор вручную задает новый пароль пользователю."],
+    [/^\/api\/complaint-draft$/, "Сохранение, загрузка или очистка черновика жалобы пользователя."],
+    [/^\/api\/generate$/, "Генерация итоговой жалобы по заполненной форме."],
+    [/^\/api\/generate-rehab$/, "Генерация заявления на реабилитацию."],
+    [/^\/api\/ai\/suggest$/, "AI улучшает и переписывает описание жалобы."],
+    [/^\/api\/ai\/extract-principal$/, "AI распознает данные доверителя с изображения документа."],
+    [/^\/api\/auth\/login$/, "Вход пользователя в аккаунт."],
+    [/^\/api\/auth\/register$/, "Регистрация нового аккаунта."],
+    [/^\/api\/auth\/logout$/, "Выход пользователя из аккаунта."],
+    [/^\/api\/auth\/forgot-password$/, "Запуск восстановления пароля."],
+    [/^\/api\/auth\/reset-password$/, "Сброс пароля по токену восстановления."],
+    [/^\/api\/profile$/, "Загрузка или сохранение данных профиля пользователя."],
+    [/^\/api\/exam-import\/sync$/, "мпорт новых ответов на экзамены из Google Sheets."],
+    [/^\/api\/exam-import\/score$/, "Массовая проверка импортированных экзаменационных ответов."],
+    [/^\/api\/exam-import\/rows\/\d+$/, "Просмотр деталей по одной импортированной строке экзамена."],
+    [/^\/api\/exam-import\/rows\/\d+\/score$/, "Проверка и оценка одной конкретной строки экзамена."],
   ];
 
   for (const [pattern, description] of patterns) {
@@ -143,34 +143,34 @@ function describeApiPath(path) {
     }
   }
 
-  return "РўРµС…РЅРёС‡РµСЃРєРёР№ API-Р·Р°РїСЂРѕСЃ. Р”Р»СЏ СЌС‚РѕРіРѕ РїСѓС‚Рё РµС‰Рµ РЅРµ РґРѕР±Р°РІР»РµРЅРѕ С‡РµР»РѕРІРµРєРѕС‡РёС‚Р°РµРјРѕРµ РѕРїРёСЃР°РЅРёРµ.";
+  return "Технический API-запрос. Для этого пути еще не добавлено человекочитаемое описание.";
 }
 
 function describeEventType(eventType) {
   const normalized = String(eventType || "").trim().toLowerCase();
   const descriptions = {
-    api_request: "РћР±С‹С‡РЅС‹Р№ Р·Р°РїСЂРѕСЃ Рє API РїСЂРёР»РѕР¶РµРЅРёСЏ.",
-    complaint_generated: "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃРіРµРЅРµСЂРёСЂРѕРІР°Р» Р¶Р°Р»РѕР±Сѓ.",
-    rehab_generated: "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃРіРµРЅРµСЂРёСЂРѕРІР°Р» Р·Р°СЏРІР»РµРЅРёРµ РЅР° СЂРµР°Р±РёР»РёС‚Р°С†РёСЋ.",
-    complaint_draft_saved: "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃРѕС…СЂР°РЅРёР» С‡РµСЂРЅРѕРІРёРє Р¶Р°Р»РѕР±С‹.",
-    complaint_draft_cleared: "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РѕС‡РёСЃС‚РёР» С‡РµСЂРЅРѕРІРёРє Р¶Р°Р»РѕР±С‹.",
-    ai_suggest: "AI РѕР±СЂР°Р±РѕС‚Р°Р» Рё СѓР»СѓС‡С€РёР» С‚РµРєСЃС‚ Р¶Р°Р»РѕР±С‹.",
-    ai_extract_principal: "AI СЂР°СЃРїРѕР·РЅР°Р» РґР°РЅРЅС‹Рµ СЃ РґРѕРєСѓРјРµРЅС‚Р°.",
-    ai_exam_scoring: "AI РїСЂРѕРІРµСЂРёР» СЌРєР·Р°РјРµРЅР°С†РёРѕРЅРЅС‹Рµ РѕС‚РІРµС‚С‹ Рё РІРµСЂРЅСѓР» СЃС‚Р°С‚РёСЃС‚РёРєСѓ РїРѕ cache, СЌРІСЂРёСЃС‚РёРєР°Рј Рё LLM.",
-    exam_import_sync_error: "РРјРїРѕСЂС‚ РёР· Google Sheets Р·Р°РІРµСЂС€РёР»СЃСЏ РѕС€РёР±РєРѕР№.",
-    exam_import_score_failures: "Р’Рѕ РІСЂРµРјСЏ РјР°СЃСЃРѕРІРѕР№ РїСЂРѕРІРµСЂРєРё СЌРєР·Р°РјРµРЅРѕРІ С‡Р°СЃС‚СЊ СЃС‚СЂРѕРє РЅРµ РѕР±СЂР°Р±РѕС‚Р°Р»Р°СЃСЊ.",
-    exam_import_row_score_error: "РџСЂРѕРІРµСЂРєР° РѕРґРЅРѕР№ СЃС‚СЂРѕРєРё СЌРєР·Р°РјРµРЅР° Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РѕС€РёР±РєРѕР№.",
-    admin_verify_email: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РїРѕРґС‚РІРµСЂРґРёР» email РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
-    admin_block_user: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°Р» РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
-    admin_unblock_user: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЂР°Р·Р±Р»РѕРєРёСЂРѕРІР°Р» РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
-    admin_grant_tester: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РІС‹РґР°Р» СЃС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР°.",
-    admin_revoke_tester: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅСЏР» СЃС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР°.",
-    admin_grant_gka: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РїСЂРёСЃРІРѕРёР» С‚РёРї Р“РљРђ-Р—Р“РљРђ.",
-    admin_revoke_gka: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅСЏР» С‚РёРї Р“РљРђ-Р—Р“РљРђ.",
-    admin_update_email: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РёР·РјРµРЅРёР» email РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
-    admin_reset_password: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ Р·Р°РґР°Р» РЅРѕРІС‹Р№ РїР°СЂРѕР»СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ.",
+    api_request: "Обычный запрос к API приложения.",
+    complaint_generated: "Пользователь сгенерировал жалобу.",
+    rehab_generated: "Пользователь сгенерировал заявление на реабилитацию.",
+    complaint_draft_saved: "Пользователь сохранил черновик жалобы.",
+    complaint_draft_cleared: "Пользователь очистил черновик жалобы.",
+    ai_suggest: "AI обработал и улучшил текст жалобы.",
+    ai_extract_principal: "AI распознал данные с документа.",
+    ai_exam_scoring: "AI проверил экзаменационные ответы и вернул статистику по cache, эвристикам и LLM.",
+    exam_import_sync_error: "мпорт из Google Sheets завершился ошибкой.",
+    exam_import_score_failures: "Во время массовой проверки экзаменов часть строк не обработалась.",
+    exam_import_row_score_error: "Проверка одной строки экзамена завершилась ошибкой.",
+    admin_verify_email: "Администратор подтвердил email пользователя.",
+    admin_block_user: "Администратор заблокировал пользователя.",
+    admin_unblock_user: "Администратор разблокировал пользователя.",
+    admin_grant_tester: "Администратор выдал статус тестера.",
+    admin_revoke_tester: "Администратор снял статус тестера.",
+    admin_grant_gka: "Администратор присвоил тип ГКА-ЗГКА.",
+    admin_revoke_gka: "Администратор снял тип ГКА-ЗГКА.",
+    admin_update_email: "Администратор изменил email пользователя.",
+    admin_reset_password: "Администратор задал новый пароль пользователю.",
   };
-  return descriptions[normalized] || "РЎРёСЃС‚РµРјРЅРѕРµ СЃРѕР±С‹С‚РёРµ Р±РµР· РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅРѕРіРѕ РѕРїРёСЃР°РЅРёСЏ.";
+  return descriptions[normalized] || "Системное событие без дополнительного описания.";
 }
 
 function showMessage(text) {
@@ -193,7 +193,7 @@ function renderFilterChip(label, key) {
   return `
     <button type="button" class="admin-filter-chip" data-clear-filter="${escapeHtml(key)}">
       <span>${escapeHtml(label)}</span>
-      <span class="admin-filter-chip__close" aria-hidden="true">Г—</span>
+      <span class="admin-filter-chip__close" aria-hidden="true">×</span>
     </button>
   `;
 }
@@ -217,7 +217,7 @@ function renderLoadingState(host, options = {}) {
 
   host.innerHTML = `
     <div class="admin-loading" aria-live="polite" aria-busy="true">
-      <p class="legal-section__description">Р—Р°РіСЂСѓР¶Р°РµРј РґР°РЅРЅС‹Рµ...</p>
+      <p class="legal-section__description">Загружаем данные...</p>
       ${lines}
     </div>
   `;
@@ -243,25 +243,25 @@ function setLiveStatus(text, tone = "muted") {
 
 function renderTotals(totals) {
   const items = [
-    ["РџРѕР»СЊР·РѕРІР°С‚РµР»Рё", totals.users_total, "Р’СЃРµРіРѕ Р°РєРєР°СѓРЅС‚РѕРІ РІ СЃРёСЃС‚РµРјРµ"],
-    ["API-Р·Р°РїСЂРѕСЃС‹", totals.api_requests_total, "РќР°РєРѕРїР»РµРЅРЅР°СЏ Р°РєС‚РёРІРЅРѕСЃС‚СЊ API"],
-    ["Р–Р°Р»РѕР±С‹", totals.complaints_total, "РЎРіРµРЅРµСЂРёСЂРѕРІР°РЅРЅС‹Рµ Р¶Р°Р»РѕР±С‹"],
-    ["Р РµР°Р±РёР»РёС‚Р°С†РёРё", totals.rehabs_total, "РЎРіРµРЅРµСЂРёСЂРѕРІР°РЅРЅС‹Рµ СЂРµР°Р±РёР»РёС‚Р°С†РёРё"],
-    ["AI suggest", totals.ai_suggest_total, "РўРµРєСЃС‚РѕРІС‹Рµ AI-РѕРїРµСЂР°С†РёРё"],
-    ["AI OCR", totals.ai_ocr_total, "Р Р°СЃРїРѕР·РЅР°РІР°РЅРёРµ РґРѕРєСѓРјРµРЅС‚РѕРІ"],
-    ["AI-РїСЂРѕРІРµСЂРєРё СЌРєР·Р°РјРµРЅРѕРІ", totals.ai_exam_scoring_total || 0, "РЎРєРѕР»СЊРєРѕ СЂР°Р· Р·Р°РїСѓСЃРєР°Р»Р°СЃСЊ AI-РїСЂРѕРІРµСЂРєР° СЌРєР·Р°РјРµРЅРѕРІ"],
-    ["РЎС‚СЂРѕРєРё СЌРєР·Р°РјРµРЅР°", totals.ai_exam_scoring_rows || 0, "РЎРєРѕР»СЊРєРѕ СЃС‚СЂРѕРє СЌРєР·Р°РјРµРЅР° СЂРµР°Р»СЊРЅРѕ РїСЂРѕРІРµСЂРµРЅРѕ"],
-    ["РћС‚РІРµС‚С‹ СЌРєР·Р°РјРµРЅР°", totals.ai_exam_scoring_answers || 0, "РЎРєРѕР»СЊРєРѕ РѕС‚РІРµС‚РѕРІ РїСЂРѕС€Р»Рѕ С‡РµСЂРµР· РѕС†РµРЅРёРІР°РЅРёРµ"],
-    ["Р‘РµР· LLM", totals.ai_exam_heuristic_total || 0, "РћС‚РІРµС‚С‹, Р·Р°РєСЂС‹С‚С‹Рµ Р±РµР· РѕР±СЂР°С‰РµРЅРёСЏ Рє РјРѕРґРµР»Рё"],
-    ["РџРѕРїР°РґР°РЅРёСЏ РІ РєСЌС€", totals.ai_exam_cache_total || 0, "РћС‚РІРµС‚С‹, РІР·СЏС‚С‹Рµ РёР· РєСЌС€Р°"],
-    ["РћС‚РІРµС‚С‹ С‡РµСЂРµР· LLM", totals.ai_exam_llm_total || 0, "РћС‚РІРµС‚С‹, СЂРµР°Р»СЊРЅРѕ СѓС€РµРґС€РёРµ РІ РјРѕРґРµР»СЊ"],
-    ["Р’С‹Р·РѕРІС‹ LLM", totals.ai_exam_llm_calls_total || 0, "РЎРєРѕР»СЊРєРѕ batch-РІС‹Р·РѕРІРѕРІ СЃРґРµР»Р°Р»Рё Рє РјРѕРґРµР»Рё"],
-    ["РћС€РёР±РєРё СЌРєР·Р°РјРµРЅР°", totals.ai_exam_failure_total || 0, "РћС€РёР±РєРё РѕС†РµРЅРёРІР°РЅРёСЏ СЌРєР·Р°РјРµРЅРѕРІ Рё РёРјРїРѕСЂС‚Р°"],
-    ["Р’С…РѕРґСЏС‰РёР№ С‚СЂР°С„РёРє", `${formatNumber(totals.request_bytes_total)} B`, "РЎСѓРјРјР°СЂРЅС‹Р№ СЂР°Р·РјРµСЂ Р·Р°РїСЂРѕСЃРѕРІ"],
-    ["РСЃС…РѕРґСЏС‰РёР№ С‚СЂР°С„РёРє", `${formatNumber(totals.response_bytes_total)} B`, "РЎСѓРјРјР°СЂРЅС‹Р№ СЂР°Р·РјРµСЂ РѕС‚РІРµС‚РѕРІ"],
-    ["Р РµСЃСѓСЂСЃРЅС‹Рµ РµРґРёРЅРёС†С‹", formatNumber(totals.resource_units_total), "РЈСЃР»РѕРІРЅР°СЏ РЅР°РіСЂСѓР·РєР°"],
-    ["РЎСЂРµРґРЅРёР№ API РѕС‚РІРµС‚", `${formatNumber(totals.avg_api_duration_ms)} ms`, "РЎСЂРµРґРЅСЏСЏ РґР»РёС‚РµР»СЊРЅРѕСЃС‚СЊ API"],
-    ["РЎРѕР±С‹С‚РёСЏ Р·Р° 24 С‡Р°СЃР°", totals.events_last_24h, "РџРѕСЃР»РµРґРЅСЏСЏ СЃСѓС‚РѕС‡РЅР°СЏ Р°РєС‚РёРІРЅРѕСЃС‚СЊ"],
+    ["Пользователи", totals.users_total, "Всего аккаунтов в системе"],
+    ["API-запросы", totals.api_requests_total, "Накопленная активность API"],
+    ["Жалобы", totals.complaints_total, "Сгенерированные жалобы"],
+    ["Реабилитации", totals.rehabs_total, "Сгенерированные реабилитации"],
+    ["AI suggest", totals.ai_suggest_total, "Текстовые AI-операции"],
+    ["AI OCR", totals.ai_ocr_total, "Распознавание документов"],
+    ["AI-проверки экзаменов", totals.ai_exam_scoring_total || 0, "Сколько раз запускалась AI-проверка экзаменов"],
+    ["Строки экзамена", totals.ai_exam_scoring_rows || 0, "Сколько строк экзамена реально проверено"],
+    ["Ответы экзамена", totals.ai_exam_scoring_answers || 0, "Сколько ответов прошло через оценивание"],
+    ["Без LLM", totals.ai_exam_heuristic_total || 0, "Ответы, закрытые без обращения к модели"],
+    ["Попадания в кэш", totals.ai_exam_cache_total || 0, "Ответы, взятые из кэша"],
+    ["Ответы через LLM", totals.ai_exam_llm_total || 0, "Ответы, реально ушедшие в модель"],
+    ["Вызовы LLM", totals.ai_exam_llm_calls_total || 0, "Сколько batch-вызовов сделали к модели"],
+    ["Ошибки экзамена", totals.ai_exam_failure_total || 0, "Ошибки оценивания экзаменов и импорта"],
+    ["Входящий трафик", `${formatNumber(totals.request_bytes_total)} B`, "Суммарный размер запросов"],
+    ["сходящий трафик", `${formatNumber(totals.response_bytes_total)} B`, "Суммарный размер ответов"],
+    ["Ресурсные единицы", formatNumber(totals.resource_units_total), "Условная нагрузка"],
+    ["Средний API ответ", `${formatNumber(totals.avg_api_duration_ms)} ms`, "Средняя длительность API"],
+    ["События за 24 часа", totals.events_last_24h, "Последняя суточная активность"],
   ];
 
   totalsHost.innerHTML = items
@@ -286,42 +286,42 @@ function renderPerformance(payload) {
   const latency = payload?.latency || {};
   const rates = payload?.rates || {};
   const top = Array.isArray(payload?.top_endpoints) ? payload.top_endpoints : [];
-  const snapshotAt = String(payload?.snapshot_at || "вЂ”");
+  const snapshotAt = String(payload?.snapshot_at || "—");
 
   performanceHost.innerHTML = `
     <article class="legal-status-card">
-      <span class="legal-status-card__label">РЎРЅРёРјРѕРє</span>
+      <span class="legal-status-card__label">Снимок</span>
       <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(snapshotAt)}</strong>
       <span class="admin-user-cell__secondary">${renderBadge(isCached ? "cache" : "live", isCached ? "muted" : "success-soft")}</span>
     </article>
     <article class="legal-status-card">
       <span class="legal-status-card__label">p95 / p50 (ms)</span>
-      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(latency.p95_ms ?? "вЂ”"))} / ${escapeHtml(String(latency.p50_ms ?? "вЂ”"))}</strong>
-      <span class="admin-user-cell__secondary">РћС€РёР±РѕРє: ${escapeHtml(String(totals.failed_requests ?? 0))} РёР· ${escapeHtml(String(totals.total_requests ?? 0))}</span>
+      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(latency.p95_ms ?? "—"))} / ${escapeHtml(String(latency.p50_ms ?? "—"))}</strong>
+      <span class="admin-user-cell__secondary">Ошибок: ${escapeHtml(String(totals.failed_requests ?? 0))} из ${escapeHtml(String(totals.total_requests ?? 0))}</span>
     </article>
     <article class="legal-status-card">
       <span class="legal-status-card__label">RPS</span>
-      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(rates.requests_per_second ?? "вЂ”"))}</strong>
-      <span class="admin-user-cell__secondary">РћРєРЅРѕ: ${escapeHtml(String(payload?.window_minutes ?? "вЂ”"))} РјРёРЅ</span>
+      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(rates.requests_per_second ?? "—"))}</strong>
+      <span class="admin-user-cell__secondary">Окно: ${escapeHtml(String(payload?.window_minutes ?? "—"))} мин</span>
     </article>
     <article class="legal-status-card">
-      <span class="legal-status-card__label">РўРѕРї endpoint</span>
-      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(top[0]?.path || "вЂ”"))}</strong>
-      <span class="admin-user-cell__secondary">Р—Р°РїСЂРѕСЃРѕРІ: ${escapeHtml(String(top[0]?.count || 0))}</span>
+      <span class="legal-status-card__label">Топ endpoint</span>
+      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(top[0]?.path || "—"))}</strong>
+      <span class="admin-user-cell__secondary">Запросов: ${escapeHtml(String(top[0]?.count || 0))}</span>
     </article>
   `;
 }
 
 function renderTopEndpoints(items) {
   if (!items.length) {
-    endpointsHost.innerHTML = '<p class="legal-section__description">РџРѕРєР° РЅРµС‚ РґР°РЅРЅС‹С… РїРѕ API-Р·Р°РїСЂРѕСЃР°Рј.</p>';
+    endpointsHost.innerHTML = '<p class="legal-section__description">Пока нет данных по API-запросам.</p>';
     return;
   }
 
   endpointsHost.innerHTML = `
     <div class="legal-table-shell">
       <table class="legal-table admin-table admin-table--compact">
-        <thead><tr><th>Р­РЅРґРїРѕРёРЅС‚</th><th>Р§С‚Рѕ РґРµР»Р°РµС‚</th><th>Р—Р°РїСЂРѕСЃРѕРІ</th></tr></thead>
+        <thead><tr><th>Эндпоинт</th><th>Что делает</th><th>Запросов</th></tr></thead>
         <tbody>
           ${items
             .map(
@@ -346,7 +346,7 @@ function renderExamImport(summary) {
   }
 
   if (!summary) {
-    examImportHost.innerHTML = '<p class="legal-section__description">РџРѕРєР° РЅРµС‚ РґР°РЅРЅС‹С… РїРѕ РёРјРїРѕСЂС‚Сѓ СЌРєР·Р°РјРµРЅРѕРІ.</p>';
+    examImportHost.innerHTML = '<p class="legal-section__description">Пока нет данных по импорту экзаменов.</p>';
     return;
   }
 
@@ -357,26 +357,26 @@ function renderExamImport(summary) {
   examImportHost.innerHTML = `
     <div class="admin-exam-grid">
       <article class="legal-status-card">
-        <span class="legal-status-card__label">РћР¶РёРґР°СЋС‚ РѕС†РµРЅРёРІР°РЅРёСЏ</span>
+        <span class="legal-status-card__label">Ожидают оценивания</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary.pending_scores || 0))}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">РџРѕСЃР»РµРґРЅСЏСЏ СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(lastSync.created_at || "вЂ”")}</strong>
+        <span class="legal-status-card__label">Последняя синхронизация</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(lastSync.created_at || "—")}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">РџРѕСЃР»РµРґРЅРµРµ РѕС†РµРЅРёРІР°РЅРёРµ</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(lastScore.created_at || "вЂ”")}</strong>
+        <span class="legal-status-card__label">Последнее оценивание</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(lastScore.created_at || "—")}</strong>
       </article>
     </div>
     <div class="admin-exam-meta">
       <div class="admin-user-cell">
         <strong>${escapeHtml(lastSync.path || "/api/exam-import/sync")}</strong>
-        <span class="admin-user-cell__secondary">${escapeHtml(lastSync.status_code ? `РЎС‚Р°С‚СѓСЃ ${lastSync.status_code}` : "Р—Р°РїСѓСЃРєРѕРІ РїРѕРєР° РЅРµ Р±С‹Р»Рѕ")}</span>
+        <span class="admin-user-cell__secondary">${escapeHtml(lastSync.status_code ? `Статус ${lastSync.status_code}` : "Запусков пока не было")}</span>
       </div>
       <div class="admin-user-cell">
         <strong>${escapeHtml(lastScore.path || "/api/exam-import/score")}</strong>
-        <span class="admin-user-cell__secondary">${escapeHtml(lastScore.status_code ? `РЎС‚Р°С‚СѓСЃ ${lastScore.status_code}` : "РџСЂРѕРІРµСЂРѕРє РїРѕРєР° РЅРµ Р±С‹Р»Рѕ")}</span>
+        <span class="admin-user-cell__secondary">${escapeHtml(lastScore.status_code ? `Статус ${lastScore.status_code}` : "Проверок пока не было")}</span>
       </div>
     </div>
     ${
@@ -385,7 +385,7 @@ function renderExamImport(summary) {
           <div class="legal-table-shell">
             <table class="legal-table admin-table admin-table--compact">
               <thead>
-                <tr><th>Р’СЂРµРјСЏ</th><th>РўРёРї</th><th>РџСѓС‚СЊ</th><th>Р§С‚Рѕ СЃР»СѓС‡РёР»РѕСЃСЊ</th></tr>
+                <tr><th>Время</th><th>Тип</th><th>Путь</th><th>Что случилось</th></tr>
               </thead>
               <tbody>
                 ${recentFailures
@@ -404,7 +404,7 @@ function renderExamImport(summary) {
             </table>
           </div>
         `
-        : '<p class="legal-section__description">РџРѕСЃР»РµРґРЅРёС… РѕС€РёР±РѕРє РёРјРїРѕСЂС‚Р° СЌРєР·Р°РјРµРЅРѕРІ Рё AI-РѕС†РµРЅРёРІР°РЅРёСЏ РЅРµ РЅР°Р№РґРµРЅРѕ.</p>'
+        : '<p class="legal-section__description">Последних ошибок импорта экзаменов и AI-оценивания не найдено.</p>'
     }
   `;
 }
@@ -415,23 +415,23 @@ function renderActiveFilters(filters) {
   }
 
   const chips = [];
-  if (filters.search) chips.push(renderFilterChip(`РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ: ${filters.search}`, "search"));
+  if (filters.search) chips.push(renderFilterChip(`Пользователь: ${filters.search}`, "search"));
   if (filters.user_sort && filters.user_sort !== "complaints") {
     const sortLabels = {
-      api_requests: "РЎРѕСЂС‚РёСЂРѕРІРєР°: API-Р°РєС‚РёРІРЅРѕСЃС‚СЊ",
-      last_seen: "РЎРѕСЂС‚РёСЂРѕРІРєР°: РїРѕСЃР»РµРґРЅСЏСЏ Р°РєС‚РёРІРЅРѕСЃС‚СЊ",
-      created_at: "РЎРѕСЂС‚РёСЂРѕРІРєР°: РґР°С‚Р° СЂРµРіРёСЃС‚СЂР°С†РёРё",
-      username: "РЎРѕСЂС‚РёСЂРѕРІРєР°: username",
+      api_requests: "Сортировка: API-активность",
+      last_seen: "Сортировка: последняя активность",
+      created_at: "Сортировка: дата регистрации",
+      username: "Сортировка: username",
     };
-    chips.push(renderFilterChip(sortLabels[filters.user_sort] || `РЎРѕСЂС‚РёСЂРѕРІРєР°: ${filters.user_sort}`, "user_sort"));
+    chips.push(renderFilterChip(sortLabels[filters.user_sort] || `Сортировка: ${filters.user_sort}`, "user_sort"));
   }
-  if (filters.blocked_only) chips.push(renderFilterChip("РўРѕР»СЊРєРѕ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅРЅС‹Рµ", "blocked_only"));
-  if (filters.tester_only) chips.push(renderFilterChip("РўРѕР»СЊРєРѕ С‚РµСЃС‚РµСЂС‹", "tester_only"));
-  if (filters.gka_only) chips.push(renderFilterChip("РўРѕР»СЊРєРѕ Р“РљРђ-Р—Р“РљРђ", "gka_only"));
-  if (filters.unverified_only) chips.push(renderFilterChip("РўРѕР»СЊРєРѕ Р±РµР· РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ email", "unverified_only"));
-  if (filters.event_search) chips.push(renderFilterChip(`РЎРѕР±С‹С‚РёСЏ: ${filters.event_search}`, "event_search"));
-  if (filters.event_type) chips.push(renderFilterChip(`РўРёРї: ${filters.event_type}`, "event_type"));
-  if (filters.failed_events_only) chips.push(renderFilterChip("РўРѕР»СЊРєРѕ РѕС€РёР±РєРё", "failed_events_only"));
+  if (filters.blocked_only) chips.push(renderFilterChip("Только заблокированные", "blocked_only"));
+  if (filters.tester_only) chips.push(renderFilterChip("Только тестеры", "tester_only"));
+  if (filters.gka_only) chips.push(renderFilterChip("Только ГКА-ЗГКА", "gka_only"));
+  if (filters.unverified_only) chips.push(renderFilterChip("Только без подтверждения email", "unverified_only"));
+  if (filters.event_search) chips.push(renderFilterChip(`События: ${filters.event_search}`, "event_search"));
+  if (filters.event_type) chips.push(renderFilterChip(`Тип: ${filters.event_type}`, "event_type"));
+  if (filters.failed_events_only) chips.push(renderFilterChip("Только ошибки", "failed_events_only"));
 
   if (!chips.length) {
     activeFiltersHost.innerHTML = "";
@@ -445,10 +445,10 @@ function renderActiveFilters(filters) {
 
 function renderUserStatuses(user) {
   const badges = [
-    user.email_verified ? renderBadge("Email OK", "success") : renderBadge("Email РЅРµ РїРѕРґС‚РІРµСЂР¶РґРµРЅ", "muted"),
-    user.access_blocked ? renderBadge("Р—Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ", "danger") : renderBadge("РђРєС‚РёРІРµРЅ", "success-soft"),
-    user.is_tester ? renderBadge("РўРµСЃС‚РµСЂ", "info") : renderBadge("РћР±С‹С‡РЅС‹Р№", "neutral"),
-    user.is_gka ? renderBadge("Р“РљРђ-Р—Р“РљРђ", "info") : null,
+    user.email_verified ? renderBadge("Email OK", "success") : renderBadge("Email не подтвержден", "muted"),
+    user.access_blocked ? renderBadge("Заблокирован", "danger") : renderBadge("Активен", "success-soft"),
+    user.is_tester ? renderBadge("Тестер", "info") : renderBadge("Обычный", "neutral"),
+    user.is_gka ? renderBadge("ГКА-ЗГКА", "info") : null,
   ];
   return `<div class="admin-badge-row">${badges.filter(Boolean).join("")}</div>`;
 }
@@ -457,7 +457,7 @@ function renderUserActivity(user) {
   return `
     <div class="admin-activity">
       <div class="admin-activity__main">
-        <strong>${escapeHtml(String(user.complaints || 0))}</strong><span>Р¶Р°Р»РѕР±</span>
+        <strong>${escapeHtml(String(user.complaints || 0))}</strong><span>жалоб</span>
         <strong>${escapeHtml(String(user.rehabs || 0))}</strong><span>rehab</span>
       </div>
       <div class="admin-activity__meta">
@@ -476,23 +476,23 @@ function renderUsers(users, userSort = "complaints") {
   });
 
   if (!users.length) {
-    usersHost.innerHTML = '<p class="legal-section__description">РџРѕ С‚РµРєСѓС‰РµРјСѓ С„РёР»СЊС‚СЂСѓ РїРѕР»СЊР·РѕРІР°С‚РµР»Рё РЅРµ РЅР°Р№РґРµРЅС‹.</p>';
+    usersHost.innerHTML = '<p class="legal-section__description">По текущему фильтру пользователи не найдены.</p>';
     return;
   }
 
   usersHost.innerHTML = `
     <div class="admin-section-toolbar">
-      <p class="legal-section__description">РџРѕРєР°Р·Р°РЅРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№: ${escapeHtml(String(users.length))}. РЎРѕСЂС‚РёСЂРѕРІРєР°: ${escapeHtml(String(userSort))}</p>
+      <p class="legal-section__description">Показано пользователей: ${escapeHtml(String(users.length))}. Сортировка: ${escapeHtml(String(userSort))}</p>
     </div>
     <div class="legal-table-shell">
       <table class="legal-table admin-table">
         <thead>
           <tr>
-            <th>РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ</th>
-            <th>РЎС‚Р°С‚СѓСЃС‹</th>
-            <th>РђРєС‚РёРІРЅРѕСЃС‚СЊ</th>
-            <th>РџРѕСЃР»РµРґРЅСЏСЏ Р°РєС‚РёРІРЅРѕСЃС‚СЊ</th>
-            <th>РЈРїСЂР°РІР»РµРЅРёРµ</th>
+            <th>Пользователь</th>
+            <th>Статусы</th>
+            <th>Активность</th>
+            <th>Последняя активность</th>
+            <th>Управление</th>
           </tr>
         </thead>
         <tbody>
@@ -510,12 +510,12 @@ function renderUsers(users, userSort = "complaints") {
                   <td>${renderUserActivity(user)}</td>
                   <td>
                     <div class="admin-user-cell">
-                      <strong>${escapeHtml(user.last_seen_at || "вЂ”")}</strong>
-                      <span class="admin-user-cell__secondary">${escapeHtml(user.access_blocked_reason || "Р‘РµР· РїСЂРёС‡РёРЅС‹ Р±Р»РѕРєРёСЂРѕРІРєРё")}</span>
+                      <strong>${escapeHtml(user.last_seen_at || "—")}</strong>
+                      <span class="admin-user-cell__secondary">${escapeHtml(user.access_blocked_reason || "Без причины блокировки")}</span>
                     </div>
                   </td>
                   <td>
-                    <button type="button" class="secondary-button admin-user-open-btn" data-open-user="${escapeHtml(user.username || "")}">РЈРїСЂР°РІР»РµРЅРёРµ</button>
+                    <button type="button" class="secondary-button admin-user-open-btn" data-open-user="${escapeHtml(user.username || "")}">Управление</button>
                   </td>
                 </tr>
               `,
@@ -529,31 +529,31 @@ function renderUsers(users, userSort = "complaints") {
 
 function renderEvents(events) {
   if (!events.length) {
-    eventsHost.innerHTML = '<p class="legal-section__description">РЎРѕР±С‹С‚РёР№ РїРѕ С‚РµРєСѓС‰РµРјСѓ С„РёР»СЊС‚СЂСѓ РЅРµС‚.</p>';
+    eventsHost.innerHTML = '<p class="legal-section__description">Событий по текущему фильтру нет.</p>';
     return;
   }
 
   eventsHost.innerHTML = `
     <div class="admin-section-toolbar">
-      <p class="legal-section__description">РџРѕРєР°Р·Р°РЅРѕ СЃРѕР±С‹С‚РёР№: ${escapeHtml(String(events.length))}</p>
+      <p class="legal-section__description">Показано событий: ${escapeHtml(String(events.length))}</p>
     </div>
     <div class="legal-table-shell">
       <table class="legal-table admin-table admin-table--compact">
         <thead>
           <tr>
-            <th>Р’СЂРµРјСЏ</th>
-            <th>РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ</th>
-            <th>РўРёРї</th>
-            <th>РџСѓС‚СЊ</th>
-            <th>РЎС‚Р°С‚СѓСЃ</th>
+            <th>Время</th>
+            <th>Пользователь</th>
+            <th>Тип</th>
+            <th>Путь</th>
+            <th>Статус</th>
             <th>ms</th>
-            <th>Р РµСЃСѓСЂСЃС‹</th>
+            <th>Ресурсы</th>
           </tr>
         </thead>
         <tbody>
           ${events
             .map((event) => {
-              const statusValue = event.status_code ?? "вЂ”";
+              const statusValue = event.status_code ?? "—";
               const statusTone = Number(event.status_code || 0) >= 400 ? "danger" : "neutral";
               return `
                 <tr>
@@ -591,29 +591,29 @@ function renderAdminAudit(events) {
 
   const adminEvents = events.filter((event) => String(event.event_type || "").startsWith("admin_"));
   if (!adminEvents.length) {
-    adminEventsHost.innerHTML = '<p class="legal-section__description">РђРґРјРёРЅ-РґРµР№СЃС‚РІРёР№ РїРѕ С‚РµРєСѓС‰РµРјСѓ С„РёР»СЊС‚СЂСѓ РїРѕРєР° РЅРµ РІРёРґРЅРѕ.</p>';
+    adminEventsHost.innerHTML = '<p class="legal-section__description">Админ-действий по текущему фильтру пока не видно.</p>';
     return;
   }
 
   adminEventsHost.innerHTML = `
     <div class="admin-section-toolbar">
-      <p class="legal-section__description">РџРѕРєР°Р·Р°РЅРѕ Р°РґРјРёРЅ-РґРµР№СЃС‚РІРёР№: ${escapeHtml(String(adminEvents.length))}</p>
+      <p class="legal-section__description">Показано админ-действий: ${escapeHtml(String(adminEvents.length))}</p>
     </div>
     <div class="legal-table-shell">
       <table class="legal-table admin-table admin-table--compact">
         <thead>
           <tr>
-            <th>Р’СЂРµРјСЏ</th>
-            <th>РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ</th>
-            <th>Р”РµР№СЃС‚РІРёРµ</th>
-            <th>Р—Р°РїСЂРѕСЃ</th>
-            <th>РЎС‚Р°С‚СѓСЃ</th>
+            <th>Время</th>
+            <th>Администратор</th>
+            <th>Действие</th>
+            <th>Запрос</th>
+            <th>Статус</th>
           </tr>
         </thead>
         <tbody>
           ${adminEvents
             .map((event) => {
-              const statusValue = event.status_code ?? "вЂ”";
+              const statusValue = event.status_code ?? "—";
               const statusTone = Number(event.status_code || 0) >= 400 ? "danger" : "success-soft";
               return `
                 <tr>
@@ -708,7 +708,7 @@ function renderUserModal(user) {
   userModalBody.innerHTML = `
     <div class="legal-status-row legal-status-row--three">
       <article class="legal-status-card">
-        <span class="legal-status-card__label">РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ</span>
+        <span class="legal-status-card__label">Пользователь</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(user.username || "-")}</strong>
       </article>
       <article class="legal-status-card">
@@ -716,66 +716,66 @@ function renderUserModal(user) {
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(user.email || "-")}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">РџРѕСЃР»РµРґРЅСЏСЏ Р°РєС‚РёРІРЅРѕСЃС‚СЊ</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(user.last_seen_at || "вЂ”")}</strong>
+        <span class="legal-status-card__label">Последняя активность</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(user.last_seen_at || "—")}</strong>
       </article>
     </div>
 
     <div class="legal-subcard admin-user-detail-card">
       <div class="legal-subcard__header">
         <div>
-          <span class="legal-field__label">РЎС‚Р°С‚СѓСЃС‹</span>
-          <p class="legal-section__description">РљР»СЋС‡РµРІС‹Рµ С„Р»Р°РіРё Рё РїСЂРёС‡РёРЅР° Р±Р»РѕРєРёСЂРѕРІРєРё.</p>
+          <span class="legal-field__label">Статусы</span>
+          <p class="legal-section__description">Ключевые флаги и причина блокировки.</p>
         </div>
       </div>
       ${renderUserStatuses(user)}
       <div class="admin-user-detail-grid">
-        <div><span class="legal-field__label">РџСЂРёС‡РёРЅР° Р±Р»РѕРєРёСЂРѕРІРєРё</span><div class="admin-user-detail-text">${escapeHtml(user.access_blocked_reason || "РќРµ СѓРєР°Р·Р°РЅР°")}</div></div>
-        <div><span class="legal-field__label">РЎРѕР·РґР°РЅ</span><div class="admin-user-detail-text">${escapeHtml(user.created_at || "вЂ”")}</div></div>
+        <div><span class="legal-field__label">Причина блокировки</span><div class="admin-user-detail-text">${escapeHtml(user.access_blocked_reason || "Не указана")}</div></div>
+        <div><span class="legal-field__label">Создан</span><div class="admin-user-detail-text">${escapeHtml(user.created_at || "—")}</div></div>
       </div>
     </div>
 
     <div class="legal-subcard admin-user-detail-card">
       <div class="legal-subcard__header">
         <div>
-          <span class="legal-field__label">РђРєС‚РёРІРЅРѕСЃС‚СЊ</span>
-          <p class="legal-section__description">РљСЂР°С‚РєР°СЏ СЃРІРѕРґРєР° РїРѕ РґРµР№СЃС‚РІРёСЏРј РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.</p>
+          <span class="legal-field__label">Активность</span>
+          <p class="legal-section__description">Краткая сводка по действиям пользователя.</p>
         </div>
       </div>
       <div class="admin-user-summary-grid">
-        <article class="legal-status-card"><span class="legal-status-card__label">Р–Р°Р»РѕР±С‹</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.complaints || 0))}</strong></article>
+        <article class="legal-status-card"><span class="legal-status-card__label">Жалобы</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.complaints || 0))}</strong></article>
         <article class="legal-status-card"><span class="legal-status-card__label">Rehab</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.rehabs || 0))}</strong></article>
         <article class="legal-status-card"><span class="legal-status-card__label">AI</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String((user.ai_suggestions || 0) + (user.ai_ocr_requests || 0)))}</strong></article>
         <article class="legal-status-card"><span class="legal-status-card__label">API</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.api_requests || 0))}</strong></article>
-        <article class="legal-status-card"><span class="legal-status-card__label">Р РµСЃСѓСЂСЃС‹</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.resource_units || 0))}</strong></article>
+        <article class="legal-status-card"><span class="legal-status-card__label">Ресурсы</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.resource_units || 0))}</strong></article>
       </div>
     </div>
 
     <div class="legal-subcard admin-user-detail-card">
       <div class="legal-subcard__header">
         <div>
-          <span class="legal-field__label">Р‘С‹СЃС‚СЂС‹Рµ РґРµР№СЃС‚РІРёСЏ</span>
-          <p class="legal-section__description">РЈРїСЂР°РІР»РµРЅРёРµ РґРѕСЃС‚СѓРїРѕРј Рё СѓС‡РµС‚РЅРѕР№ Р·Р°РїРёСЃСЊСЋ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.</p>
+          <span class="legal-field__label">Быстрые действия</span>
+          <p class="legal-section__description">Управление доступом и учетной записью пользователя.</p>
         </div>
       </div>
       <div class="admin-user-actions">
-        <button type="button" class="ghost-button" data-verify-email="${escapeHtml(user.username || "")}">РџРѕРґС‚РІРµСЂРґРёС‚СЊ email</button>
-        <button type="button" class="ghost-button" data-change-email="${escapeHtml(user.username || "")}" data-current-email="${escapeHtml(user.email || "")}">РЎРјРµРЅРёС‚СЊ email</button>
-        <button type="button" class="ghost-button" data-reset-password="${escapeHtml(user.username || "")}">РЎР±СЂРѕСЃРёС‚СЊ РїР°СЂРѕР»СЊ</button>
+        <button type="button" class="ghost-button" data-verify-email="${escapeHtml(user.username || "")}">Подтвердить email</button>
+        <button type="button" class="ghost-button" data-change-email="${escapeHtml(user.username || "")}" data-current-email="${escapeHtml(user.email || "")}">Сменить email</button>
+        <button type="button" class="ghost-button" data-reset-password="${escapeHtml(user.username || "")}">Сбросить пароль</button>
         ${
           user.is_tester
-            ? `<button type="button" class="ghost-button" data-revoke-tester="${escapeHtml(user.username || "")}">РЎРЅСЏС‚СЊ С‚РµСЃС‚РµСЂР°</button>`
-            : `<button type="button" class="ghost-button" data-grant-tester="${escapeHtml(user.username || "")}">Р’С‹РґР°С‚СЊ С‚РµСЃС‚РµСЂР°</button>`
+            ? `<button type="button" class="ghost-button" data-revoke-tester="${escapeHtml(user.username || "")}">Снять тестера</button>`
+            : `<button type="button" class="ghost-button" data-grant-tester="${escapeHtml(user.username || "")}">Выдать тестера</button>`
         }
         ${
           user.is_gka
-            ? `<button type="button" class="ghost-button" data-revoke-gka="${escapeHtml(user.username || "")}">РЎРЅСЏС‚СЊ Р“РљРђ-Р—Р“РљРђ</button>`
-            : `<button type="button" class="ghost-button" data-grant-gka="${escapeHtml(user.username || "")}">Р’С‹РґР°С‚СЊ Р“РљРђ-Р—Р“РљРђ</button>`
+            ? `<button type="button" class="ghost-button" data-revoke-gka="${escapeHtml(user.username || "")}">Снять ГКА-ЗГКА</button>`
+            : `<button type="button" class="ghost-button" data-grant-gka="${escapeHtml(user.username || "")}">Выдать ГКА-ЗГКА</button>`
         }
         ${
           user.access_blocked
-            ? `<button type="button" class="ghost-button" data-unblock-user="${escapeHtml(user.username || "")}">Р Р°Р·Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ</button>`
-            : `<button type="button" class="ghost-button" data-block-user="${escapeHtml(user.username || "")}">Р—Р°Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ</button>`
+            ? `<button type="button" class="ghost-button" data-unblock-user="${escapeHtml(user.username || "")}">Разблокировать</button>`
+            : `<button type="button" class="ghost-button" data-block-user="${escapeHtml(user.username || "")}">Заблокировать</button>`
         }
       </div>
     </div>
@@ -801,7 +801,7 @@ async function loadAdminPerformance({ silent = false } = {}) {
     if (!response.ok) {
       const payload = await parsePayload(response);
       if (!silent) {
-        showText(errorsHost, payload.detail || "Не удалось загрузить метрики производительности.");
+        showText(errorsHost, payload.detail || "    .");
       }
       return;
     }
@@ -809,7 +809,7 @@ async function loadAdminPerformance({ silent = false } = {}) {
     renderPerformance(payload);
   } catch (error) {
     if (!silent) {
-      showText(errorsHost, error?.message || "Не удалось загрузить метрики производительности.");
+      showText(errorsHost, error?.message || "    .");
     }
   }
 }
@@ -820,7 +820,7 @@ async function loadAdminOverview({ silent = false } = {}) {
     clearMessage();
     showOverviewLoading();
   } else {
-    setLiveStatus("Live: обновление...", "info");
+    setLiveStatus("Live: ...", "info");
   }
 
   try {
@@ -828,9 +828,9 @@ async function loadAdminOverview({ silent = false } = {}) {
     if (!response.ok) {
       const payload = await parsePayload(response);
       if (!silent) {
-        showText(errorsHost, payload.detail || "Не удалось загрузить данные админ-панели.");
+        showText(errorsHost, payload.detail || "    -.");
       } else {
-        setLiveStatus("Live: ошибка обновления", "danger");
+        setLiveStatus("Live:  ", "danger");
       }
       return;
     }
@@ -848,13 +848,13 @@ async function loadAdminOverview({ silent = false } = {}) {
       renderUserModal(userIndex.get(String(selectedUser).toLowerCase()));
     }
     if (silent) {
-      setLiveStatus(`Live: синхронно ${new Date().toLocaleTimeString("ru-RU")}`, "success-soft");
+      setLiveStatus(`Live:  ${new Date().toLocaleTimeString("ru-RU")}`, "success-soft");
     }
   } catch (error) {
     if (!silent) {
-      showText(errorsHost, error?.message || "Не удалось загрузить данные админ-панели.");
+      showText(errorsHost, error?.message || "    -.");
     } else {
-      setLiveStatus("Live: ошибка обновления", "danger");
+      setLiveStatus("Live:  ", "danger");
     }
   }
 }
@@ -878,13 +878,13 @@ function clearLiveTimer() {
 function scheduleLiveRefresh() {
   clearLiveTimer();
   if (!liveRefreshField?.checked) {
-    setLiveStatus("Live: выключено", "muted");
+    setLiveStatus("Live: ", "muted");
     return;
   }
 
   const intervalSeconds = Number(liveIntervalField?.value || 30);
   const safeIntervalMs = Math.max(10, intervalSeconds) * 1000;
-  setLiveStatus(`Live: интервал ${Math.max(10, intervalSeconds)}с`, "info");
+  setLiveStatus(`Live:  ${Math.max(10, intervalSeconds)}`, "info");
 
   adminLiveTimer = window.setInterval(async () => {
     if (document.hidden) {
@@ -942,78 +942,78 @@ async function performAdminAction(url, successText, body = null) {
     });
     if (!response.ok) {
       const payload = await parsePayload(response);
-      showText(errorsHost, payload.detail || "РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹РїРѕР»РЅРёС‚СЊ РґРµР№СЃС‚РІРёРµ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°.");
+      showText(errorsHost, payload.detail || "Не удалось выполнить действие администратора.");
       return;
     }
     showMessage(successText);
     await loadAdminOverview();
   } catch (error) {
-    showText(errorsHost, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹РїРѕР»РЅРёС‚СЊ РґРµР№СЃС‚РІРёРµ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°.");
+    showText(errorsHost, error?.message || "Не удалось выполнить действие администратора.");
   }
 }
 
 async function handleAdminAction(target) {
   const verifyUsername = target.getAttribute("data-verify-email");
   if (verifyUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(verifyUsername)}/verify-email`, "Email РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РїРѕРґС‚РІРµСЂР¶РґРµРЅ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј.");
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(verifyUsername)}/verify-email`, "Email пользователя подтвержден администратором.");
     return true;
   }
 
   const unblockUsername = target.getAttribute("data-unblock-user");
   if (unblockUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(unblockUsername)}/unblock`, "Р”РѕСЃС‚СѓРї РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅ.");
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(unblockUsername)}/unblock`, "Доступ пользователя восстановлен.");
     return true;
   }
 
   const blockUsername = target.getAttribute("data-block-user");
   if (blockUsername) {
-    const reason = window.prompt("РџСЂРёС‡РёРЅР° Р±Р»РѕРєРёСЂРѕРІРєРё (РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ):", "") || "";
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(blockUsername)}/block`, "Р”РѕСЃС‚СѓРї РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ.", { reason });
+    const reason = window.prompt("Причина блокировки (необязательно):", "") || "";
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(blockUsername)}/block`, "Доступ пользователя заблокирован.", { reason });
     return true;
   }
 
   const grantTesterUsername = target.getAttribute("data-grant-tester");
   if (grantTesterUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(grantTesterUsername)}/grant-tester`, "РЎС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР° РІС‹РґР°РЅ.");
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(grantTesterUsername)}/grant-tester`, "Статус тестера выдан.");
     return true;
   }
 
   const revokeTesterUsername = target.getAttribute("data-revoke-tester");
   if (revokeTesterUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(revokeTesterUsername)}/revoke-tester`, "РЎС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР° СЃРЅСЏС‚.");
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(revokeTesterUsername)}/revoke-tester`, "Статус тестера снят.");
     return true;
   }
 
   const grantGkaUsername = target.getAttribute("data-grant-gka");
   if (grantGkaUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(grantGkaUsername)}/grant-gka`, "РўРёРї Р“РљРђ-Р—Р“РљРђ РїСЂРёСЃРІРѕРµРЅ.");
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(grantGkaUsername)}/grant-gka`, "Тип ГКА-ЗГКА присвоен.");
     return true;
   }
 
   const revokeGkaUsername = target.getAttribute("data-revoke-gka");
   if (revokeGkaUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(revokeGkaUsername)}/revoke-gka`, "РўРёРї Р“РљРђ-Р—Р“РљРђ СЃРЅСЏС‚.");
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(revokeGkaUsername)}/revoke-gka`, "Тип ГКА-ЗГКА снят.");
     return true;
   }
 
   const changeEmailUsername = target.getAttribute("data-change-email");
   if (changeEmailUsername) {
     const currentEmail = target.getAttribute("data-current-email") || "";
-    const email = window.prompt("РќРѕРІС‹Р№ email РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ:", currentEmail) || "";
+    const email = window.prompt("Новый email пользователя:", currentEmail) || "";
     if (!email.trim()) {
       return true;
     }
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(changeEmailUsername)}/email`, "Email РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РѕР±РЅРѕРІР»РµРЅ.", { email });
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(changeEmailUsername)}/email`, "Email пользователя обновлен.", { email });
     return true;
   }
 
   const resetPasswordUsername = target.getAttribute("data-reset-password");
   if (resetPasswordUsername) {
-    const password = window.prompt("РќРѕРІС‹Р№ РїР°СЂРѕР»СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ:") || "";
+    const password = window.prompt("Новый пароль пользователя:") || "";
     if (!password.trim()) {
       return true;
     }
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(resetPasswordUsername)}/reset-password`, "РџР°СЂРѕР»СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РѕР±РЅРѕРІР»РµРЅ.", { password });
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(resetPasswordUsername)}/reset-password`, "Пароль пользователя обновлен.", { password });
     return true;
   }
 
