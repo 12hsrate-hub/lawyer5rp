@@ -30,7 +30,7 @@
 
       <section class="panel legal-card legal-section legal-section--auth">
         {{ ui.section_header("Основное", "Войти в кабинет", "Используйте логин или email, который привязан к аккаунту.") }}
-        <form id="login-form" class="legal-auth-form">
+        <form accept-charset="UTF-8" id="login-form" class="legal-auth-form">
           <div class="legal-field-grid">
             {{ ui.field_text("username", "Логин или email", "nickname или you@example.com", "", "", "text", "autocomplete='username' required") }}
             {{ ui.field_text("password", "Пароль", "Введите пароль", "", "", "password", "autocomplete='current-password' required") }}
@@ -45,7 +45,7 @@
 
       <section class="panel legal-card legal-section legal-section--auth">
         {{ ui.section_header("Новый аккаунт", "Регистрация", "Логин, email и надежный пароль.") }}
-        <form id="register-form" class="legal-auth-form">
+        <form accept-charset="UTF-8" id="register-form" class="legal-auth-form">
           <div class="legal-field-grid legal-field-grid--two">
             {{ ui.field_text("username", "Логин", "Например, lawyer5rp", "", "", "text", "autocomplete='username' required") }}
             {{ ui.field_text("email", "Email", "you@example.com", "", "", "email", "autocomplete='email' required") }}
@@ -69,7 +69,7 @@
 
       <section id="resend-form" class="panel legal-card legal-section legal-section--auth-side" hidden>
         {{ ui.section_header("Подтверждение email", "Повторная отправка", "Отправим ссылку еще раз на тот же email.") }}
-        <form class="legal-auth-form">
+        <form accept-charset="UTF-8" class="legal-auth-form">
           <div class="legal-field-grid">
             {{ ui.field_text("email", "Email", "you@example.com", "", "", "email", "autocomplete='email' required") }}
           </div>
@@ -82,7 +82,7 @@
 
       <section id="forgot-password-form" class="panel legal-card legal-section legal-section--auth-side" hidden>
         {{ ui.section_header("Восстановление", "Сброс пароля", "Мы отправим ссылку для установки нового пароля.") }}
-        <form class="legal-auth-form">
+        <form accept-charset="UTF-8" class="legal-auth-form">
           <div class="legal-field-grid">
             {{ ui.field_text("email", "Email", "you@example.com", "", "", "email", "autocomplete='email' required") }}
           </div>

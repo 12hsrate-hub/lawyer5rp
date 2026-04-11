@@ -50,7 +50,7 @@
 
   <div class="legal-workspace legal-workspace--wide">
     <div class="legal-workspace__main">
-      <form id="profile-form" novalidate>
+      <form accept-charset="UTF-8" id="profile-form" novalidate>
         <section id="profile-section-main" class="panel legal-card legal-section">
           {{ ui.section_header("Раздел 1", "Основные данные", "Укажите сведения представителя, которые будут подставляться в итоговые документы.") }}
           <div class="legal-field-grid legal-field-grid--two">
@@ -76,7 +76,7 @@
 
       <section id="profile-section-password" class="panel legal-card legal-section">
         {{ ui.section_header("Раздел 3", "Смена пароля", "Укажите текущий пароль и придумайте новый. Новый пароль должен отличаться от текущего.") }}
-        <form id="password-form" class="legal-auth-form" novalidate>
+        <form accept-charset="UTF-8" id="password-form" class="legal-auth-form" novalidate>
           <div class="legal-field-grid legal-field-grid--two">
             {{ ui.field_text("current_password", "Текущий пароль", "", "", "legal-field--full", "password", "autocomplete='current-password' required") }}
             {{ ui.field_text("new_password", "Новый пароль", "", "", "", "password", "autocomplete='new-password' required") }}

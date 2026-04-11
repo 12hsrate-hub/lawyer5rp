@@ -67,7 +67,9 @@ class WebPagesSmokeTests(unittest.TestCase):
     def test_complaint_page_smoke(self):
         response = self.client.get("/complaint")
         self.assertEqual(response.status_code, 200)
+        self.assertIn("charset=utf-8", response.headers.get("content-type", "").lower())
         self.assertIn("complaint-form", response.text)
+        self.assertIn('accept-charset="UTF-8"', response.text)
         self.assertIn("result", response.text)
         self.assertIn("ai-focus-hint", response.text)
         self.assertIn("complaint-basis", response.text)
@@ -82,6 +84,7 @@ class WebPagesSmokeTests(unittest.TestCase):
     def test_rehab_page_smoke(self):
         response = self.client.get("/rehab")
         self.assertEqual(response.status_code, 200)
+        self.assertIn("charset=utf-8", response.headers.get("content-type", "").lower())
         self.assertIn("rehab-form", response.text)
         self.assertIn("principal_name", response.text)
 
