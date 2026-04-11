@@ -8,6 +8,8 @@ from ogp_web.schemas import (
     ComplaintDraftResponse,
     ComplaintPayload,
     GenerateResponse,
+    LawQaPayload,
+    LawQaResponse,
     PrincipalScanPayload,
     PrincipalScanResult,
     RehabPayload,
@@ -15,7 +17,7 @@ from ogp_web.schemas import (
     SuggestResponse,
 )
 from ogp_web.server_config import get_server_config
-from ogp_web.services.ai_service import extract_principal_scan, suggest_text
+from ogp_web.services.ai_service import answer_law_question, extract_principal_scan, suggest_text
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -203,3 +205,28 @@ async def extract_principal(
         },
     )
     return result
+
+
+@router.post("/api/ai/law-qa-test", response_model=LawQaResponse)
+async def law_qa_test(
+    payload: LawQaPayload,
+    user: AuthUser = Depends(require_user),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+) -> LawQaResponse:
+    text, used_sources, indexed_documents = answer_law_question(payload)
+    metrics_store.log_event(
+        event_type="ai_law_qa_test",
+        username=user.username,
+        path="/api/ai/law-qa-test",
+        method="POST",
+        status_code=200,
+        resource_units=len(payload.question or "") + len(text),
+        meta={
+            "server_code": user.server_code,
+            "laws_root_url": payload.laws_root_url,
+            "indexed_documents": indexed_documents,
+            "used_sources_count": len(used_sources),
+            "max_answer_chars": payload.max_answer_chars,
+        },
+    )
+    return LawQaResponse(text=text, used_sources=used_sources, indexed_documents=indexed_documents)

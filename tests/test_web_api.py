@@ -617,6 +617,35 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["text"], "AI text")
 
+    def test_law_qa_test_endpoint_returns_text_and_sources(self):
+        self._register_verify_and_login("tester", "tester_law@example.com")
+
+        original = ai_service.answer_law_question
+        ai_service.answer_law_question = lambda payload: ("Ответ по нормам", ["https://laws.example/base"], 3)
+        try:
+            response = self.client.post(
+                "/api/ai/law-qa-test",
+                json={
+                    "laws_root_url": "https://laws.example/base",
+                    "question": "Какая норма регулирует доступ адвоката?",
+                    "max_answer_chars": 2000,
+                },
+            )
+        finally:
+            ai_service.answer_law_question = original
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["text"], "Ответ по нормам")
+        self.assertEqual(payload["indexed_documents"], 3)
+        self.assertEqual(payload["used_sources"], ["https://laws.example/base"])
+
+    def test_law_qa_test_page_available_for_tester(self):
+        self._register_verify_and_login("tester", "tester_law_page@example.com")
+        response = self.client.get("/law-qa-test")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Q&A по законодательной базе", response.text)
+
     def test_generate_rehab_flow_uses_saved_profile(self):
         self._register_verify_and_login("tester", "tester10@example.com")
 

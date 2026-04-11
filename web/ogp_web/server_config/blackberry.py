@@ -93,6 +93,12 @@ BLACKBERRY_SERVER_CONFIG = ServerConfig(
             permission="court_claims",
         ),
         NavItemConfig(
+            key="law_qa_test",
+            label="Тест законов",
+            href="/law-qa-test",
+            permission="court_claims",
+        ),
+        NavItemConfig(
             key="exam_import",
             label="Проверка тестов",
             href="/exam-import-test",
@@ -110,6 +116,12 @@ BLACKBERRY_SERVER_CONFIG = ServerConfig(
             permission="court_claims",
         ),
         NavItemConfig(
+            key="law_qa_test",
+            label="Q&A по законам",
+            href="/law-qa-test",
+            permission="court_claims",
+        ),
+        NavItemConfig(
             key="exam_import",
             label="Проверка тестов",
             href="/exam-import-test",
@@ -122,6 +134,7 @@ BLACKBERRY_SERVER_CONFIG = ServerConfig(
             "rehab",
             "profile",
             "court_claim_test",
+            "law_qa_test",
             "complaint_test",
             "exam_import",
             "admin",

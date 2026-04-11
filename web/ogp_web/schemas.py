@@ -127,6 +127,28 @@ class SuggestResponse(BaseModel):
     text: str
 
 
+class LawQaPayload(BaseModel):
+    laws_root_url: str = ""
+    question: str = ""
+    max_answer_chars: int = 2200
+
+    @field_validator("max_answer_chars")
+    @classmethod
+    def validate_max_answer_chars(cls, value: int) -> int:
+        normalized = int(value or 0)
+        if normalized < 600:
+            return 600
+        if normalized > 5000:
+            return 5000
+        return normalized
+
+
+class LawQaResponse(BaseModel):
+    text: str
+    used_sources: List[str] = Field(default_factory=list)
+    indexed_documents: int = 0
+
+
 class PrincipalScanPayload(BaseModel):
     image_data_url: str = ""
 
