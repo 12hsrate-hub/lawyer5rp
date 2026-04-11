@@ -16,6 +16,7 @@ from fastapi import HTTPException, status
 from ogp_web.schemas import LawQaPayload, PrincipalScanPayload, PrincipalScanResult, SuggestPayload
 from ogp_web.server_config import DEFAULT_SERVER_CODE, get_server_config
 from ogp_web.services.law_bundle_service import LawChunk, load_law_bundle_chunks
+from ogp_web.services.law_retrieval_service import retrieve_law_context, unique_sources
 from shared.ogp_ai import (
     create_openai_client,
     extract_response_text,
@@ -849,41 +850,65 @@ def _request_law_qa_text(*, client, model_name: str, prompt: str, max_output_tok
     )
 
 
+def _retrieve_law_context(*, server_code: str, query: str, excerpt_chars: int):
+    return retrieve_law_context(
+        server_code=server_code,
+        query=query,
+        excerpt_chars=excerpt_chars,
+        get_server_config_func=get_server_config,
+        load_law_bundle_chunks_func=load_law_bundle_chunks,
+        build_law_chunk_index_func=_build_law_chunk_index_cached,
+        select_chunks_func=_select_law_qa_chunks,
+        score_chunk_func=_score_law_chunk,
+        extract_excerpt_func=_extract_relevant_law_excerpt,
+        default_server_code=DEFAULT_SERVER_CODE,
+    )
+
+
+def _build_law_qa_context_blocks(retrieval_result) -> list[str]:
+    context_blocks: list[str] = []
+    for match in retrieval_result.matches:
+        excerpt = match.excerpt or match.chunk.text.strip()
+        context_blocks.append(
+            (
+                f"[\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a: {match.chunk.url}]\n"
+                f"[\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442: {match.chunk.document_title}]\n"
+                f"[\u041d\u043e\u0440\u043c\u0430: {match.chunk.article_label}]\n"
+                f"{excerpt}"
+            )
+        )
+    return context_blocks
+
+
 def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: int = 4) -> str:
     retrieval_query = str(question or "").strip()
     if not retrieval_query:
         return ""
 
-    server_config = get_server_config(server_code or DEFAULT_SERVER_CODE)
-    law_sources = [str(item or "").strip() for item in server_config.law_qa_sources if str(item or "").strip()]
-    bundle_path = str(getattr(server_config, "law_qa_bundle_path", "") or "").strip()
-    chunks = list(load_law_bundle_chunks(server_code, bundle_path)) if bundle_path else []
-    if not chunks and law_sources:
-        chunks = list(_build_law_chunk_index_cached(tuple(law_sources)))
-    if not chunks:
+    retrieval_result = _retrieve_law_context(
+        server_code=server_code,
+        query=retrieval_query,
+        excerpt_chars=900,
+    )
+    if not retrieval_result.indexed_chunk_count or retrieval_result.confidence == "low":
         return ""
 
-    selected, confidence = _select_law_qa_chunks(chunks, retrieval_query)
-    if confidence == "low":
-        return ""
-
-    positive = [(item, _score_law_chunk(item, retrieval_query)) for item in selected]
-    positive = [(item, score) for item, score in positive if score > 0][:max_chunks]
+    positive = [match for match in retrieval_result.matches if match.score > 0][:max_chunks]
     if not positive:
         return ""
 
     parts: list[str] = []
-    for item, _score in positive:
-        excerpt = _extract_relevant_law_excerpt(item.text, retrieval_query, max_chars=900)
+    for match in positive:
+        excerpt = match.excerpt
         if not excerpt:
             continue
         parts.append(
             "\n".join(
                 (
-                    f"Источник: {item.url}",
-                    f"Документ: {item.document_title}",
-                    f"Норма: {item.article_label}",
-                    f"Фрагмент: {excerpt}",
+                    f"\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a: {match.chunk.url}",
+                    f"\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442: {match.chunk.document_title}",
+                    f"\u041d\u043e\u0440\u043c\u0430: {match.chunk.article_label}",
+                    f"\u0424\u0440\u0430\u0433\u043c\u0435\u043d\u0442: {excerpt}",
                 )
             )
         )
@@ -943,46 +968,46 @@ def _clean_suggest_text(text: str) -> str:
 def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     question = payload.question.strip()
     if not question:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Введите вопрос для анализа."])
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=["\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0432\u043e\u043f\u0440\u043e\u0441 \u0434\u043b\u044f \u0430\u043d\u0430\u043b\u0438\u0437\u0430."],
+        )
 
     model_name = resolve_law_qa_model(payload.model)
-    server_code = payload.server_code or DEFAULT_SERVER_CODE
-    server_config = get_server_config(server_code)
-    law_sources = [str(item or "").strip() for item in server_config.law_qa_sources if str(item or "").strip()]
-    bundle_path = str(getattr(server_config, "law_qa_bundle_path", "") or "").strip()
-    chunks = list(load_law_bundle_chunks(server_code, bundle_path)) if bundle_path else []
-    if not chunks and not law_sources:
+    retrieval_result = _retrieve_law_context(
+        server_code=payload.server_code or DEFAULT_SERVER_CODE,
+        query=question,
+        excerpt_chars=1800,
+    )
+    if not retrieval_result.is_configured:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=["Для выбранного сервера не настроены источники законов."],
+            detail=[
+                "\u0414\u043b\u044f \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u043e\u0433\u043e \u0441\u0435\u0440\u0432\u0435\u0440\u0430 "
+                "\u043d\u0435 \u043d\u0430\u0441\u0442\u0440\u043e\u0435\u043d\u044b \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438 \u0437\u0430\u043a\u043e\u043d\u043e\u0432."
+            ],
         )
 
-    if not chunks:
-        chunks = list(_build_law_chunk_index_cached(tuple(law_sources)))
-    if not chunks:
+    if not retrieval_result.indexed_chunk_count:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=["Не удалось загрузить законы для выбранного сервера. Проверьте настройку law base."],
+            detail=[
+                "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c "
+                "\u0437\u0430\u043a\u043e\u043d\u044b \u0434\u043b\u044f \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u043e\u0433\u043e "
+                "\u0441\u0435\u0440\u0432\u0435\u0440\u0430. \u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 "
+                "\u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0443 law base."
+            ],
         )
 
-    selected, retrieval_confidence = _select_law_qa_chunks(chunks, question)
-    context_blocks = [
-        (
-            f"[Источник: {item.url}]\n"
-            f"[Документ: {item.document_title}]\n"
-            f"[Норма: {item.article_label}]\n"
-            f"{_extract_relevant_law_excerpt(item.text, question, max_chars=1800)}"
-        )
-        for item in selected
-    ]
+    context_blocks = _build_law_qa_context_blocks(retrieval_result)
     prompt = _build_law_qa_prompt(
-        server_name=server_config.name,
-        server_code=server_config.code,
+        server_name=retrieval_result.server_name,
+        server_code=retrieval_result.server_code,
         model_name=model_name,
         question=question,
         max_answer_chars=payload.max_answer_chars,
         context_blocks=context_blocks,
-        retrieval_confidence=retrieval_confidence,
+        retrieval_confidence=retrieval_result.confidence,
     )
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
@@ -1001,8 +1026,7 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
 
     limited = text[: payload.max_answer_chars].strip()
-    unique_sources = list(dict.fromkeys(item.url for item in selected))
-    return limited, unique_sources, len(chunks)
+    return limited, list(unique_sources(retrieval_result)), retrieval_result.indexed_chunk_count
 
 
 def suggest_text(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> str:
