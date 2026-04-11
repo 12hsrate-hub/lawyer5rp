@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import os
+import re
+from html.parser import HTMLParser
+from urllib.parse import urljoin, urlparse
+
+import httpx
 
 from fastapi import HTTPException, status
 
-from ogp_web.schemas import PrincipalScanPayload, PrincipalScanResult, SuggestPayload
-from shared.ogp_ai import extract_principal_fields_with_proxy_fallback, suggest_description_with_proxy_fallback
+from ogp_web.schemas import LawQaPayload, PrincipalScanPayload, PrincipalScanResult, SuggestPayload
+from shared.ogp_ai import (
+    create_openai_client,
+    extract_principal_fields_with_proxy_fallback,
+    suggest_description_with_proxy_fallback,
+)
 
 
 def _humanize_ai_exception(exc: Exception) -> str:
@@ -31,6 +40,137 @@ def _ai_exception_details(exc: Exception) -> list[str]:
     if raw != details[0]:
         details.append(f"Полная ошибка OpenAI: {raw}")
     return details
+
+
+class _LawHtmlParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self._chunks: list[str] = []
+        self._links: list[str] = []
+
+    @property
+    def text(self) -> str:
+        merged = " ".join(chunk.strip() for chunk in self._chunks if chunk and chunk.strip())
+        return re.sub(r"\s+", " ", merged).strip()
+
+    @property
+    def links(self) -> list[str]:
+        return self._links
+
+    def handle_data(self, data: str) -> None:
+        if data:
+            self._chunks.append(data)
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag.lower() != "a":
+            return
+        for key, value in attrs:
+            if key.lower() == "href" and value:
+                self._links.append(str(value))
+                break
+
+
+def _extract_keywords(question: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-zA-Zа-яА-Я0-9_]{4,}", question.lower())
+        if token not in {"когда", "если", "или", "тогда", "where", "what", "which", "with"}
+    }
+
+
+def _fetch_law_documents(root_url: str, *, max_documents: int = 8, max_doc_chars: int = 9000) -> list[dict[str, str]]:
+    parsed_root = urlparse(root_url)
+    if parsed_root.scheme not in {"http", "https"} or not parsed_root.netloc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Укажите корректный URL законодательной базы (http/https)."])
+
+    allowed_host = parsed_root.netloc.lower()
+    queue = [root_url]
+    seen: set[str] = set()
+    documents: list[dict[str, str]] = []
+
+    with httpx.Client(timeout=8.0, follow_redirects=True) as client:
+        while queue and len(documents) < max_documents:
+            current = queue.pop(0)
+            if current in seen:
+                continue
+            seen.add(current)
+            try:
+                response = client.get(current)
+                response.raise_for_status()
+            except Exception:
+                continue
+            content_type = (response.headers.get("content-type") or "").lower()
+            if "text/html" not in content_type:
+                continue
+            parser = _LawHtmlParser()
+            parser.feed(response.text)
+            text = parser.text[:max_doc_chars].strip()
+            if text:
+                documents.append({"url": current, "text": text})
+            for raw_href in parser.links:
+                candidate = urljoin(current, raw_href).strip()
+                if not candidate.startswith(("http://", "https://")):
+                    continue
+                parsed = urlparse(candidate)
+                if parsed.netloc.lower() != allowed_host:
+                    continue
+                if candidate not in seen and candidate not in queue and len(queue) < 40:
+                    queue.append(candidate)
+    return documents
+
+
+def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
+    laws_root_url = payload.laws_root_url.strip()
+    question = payload.question.strip()
+    if not laws_root_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Добавьте ссылку на законодательную базу сервера."])
+    if not question:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Введите вопрос для анализа."])
+
+    documents = _fetch_law_documents(laws_root_url)
+    if not documents:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=["Не удалось загрузить законы по ссылке. Проверьте доступность страниц и дайте дополнительные ссылки на разделы."],
+        )
+
+    keywords = _extract_keywords(question)
+
+    def score(item: dict[str, str]) -> int:
+        lower_text = item["text"].lower()
+        return sum(1 for keyword in keywords if keyword in lower_text)
+
+    ranked = sorted(documents, key=score, reverse=True)
+    selected = ranked[:4]
+    context_blocks = [f"[Источник: {item['url']}]\n{item['text'][:2500]}" for item in selected]
+    prompt = (
+        "Ты юридический ассистент игрового сервера. Отвечай только на основе переданной законодательной базы.\n"
+        "Если данных недостаточно, прямо так и скажи и попроси дополнительные ссылки.\n"
+        "Обязательно укажи ссылки на нормы (URL источников) в конце каждого смыслового абзаца.\n"
+        "Ответ должен быть полным по существу, но без воды.\n\n"
+        f"Вопрос:\n{question}\n\n"
+        f"Ограничение длины ответа: не более {payload.max_answer_chars} символов.\n\n"
+        "Законодательная база:\n"
+        + "\n\n".join(context_blocks)
+    )
+
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
+    try:
+        client = create_openai_client(api_key=api_key, proxy_url=proxy_url)
+        response = client.responses.create(
+            model=os.getenv("OPENAI_TEXT_MODEL", "gpt-4.1-mini"),
+            input=prompt,
+            max_output_tokens=800,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
+
+    text = (response.output_text or "").strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=["Модель вернула пустой ответ."])
+    limited = text[: payload.max_answer_chars].strip()
+    return limited, [item["url"] for item in selected], len(documents)
 
 
 def suggest_text(payload: SuggestPayload) -> str:

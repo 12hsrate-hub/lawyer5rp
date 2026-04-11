@@ -227,6 +227,27 @@ async def court_claim_test_page(
     )
 
 
+@router.get("/law-qa-test", response_class=HTMLResponse)
+async def law_qa_test_page(
+    request: Request,
+    user: AuthUser = Depends(require_user),
+    store: UserStore = Depends(get_user_store),
+):
+    server_config, permissions = _server_context(store, user.username)
+    if not permissions.can_access_court_claims:
+        return RedirectResponse(url="/complaint", status_code=status.HTTP_302_FOUND)
+    return templates.TemplateResponse(
+        request,
+        "law_qa_test.html",
+        _build_page_context(
+            user=user,
+            server_config=server_config,
+            permissions=permissions,
+            nav_active="law_qa_test",
+        ),
+    )
+
+
 @router.get("/rehab", response_class=HTMLResponse)
 async def rehab_page(
     request: Request,
