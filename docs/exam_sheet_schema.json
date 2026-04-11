@@ -1,0 +1,414 @@
+{
+  "source": {
+    "sheet_url": "https://docs.google.com/spreadsheets/d/1JpmG1N30TvVs-1P9kp00MDhzBnIxUG-HgAlcAW_cwn4/edit?usp=sharing",
+    "csv_url": "https://docs.google.com/spreadsheets/d/1JpmG1N30TvVs-1P9kp00MDhzBnIxUG-HgAlcAW_cwn4/gviz/tq?tqx=out:csv&gid=0",
+    "captured_on": "2026-04-11",
+    "meaningful_columns": "A-AD",
+    "ignored_empty_columns": [
+      "AE",
+      "AF",
+      "AG",
+      "AH",
+      "AI",
+      "AJ"
+    ]
+  },
+  "respondent_fields": [
+    {
+      "column": "A",
+      "field": "submitted_at",
+      "label": "Отметка времени"
+    },
+    {
+      "column": "B",
+      "field": "full_name",
+      "label": "Ваше Имя/Фамилия? (пример Pavel Clayton)"
+    },
+    {
+      "column": "C",
+      "field": "discord_tag",
+      "label": "Ваш DiscordTag для связи? (пример: musiksash)"
+    },
+    {
+      "column": "D",
+      "field": "passport",
+      "label": "Ваш номер паспорта?"
+    },
+    {
+      "column": "E",
+      "field": "exam_format",
+      "label": "Формат экзамена"
+    }
+  ],
+  "answer_fields": [
+    {
+      "question_index": 1,
+      "column": "F",
+      "field": "bail_article_14_scope_and_pricing",
+      "type": "compound",
+      "label": "Статья 14 АК, выпуск под залог: по каким кодексам допускается и как назначается стоимость залога"
+    },
+    {
+      "question_index": 2,
+      "column": "G",
+      "field": "bail_amount_for_multiple_articles",
+      "type": "understanding",
+      "label": "Как назначается сумма залога при нескольких административных статьях"
+    },
+    {
+      "question_index": 3,
+      "column": "H",
+      "field": "bail_if_one_article_has_no_bail_amount",
+      "type": "understanding",
+      "label": "Что делать, если одна из статей не содержит суммы залога"
+    },
+    {
+      "question_index": 4,
+      "column": "I",
+      "field": "bail_prohibited_comment_markers",
+      "type": "understanding",
+      "label": "Когда выпуск под залог запрещен по комментарию бланка ареста"
+    },
+    {
+      "question_index": 5,
+      "column": "J",
+      "field": "evidence_disclosure_article",
+      "type": "understanding",
+      "label": "По какой статье и какого кодекса сотрудник обязан предоставить доказательства адвокату"
+    },
+    {
+      "question_index": 6,
+      "column": "K",
+      "field": "ems_parking_article_22_applicability",
+      "type": "general",
+      "label": "Допустимо ли привлекать за проникновение на парковку служебного транспорта EMS LS по ст. 22 АК"
+    },
+    {
+      "question_index": 7,
+      "column": "L",
+      "field": "when_right_to_lawyer_not_realized",
+      "type": "general",
+      "label": "Когда право на адвоката не реализуется при задержании"
+    },
+    {
+      "question_index": 8,
+      "column": "M",
+      "field": "appeal_deadlines_and_places",
+      "type": "general",
+      "label": "Сроки и варианты обжалования решений сотрудников ОГП и иных госорганов"
+    },
+    {
+      "question_index": 9,
+      "column": "N",
+      "field": "closed_areas_lawyer_can_access",
+      "type": "general",
+      "label": "На каких закрытых территориях адвокат может находиться самостоятельно"
+    },
+    {
+      "question_index": 10,
+      "column": "O",
+      "field": "advocate_secrecy_definition",
+      "type": "general",
+      "label": "Что такое адвокатская тайна и что к ней относится"
+    },
+    {
+      "question_index": 11,
+      "column": "P",
+      "field": "circumstances_excluding_criminality",
+      "type": "general",
+      "label": "Какие обстоятельства исключают преступность деяния"
+    },
+    {
+      "question_index": 12,
+      "column": "Q",
+      "field": "when_grounds_must_be_named",
+      "type": "general",
+      "label": "Когда законодательство обязывает называть основания законных требований"
+    },
+    {
+      "question_index": 13,
+      "column": "R",
+      "field": "presumption_of_innocence_and_exception",
+      "type": "theory",
+      "label": "Презумпция невиновности и исключение из принципа"
+    },
+    {
+      "question_index": 14,
+      "column": "S",
+      "field": "advocate_immunity_cases",
+      "type": "general",
+      "label": "Когда адвокат наделяется статусом неприкосновенности"
+    },
+    {
+      "question_index": 15,
+      "column": "T",
+      "field": "who_can_void_legal_services_contract",
+      "type": "general",
+      "label": "Кто правомочен признать недействительным договор на оказание юридических услуг"
+    },
+    {
+      "question_index": 16,
+      "column": "U",
+      "field": "repeat_offense_under_article_48",
+      "type": "scenario",
+      "label": "Повторное оскорбление сотрудника по ст. 48 АК через 4 дня"
+    },
+    {
+      "question_index": 17,
+      "column": "V",
+      "field": "visor_in_ems_after_identification",
+      "type": "scenario",
+      "label": "Опущенный визор в EMS после выполнения требования сотрудника"
+    },
+    {
+      "question_index": 18,
+      "column": "W",
+      "field": "shirtless_person_at_post_office_article_18",
+      "type": "scenario",
+      "label": "Арест по ст. 18 АК за отсутствие майки на почте"
+    },
+    {
+      "question_index": 19,
+      "column": "X",
+      "field": "evidence_for_ogp_request_nonresponse",
+      "type": "understanding",
+      "label": "Какие доказательства прикладывать в ОГП по факту непредоставления ответа на адвокатский запрос"
+    },
+    {
+      "question_index": 20,
+      "column": "Y",
+      "field": "what_officer_must_do_when_sees_civilian_with_weapon",
+      "type": "scenario",
+      "label": "Что обязан сделать сотрудник, увидев гражданского с оружием за спиной"
+    },
+    {
+      "question_index": 21,
+      "column": "Z",
+      "field": "ems_pockets_search_without_grounds",
+      "type": "scenario",
+      "label": "Требование вывернуть карманы в EMS без указания оснований"
+    },
+    {
+      "question_index": 22,
+      "column": "AA",
+      "field": "gross_article_17_pc_violations_and_release",
+      "type": "scenario",
+      "label": "Являются ли грубые нарушения ст. 17 ПК основанием для освобождения"
+    },
+    {
+      "question_index": 23,
+      "column": "AB",
+      "field": "fine_nonpayment_and_article_52_defense",
+      "type": "scenario",
+      "label": "Как защищать задержанного при ст. 52 АК из-за неоплаты штрафа по ДК"
+    },
+    {
+      "question_index": 24,
+      "column": "AC",
+      "field": "diamond_casino_mask_detention",
+      "type": "scenario",
+      "label": "Правомерность задержания за маску на парковке казино Diamond"
+    },
+    {
+      "question_index": 25,
+      "column": "AD",
+      "field": "ignorance_of_law_statement_invalid",
+      "type": "general",
+      "label": "Почему фраза \"я не знал, что так делать нельзя\" не работает"
+    }
+  ],
+  "comparison_template": {
+    "row_identity": {
+      "submitted_at": "",
+      "full_name": "",
+      "discord_tag": "",
+      "passport": "",
+      "exam_format": ""
+    },
+    "answers": {
+      "F": {
+        "field": "bail_article_14_scope_and_pricing",
+        "header": "Статья 14 АК, выпуск под залог",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "G": {
+        "field": "bail_amount_for_multiple_articles",
+        "header": "Сумма залога при нескольких статьях",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "H": {
+        "field": "bail_if_one_article_has_no_bail_amount",
+        "header": "Одна из статей не содержит суммы залога",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "I": {
+        "field": "bail_prohibited_comment_markers",
+        "header": "Когда выпуск под залог запрещен",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "J": {
+        "field": "evidence_disclosure_article",
+        "header": "Статья о выдаче доказательств адвокату",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "K": {
+        "field": "ems_parking_article_22_applicability",
+        "header": "Проникновение на парковку EMS LS",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "L": {
+        "field": "when_right_to_lawyer_not_realized",
+        "header": "Когда право на адвоката не реализуется",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "M": {
+        "field": "appeal_deadlines_and_places",
+        "header": "Сроки и способы обжалования",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "N": {
+        "field": "closed_areas_lawyer_can_access",
+        "header": "Закрытые территории для адвоката",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "O": {
+        "field": "advocate_secrecy_definition",
+        "header": "Адвокатская тайна",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "P": {
+        "field": "circumstances_excluding_criminality",
+        "header": "Обстоятельства, исключающие преступность деяния",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "Q": {
+        "field": "when_grounds_must_be_named",
+        "header": "Когда нужно называть основания",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "R": {
+        "field": "presumption_of_innocence_and_exception",
+        "header": "Презумпция невиновности и исключение",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "S": {
+        "field": "advocate_immunity_cases",
+        "header": "Неприкосновенность адвоката",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "T": {
+        "field": "who_can_void_legal_services_contract",
+        "header": "Кто может признать договор недействительным",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "U": {
+        "field": "repeat_offense_under_article_48",
+        "header": "Повторное правонарушение по ст. 48 АК",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "V": {
+        "field": "visor_in_ems_after_identification",
+        "header": "Визор в EMS после идентификации",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "W": {
+        "field": "shirtless_person_at_post_office_article_18",
+        "header": "Отсутствие майки на почте и ст. 18 АК",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "X": {
+        "field": "evidence_for_ogp_request_nonresponse",
+        "header": "Доказательства для обращения в ОГП",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "Y": {
+        "field": "what_officer_must_do_when_sees_civilian_with_weapon",
+        "header": "Действия сотрудника при виде гражданского с оружием",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "Z": {
+        "field": "ems_pockets_search_without_grounds",
+        "header": "Требование вывернуть карманы без оснований",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "AA": {
+        "field": "gross_article_17_pc_violations_and_release",
+        "header": "Грубые нарушения ст. 17 ПК и освобождение",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "AB": {
+        "field": "fine_nonpayment_and_article_52_defense",
+        "header": "Защита по ст. 52 АК при неоплате штрафа",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "AC": {
+        "field": "diamond_casino_mask_detention",
+        "header": "Маска на парковке Diamond",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      },
+      "AD": {
+        "field": "ignorance_of_law_statement_invalid",
+        "header": "Почему незнание закона не освобождает",
+        "user_answer": "",
+        "reference_answer": "",
+        "match_notes": ""
+      }
+    }
+  },
+  "integration_notes": {
+    "current_live_sheet_question_columns": "F-AD",
+    "current_project_answer_key_columns": "F-AC",
+    "mismatch": [
+      "Колонка AD есть в живой Google Sheets таблице, но отсутствует в web/ogp_web/exam_answer_key.json.",
+      "При текущей логике build_exam_score_items вопрос AD не будет автоматически сопоставляться, пока для него не появится эталонный ответ."
+    ]
+  }
+}

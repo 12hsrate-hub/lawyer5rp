@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import atexit
 import logging
 import os
 import socket
 import sys
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
@@ -161,6 +163,20 @@ def _check_openai_health() -> dict[str, object]:
     return details
 
 
+def _close_app_resources(app: FastAPI) -> None:
+    if getattr(app.state, "_resources_closed", False):
+        return
+    user_store = getattr(app.state, "user_store", None)
+    user_repository = getattr(user_store, "repository", None)
+    if user_repository is not None:
+        user_repository.close()
+    rate_limiter = getattr(app.state, "rate_limiter", None)
+    rate_limiter_repository = getattr(rate_limiter, "repository", None)
+    if rate_limiter_repository is not None:
+        rate_limiter_repository.close()
+    app.state._resources_closed = True
+
+
 def create_app(
     user_store: UserStore | None = None,
     exam_answers_store: ExamAnswersStore | None = None,
@@ -169,7 +185,12 @@ def create_app(
     _configure_web_logging()
     _get_secret_key()
 
-    app = FastAPI(title="OGP Builder Web", version="1.3.0")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        yield
+        _close_app_resources(app)
+
+    app = FastAPI(title="OGP Builder Web", version="1.3.0", lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     app.state.user_store = user_store or get_default_user_store()
     app.state.exam_answers_store = exam_answers_store or get_default_exam_answers_store()
@@ -283,11 +304,6 @@ def create_app(
             },
         )
 
-    @app.on_event("shutdown")
-    def close_user_store_repository() -> None:
-        app.state.user_store.repository.close()
-        app.state.rate_limiter.repository.close()
-
     app.include_router(pages_router)
     app.include_router(auth_router)
     app.include_router(profile_router)
@@ -298,3 +314,4 @@ def create_app(
 
 
 app = create_app()
+atexit.register(_close_app_resources, app)

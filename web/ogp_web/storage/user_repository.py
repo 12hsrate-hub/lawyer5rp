@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from threading import Lock
 from threading import local
 from typing import Any
 
@@ -10,6 +11,16 @@ class UserRepository:
     def __init__(self, backend: DatabaseBackend):
         self.backend = backend
         self._local = local()
+        self._connections: set[Any] = set()
+        self._connections_lock = Lock()
+
+    def _register_connection(self, conn: Any) -> None:
+        with self._connections_lock:
+            self._connections.add(conn)
+
+    def _unregister_connection(self, conn: Any) -> None:
+        with self._connections_lock:
+            self._connections.discard(conn)
 
     def connect(self):
         conn = getattr(self._local, "connection", None)
@@ -22,9 +33,11 @@ class UserRepository:
                     conn.close()
                 except Exception:
                     pass
+                self._unregister_connection(conn)
                 self._local.connection = None
 
         conn = self.backend.connect()
+        self._register_connection(conn)
         self._local.connection = conn
         return conn
 
@@ -45,10 +58,14 @@ class UserRepository:
             raise self.backend.map_exception(exc) from exc
 
     def close(self) -> None:
-        conn = getattr(self._local, "connection", None)
-        if conn is None:
-            return
-        try:
-            conn.close()
-        finally:
-            self._local.connection = None
+        with self._connections_lock:
+            connections = list(self._connections)
+            self._connections.clear()
+
+        for conn in connections:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        self._local.connection = None

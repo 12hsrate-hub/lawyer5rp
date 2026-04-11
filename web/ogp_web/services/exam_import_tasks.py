@@ -219,6 +219,8 @@ class ExamImportTaskRegistry:
         record = ExamTaskRecord(id=uuid.uuid4().hex, task_type=task_type, source_row=source_row)
         placeholder = self._placeholder()
         empty_json = "{}" if self.is_postgres_backend else ""
+        started_at_value = None if self.is_postgres_backend else record.started_at
+        finished_at_value = None if self.is_postgres_backend else record.finished_at
         with self._lock, closing(self._connect()) as conn:
             self._raise_if_capacity_exceeded(conn)
             conn.execute(
@@ -234,8 +236,8 @@ class ExamImportTaskRegistry:
                     record.source_row,
                     record.status,
                     record.created_at,
-                    record.started_at,
-                    record.finished_at,
+                    started_at_value,
+                    finished_at_value,
                     record.error,
                     empty_json,
                     empty_json,

@@ -21,6 +21,7 @@ EXAM_SHEET_CSV_URL = (
 )
 EXAM_BASE_COLUMNS = 5
 EXAM_ANSWER_KEY_PATH = Path(__file__).resolve().parents[1] / "exam_answer_key.json"
+EXAM_QUESTION_COLUMNS_PATH = Path(__file__).resolve().parents[1] / "exam_question_columns.json"
 EXAM_SHEET_CACHE_TTL = 300  # секунд
 EXAM_LICENSE_TYPE = "Получение лицензии адвоката"
 EXAM_STATE_TYPE = "Государственный адвокат"
@@ -57,6 +58,75 @@ _sheet_cache: list[dict[str, object]] | None = None
 _sheet_cache_at: float = 0.0
 
 
+def _column_to_index(column: str) -> int:
+    value = 0
+    for symbol in str(column or "").strip().upper():
+        if "A" <= symbol <= "Z":
+            value = value * 26 + (ord(symbol) - ord("A") + 1)
+    return value
+
+
+def _normalize_match_text(value: str) -> str:
+    text = str(value or "").lower().replace("ё", "е")
+    normalized_chars: list[str] = []
+    for char in text:
+        if char.isalnum() or char.isspace():
+            normalized_chars.append(char)
+        else:
+            normalized_chars.append(" ")
+    return " ".join("".join(normalized_chars).split())
+
+
+def _detect_question_start_index(headers: list[str]) -> int:
+    for index, header in enumerate(headers):
+        normalized = str(header or "").strip().lower()
+        if normalized in {"формат экзамена", "format", "exam_format"}:
+            return index + 1
+    return EXAM_BASE_COLUMNS
+
+
+def _is_non_scoring_header(header: str) -> bool:
+    normalized = str(header or "").strip().lower()
+    if not normalized:
+        return True
+    blocked_fragments = (
+        "отметка времени",
+        "submitted",
+        "time",
+        "ваше имя",
+        "имя/фамилия",
+        "full_name",
+        "discord",
+        "passport",
+        "номер паспорта",
+        "формат экзамена",
+        "exam_format",
+        "exam_type",
+        "format",
+    )
+    return any(fragment in normalized for fragment in blocked_fragments)
+
+
+def build_exam_correct_answers_from_payload(payload: dict[str, str]) -> dict[str, str]:
+    items = list((payload or {}).items())
+    question_start_index = _detect_question_start_index([str(header) for header, _ in items])
+    answers: dict[str, str] = {}
+    question_offset = 0
+    for index, (header, answer) in enumerate(items):
+        if index < question_start_index:
+            continue
+        if _is_non_scoring_header(str(header)):
+            continue
+        logical_index = EXAM_BASE_COLUMNS + question_offset
+        question_offset += 1
+        value = str(answer or "").strip()
+        if not value:
+            continue
+        column = _column_letter(logical_index).upper()
+        answers[column] = value
+    return answers
+
+
 @lru_cache(maxsize=1)
 def load_exam_correct_answers() -> dict[str, str]:
     with EXAM_ANSWER_KEY_PATH.open("r", encoding="utf-8") as fh:
@@ -73,6 +143,68 @@ def load_exam_correct_answers() -> dict[str, str]:
             continue
         normalized[key] = value
     return normalized
+
+
+@lru_cache(maxsize=1)
+def load_exam_question_fragments() -> dict[str, list[str]]:
+    with EXAM_QUESTION_COLUMNS_PATH.open("r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    normalized: dict[str, list[str]] = {}
+    for raw_column, raw_fragments in dict(data or {}).items():
+        column = str(raw_column or "").strip().upper()
+        if not column:
+            continue
+        fragments: list[str] = []
+        for fragment in list(raw_fragments or []):
+            normalized_fragment = _normalize_match_text(str(fragment or ""))
+            if normalized_fragment:
+                fragments.append(normalized_fragment)
+        if fragments:
+            normalized[column] = fragments
+    return normalized
+
+
+def _extract_exam_type(payload: dict[str, str]) -> str:
+    direct_value = payload.get("Формат экзамена") or payload.get("format") or payload.get("exam_format")
+    if direct_value:
+        return normalize_exam_type(direct_value)
+    for header, value in payload.items():
+        normalized_header = _normalize_match_text(str(header))
+        if "формат экзамена" in normalized_header or normalized_header == "exam format":
+            return normalize_exam_type(value)
+    return ""
+
+
+def _map_payload_answers_by_column(payload: dict[str, str], columns: list[str]) -> dict[str, tuple[str, str]]:
+    question_entries: list[tuple[str, str, str]] = []
+    for header, value in payload.items():
+        header_text = str(header or "").strip()
+        if _is_non_scoring_header(header_text):
+            continue
+        question_entries.append((header_text, str(value or "").strip(), _normalize_match_text(header_text)))
+
+    by_column: dict[str, tuple[str, str]] = {}
+    used_headers: set[str] = set()
+    fragments_by_column = load_exam_question_fragments()
+    for column in columns:
+        fragments = fragments_by_column.get(column, [])
+        if not fragments:
+            continue
+        for header, answer, normalized_header in question_entries:
+            if header in used_headers:
+                continue
+            if any(fragment in normalized_header for fragment in fragments):
+                by_column[column] = (header, answer)
+                used_headers.add(header)
+                break
+
+    fallback_entries = [(header, answer) for header, answer, _ in question_entries if header not in used_headers]
+    unresolved_columns = [column for column in columns if column not in by_column]
+    for index, column in enumerate(unresolved_columns):
+        if index >= len(fallback_entries):
+            break
+        by_column[column] = fallback_entries[index]
+    return by_column
 
 
 def _normalize_headers(raw_headers: list[str]) -> list[str]:
@@ -104,6 +236,7 @@ def parse_exam_sheet_csv(csv_text: str) -> list[dict[str, object]]:
         return []
 
     headers = _normalize_headers(reader[0])
+    question_start_index = _detect_question_start_index(headers)
     rows: list[dict[str, object]] = []
     for index, row in enumerate(reader[1:], start=2):
         if not any(str(cell or "").strip() for cell in row):
@@ -125,7 +258,7 @@ def parse_exam_sheet_csv(csv_text: str) -> list[dict[str, object]]:
                 "discord_tag": payload.get(headers[2], ""),
                 "passport": payload.get(headers[3], ""),
                 "exam_format": payload.get(headers[4], ""),
-                "answer_count": max(len(headers) - EXAM_BASE_COLUMNS, 0),
+                "answer_count": max(len(headers) - question_start_index, 0),
                 "payload": payload,
             }
         )
@@ -160,18 +293,26 @@ def fetch_exam_sheet_rows(*, force_refresh: bool = False) -> list[dict[str, obje
     return rows
 
 
-def build_exam_score_items(payload: dict[str, str]) -> list[dict[str, str]]:
-    answer_key = load_exam_correct_answers()
-    items = list(payload.items())
-    exam_type = normalize_exam_type(payload.get("Формат экзамена") or payload.get("format") or payload.get("exam_format"))
+def build_exam_score_items(payload: dict[str, str], *, correct_answers: dict[str, str] | None = None) -> list[dict[str, str]]:
+    answer_key = dict(load_exam_correct_answers())
+    if correct_answers:
+        for column, answer in correct_answers.items():
+            key = str(column or "").strip().upper()
+            value = str(answer or "").strip()
+            if key and value:
+                answer_key[key] = value
+    ordered_columns = sorted(answer_key.keys(), key=_column_to_index)
+    mapped_answers = _map_payload_answers_by_column(payload, ordered_columns)
+    exam_type = _extract_exam_type(payload)
     scored_items: list[dict[str, str]] = []
-    for index, (header, user_answer) in enumerate(items):
-        if index < EXAM_BASE_COLUMNS:
-            continue
-        column = _column_letter(index)
+    for column in ordered_columns:
         correct_answer = answer_key.get(column)
         if not correct_answer:
             continue
+        mapped_item = mapped_answers.get(column)
+        if mapped_item is None:
+            continue
+        header, user_answer = mapped_item
         scored_items.append(
             {
                 "column": column,

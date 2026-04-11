@@ -13,7 +13,7 @@ class SQLiteBackend:
 
     def connect(self) -> sqlite3.Connection:
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = sqlite3.connect(self.db_path, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             if self.busy_timeout_ms:
                 conn.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")

@@ -1,4 +1,13 @@
 window.OGPExamImportView = {
+  formatScoreRange(examScores) {
+    if (!Array.isArray(examScores) || !examScores.length) {
+      return "F–AD";
+    }
+    const first = examScores[0]?.column || "F";
+    const last = examScores[examScores.length - 1]?.column || "AD";
+    return `${first}–${last}`;
+  },
+
   formatAverage(entry) {
     return entry.average_score != null ? `${entry.average_score} / 100` : "—";
   },
@@ -73,12 +82,13 @@ window.OGPExamImportView = {
     }
 
     host.hidden = false;
+    const scoreRange = this.formatScoreRange(examScores);
     host.innerHTML = `
       <div class="legal-section__header">
         <div>
           <p class="legal-section__eyebrow">Проверка ответов</p>
-          <h3 class="legal-section__title">Сравнение по ключу F–AC</h3>
-          <p class="legal-section__description">Средний балл: <strong>${escapeHtml(averageText)}</strong>. Ниже показаны ответы пользователя, правильные ответы и оценка по смысловому совпадению.</p>
+          <h3 class="legal-section__title">Сравнение по ключу ${escapeHtml(scoreRange)}</h3>
+          <p class="legal-section__description">Средний балл: <strong>${escapeHtml(averageText)}</strong>. Ниже показано сравнение вопроса, ответа, эталона и логики проверки.</p>
         </div>
       </div>
       <div class="legal-table-shell exam-detail-shell">
@@ -89,6 +99,7 @@ window.OGPExamImportView = {
               <th>Вопрос</th>
               <th>Ответ пользователя</th>
               <th>Правильный ответ</th>
+              <th>Логика проверки</th>
               <th>Балл</th>
               <th>Пояснение</th>
             </tr>
@@ -102,6 +113,7 @@ window.OGPExamImportView = {
                     <td>${escapeHtml(item.header)}</td>
                     <td>${escapeHtml(item.user_answer || "—")}</td>
                     <td>${escapeHtml(item.correct_answer || "—")}</td>
+                    <td>${escapeHtml(Array.isArray(item.key_points) && item.key_points.length ? item.key_points.join("; ") : "—")}</td>
                     <td>${escapeHtml(item.score ?? "—")}</td>
                     <td>${escapeHtml(item.rationale || "—")}</td>
                   </tr>

@@ -204,6 +204,89 @@ class WebServiceTests(unittest.TestCase):
         n_item = next(item for item in items if item["column"] == "N")
         self.assertTrue(n_item["key_points"])
 
+    def test_exam_sheet_service_anchors_question_columns_after_exam_format(self):
+        payload = {
+            "submitted": "2026-04-08",
+            "full_name": "Student",
+            "discord": "disc",
+            "passport": "123456",
+            "exam_type_extra": "Государственный адвокат",
+            "format": "Государственный адвокат",
+            "Составной вопрос": "Answer F",
+            "Последний вопрос": "Answer AD",
+        }
+
+        items = exam_sheet_service.build_exam_score_items(payload)
+
+        self.assertGreaterEqual(len(items), 2)
+        self.assertEqual(items[0]["column"], "F")
+        self.assertEqual(items[0]["question"], "Составной вопрос")
+        self.assertEqual(items[1]["column"], "G")
+
+    def test_exam_sheet_service_uses_row_payload_as_correct_answers(self):
+        payload = {
+            "submitted": "2026-04-08",
+            "full_name": "Student",
+            "discord": "disc",
+            "passport": "123456",
+            "exam_type_extra": "Государственный адвокат",
+            "format": "Государственный адвокат",
+            "QF": "candidate F",
+        }
+        row4_payload = {
+            "submitted": "",
+            "full_name": "эталонные ответы",
+            "discord": "",
+            "passport": "",
+            "exam_type_extra": "эталонные ответы",
+            "format": "эталонные ответы",
+            "QF": "row4 F",
+        }
+
+        dynamic_answers = exam_sheet_service.build_exam_correct_answers_from_payload(row4_payload)
+        items = exam_sheet_service.build_exam_score_items(payload, correct_answers=dynamic_answers)
+
+        self.assertEqual(items[0]["column"], "F")
+        self.assertEqual(items[0]["correct_answer"], "row4 F")
+
+    def test_exam_sheet_service_skips_personal_columns_from_scoring(self):
+        payload = {
+            "submitted": "2026-04-08",
+            "full_name": "Student",
+            "discord": "disc",
+            "passport": "123456",
+            "format": "Государственный адвокат",
+            "Ваше Имя/Фамилия?": "Имя Фамилия",
+            "Ваш DiscordTag для связи?": "tag#0001",
+            "Ваш номер паспорта?": "654321",
+            "QF": "answer F",
+        }
+
+        items = exam_sheet_service.build_exam_score_items(payload)
+        columns = {item["column"] for item in items}
+
+        self.assertIn("F", columns)
+        self.assertNotIn("G", columns)
+
+    def test_exam_sheet_service_is_stable_for_unordered_payload_from_jsonb(self):
+        payload = {
+            "column_31": "",
+            "Формат экзамена": "Получение лицензии адвоката",
+            "Ваше Имя/Фамилия? (пример Pavel Clayton)": "Nikitos Reground",
+            "Ситуативный вопрос. Ваш подзащитный был задержан за ст. 18 АК на парковке казино Diamond за ношение маски или иного средства маскировки личности. Правомерно ли задержание или нет? Ответ пояснить.": "Ответ по AC",
+            "Составной вопрос. Статья 14 АК сообщает нам о выпуске граждан под залог.  (1) Граждан, осужденных по каким законам и кодексам адвокаты вправе выпускать арестованных под залог? (2) Как назначается стоимость залога?": "Ответ по F",
+            "Общий вопрос. Почему заявление: “я не знал, что так делать нельзя” не работает? Сошлитесь на норму закона.": "Ответ по AD",
+            "Ваш DiscordTag для связи? (пример: musiksash)": "tag#0001",
+            "Ваш номер паспорта?": "654321",
+        }
+
+        items = exam_sheet_service.build_exam_score_items(payload)
+        by_column = {item["column"]: item for item in items}
+
+        self.assertEqual(by_column["F"]["user_answer"], "Ответ по F")
+        self.assertEqual(by_column["AC"]["user_answer"], "Ответ по AC")
+        self.assertEqual(by_column["AD"]["user_answer"], "Ответ по AD")
+
     def test_exam_sheet_service_load_exam_correct_answers_skips_empty_values(self):
         original_content = exam_sheet_service.EXAM_ANSWER_KEY_PATH.read_text(encoding="utf-8")
         exam_sheet_service.load_exam_correct_answers.cache_clear()

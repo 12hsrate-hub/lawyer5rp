@@ -71,6 +71,9 @@ class ExamAnswersStore:
     def _needs_rescore_predicate(self) -> str:
         return "needs_rescore IS TRUE" if self.is_postgres_backend else "needs_rescore = 1"
 
+    def _bool_true_value(self) -> bool | int:
+        return True if self.is_postgres_backend else 1
+
     def _decode_json_value(self, raw: Any, default: Any):
         if raw in (None, ""):
             return default
@@ -262,6 +265,7 @@ class ExamAnswersStore:
         placeholder = self._placeholder()
         current_timestamp = self._current_timestamp_sql()
         payload_placeholder = self._cast_json_value(placeholder)
+        needs_rescore_value = self._bool_true_value()
 
         normalized_rows: list[dict[str, object]] = []
         for row in rows:
@@ -369,7 +373,7 @@ class ExamAnswersStore:
                             exam_format,
                             payload_json,
                             answer_count,
-                            1,
+                            needs_rescore_value,
                             import_key,
                         ),
                     )
@@ -408,7 +412,7 @@ class ExamAnswersStore:
                                 average_score = NULL,
                                 average_score_answer_count = NULL,
                                 average_score_scored_at = NULL,
-                                needs_rescore = 1,
+                                needs_rescore = {placeholder},
                                 updated_at = {current_timestamp}
                             WHERE id = {placeholder}
                             """,
@@ -421,6 +425,7 @@ class ExamAnswersStore:
                                 exam_format,
                                 payload_json,
                                 answer_count,
+                                needs_rescore_value,
                                 existing["id"],
                             ),
                         )
@@ -596,7 +601,7 @@ class ExamAnswersStore:
 
     def save_exam_scores(self, source_row: int, scores: list[dict[str, object]]) -> None:
         average_score, average_score_answer_count = self._calculate_average_score(scores)
-        needs_rescore = 1 if self._has_invalid_score_result(scores) else 0
+        needs_rescore = self._has_invalid_score_result(scores)
         with closing(self._connect()) as conn:
             conn.execute(
                 f"""

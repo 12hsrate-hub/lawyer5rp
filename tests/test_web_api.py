@@ -52,6 +52,9 @@ class WebApiTests(unittest.TestCase):
     def tearDown(self):
         reset_rate_limit(self.client.app.state.rate_limiter)
         self.client.close()
+        self.client.app.state.rate_limiter.repository.close()
+        self.client.app.state.user_store.repository.close()
+        self.store.repository.close()
         if self.prev_test_users is None:
             os.environ.pop("OGP_WEB_TEST_USERS", None)
         else:
@@ -293,6 +296,8 @@ class WebApiTests(unittest.TestCase):
             self.assertFalse(payload["checks"]["admin_metrics_store"]["ok"])
         finally:
             client.close()
+            client.app.state.rate_limiter.repository.close()
+            client.app.state.user_store.repository.close()
 
     def test_complaint_draft_can_be_saved_loaded_and_cleared(self):
         self._register_verify_and_login("tester", "draft@example.com")
@@ -379,6 +384,8 @@ class WebApiTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
         finally:
             admin_client.close()
+            admin_client.app.state.rate_limiter.repository.close()
+            admin_client.app.state.user_store.repository.close()
 
         response = session_client.get("/api/auth/me")
         self.assertEqual(response.status_code, 403)
@@ -479,6 +486,8 @@ class WebApiTests(unittest.TestCase):
             self.assertIn("Обращение", response.json()["bbcode"])
         finally:
             client.close()
+            client.app.state.rate_limiter.repository.close()
+            client.app.state.user_store.repository.close()
 
     def test_login_requires_verified_email(self):
         response = self.client.post(

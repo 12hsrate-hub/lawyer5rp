@@ -55,6 +55,9 @@ class WebPagesSmokeTests(unittest.TestCase):
     def tearDown(self):
         reset_rate_limit(self.client.app.state.rate_limiter)
         self.client.close()
+        self.client.app.state.rate_limiter.repository.close()
+        self.client.app.state.user_store.repository.close()
+        self.store.repository.close()
         if self.prev_test_users is None:
             os.environ.pop("OGP_WEB_TEST_USERS", None)
         else:

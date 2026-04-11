@@ -601,6 +601,10 @@ class FakeExamAnswersConnection:
             return FakeCursor(rowcount=0)
         if normalized.startswith("CREATE UNIQUE INDEX IF NOT EXISTS idx_exam_answers_import_key"):
             return FakeCursor(rowcount=0)
+        if normalized.startswith("CREATE INDEX IF NOT EXISTS idx_exam_answers_source_row_import_key"):
+            return FakeCursor(rowcount=0)
+        if normalized.startswith("CREATE INDEX IF NOT EXISTS idx_exam_answers_pending_scores"):
+            return FakeCursor(rowcount=0)
         if normalized.startswith("SELECT id, source_row, submitted_at, full_name, discord_tag, passport, exam_format, question_g_score, exam_scores_json, average_score FROM exam_answers"):
             rows = [
                 {
@@ -661,7 +665,7 @@ class FakeExamAnswersConnection:
             )
         if normalized.startswith("INSERT INTO exam_answers ( source_row, submitted_at, full_name, discord_tag, passport, exam_format, payload_json, answer_count, needs_rescore, import_key ) VALUES"):
             return self._insert_row(params)
-        if normalized.startswith("UPDATE exam_answers SET source_row = %s, submitted_at = %s, full_name = %s, discord_tag = %s, passport = %s, exam_format = %s, payload_json = %s::jsonb, answer_count = %s, question_g_score = NULL, question_g_rationale = NULL, question_g_scored_at = NULL, exam_scores_json = NULL, exam_scores_scored_at = NULL, average_score = NULL, average_score_answer_count = NULL, average_score_scored_at = NULL, needs_rescore = 1, updated_at = NOW() WHERE id = %s"):
+        if normalized.startswith("UPDATE exam_answers SET source_row = %s, submitted_at = %s, full_name = %s, discord_tag = %s, passport = %s, exam_format = %s, payload_json = %s::jsonb, answer_count = %s, question_g_score = NULL, question_g_rationale = NULL, question_g_scored_at = NULL, exam_scores_json = NULL, exam_scores_scored_at = NULL, average_score = NULL, average_score_answer_count = NULL, average_score_scored_at = NULL, needs_rescore = %s, updated_at = NOW() WHERE id = %s"):
             return self._update_row(params)
         if normalized.startswith("SELECT COUNT(*) AS total FROM exam_answers WHERE source_row > 0"):
             total = sum(1 for row in self.state["rows"] if row["source_row"] > 0)
@@ -737,7 +741,7 @@ class FakeExamAnswersConnection:
         return FakeCursor(rowcount=1)
 
     def _update_row(self, params):
-        source_row, submitted_at, full_name, discord_tag, passport, exam_format, payload_json, answer_count, row_id = params
+        source_row, submitted_at, full_name, discord_tag, passport, exam_format, payload_json, answer_count, needs_rescore, row_id = params
         row = self._find_by_id(int(row_id))
         if not row:
             return FakeCursor(rowcount=0)
@@ -759,7 +763,7 @@ class FakeExamAnswersConnection:
                 "average_score": None,
                 "average_score_answer_count": None,
                 "average_score_scored_at": None,
-                "needs_rescore": True,
+                "needs_rescore": bool(needs_rescore),
                 "updated_at": self._now(),
             }
         )
@@ -878,6 +882,10 @@ class FakeExamImportTasksConnection:
         if normalized.startswith("SELECT id, task_type, source_row, status, created_at, started_at, finished_at, error, progress_json, result_json FROM exam_import_tasks WHERE id = %s"):
             row = self.state["rows"].get(params[0])
             return FakeCursor(rowcount=1 if row else 0, one=row)
+        if normalized.startswith("SELECT COUNT(*) AS active_count FROM exam_import_tasks WHERE status = %s"):
+            status = str(params[0])
+            active_count = sum(1 for row in self.state["rows"].values() if str(row.get("status") or "") == status)
+            return FakeCursor(rowcount=1, one={"active_count": active_count})
         if normalized.startswith("UPDATE exam_import_tasks SET "):
             task_id = params[-1]
             row = self.state["rows"].get(task_id)
@@ -928,6 +936,7 @@ class WebStorageTests(unittest.TestCase):
             loaded = store.get_representative_profile("tester")
             self.assertEqual(loaded["passport"], "AA")
         finally:
+            store.repository.close()
             del store
             gc.collect()
             shutil.rmtree(tmpdir, ignore_errors=True)
@@ -943,6 +952,7 @@ class WebStorageTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "подтвердите email"):
                 store.authenticate("tester2", "Password123!")
         finally:
+            store.repository.close()
             del store
             gc.collect()
             shutil.rmtree(tmpdir, ignore_errors=True)
@@ -962,6 +972,7 @@ class WebStorageTests(unittest.TestCase):
             authenticated = store.authenticate("reset@example.com", "NewPassword456!")
             self.assertEqual(authenticated.username, "resetuser")
         finally:
+            store.repository.close()
             del store
             gc.collect()
             shutil.rmtree(tmpdir, ignore_errors=True)

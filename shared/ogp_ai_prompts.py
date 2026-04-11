@@ -5,8 +5,8 @@ from dataclasses import dataclass
 
 SUGGEST_PROMPT_VERSION = "suggest.v25"
 PRINCIPAL_SCAN_PROMPT_VERSION = "principal_scan.v2"
-EXAM_SCORING_PROMPT_VERSION = "exam_scoring.v6"
-EXAM_BATCH_SCORING_PROMPT_VERSION = "exam_batch_scoring.v6"
+EXAM_SCORING_PROMPT_VERSION = "exam_scoring.v7"
+EXAM_BATCH_SCORING_PROMPT_VERSION = "exam_batch_scoring.v7"
 
 
 @dataclass(frozen=True)
@@ -446,35 +446,177 @@ def build_principal_scan_prompt() -> str:
 
 def _build_exam_scoring_rules() -> str:
     return """
+Ты — строгий проверяющий юридического экзамена GTA5RP.
 Compare by legal meaning and core conclusion, not by wording alone.
 
-This review cycle uses draft reference answers.
-Treat the reference answer as a working skeleton, not as a demand for exact phrasing.
+Твоя задача:
+проверять ответы кандидата не по совпадению слов, а по смыслу, юридической логике, полноте, корректности правового вывода, наличию обязательных условий, исключений, сроков, субъектов и точных норм там, где они обязательны.
 
-Scoring rubric:
-- 40 points: the student's final legal conclusion matches the reference.
-- 20 points: the norm, article, precedent, body, or legal source is correct when the question depends on it.
-- 20 points: key conditions, exceptions, deadlines, or mandatory list items are preserved.
-- 20 points: the reasoning stays legally coherent and does not invent a different rule.
+Нормализация входа:
+1. Считай пустым ответом значения:
+   "", "-", "—", "нет ответа", "n/a", "null", "не знаю".
+2. Если ответ пустой после нормализации:
+   - verdict = "incorrect"
+   - score = 0
+   - reasoning = "Ответ отсутствует или не содержит содержательного ответа по существу."
+3. Не интерпретируй заглушки как частичный ответ.
 
-Evaluation rules:
-- Accept paraphrases, concise wording, and different order when the meaning is preserved.
-- exam_type is mandatory context for evaluation.
-- If the question depends on exam_type, an answer for the wrong exam mode is a substantial error.
-- Questions that depend on exam_type: N and S.
-- Ignore framing phrases like "Вопрос с выбором ответа" or "Правильный ответ", and focus on the legal substance.
-- Penalize wrong article numbers, wrong institutions, wrong deadlines, invented legal bases, and contradictions.
-- If the answer is partly right, award partial credit instead of forcing a binary result.
-- If the reference contains a list, omissions of mandatory elements must lower the score.
-- Do not over-credit by guessing unstated meaning from the student's answer.
-- Do not under-credit just because the draft reference answer is longer than the student's answer.
+Главные правила проверки:
+1. Проверяй по смыслу, а не по буквальному совпадению.
+2. Засчитывай:
+   - перефразирование
+   - синонимы
+   - другой порядок фраз
+   - краткую формулировку, если в ней сохранен обязательный смысл
+3. Не додумывай за кандидата то, чего он не написал.
+4. Оценивай только фактически данный ответ.
+5. Если в ответе есть и верное, и неверное:
+   - существенная ошибка не позволяет ставить "correct"
+   - критическая ошибка может резко ограничить балл, даже если часть ответа верна
+6. Если candidate_answer шире эталона, это допустимо только если:
+   - добавления не противоречат правильному ответу
+   - добавления не подменяют правовое основание
+   - добавления не уводят в другой режим экзамена
+7. Если correct_answer и key_points переданы одновременно:
+   - key_points — это минимальный обязательный критерий
+   - correct_answer — дополнительный ориентир
+   - must_not_include и fatal_errors имеют приоритет как негативные критерии
 
-Score bands:
-- 90-100: correct in substance, with at most minor precision loss.
-- 75-89: mostly correct, but incomplete or slightly imprecise.
-- 50-74: mixed result, with important omissions or weak legal support.
-- 25-49: mostly incorrect.
-- 1-24: incorrect, contradictory, or misleading.
+Критически важное правило по exam_type:
+1. exam_type обязателен для анализа.
+2. Если вопрос зависит от формата экзамена, нельзя засчитывать ответ, который верен для другого формата.
+3. Если кандидат дал ответ для другого формата:
+   - exam_type_issue = true
+   - это существенная ошибка
+4. Для вопросов, зависящих от exam_type, при неверном режиме:
+   - verdict не выше "partially_correct"
+   - если ответ явно построен по чужому режиму, verdict = "incorrect"
+
+Вопросы, зависящие от exam_type:
+- N
+- S
+
+Колонки, где точная норма особенно важна:
+- J
+- K
+- M
+- P
+- Q
+- R
+- U
+- Y
+- Z
+- AA
+- AB
+- AC
+- AD
+
+Как оценивать по типу question_type:
+
+1. mode_sensitive
+- сначала проверь, соответствует ли ответ нужному exam_type
+- если ответ верен для другого режима, это существенная ошибка
+- если вопрос перечислительный, проверяй только элементы, допустимые для текущего режима
+
+2. exact_ref
+- если вопрос требует точную статью, часть, пункт, кодекс или прецедент:
+  - неправильная ссылка — существенная ошибка
+  - отсутствие ссылки при верной общей сути не позволяет ставить "correct"
+  - если суть вопроса именно в точной норме, неверная ссылка резко снижает оценку
+- общая “логика по смыслу” без нужной нормы обычно не выше "partially_correct" или "weak"
+
+3. list_all
+- проверяй полноту перечня
+- отдельно фиксируй:
+  - что названо правильно
+  - что пропущено
+  - что добавлено лишнего
+- если пропущены обязательные пункты, не ставь "correct"
+
+4. yes_no_with_exception
+- сначала проверь основной вывод: да / нет / правомерно / неправомерно
+- затем проверь исключение, ограничение или условие
+- неверный основной вывод — критическая ошибка
+- верный вывод при неверном основании не выше "partially_correct" или "weak" в зависимости от тяжести ошибки
+
+5. scenario_action
+- проверяй, названо ли конкретное требуемое действие
+- общие рассуждения без конкретного процессуального действия — недостаточны
+- если обязательна норма, но действие описано без нее, не ставь максимальный балл
+
+6. standard
+- проверяй общий юридический смысл, полноту и отсутствие противоречий
+
+Правила по must_not_include:
+1. Если ответ содержит элемент из must_not_include:
+   - считай это ошибкой
+2. Если такой элемент меняет правовой вывод, подменяет режим, искажает норму или ломает логику:
+   - это существенная ошибка
+3. Если must_not_include прямо противоречит правильному ответу:
+   - не ставь "correct"
+
+Правила по fatal_errors:
+1. Если ответ содержит fatal_errors:
+   - fatal_conflict = true
+2. При fatal_conflict:
+   - verdict не выше "weak"
+   - если ошибка разрушает суть ответа, verdict = "incorrect"
+
+Ограничители баллов:
+1. Неверный exam_type на mode_sensitive вопросе:
+   - максимум 25
+2. Неверный основной вывод в yes/no вопросе:
+   - максимум 15
+3. Вывод верный, но правовая база ложная:
+   - максимум 55
+4. Точная норма обязательна, но дана неверно:
+   - максимум 35
+5. Пропущен один обязательный элемент в list_all:
+   - максимум 80
+6. Пропущено два и более обязательных элемента:
+   - максимум 65
+7. Ответ общий, расплывчатый, без конкретного действия в scenario_action:
+   - максимум 50
+8. Пустой ответ:
+   - 0
+
+Дополнительные признаки слабого ответа:
+- разговорные вставки вроде:
+  - "ну вообще"
+  - "по-моему"
+  - "думаю"
+  - "вопрос сложный"
+- нерелевантные рассуждения вместо ответа по норме
+- подмена законодательства правилами сервера / проекта / личным мнением
+Если такие элементы мешают правовой точности, снижай оценку.
+
+Как понимать шкалу:
+- correct = 90-100
+- mostly_correct = 70-89
+- partially_correct = 40-69
+- weak = 15-39
+- incorrect = 0-14
+
+Что считать существенными ошибками:
+- неверный правовой вывод
+- подмена правового основания
+- пропуск обязательного исключения
+- пропуск важного срока
+- пропуск ключевого субъекта
+- неправильная статья / кодекс / часть / пункт, если вопрос про точную норму
+- смешение правил разных форматов экзамена
+- выдуманные нормы, органы, исключения или полномочия
+- ответ не на тот вопрос
+- замена закона “правилами проекта / сервера”
+
+Правило приоритета:
+1. normalized_empty
+2. fatal_errors
+3. exam_type
+4. основной правовой вывод
+5. точная норма
+6. полнота key_points
+7. второстепенные детали
 """.strip()
 
 
@@ -523,6 +665,15 @@ Student answer:
 
 Minimal required points:
 {key_points_text}
+
+must_not_include:
+- not provided
+
+fatal_errors:
+- not provided
+
+question_type:
+standard
 """,
             ),
             ("scoring_rules", _build_exam_scoring_rules()),
@@ -530,9 +681,29 @@ Minimal required points:
                 "output_contract",
                 """
 Return only JSON:
-{"score": 1-100, "rationale": "brief reason"}
+{
+  "column": "F",
+  "exam_type": "",
+  "question": "",
+  "question_type": "standard",
+  "verdict": "mostly_correct",
+  "score": 78,
+  "reasoning": "Кратко и строго объясни, почему выставлена именно такая оценка.",
+  "matched_points": [],
+  "missing_points": [],
+  "errors": [],
+  "must_not_hits": [],
+  "fatal_hits": [],
+  "normalized_empty": false,
+  "exam_type_issue": false,
+  "fatal_conflict": false,
+  "corrected_short_answer": "",
+  "rationale": "brief reason"
+}
 
+The fields "score" and "rationale" are mandatory.
 The rationale must be one short sentence that states the main match or the main mistake.
+Legacy compatibility hint: include "score" as a numeric value in range 1-100 ("score": 1-100).
 """,
             ),
         ),
@@ -586,10 +757,41 @@ Items:
                 "output_contract",
                 """
 Return only JSON in this form:
-{"F":{"score":75,"rationale":"..."},"G":{"score":100,"rationale":"..."}}
+{
+  "summary": {
+    "total": 0,
+    "correct": 0,
+    "mostly_correct": 0,
+    "partially_correct": 0,
+    "weak": 0,
+    "incorrect": 0,
+    "average_score": 0
+  },
+  "results": [
+    {
+      "column": "F",
+      "exam_type": "",
+      "question": "",
+      "question_type": "standard",
+      "verdict": "mostly_correct",
+      "score": 78,
+      "reasoning": "Кратко и строго объясни, почему выставлена именно такая оценка.",
+      "matched_points": [],
+      "missing_points": [],
+      "errors": [],
+      "must_not_hits": [],
+      "fatal_hits": [],
+      "normalized_empty": false,
+      "exam_type_issue": false,
+      "fatal_conflict": false,
+      "corrected_short_answer": "",
+      "rationale": "brief reason"
+    }
+  ]
+}
 
-Use the item labels exactly as provided in square brackets.
-Each rationale must be one short sentence.
+Also acceptable fallback JSON:
+{"F":{"score":75,"rationale":"..."},"G":{"score":100,"rationale":"..."}}
 """,
             ),
         ),

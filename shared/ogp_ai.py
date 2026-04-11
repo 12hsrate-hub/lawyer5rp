@@ -136,6 +136,34 @@ def _normalize_exam_result(payload: dict[str, object] | None, *, fallback_ration
     }
 
 
+def _extract_batch_results_map(raw_payload: dict[str, object] | None) -> dict[str, dict[str, object]]:
+    if not isinstance(raw_payload, dict):
+        return {}
+
+    results = raw_payload.get("results")
+    if isinstance(results, list):
+        mapped: dict[str, dict[str, object]] = {}
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            column = str(item.get("column") or "").strip().upper()
+            if not column:
+                continue
+            mapped[column] = item
+        if mapped:
+            return mapped
+
+    fallback: dict[str, dict[str, object]] = {}
+    for key, value in raw_payload.items():
+        column = str(key or "").strip().upper()
+        if not column:
+            continue
+        if not isinstance(value, dict):
+            continue
+        fallback[column] = value
+    return fallback
+
+
 def _run_with_proxy_fallback(
     *,
     api_key: str,
@@ -580,10 +608,15 @@ def score_exam_answers_batch_with_proxy_fallback(
                 f'[{item["column"]}]'
                 f'\nExam type: {item.get("exam_type", "")}'
                 f'\nQuestion: {item.get("question") or item["header"]}'
-                f'\nStudent answer: {item["user_answer"]}'
+                f'\nquestion_type: {item.get("question_type", "standard")}'
+                f'\ncandidate_answer: {item["user_answer"]}'
                 f'\nDraft reference answer: {item["correct_answer"]}'
                 f'\nMinimal required points:\n'
                 + "\n".join(f'- {point}' for point in (item.get("key_points") or []))
+                + f'\nmust_not_include:\n'
+                + "\n".join(f'- {point}' for point in (item.get("must_not_include") or []))
+                + f'\nfatal_errors:\n'
+                + "\n".join(f'- {point}' for point in (item.get("fatal_errors") or []))
             )
             for item in chunk_items
         )
@@ -622,10 +655,11 @@ def score_exam_answers_batch_with_proxy_fallback(
             stats["llm_count"] += len(chunk_items)
             response = client.responses.create(model=OPENAI_EXAM_SCORING_MODEL, input=prompt)
             raw = _extract_json_object(response.output_text or "")
+            raw_by_column = _extract_batch_results_map(raw)
             chunk_results: dict[str, dict[str, object]] = {}
             for item in chunk_items:
                 column = item["column"]
-                payload = raw.get(column) if isinstance(raw, dict) else None
+                payload = raw_by_column.get(str(column or "").upper())
                 normalized_result = _normalize_exam_result(payload, fallback_rationale=DEFAULT_INVALID_BATCH_RATIONALE)
                 chunk_results[column] = normalized_result
                 per_item_cache_key = _build_exam_score_cache_key(
