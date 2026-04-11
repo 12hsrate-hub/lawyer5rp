@@ -1369,6 +1369,66 @@ class PostgresAdminMetricsStoreTests(unittest.TestCase):
         root = Path(tmpdir)
         return AdminMetricsStore(root / "admin_metrics.db", backend=FakeAdminMetricsPostgresBackend())
 
+    def test_summarize_ai_generation_logs_keeps_backward_compatibility_with_stage_timings(self):
+        tmpdir = make_temp_dir()
+        self.addCleanup(shutil.rmtree, tmpdir, True)
+        root = Path(tmpdir)
+        store = AdminMetricsStore(root / "admin_metrics.db", backend=SQLiteBackend(root / "admin_metrics.db"))
+
+        self.assertTrue(
+            store.log_ai_generation(
+                username="alpha",
+                server_code="blackberry",
+                flow="suggest",
+                generation_id="gen_old",
+                path="/api/ai/suggest",
+                meta={
+                    "model": "gpt-5-mini",
+                    "input_tokens": 100,
+                    "output_tokens": 40,
+                    "total_tokens": 140,
+                    "latency_ms": 180,
+                },
+            )
+        )
+        self.assertTrue(
+            store.log_ai_generation(
+                username="alpha",
+                server_code="blackberry",
+                flow="suggest",
+                generation_id="gen_new",
+                path="/api/ai/suggest",
+                meta={
+                    "model": "gpt-5-mini",
+                    "input_tokens": 160,
+                    "output_tokens": 55,
+                    "total_tokens": 215,
+                    "latency_ms": 170,
+                    "retrieval_ms": 22,
+                    "openai_ms": 170,
+                    "total_suggest_ms": 205,
+                    "estimated_cost_usd": 0.0012,
+                },
+            )
+        )
+
+        summary = store.summarize_ai_generation_logs(flow="suggest", limit=10)
+
+        self.assertEqual(summary["total_generations"], 2)
+        self.assertEqual(summary["input_tokens_total"], 260)
+        self.assertEqual(summary["output_tokens_total"], 95)
+        self.assertEqual(summary["total_tokens_total"], 355)
+        self.assertEqual(summary["latency_ms_p50"], 175)
+        self.assertEqual(summary["latency_ms_p95"], 180)
+        self.assertEqual(summary["retrieval_ms_p50"], 22)
+        self.assertEqual(summary["retrieval_ms_p95"], 22)
+        self.assertEqual(summary["openai_ms_p50"], 170)
+        self.assertEqual(summary["openai_ms_p95"], 170)
+        self.assertEqual(summary["total_suggest_ms_p50"], 205)
+        self.assertEqual(summary["total_suggest_ms_p95"], 205)
+        self.assertEqual(summary["estimated_cost_samples"], 1)
+        self.assertEqual(summary["estimated_cost_total_usd"], 0.0012)
+
     def test_postgres_admin_metrics_store_logs_overview_and_csv(self):
         store = self.make_store()
 
