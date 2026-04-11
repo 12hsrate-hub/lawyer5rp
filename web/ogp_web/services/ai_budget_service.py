@@ -51,7 +51,7 @@ _MODEL_PRICING_DEFAULTS: dict[str, tuple[float, float]] = {
     "gpt-5.4": (2.50, 15.00),
     "gpt-5.4-mini": (0.75, 4.50),
     "gpt-5-mini": (0.75, 4.50),
-    "gpt-4.1-mini": (0.80, 3.20),
+    "gpt-4.1-mini": (0.40, 1.60),
 }
 
 
