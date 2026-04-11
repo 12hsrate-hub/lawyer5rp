@@ -161,7 +161,7 @@ def _is_blocked_law_host(host: str) -> bool:
     return False
 
 
-def _fetch_law_documents(source_urls: list[str], *, max_documents: int = 8, max_doc_chars: int = 9000) -> list[dict[str, str]]:
+def _fetch_law_documents(source_urls: list[str], *, max_documents: int = 8, max_doc_chars: int = 120000) -> list[dict[str, str]]:
     documents: list[dict[str, str]] = []
     normalized_sources: list[str] = []
 
@@ -194,6 +194,54 @@ def _fetch_law_documents(source_urls: list[str], *, max_documents: int = 8, max_
     return documents
 
 
+def _extract_relevant_law_excerpt(text: str, question: str, *, max_chars: int = 2500) -> str:
+    normalized_text = str(text or "").strip()
+    if not normalized_text:
+        return ""
+
+    keywords = sorted(_extract_keywords(question), key=len, reverse=True)
+    if not keywords:
+        return normalized_text[:max_chars].strip()
+
+    lower_text = normalized_text.lower()
+    hit_positions: list[int] = []
+    for keyword in keywords[:6]:
+        index = lower_text.find(keyword.lower())
+        if index >= 0:
+            hit_positions.append(index)
+
+    article_matches = re.findall(r"(?:ст\.?|статья)\s*(\d{1,3})", question, flags=re.IGNORECASE)
+    for article_number in article_matches[:3]:
+        article_pattern = re.search(rf"(ст\.?|статья)\s*{re.escape(article_number)}", lower_text, flags=re.IGNORECASE)
+        if article_pattern:
+            hit_positions.append(article_pattern.start())
+
+    if not hit_positions:
+        return normalized_text[:max_chars].strip()
+
+    snippets: list[str] = []
+    seen_windows: set[tuple[int, int]] = set()
+    radius = max_chars // 3
+    for position in sorted(hit_positions)[:3]:
+        start = max(0, position - radius)
+        end = min(len(normalized_text), position + radius)
+        window_key = (start, end)
+        if window_key in seen_windows:
+            continue
+        seen_windows.add(window_key)
+        snippet = normalized_text[start:end].strip()
+        if start > 0:
+            snippet = "... " + snippet
+        if end < len(normalized_text):
+            snippet = snippet + " ..."
+        snippets.append(snippet)
+
+    combined = "\n\n".join(snippets).strip()
+    if len(combined) <= max_chars:
+        return combined
+    return combined[:max_chars].rsplit(" ", 1)[0].strip()
+
+
 def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     question = payload.question.strip()
     if not question:
@@ -224,7 +272,10 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
 
     ranked = sorted(documents, key=score, reverse=True)
     selected = ranked[:4]
-    context_blocks = [f"[Источник: {item['url']}]\n{item['text'][:2500]}" for item in selected]
+    context_blocks = [
+        f"[Источник: {item['url']}]\n{_extract_relevant_law_excerpt(item['text'], question, max_chars=2500)}"
+        for item in selected
+    ]
     prompt = (
         "Ты юридический ассистент игрового сервера. Отвечай только на основе переданной внутриигровой законодательной базы.\n"
         "Если данных недостаточно, прямо так и скажи.\n"

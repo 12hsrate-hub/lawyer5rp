@@ -485,5 +485,19 @@ class WebServiceTests(unittest.TestCase):
         self.assertIn("Не добавляй никакие реальные законы", captured["input"])
 
 
+    def test_extract_relevant_law_excerpt_uses_hit_window_not_only_document_start(self):
+        text = (
+            "intro " * 300
+            + "Article 20. Grounds for release of a detainee: the detainee must be released when there are no grounds to continue detention. "
+            + "tail " * 100
+        )
+        excerpt = ai_service._extract_relevant_law_excerpt(
+            text,
+            "grounds for release of a detainee",
+            max_chars=500,
+        )
+        self.assertIn("Article 20", excerpt)
+        self.assertIn("Grounds for release of a detainee", excerpt)
+
 if __name__ == "__main__":
     unittest.main()
