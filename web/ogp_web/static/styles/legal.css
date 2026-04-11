@@ -426,6 +426,17 @@
   align-items: end;
 }
 
+.legal-ocr__submit {
+  min-width: 210px;
+  font-weight: 600;
+}
+
+.legal-ocr__submit:disabled {
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}
+
 .legal-file-picker {
   display: flex;
   align-items: center;
@@ -1173,6 +1184,11 @@
 
   .admin-table__path {
     max-width: 220px;
+  }
+
+  .legal-ocr__submit {
+    width: 100%;
+    min-width: 0;
   }
 }
 

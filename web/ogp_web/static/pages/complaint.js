@@ -103,6 +103,20 @@ const complaintFilePicker = bindFilePickerLabel({
   emptyText: OCR_TEXT.emptyFileName,
 });
 
+function syncComplaintOcrButtonState() {
+  if (!complaintOcrBtn || !complaintOcrFile) {
+    return;
+  }
+  const hasFile = Boolean((complaintOcrFile.files || [])[0]);
+  complaintOcrBtn.disabled = !hasFile;
+}
+
+complaintOcrFile?.addEventListener("change", syncComplaintOcrButtonState);
+complaintOcrFile?.addEventListener("click", () => {
+  window.setTimeout(syncComplaintOcrButtonState, 0);
+});
+syncComplaintOcrButtonState();
+
 const resetComplaintOcrUi = createUiResetter({
   fileInput: complaintOcrFile,
   progressHost: complaintOcrProgress,
@@ -504,6 +518,7 @@ function resetDraft() {
   applyComplaintState(createPresetState(presetPayload) || {});
   setCurrentDate(form);
   resetComplaintOcrUi();
+  syncComplaintOcrButtonState();
   setBbcodeBusy(false, "Статус: черновик очищен, форма готова к новой жалобе.");
   showAppMessage("Черновик жалобы очищен.");
 }
@@ -618,6 +633,7 @@ bindDigitsOnly(form, "appeal_no", 4);
   await loadRemoteDraft();
   setCurrentDate(form);
   resetComplaintOcrUi();
+  syncComplaintOcrButtonState();
   setAiFocusHint();
   updateRequiredProgress();
 })();

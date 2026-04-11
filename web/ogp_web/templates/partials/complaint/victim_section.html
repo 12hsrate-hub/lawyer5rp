@@ -57,7 +57,15 @@
             <input id="complaint-ocr-file" class="legal-file-picker__input" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
           </div>
         </label>
-        <button type="button" id="complaint-ocr-btn" class="secondary-button">Распознать данные</button>
+        <button
+          type="button"
+          id="complaint-ocr-btn"
+          class="primary-button legal-ocr__submit"
+          aria-describedby="complaint-ocr-status"
+          disabled
+        >
+          Распознать данные
+        </button>
       </div>
 
       <div id="complaint-ocr-status" class="legal-ocr__status">Статус: ожидает изображение.</div>
