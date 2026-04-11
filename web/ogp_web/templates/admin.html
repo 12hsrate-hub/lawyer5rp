@@ -7,8 +7,28 @@
 {% endblock %}
 
 {% block content %}
-  <section class="page-shell legal-page legal-page--admin">
-    {% include "partials/page_hero.html" %}
+  <div class="legal-page legal-page--admin">
+    <header class="legal-header">
+      <div class="legal-header__main">
+        <p class="legal-header__eyebrow">OGP Builder</p>
+        <h1 class="legal-header__title">Админ-панель</h1>
+        <p class="legal-header__description">
+          Управление пользователями, импортом экзаменов, событиями и операционными метриками.
+        </p>
+      </div>
+      <aside class="legal-user-card">
+        <div class="legal-user-card__top">
+          <span class="legal-user-card__label">Администратор</span>
+          <strong class="legal-user-card__value">{{ username }}</strong>
+        </div>
+        <p class="legal-user-card__text">Быстрый доступ к ключевым разделам и управлению доступом.</p>
+        <div class="legal-user-card__actions">
+          <a class="button-link secondary-button" href="/complaint">К жалобе</a>
+          <a class="button-link ghost-button" href="/profile">Профиль</a>
+          <button type="button" id="logout-btn" class="ghost-button">Выйти</button>
+        </div>
+      </aside>
+    </header>
     {% include "partials/page_nav.html" %}
     <nav class="legal-section-jump" aria-label="Навигация по разделам админ-панели">
       <a class="legal-section-jump__link" href="#admin-section-filters">Фильтры</a>
@@ -265,7 +285,7 @@
         </div>
       </section>
     </section>
-  </section>
+  </div>
 
   <div id="admin-user-modal" class="modal-backdrop" hidden>
     <div class="modal-card modal-card--wide legal-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-user-modal-title">
