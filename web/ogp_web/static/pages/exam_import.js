@@ -1,4 +1,4 @@
-﻿const importButton = document.getElementById("exam-import-btn");
+const importButton = document.getElementById("exam-import-btn");
 const scoreButton = document.getElementById("exam-score-btn");
 const rescoreFailedButton = document.getElementById("exam-rescore-failed-btn");
 const progressBox = document.getElementById("exam-import-progress");
