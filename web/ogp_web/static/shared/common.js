@@ -61,22 +61,22 @@ window.OGPWeb = {
   },
 
   setStateLoading(host, text = "") {
-    this.setState(host, "loading");
+    window.OGPWeb.setState(host, "loading");
     host.textContent = String(text || "");
   },
 
   setStateSuccess(host, text = "") {
-    this.setState(host, "success");
+    window.OGPWeb.setState(host, "success");
     host.textContent = String(text || "");
   },
 
   setStateError(host, text = "") {
-    this.setState(host, "error");
+    window.OGPWeb.setState(host, "error");
     host.textContent = String(text || "");
   },
 
   setStateEmpty(host, text = "") {
-    this.setState(host, "empty");
+    window.OGPWeb.setState(host, "empty");
     host.textContent = String(text || "");
   },
 
