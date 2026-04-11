@@ -38,6 +38,7 @@ const detailModal = createModalController({
 });
 
 const ACTIVE_TASK_STORAGE_KEY = "ogp_exam_import_active_task";
+const TASK_INTERRUPTION_MARKER = "сервис был перезапущен до завершения задачи";
 
 let progressHintTimer = null;
 let progressElapsedTimer = null;
@@ -151,7 +152,15 @@ function formatErrorMessage(error, fallbackText) {
   if (lowered.includes("api key")) {
     return "На сервере возникла проблема с настройкой OpenAI API key.";
   }
+  if (lowered.includes(TASK_INTERRUPTION_MARKER)) {
+    return "РџСЂРµРґС‹РґСѓС‰Р°СЏ С„РѕРЅРѕРІР°СЏ РїСЂРѕРІРµСЂРєР° РїСЂРµСЂРІР°Р»Р°СЃСЊ РїРѕСЃР»Рµ РїРµСЂРµР·Р°РїСѓСЃРєР° СЃРµСЂРІРёСЃР°. Р”Р°РЅРЅС‹Рµ РёРјРїРѕСЂС‚Р° СЃРѕС…СЂР°РЅРµРЅС‹, РјРѕР¶РЅРѕ Р·Р°РїСѓСЃС‚РёС‚СЊ РїСЂРѕРІРµСЂРєСѓ РµС‰Рµ СЂР°Р·.";
+  }
   return raw;
+}
+
+function isInterruptedTaskError(error) {
+  const message = String(error?.message || "").trim().toLowerCase();
+  return message.includes(TASK_INTERRUPTION_MARKER);
 }
 
 function setBusy(isBusy, text = "", options = {}) {
@@ -604,7 +613,11 @@ async function resumeActiveTask() {
     showMessage(buildBulkResultMessage(payload, "default"));
   } catch (error) {
     clearActiveTask();
-    showErrors(formatErrorMessage(error, "Не удалось завершить фоновую проверку."));
+    if (isInterruptedTaskError(error)) {
+      showMessage(formatErrorMessage(error, "Фоновая проверка была прервана."));
+    } else {
+      showErrors(formatErrorMessage(error, "Не удалось завершить фоновую проверку."));
+    }
   } finally {
     setBusy(false);
   }
