@@ -1,10 +1,11 @@
 {% extends "layouts/base.html" %}
+{% import "components/forms.html" as ui %}
 
 {% block title %}{{ app_title }} - Вход{% endblock %}
 {% block main_class %}page auth-page{% endblock %}
 
 {% block content %}
-<div class="legal-page legal-page--auth">
+<div class="legal-page legal-page--auth density-comfortable">
   <header class="legal-header legal-header--auth">
     <div class="legal-header__main">
       <p class="legal-header__eyebrow">OGP Builder</p>
@@ -28,29 +29,14 @@
       </section>
 
       <section class="panel legal-card legal-section legal-section--auth">
-        <div class="legal-section__header">
-          <div>
-            <p class="legal-section__eyebrow">Основное</p>
-            <h2 class="legal-section__title">Войти в кабинет</h2>
-            <p class="legal-section__description">Используйте логин или email, который привязан к аккаунту.</p>
-          </div>
-        </div>
-
+        {{ ui.section_header("Основное", "Войти в кабинет", "Используйте логин или email, который привязан к аккаунту.") }}
         <form id="login-form" class="legal-auth-form">
           <div class="legal-field-grid">
-            <label class="legal-field">
-              <span class="legal-field__label">Логин или email</span>
-              <input name="username" autocomplete="username" placeholder="nickname или you@example.com" required>
-            </label>
-
-            <label class="legal-field">
-              <span class="legal-field__label">Пароль</span>
-              <input name="password" type="password" autocomplete="current-password" placeholder="Введите пароль" required>
-            </label>
+            {{ ui.field_text("username", "Логин или email", "nickname или you@example.com", "", "", "text", "autocomplete='username' required") }}
+            {{ ui.field_text("password", "Пароль", "Введите пароль", "", "", "password", "autocomplete='current-password' required") }}
           </div>
-
           <div class="actions legal-toolbar legal-toolbar--result">
-            <button type="submit" class="primary-button">Войти</button>
+            {{ ui.button("Войти", "primary", "submit") }}
             <button id="forgot-password-toggle" type="button" class="ghost-button">Забыли пароль?</button>
             <button id="resend-toggle" type="button" class="ghost-button">Нет письма?</button>
           </div>
@@ -58,34 +44,15 @@
       </section>
 
       <section class="panel legal-card legal-section legal-section--auth">
-        <div class="legal-section__header">
-          <div>
-            <p class="legal-section__eyebrow">Новый аккаунт</p>
-            <h2 class="legal-section__title">Регистрация</h2>
-            <p class="legal-section__description">Логин, email и надежный пароль.</p>
-          </div>
-        </div>
-
+        {{ ui.section_header("Новый аккаунт", "Регистрация", "Логин, email и надежный пароль.") }}
         <form id="register-form" class="legal-auth-form">
           <div class="legal-field-grid legal-field-grid--two">
-            <label class="legal-field">
-              <span class="legal-field__label">Логин</span>
-              <input name="username" autocomplete="username" placeholder="Например, lawyer5rp" required>
-            </label>
-
-            <label class="legal-field">
-              <span class="legal-field__label">Email</span>
-              <input name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
-            </label>
-
-            <label class="legal-field legal-field--full">
-              <span class="legal-field__label">Пароль</span>
-              <input name="password" type="password" autocomplete="new-password" placeholder="Создайте надежный пароль" required>
-            </label>
+            {{ ui.field_text("username", "Логин", "Например, lawyer5rp", "", "", "text", "autocomplete='username' required") }}
+            {{ ui.field_text("email", "Email", "you@example.com", "", "", "email", "autocomplete='email' required") }}
+            {{ ui.field_text("password", "Пароль", "Создайте надежный пароль", "", "legal-field--full", "password", "autocomplete='new-password' required") }}
           </div>
-
           <div class="actions legal-toolbar legal-toolbar--result">
-            <button type="submit" class="primary-button">Создать аккаунт</button>
+            {{ ui.button("Создать аккаунт", "primary", "submit") }}
           </div>
         </form>
       </section>
@@ -93,64 +60,35 @@
 
     <aside class="legal-auth-shell__side">
       <section class="panel legal-card legal-section legal-section--auth-side legal-section--auth-compact">
-        <div class="legal-section__header">
-          <div>
-            <p class="legal-section__eyebrow">Помощь</p>
-            <h2 class="legal-section__title">Дополнительные действия</h2>
-            <p class="legal-section__description">Открывайте только тот сценарий, который нужен сейчас.</p>
-          </div>
-        </div>
-
+        {{ ui.section_header("Помощь", "Дополнительные действия", "Открывайте только тот сценарий, который нужен сейчас.") }}
         <div class="legal-auth-support-actions">
-          <button id="resend-toggle-side" type="button" class="secondary-button">Повторно отправить email</button>
-          <button id="forgot-password-toggle-side" type="button" class="ghost-button">Сбросить пароль</button>
+          {{ ui.button("Повторно отправить email", "secondary", "button", "resend-toggle-side") }}
+          {{ ui.button("Сбросить пароль", "ghost", "button", "forgot-password-toggle-side") }}
         </div>
       </section>
 
       <section id="resend-form" class="panel legal-card legal-section legal-section--auth-side" hidden>
-        <div class="legal-section__header">
-          <div>
-            <p class="legal-section__eyebrow">Подтверждение email</p>
-            <h2 class="legal-section__title">Повторная отправка</h2>
-            <p class="legal-section__description">Отправим ссылку еще раз на тот же email.</p>
-          </div>
-        </div>
-
+        {{ ui.section_header("Подтверждение email", "Повторная отправка", "Отправим ссылку еще раз на тот же email.") }}
         <form class="legal-auth-form">
           <div class="legal-field-grid">
-            <label class="legal-field">
-              <span class="legal-field__label">Email</span>
-              <input name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
-            </label>
+            {{ ui.field_text("email", "Email", "you@example.com", "", "", "email", "autocomplete='email' required") }}
           </div>
-
           <div class="actions legal-toolbar legal-toolbar--result">
-            <button type="submit" class="secondary-button">Отправить ссылку еще раз</button>
-            <button id="resend-cancel" type="button" class="ghost-button">Скрыть</button>
+            {{ ui.button("Отправить ссылку еще раз", "secondary", "submit") }}
+            {{ ui.button("Скрыть", "ghost", "button", "resend-cancel") }}
           </div>
         </form>
       </section>
 
       <section id="forgot-password-form" class="panel legal-card legal-section legal-section--auth-side" hidden>
-        <div class="legal-section__header">
-          <div>
-            <p class="legal-section__eyebrow">Восстановление</p>
-            <h2 class="legal-section__title">Сброс пароля</h2>
-            <p class="legal-section__description">Мы отправим ссылку для установки нового пароля.</p>
-          </div>
-        </div>
-
+        {{ ui.section_header("Восстановление", "Сброс пароля", "Мы отправим ссылку для установки нового пароля.") }}
         <form class="legal-auth-form">
           <div class="legal-field-grid">
-            <label class="legal-field">
-              <span class="legal-field__label">Email</span>
-              <input name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
-            </label>
+            {{ ui.field_text("email", "Email", "you@example.com", "", "", "email", "autocomplete='email' required") }}
           </div>
-
           <div class="actions legal-toolbar legal-toolbar--result">
-            <button type="submit" class="primary-button">Сбросить пароль</button>
-            <button id="forgot-password-cancel" type="button" class="ghost-button">Скрыть</button>
+            {{ ui.button("Сбросить пароль", "primary", "submit") }}
+            {{ ui.button("Скрыть", "ghost", "button", "forgot-password-cancel") }}
           </div>
         </form>
       </section>
@@ -165,7 +103,7 @@
     <h2 id="success-modal-title">Действие выполнено</h2>
     <div id="success-modal-text" class="success-box modal-message"></div>
     <div class="actions modal-actions">
-      <button id="success-modal-ok" class="primary-button" type="button">Понятно</button>
+      {{ ui.button("Понятно", "primary", "button", "success-modal-ok") }}
     </div>
   </div>
 </div>
@@ -177,7 +115,7 @@
     <h2 id="error-modal-title">Не удалось выполнить действие</h2>
     <div id="error-modal-text" class="errors modal-message"></div>
     <div class="actions modal-actions">
-      <button id="error-modal-ok" class="primary-button" type="button">Понятно</button>
+      {{ ui.button("Понятно", "primary", "button", "error-modal-ok") }}
     </div>
   </div>
 </div>

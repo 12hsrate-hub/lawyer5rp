@@ -1,12 +1,12 @@
 :root {
-  --bg: #f5efe4;
-  --surface: #fcfaf7;
-  --surface-soft: rgba(255, 251, 245, 0.92);
+  --bg: #f3f1ec;
+  --surface: #fbfaf7;
+  --surface-soft: rgba(251, 250, 247, 0.96);
   --surface-contrast: #1f2528;
   --ink: #2b211c;
   --muted: #6f6258;
-  --line: #d8cbbe;
-  --line-strong: #cbb8a4;
+  --line: #d3cdc4;
+  --line-strong: #bfb6aa;
   --accent: #9d3c24;
   --accent-strong: #c35a2f;
   --brand: #234e52;
@@ -20,8 +20,8 @@
   --radius-md: 18px;
   --radius-lg: 24px;
   --radius-pill: 999px;
-  --shadow-soft: 0 12px 40px rgba(43, 33, 28, 0.06);
-  --shadow-md: 0 18px 60px rgba(38, 32, 27, 0.12);
+  --shadow-soft: 0 8px 26px rgba(30, 32, 36, 0.05);
+  --shadow-md: 0 14px 38px rgba(30, 32, 36, 0.1);
   --shadow-strong: 0 24px 80px rgba(38, 32, 27, 0.22);
   --shadow: var(--shadow-md);
   --focus-ring: 0 0 0 4px rgba(35, 78, 82, 0.1);
@@ -42,10 +42,7 @@ body {
   margin: 0;
   color: var(--ink);
   font: 16px/1.5 var(--font-ui);
-  background:
-    radial-gradient(circle at top left, rgba(157, 60, 36, 0.18), transparent 32%),
-    radial-gradient(circle at top right, rgba(38, 70, 83, 0.18), transparent 28%),
-    linear-gradient(180deg, #fbf6ed, var(--bg));
+  background: linear-gradient(180deg, #f7f6f3, var(--bg));
 }
 
 body.modal-open {
@@ -67,10 +64,19 @@ body.modal-open {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(circle at 14% 18%, rgba(157, 60, 36, 0.18), transparent 20%),
-    radial-gradient(circle at 82% 14%, rgba(38, 70, 83, 0.14), transparent 24%),
-    linear-gradient(120deg, rgba(255, 255, 255, 0.35), transparent 45%);
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.22), transparent 45%);
+}
+
+.density-comfortable {
+  --ui-control-height: 52px;
+  --ui-control-padding-y: 14px;
+  --ui-control-padding-x: 16px;
+}
+
+.density-compact {
+  --ui-control-height: 44px;
+  --ui-control-padding-y: 10px;
+  --ui-control-padding-x: 12px;
 }
 
 .eyebrow {

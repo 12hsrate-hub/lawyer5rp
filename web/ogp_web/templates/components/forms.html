@@ -1,0 +1,35 @@
+{% macro button(label, variant="primary", button_type="button", id=None, extra_class="", attrs="") -%}
+  {%- set base = "primary-button" -%}
+  {%- if variant == "secondary" -%}
+    {%- set base = "secondary-button" -%}
+  {%- elif variant == "ghost" -%}
+    {%- set base = "ghost-button" -%}
+  {%- endif -%}
+  <button type="{{ button_type }}" class="{{ base }}{{ (' ' + extra_class) if extra_class else '' }}"{% if id %} id="{{ id }}"{% endif %}{{ (' ' + attrs)|safe if attrs else '' }}>{{ label }}</button>
+{%- endmacro %}
+
+{% macro field_text(name, label, placeholder="", value="", field_class="", input_type="text", attrs="") -%}
+  <label class="legal-field{{ (' ' + field_class) if field_class else '' }}">
+    <span class="legal-field__label">{{ label }}</span>
+    <input
+      name="{{ name }}"
+      type="{{ input_type }}"
+      value="{{ value }}"
+      placeholder="{{ placeholder }}"
+      {{ attrs|safe if attrs else "" }}
+    >
+  </label>
+{%- endmacro %}
+
+{% macro section_header(eyebrow, title, description="") -%}
+  <div class="legal-section__header">
+    <div>
+      <p class="legal-section__eyebrow">{{ eyebrow }}</p>
+      <h2 class="legal-section__title">{{ title }}</h2>
+      {% if description %}
+      <p class="legal-section__description">{{ description }}</p>
+      {% endif %}
+    </div>
+  </div>
+{%- endmacro %}
+

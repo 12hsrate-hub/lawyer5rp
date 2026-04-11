@@ -690,7 +690,7 @@
 .primary-button,
 .secondary-button,
 .ghost-button {
-  min-height: 48px;
+  min-height: var(--ui-control-height, 48px);
   padding: 0 18px;
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
@@ -737,8 +737,8 @@
   background: rgba(255, 255, 255, 0.78);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  min-height: 54px;
-  padding: 14px 16px;
+  min-height: var(--ui-control-height, 54px);
+  padding: var(--ui-control-padding-y, 14px) var(--ui-control-padding-x, 16px);
   color: var(--ink);
   transition:
     border-color 140ms ease,

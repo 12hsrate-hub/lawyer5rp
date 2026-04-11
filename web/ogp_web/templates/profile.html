@@ -1,9 +1,10 @@
 {% extends "layouts/base.html" %}
+{% import "components/forms.html" as ui %}
 
 {% block title %}{{ app_title }} - Личный кабинет{% endblock %}
 
 {% block content %}
-<div class="legal-page legal-page--profile">
+<div class="legal-page legal-page--profile density-comfortable">
   <header class="legal-header">
     <div class="legal-header__main">
       <p class="legal-header__eyebrow">OGP Builder</p>
@@ -19,7 +20,7 @@
       <p class="legal-user-card__text">Проверьте и обновите данные представителя перед формированием итоговых документов.</p>
       <div class="legal-user-card__actions">
         <a class="button-link secondary-button" href="/complaint">К жалобе</a>
-        <button type="button" id="logout-btn" class="ghost-button">Выйти</button>
+        {{ ui.button("Выйти", "ghost", "button", "logout-btn") }}
       </div>
     </aside>
   </header>
@@ -51,93 +52,39 @@
     <div class="legal-workspace__main">
       <form id="profile-form" novalidate>
         <section id="profile-section-main" class="panel legal-card legal-section">
-          <div class="legal-section__header">
-            <div>
-              <p class="legal-section__eyebrow">Раздел 1</p>
-              <h2 class="legal-section__title">Основные данные</h2>
-              <p class="legal-section__description">Укажите сведения представителя, которые будут подставляться в итоговые документы.</p>
-            </div>
-          </div>
-
+          {{ ui.section_header("Раздел 1", "Основные данные", "Укажите сведения представителя, которые будут подставляться в итоговые документы.") }}
           <div class="legal-field-grid legal-field-grid--two">
-            <label class="legal-field">
-              <span class="legal-field__label">ФИО представителя</span>
-              <input name="name" placeholder="Имя Фамилия" data-profile-track="true">
-            </label>
-
-            <label class="legal-field">
-              <span class="legal-field__label">Паспорт</span>
-              <input name="passport" placeholder="123456" maxlength="6" data-profile-track="true">
-            </label>
-
-            <label class="legal-field legal-field--full">
-              <span class="legal-field__label">Адрес</span>
-              <input name="address" placeholder="Los Santos, Vespucci Blvd, 1" data-profile-track="true">
-            </label>
+            {{ ui.field_text("name", "ФИО представителя", "Имя Фамилия", "", "", "text", "data-profile-track='true'") }}
+            {{ ui.field_text("passport", "Паспорт", "123456", "", "", "text", "maxlength='6' data-profile-track='true'") }}
+            {{ ui.field_text("address", "Адрес", "Los Santos, Vespucci Blvd, 1", "", "legal-field--full", "text", "data-profile-track='true'") }}
           </div>
         </section>
 
         <section class="panel legal-card legal-section">
-          <div class="legal-section__header">
-            <div>
-              <p class="legal-section__eyebrow">Раздел 2</p>
-              <h2 class="legal-section__title">Контакты и профиль</h2>
-              <p class="legal-section__description">Эти поля используются при генерации итогового документа.</p>
-            </div>
-          </div>
-
+          {{ ui.section_header("Раздел 2", "Контакты и профиль", "Эти поля используются при генерации итогового документа.") }}
           <div class="legal-field-grid legal-field-grid--two">
-            <label class="legal-field">
-              <span class="legal-field__label">Телефон</span>
-              <input name="phone" placeholder="1234567" inputmode="numeric" maxlength="7" pattern="\d{7}" data-profile-track="true">
-            </label>
-
-            <label class="legal-field">
-              <span class="legal-field__label">Discord</span>
-              <input name="discord" placeholder="nickname" data-profile-track="true">
-            </label>
-
-            <label class="legal-field legal-field--full">
-              <span class="legal-field__label">Скан паспорта URL</span>
-              <input name="passport_scan_url" type="url" placeholder="https://example.com/passport" data-profile-track="true">
-            </label>
+            {{ ui.field_text("phone", "Телефон", "1234567", "", "", "text", "inputmode='numeric' maxlength='7' pattern='\\d{7}' data-profile-track='true'") }}
+            {{ ui.field_text("discord", "Discord", "nickname", "", "", "text", "data-profile-track='true'") }}
+            {{ ui.field_text("passport_scan_url", "Скан паспорта URL", "https://example.com/passport", "", "legal-field--full", "url", "data-profile-track='true'") }}
           </div>
 
           <div class="actions legal-toolbar legal-toolbar--result">
-            <button type="submit" class="primary-button">Сохранить профиль</button>
+            {{ ui.button("Сохранить профиль", "primary", "submit") }}
           </div>
         </section>
       </form>
 
       <section id="profile-section-password" class="panel legal-card legal-section">
-        <div class="legal-section__header">
-          <div>
-            <p class="legal-section__eyebrow">Раздел 3</p>
-            <h2 class="legal-section__title">Смена пароля</h2>
-            <p class="legal-section__description">Укажите текущий пароль и придумайте новый. Новый пароль должен отличаться от текущего.</p>
-          </div>
-        </div>
-
+        {{ ui.section_header("Раздел 3", "Смена пароля", "Укажите текущий пароль и придумайте новый. Новый пароль должен отличаться от текущего.") }}
         <form id="password-form" class="legal-auth-form" novalidate>
           <div class="legal-field-grid legal-field-grid--two">
-            <label class="legal-field legal-field--full">
-              <span class="legal-field__label">Текущий пароль</span>
-              <input name="current_password" type="password" autocomplete="current-password" required>
-            </label>
-
-            <label class="legal-field">
-              <span class="legal-field__label">Новый пароль</span>
-              <input name="new_password" type="password" autocomplete="new-password" required>
-            </label>
-
-            <label class="legal-field">
-              <span class="legal-field__label">Подтвердите новый пароль</span>
-              <input name="confirm_password" type="password" autocomplete="new-password" required>
-            </label>
+            {{ ui.field_text("current_password", "Текущий пароль", "", "", "legal-field--full", "password", "autocomplete='current-password' required") }}
+            {{ ui.field_text("new_password", "Новый пароль", "", "", "", "password", "autocomplete='new-password' required") }}
+            {{ ui.field_text("confirm_password", "Подтвердите новый пароль", "", "", "", "password", "autocomplete='new-password' required") }}
           </div>
 
           <div class="actions legal-toolbar legal-toolbar--result">
-            <button type="submit" class="secondary-button">Сменить пароль</button>
+            {{ ui.button("Сменить пароль", "secondary", "submit") }}
           </div>
         </form>
       </section>
