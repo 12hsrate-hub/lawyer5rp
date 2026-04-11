@@ -4,6 +4,7 @@ import json
 import re
 import threading
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Callable
 
 from shared.ogp_ai_cache import get_ai_cache
@@ -45,6 +46,20 @@ _OPENAI_SEMAPHORES = {
     key: threading.BoundedSemaphore(value=limit)
     for key, limit in _OPENAI_CONCURRENCY_LIMITS.items()
 }
+
+
+@dataclass(frozen=True)
+class AiUsageSummary:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+
+@dataclass(frozen=True)
+class TextGenerationResult:
+    text: str
+    usage: AiUsageSummary
+    cache_hit: bool = False
 
 
 @contextmanager
@@ -113,6 +128,15 @@ def _response_part_value(item: object, key: str, default=None):
     return getattr(item, key, default)
 
 
+def _coerce_usage_int(value: object) -> int:
+    try:
+        if value is None:
+            return 0
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _sanitize_response_text(text: str) -> str:
     lines = [line.strip() for line in str(text or "").replace("\r", "").split("\n")]
     filtered = [
@@ -172,6 +196,20 @@ def extract_response_text(response: object) -> str:
                             message_chunks.append(cleaned)
 
     return "\n".join(chunk for chunk in message_chunks if chunk).strip()
+
+
+def extract_response_usage(response: object) -> AiUsageSummary:
+    usage = _response_part_value(response, "usage", None)
+    input_tokens = _coerce_usage_int(_response_part_value(usage, "input_tokens", 0))
+    output_tokens = _coerce_usage_int(_response_part_value(usage, "output_tokens", 0))
+    total_tokens = _coerce_usage_int(_response_part_value(usage, "total_tokens", 0))
+    if total_tokens <= 0:
+        total_tokens = input_tokens + output_tokens
+    return AiUsageSummary(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+    )
 
 
 def _coerce_exam_score(raw_score: object, *, fallback: int = 1) -> int:
@@ -305,6 +343,30 @@ def suggest_description(
     main_focus: str = "",
     law_context: str = "",
 ) -> str:
+    return suggest_description_result(
+        client=client,
+        victim_name=victim_name,
+        org=org,
+        subject=subject,
+        event_dt=event_dt,
+        raw_desc=raw_desc,
+        complaint_basis=complaint_basis,
+        main_focus=main_focus,
+        law_context=law_context,
+    ).text
+
+
+def suggest_description_result(
+    client,
+    victim_name: str,
+    org: str,
+    subject: str,
+    event_dt: str,
+    raw_desc: str,
+    complaint_basis: str = "",
+    main_focus: str = "",
+    law_context: str = "",
+) -> TextGenerationResult:
     prompt = _build_suggest_prompt(
         victim_name=victim_name,
         org=org,
@@ -333,12 +395,32 @@ def suggest_description(
     )
     cached = cache.get(cache_key)
     if isinstance(cached, dict) and isinstance(cached.get("text"), str):
-        return cached["text"].strip()
+        cached_usage = cached.get("usage") if isinstance(cached.get("usage"), dict) else {}
+        return TextGenerationResult(
+            text=cached["text"].strip(),
+            usage=AiUsageSummary(
+                input_tokens=_coerce_usage_int(cached_usage.get("input_tokens")),
+                output_tokens=_coerce_usage_int(cached_usage.get("output_tokens")),
+                total_tokens=_coerce_usage_int(cached_usage.get("total_tokens")),
+            ),
+            cache_hit=True,
+        )
 
     response = client.responses.create(model=OPENAI_TEXT_MODEL, input=prompt)
     text = extract_response_text(response)
-    cache.set(cache_key, {"text": text})
-    return text
+    usage = extract_response_usage(response)
+    cache.set(
+        cache_key,
+        {
+            "text": text,
+            "usage": {
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "total_tokens": usage.total_tokens,
+            },
+        },
+    )
+    return TextGenerationResult(text=text, usage=usage, cache_hit=False)
 
 
 def extract_principal_fields(
@@ -591,6 +673,42 @@ def suggest_description_with_proxy_fallback(
         operation_name="description suggestion",
         operation_kind="text",
         operation=lambda client: suggest_description(
+            client=client,
+            victim_name=victim_name,
+            org=org,
+            subject=subject,
+            event_dt=event_dt,
+            raw_desc=raw_desc,
+            complaint_basis=complaint_basis,
+            main_focus=main_focus,
+            law_context=law_context,
+        ),
+        status_callback=status_callback,
+        direct_status="РџРѕРґРєР»СЋС‡РµРЅРёРµ Рє OpenAI Р±РµР· РїСЂРѕРєСЃРё...",
+        proxy_status="РџСЂСЏРјРѕР№ Р·Р°РїСЂРѕСЃ РЅРµ РїСЂРѕС€РµР», РїСЂРѕР±СѓСЋ С‡РµСЂРµР· РїСЂРѕРєСЃРё...",
+    )
+
+
+def suggest_description_with_proxy_fallback_result(
+    api_key: str,
+    proxy_url: str,
+    victim_name: str,
+    org: str,
+    subject: str,
+    event_dt: str,
+    raw_desc: str,
+    complaint_basis: str = "",
+    main_focus: str = "",
+    law_context: str = "",
+    *,
+    status_callback: Callable[[str], None] | None = None,
+) -> TextGenerationResult:
+    return _run_with_proxy_fallback(
+        api_key=api_key,
+        proxy_url=proxy_url,
+        operation_name="description suggestion",
+        operation_kind="text",
+        operation=lambda client: suggest_description_result(
             client=client,
             victim_name=victim_name,
             org=org,

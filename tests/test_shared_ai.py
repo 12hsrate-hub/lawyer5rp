@@ -238,6 +238,25 @@ class SharedAiTests(unittest.TestCase):
 
         self.assertEqual(ogp_ai.extract_response_text(response), "Первый фрагмент\nВторой фрагмент")
 
+    def test_extract_response_usage_reads_usage_block(self):
+        response = type(
+            "Response",
+            (),
+            {
+                "usage": type(
+                    "Usage",
+                    (),
+                    {"input_tokens": 321, "output_tokens": 87, "total_tokens": 408},
+                )(),
+            },
+        )()
+
+        usage = ogp_ai.extract_response_usage(response)
+
+        self.assertEqual(usage.input_tokens, 321)
+        self.assertEqual(usage.output_tokens, 87)
+        self.assertEqual(usage.total_tokens, 408)
+
     def test_suggest_description_uses_cache_when_enabled(self):
         tmpdir = make_temporary_directory()
         previous_enabled = os.environ.get("OGP_AI_CACHE_ENABLED")

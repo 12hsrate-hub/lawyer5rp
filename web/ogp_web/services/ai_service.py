@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import socket
+from time import monotonic
 from html.parser import HTMLParser
 from ipaddress import ip_address
 from urllib.parse import urlparse
@@ -16,6 +17,12 @@ from fastapi import HTTPException, status
 
 from ogp_web.schemas import LawQaPayload, PrincipalScanPayload, PrincipalScanResult, SuggestPayload
 from ogp_web.server_config import DEFAULT_SERVER_CODE, get_server_config
+from ogp_web.services.ai_budget_service import (
+    build_ai_telemetry,
+    evaluate_budget,
+    policy_to_meta,
+    telemetry_to_meta,
+)
 from ogp_web.services.law_bundle_service import LawChunk, load_law_bundle_chunks
 from ogp_web.services.legal_pipeline_service import (
     LEGAL_PIPELINE_CONTRACT_VERSION,
@@ -30,12 +37,16 @@ from ogp_web.services.legal_pipeline_service import (
 )
 from ogp_web.services.law_retrieval_service import retrieve_law_context, unique_sources
 from shared.ogp_ai import (
+    AiUsageSummary,
+    OPENAI_TEXT_MODEL,
     create_openai_client,
     extract_response_text,
+    extract_response_usage,
     extract_principal_fields_with_proxy_fallback,
     suggest_description_with_proxy_fallback,
+    suggest_description_with_proxy_fallback_result,
 )
-from shared.ogp_ai_prompts import SUGGEST_PROMPT_VERSION
+from shared.ogp_ai_prompts import SUGGEST_PROMPT_VERSION, build_suggest_prompt
 
 LOGGER = logging.getLogger(__name__)
 LAW_QA_PROMPT_VERSION = "law_qa.v2"
@@ -60,6 +71,10 @@ class LawQaAnswerResult:
     warnings: list[str]
     shadow: dict[str, object]
     selected_norms: list[dict[str, object]]
+    telemetry: dict[str, object]
+    budget_status: str
+    budget_warnings: list[str]
+    budget_policy: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -70,6 +85,10 @@ class SuggestTextResult:
     contract_version: str
     warnings: list[str]
     shadow: dict[str, object]
+    telemetry: dict[str, object]
+    budget_status: str
+    budget_warnings: list[str]
+    budget_policy: dict[str, object]
 
 
 def normalize_ai_feedback_issues(raw_issues: list[str] | tuple[str, ...]) -> tuple[str, ...]:
@@ -861,7 +880,7 @@ def _response_diagnostics(response: object) -> str:
     )
 
 
-def _request_law_qa_text(*, client, model_name: str, prompt: str, max_output_tokens: int) -> str:
+def _request_law_qa_text(*, client, model_name: str, prompt: str, max_output_tokens: int) -> tuple[str, AiUsageSummary]:
     attempts = (
         prompt,
         prompt
@@ -877,7 +896,7 @@ def _request_law_qa_text(*, client, model_name: str, prompt: str, max_output_tok
         )
         text = extract_response_text(response)
         if text:
-            return text
+            return text, extract_response_usage(response)
         diagnostic = _response_diagnostics(response)
         diagnostics.append(diagnostic)
         LOGGER.warning(
@@ -1030,8 +1049,12 @@ def _law_qa_metrics_meta(
         "bundle_fingerprint": result.bundle_fingerprint,
         "guard_status": result.guard_status,
         "guard_warnings": list(result.warnings),
+        "budget_status": result.budget_status,
+        "budget_warnings": list(result.budget_warnings),
+        "budget_policy": result.budget_policy,
         "used_sources_count": len(used_sources),
         "selected_norms_count": len(result.selected_norms),
+        **result.telemetry,
         "shadow": result.shadow,
     }
 
@@ -1058,6 +1081,10 @@ def _suggest_metrics_meta(
         "output_preview": mask_text_preview(result.text or "", max_chars=220),
         "guard_status": result.guard_status,
         "guard_warnings": list(result.warnings),
+        "budget_status": result.budget_status,
+        "budget_warnings": list(result.budget_warnings),
+        "budget_policy": result.budget_policy,
+        **result.telemetry,
         "shadow": result.shadow,
     }
 
@@ -1223,9 +1250,10 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
+    request_started_at = monotonic()
     try:
         client = create_openai_client(api_key=api_key, proxy_url=proxy_url)
-        text = _request_law_qa_text(
+        text, usage = _request_law_qa_text(
             client=client,
             model_name=model_name,
             prompt=prompt,
@@ -1237,6 +1265,16 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
 
     limited = text[: payload.max_answer_chars].strip()
+    latency_ms = int((monotonic() - request_started_at) * 1000)
+    telemetry = build_ai_telemetry(
+        model_name=model_name,
+        prompt_text=prompt,
+        output_text=limited,
+        usage=usage,
+        latency_ms=latency_ms,
+        cache_hit=False,
+    )
+    budget_assessment = evaluate_budget(flow="law_qa", telemetry=telemetry)
     used_sources = list(unique_sources(retrieval_result))
     guard_result = guard_law_qa_answer(
         text=limited,
@@ -1255,9 +1293,19 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
         bundle_status=retrieval_result.bundle_health.status,
         bundle_generated_at=retrieval_result.bundle_health.generated_at,
         bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
-        warnings=list(dict.fromkeys(retrieval_result.bundle_health.warnings + guard_result.warning_codes)),
+        warnings=list(
+            dict.fromkeys(
+                retrieval_result.bundle_health.warnings
+                + guard_result.warning_codes
+                + budget_assessment.warnings
+            )
+        ),
         shadow=_shadow_to_dict(shadow),
         selected_norms=_build_law_qa_selected_norms(retrieval_result),
+        telemetry=telemetry_to_meta(telemetry),
+        budget_status=budget_assessment.status,
+        budget_warnings=list(budget_assessment.warnings),
+        budget_policy=policy_to_meta(budget_assessment.policy),
     )
 
 
@@ -1310,7 +1358,18 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
                 shadow_matches=shadow_result.matches,
             )
 
+    prompt_text = build_suggest_prompt(
+        victim_name=payload.victim_name.strip(),
+        org=payload.org.strip(),
+        subject=payload.subject.strip(),
+        event_dt=payload.event_dt.strip(),
+        raw_desc=payload.raw_desc.strip(),
+        complaint_basis=payload.complaint_basis.strip(),
+        main_focus=payload.main_focus.strip(),
+        law_context=law_context,
+    )
     try:
+        request_started_at = monotonic()
         text = suggest_description_with_proxy_fallback(
             api_key=api_key,
             proxy_url=proxy_url,
@@ -1337,14 +1396,28 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=["Модель вернула некорректный формат ответа. Попробуйте еще раз."],
         )
+    latency_ms = int((monotonic() - request_started_at) * 1000)
+    telemetry = build_ai_telemetry(
+        model_name=OPENAI_TEXT_MODEL,
+        prompt_text=prompt_text,
+        output_text=cleaned,
+        usage=AiUsageSummary(),
+        latency_ms=latency_ms,
+        cache_hit=False,
+    )
+    budget_assessment = evaluate_budget(flow="suggest", telemetry=telemetry)
     guard_result = guard_suggest_answer(text=cleaned)
     return SuggestTextResult(
         text=cleaned,
         generation_id=generation_id,
         guard_status=guard_result.status,
         contract_version=LEGAL_PIPELINE_CONTRACT_VERSION,
-        warnings=list(guard_result.warning_codes),
+        warnings=list(dict.fromkeys(guard_result.warning_codes + budget_assessment.warnings)),
         shadow=_shadow_to_dict(shadow),
+        telemetry=telemetry_to_meta(telemetry),
+        budget_status=budget_assessment.status,
+        budget_warnings=list(budget_assessment.warnings),
+        budget_policy=policy_to_meta(budget_assessment.policy),
     )
 
 

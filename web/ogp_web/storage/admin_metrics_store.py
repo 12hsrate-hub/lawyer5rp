@@ -404,7 +404,7 @@ class AdminMetricsStore:
             method="POST",
             status_code=200,
             meta=payload,
-            resource_units=int(payload.get("output_chars") or 0),
+            resource_units=int(payload.get("total_tokens") or payload.get("output_chars") or 0),
         )
 
     def log_ai_feedback(
@@ -728,6 +728,59 @@ class AdminMetricsStore:
             issue_type=issue_type,
             limit=limit,
         )
+
+    def summarize_ai_generation_logs(self, *, flow: str = "", limit: int = 200) -> dict[str, Any]:
+        rows = self.list_ai_generation_logs(flow=flow, limit=limit)
+        input_tokens: list[int] = []
+        output_tokens: list[int] = []
+        total_tokens: list[int] = []
+        latency_values: list[int] = []
+        estimated_cost_total = 0.0
+        estimated_cost_count = 0
+        budget_warning_count = 0
+        models: dict[str, int] = {}
+
+        for row in rows:
+            meta = row.get("meta") or {}
+            model = str(meta.get("model") or "").strip()
+            if model:
+                models[model] = models.get(model, 0) + 1
+            input_value = self._safe_request_count(meta.get("input_tokens"))
+            output_value = self._safe_request_count(meta.get("output_tokens"))
+            total_value = self._safe_request_count(meta.get("total_tokens"))
+            latency_value = self._safe_request_count(meta.get("latency_ms"))
+            if input_value:
+                input_tokens.append(input_value)
+            if output_value:
+                output_tokens.append(output_value)
+            if total_value:
+                total_tokens.append(total_value)
+            if latency_value:
+                latency_values.append(latency_value)
+            cost_value = meta.get("estimated_cost_usd")
+            try:
+                if cost_value not in (None, ""):
+                    estimated_cost_total += float(cost_value)
+                    estimated_cost_count += 1
+            except (TypeError, ValueError):
+                pass
+            warnings = meta.get("budget_warnings") or ()
+            if isinstance(warnings, list) and warnings:
+                budget_warning_count += 1
+
+        return {
+            "total_generations": len(rows),
+            "models": models,
+            "input_tokens_total": sum(input_tokens),
+            "output_tokens_total": sum(output_tokens),
+            "total_tokens_total": sum(total_tokens),
+            "input_tokens_p50": self._percentile(input_tokens, 0.5),
+            "total_tokens_p95": self._percentile(total_tokens, 0.95),
+            "latency_ms_p50": self._percentile(latency_values, 0.5),
+            "estimated_cost_total_usd": round(estimated_cost_total, 6),
+            "estimated_cost_samples": estimated_cost_count,
+            "budget_warning_count": budget_warning_count,
+        }
 
     def _sort_users(self, users_with_metrics: list[dict[str, Any]], *, user_sort: str = "complaints") -> None:
         normalized_sort = str(user_sort or "complaints").strip().lower()

@@ -682,6 +682,16 @@ class WebApiTests(unittest.TestCase):
                 "bundle_fingerprint": "abc123",
                 "warnings": [],
                 "shadow": {"enabled": False, "profile": "", "diverged": False, "overlap_count": 0},
+                "telemetry": {
+                    "model": "gpt-5.4",
+                    "input_tokens": 120,
+                    "output_tokens": 40,
+                    "total_tokens": 160,
+                    "estimated_cost_usd": 0.0009,
+                },
+                "budget_status": "ok",
+                "budget_warnings": [],
+                "budget_policy": {"flow": "law_qa"},
                 "selected_norms": [
                     {
                         "source_url": "https://laws.example/base",
@@ -759,6 +769,8 @@ class WebApiTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["flow"], "law_qa")
         self.assertEqual(payload["issue_type"], "wrong_law")
+        self.assertIn("summary", payload)
+        self.assertEqual(payload["summary"]["total_generations"], 1)
         self.assertTrue(any(item["meta"]["generation_id"] == "gen_admin_1" for item in payload["generations"]))
         self.assertTrue(any(item["meta"]["generation_id"] == "gen_admin_1" for item in payload["feedback"]))
 

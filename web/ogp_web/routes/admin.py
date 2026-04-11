@@ -399,6 +399,7 @@ async def admin_ai_pipeline_data(
         "flow": normalized_flow,
         "issue_type": normalized_issue_type,
         "limit": limit,
+        "summary": metrics_store.summarize_ai_generation_logs(flow=normalized_flow, limit=min(limit * 4, 500)),
         "generations": metrics_store.list_ai_generation_logs(flow=normalized_flow, limit=limit),
         "feedback": metrics_store.list_ai_feedback(
             flow=normalized_flow,
