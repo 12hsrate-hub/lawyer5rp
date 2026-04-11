@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -101,6 +102,97 @@ def extract_metric_value(summary: dict[str, Any], metric_name: str, nested_key: 
     return None
 
 
+def _coerce_float(value: Any) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    try:
+        return float(normalized)
+    except ValueError:
+        return None
+
+
+def _percentile(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(float(value) for value in values)
+    if len(ordered) == 1:
+        return ordered[0]
+    rank = max(0, min(len(ordered) - 1, round((percentile / 100.0) * (len(ordered) - 1))))
+    return ordered[rank]
+
+
+def summarize_server_metrics_csv(csv_path: str | Path) -> dict[str, Any]:
+    path = Path(csv_path)
+    if not path.exists():
+        return {
+            "artifact": str(path),
+            "sample_count": 0,
+        }
+
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+
+    if not rows:
+        return {
+            "artifact": str(path),
+            "sample_count": 0,
+        }
+
+    def _series(field_name: str) -> list[float]:
+        values: list[float] = []
+        for row in rows:
+            value = _coerce_float(row.get(field_name))
+            if value is not None:
+                values.append(value)
+        return values
+
+    cpu_values = _series("cpu_percent")
+    memory_percent_values = _series("memory_percent")
+    memory_used_values = _series("memory_used_mb")
+    load_1m_values = _series("load_1m")
+    load_5m_values = _series("load_5m")
+    load_15m_values = _series("load_15m")
+    disk_read_values = _series("disk_read_mb")
+    disk_write_values = _series("disk_write_mb")
+    net_sent_values = _series("net_sent_mb")
+    net_recv_values = _series("net_recv_mb")
+    process_count_values = _series("process_count")
+
+    def _delta(values: list[float]) -> float | None:
+        if len(values) < 2:
+            return None
+        return max(0.0, values[-1] - values[0])
+
+    def _max(values: list[float]) -> float | None:
+        return max(values) if values else None
+
+    def _avg(values: list[float]) -> float | None:
+        return (sum(values) / len(values)) if values else None
+
+    return {
+        "artifact": str(path),
+        "sample_count": len(rows),
+        "start_utc": rows[0].get("timestamp_utc"),
+        "end_utc": rows[-1].get("timestamp_utc"),
+        "cpu_avg": _avg(cpu_values),
+        "cpu_peak": _max(cpu_values),
+        "cpu_p95": _percentile(cpu_values, 95),
+        "memory_percent_peak": _max(memory_percent_values),
+        "memory_used_mb_peak": _max(memory_used_values),
+        "load_1m_peak": _max(load_1m_values),
+        "load_5m_peak": _max(load_5m_values),
+        "load_15m_peak": _max(load_15m_values),
+        "disk_read_mb_delta": _delta(disk_read_values),
+        "disk_write_mb_delta": _delta(disk_write_values),
+        "net_sent_mb_delta": _delta(net_sent_values),
+        "net_recv_mb_delta": _delta(net_recv_values),
+        "process_count_peak": _max(process_count_values),
+    }
+
+
 def summarize_profile_run(
     summary: dict[str, Any],
     *,
@@ -169,6 +261,7 @@ def build_parallel_summary(
     base_url: str,
     duration: str,
     artifacts_root: str | Path,
+    server_metrics_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     failing_profiles: list[str] = []
     for item in profile_runs:
@@ -186,6 +279,7 @@ def build_parallel_summary(
         "all_sla_pass": not failing_profiles,
         "failing_profiles": failing_profiles,
         "profiles": profile_runs,
+        "server_metrics": server_metrics_summary or {},
     }
 
 
@@ -203,6 +297,24 @@ def build_parallel_report_markdown(summary: dict[str, Any]) -> str:
         "## Per-profile results",
         "",
     ]
+
+    server_metrics = summary.get("server_metrics")
+    if isinstance(server_metrics, dict) and server_metrics.get("sample_count"):
+        lines.extend(
+            [
+                "## Server Telemetry",
+                "",
+                f"- Samples: `{server_metrics.get('sample_count')}`",
+                f"- Window: `{server_metrics.get('start_utc')}` -> `{server_metrics.get('end_utc')}`",
+                f"- CPU avg / p95 / peak: `{server_metrics.get('cpu_avg')}` / `{server_metrics.get('cpu_p95')}` / `{server_metrics.get('cpu_peak')}`",
+                f"- Memory peak: `{server_metrics.get('memory_percent_peak')}`% / `{server_metrics.get('memory_used_mb_peak')}` MB",
+                f"- Load 1m peak: `{server_metrics.get('load_1m_peak')}`",
+                f"- Process count peak: `{server_metrics.get('process_count_peak')}`",
+                f"- Disk delta read/write MB: `{server_metrics.get('disk_read_mb_delta')}` / `{server_metrics.get('disk_write_mb_delta')}`",
+                f"- Network delta recv/sent MB: `{server_metrics.get('net_recv_mb_delta')}` / `{server_metrics.get('net_sent_mb_delta')}`",
+                "",
+            ]
+        )
 
     for item in summary.get("profiles", []):
         if not isinstance(item, dict):
@@ -238,6 +350,7 @@ def build_report_markdown(
     duration: str,
     base_url: str,
     run_id: str,
+    server_metrics_summary: dict[str, Any] | None = None,
 ) -> str:
     normalized_profile = normalize_profile_name(profile)
     normalized_vus = normalize_vus(vus)
@@ -272,4 +385,25 @@ def build_report_markdown(
         "",
         "- `summary.json` contains the full k6 output for this run.",
     ]
+    if server_metrics_summary and server_metrics_summary.get("sample_count"):
+        lines.extend(
+            [
+                "",
+                "## Server Telemetry",
+                "",
+                f"- Samples: `{server_metrics_summary.get('sample_count')}`",
+                f"- Window: `{server_metrics_summary.get('start_utc')}` -> `{server_metrics_summary.get('end_utc')}`",
+                f"- CPU avg / p95 / peak: `{server_metrics_summary.get('cpu_avg')}` / `{server_metrics_summary.get('cpu_p95')}` / `{server_metrics_summary.get('cpu_peak')}`",
+                f"- Memory peak: `{server_metrics_summary.get('memory_percent_peak')}`% / `{server_metrics_summary.get('memory_used_mb_peak')}` MB",
+                f"- Load 1m peak: `{server_metrics_summary.get('load_1m_peak')}`",
+                f"- Process count peak: `{server_metrics_summary.get('process_count_peak')}`",
+                f"- Disk delta read/write MB: `{server_metrics_summary.get('disk_read_mb_delta')}` / `{server_metrics_summary.get('disk_write_mb_delta')}`",
+                f"- Network delta recv/sent MB: `{server_metrics_summary.get('net_recv_mb_delta')}` / `{server_metrics_summary.get('net_sent_mb_delta')}`",
+                "",
+                "## App / Server Correlation",
+                "",
+                f"- `http_req_duration p95`: `{p95}` vs `cpu_peak`: `{server_metrics_summary.get('cpu_peak')}`",
+                f"- `suggest_overload count`: `{overload_count}` vs `process_count_peak`: `{server_metrics_summary.get('process_count_peak')}`",
+            ]
+        )
     return "\n".join(lines).strip() + "\n"

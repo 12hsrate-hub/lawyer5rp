@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -33,6 +34,7 @@ from load.suggest_load_support import (
     normalize_profile_name,
     normalize_vus,
     summarize_profile_run,
+    summarize_server_metrics_csv,
 )
 
 
@@ -70,6 +72,13 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Exit non-zero when any profile breaches thresholds or a child runner fails.",
     )
+    parser.add_argument(
+        "--sample-server",
+        action="store_true",
+        help="Run scripts/server_sampler.py during the full parallel scenario and save parallel/server_metrics.csv",
+    )
+    parser.add_argument("--server-sampler-interval", type=float, default=1.0, help="Server sampler interval in seconds")
+    parser.add_argument("--server-sampler-python", default=sys.executable, help="Python executable for server sampler")
     return parser.parse_args()
 
 
@@ -146,6 +155,25 @@ def _build_child_command(
     return command
 
 
+def _start_server_sampler(
+    *,
+    python_bin: str,
+    artifact_dir: Path,
+    interval: float,
+) -> tuple[subprocess.Popen[str], Path]:
+    output_path = artifact_dir / "server_metrics.csv"
+    command = [
+        python_bin,
+        "scripts/server_sampler.py",
+        "--output",
+        str(output_path),
+        "--interval",
+        str(interval),
+    ]
+    process = subprocess.Popen(command, cwd=REPO_ROOT)
+    return process, output_path
+
+
 def main() -> int:
     args = _parse_args()
     run_id = str(args.run_id or "").strip() or new_run_id()
@@ -163,56 +191,83 @@ def main() -> int:
     threshold_p95_ms = args.threshold_p95_ms or None
     threshold_error_rate = args.threshold_error_rate if args.threshold_error_rate >= 0 else None
     running: list[tuple[str, int, subprocess.Popen[str]]] = []
-
-    for profile in profiles:
-        vus = profile_vus[profile]
-        command = _build_child_command(
-            python_bin=args.python_bin,
-            base_url=args.base_url,
-            profile=profile,
-            vus=vus,
-            duration=args.duration,
-            run_id=run_id,
-            artifacts_root=args.artifacts_root,
-            session_cookie=session_cookie,
-            k6_bin=args.k6_bin,
-            threshold_p95_ms=threshold_p95_ms,
-            threshold_error_rate=threshold_error_rate,
-        )
-        process = subprocess.Popen(command, cwd=REPO_ROOT)
-        running.append((profile, vus, process))
-
     profile_runs: list[dict[str, object]] = []
-    for profile, vus, process in running:
-        exit_code = int(process.wait())
-        artifact_dir = build_artifact_dir(artifacts_root=args.artifacts_root, run_id=run_id, profile=profile)
-        summary_path = artifact_dir / "summary.json"
-        summary = json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.exists() else {}
-        profile_summary = summarize_profile_run(
-            summary,
-            profile=profile,
-            vus=vus,
-            duration=args.duration,
-            base_url=args.base_url,
-            artifact_dir=artifact_dir,
-            exit_code=exit_code,
-        )
-        profile_summary["sla"] = evaluate_sla(
-            profile_summary,
-            threshold_p95_ms=threshold_p95_ms,
-            threshold_error_rate=threshold_error_rate,
-        )
-        profile_runs.append(profile_summary)
+    parallel_artifact_dir = build_parallel_artifact_dir(artifacts_root=args.artifacts_root, run_id=run_id)
+    parallel_artifact_dir.mkdir(parents=True, exist_ok=True)
 
+    sampler_process: subprocess.Popen[str] | None = None
+    sampler_output: Path | None = None
+    if args.sample_server:
+        sampler_process, sampler_output = _start_server_sampler(
+            python_bin=args.server_sampler_python,
+            artifact_dir=parallel_artifact_dir,
+            interval=args.server_sampler_interval,
+        )
+        time.sleep(min(max(args.server_sampler_interval, 0.1), 1.0))
+
+    try:
+        for profile in profiles:
+            vus = profile_vus[profile]
+            command = _build_child_command(
+                python_bin=args.python_bin,
+                base_url=args.base_url,
+                profile=profile,
+                vus=vus,
+                duration=args.duration,
+                run_id=run_id,
+                artifacts_root=args.artifacts_root,
+                session_cookie=session_cookie,
+                k6_bin=args.k6_bin,
+                threshold_p95_ms=threshold_p95_ms,
+                threshold_error_rate=threshold_error_rate,
+            )
+            process = subprocess.Popen(command, cwd=REPO_ROOT)
+            running.append((profile, vus, process))
+
+        for profile, vus, process in running:
+            exit_code = int(process.wait())
+            artifact_dir = build_artifact_dir(artifacts_root=args.artifacts_root, run_id=run_id, profile=profile)
+            summary_path = artifact_dir / "summary.json"
+            summary = json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.exists() else {}
+            profile_summary = summarize_profile_run(
+                summary,
+                profile=profile,
+                vus=vus,
+                duration=args.duration,
+                base_url=args.base_url,
+                artifact_dir=artifact_dir,
+                exit_code=exit_code,
+            )
+            profile_summary["sla"] = evaluate_sla(
+                profile_summary,
+                threshold_p95_ms=threshold_p95_ms,
+                threshold_error_rate=threshold_error_rate,
+            )
+            profile_runs.append(profile_summary)
+    finally:
+        if sampler_process is not None:
+            sampler_process.terminate()
+            try:
+                sampler_process.wait(timeout=10.0)
+            except subprocess.TimeoutExpired:
+                sampler_process.kill()
+                sampler_process.wait(timeout=5.0)
+
+    server_metrics_summary: dict[str, object] | None = None
+    if sampler_output is not None:
+        server_metrics_summary = summarize_server_metrics_csv(sampler_output)
+        (parallel_artifact_dir / "server_metrics_summary.json").write_text(
+            json.dumps(server_metrics_summary, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
     consolidated = build_parallel_summary(
         run_id=run_id,
         profile_runs=profile_runs,
         base_url=args.base_url,
         duration=args.duration,
         artifacts_root=args.artifacts_root,
+        server_metrics_summary=server_metrics_summary,
     )
-    parallel_artifact_dir = build_parallel_artifact_dir(artifacts_root=args.artifacts_root, run_id=run_id)
-    parallel_artifact_dir.mkdir(parents=True, exist_ok=True)
     (parallel_artifact_dir / "summary.json").write_text(
         json.dumps(consolidated, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -231,6 +286,8 @@ def main() -> int:
                 "base_url": args.base_url.rstrip("/"),
                 "artifacts_root": args.artifacts_root,
                 "fail_on_sla": bool(args.fail_on_sla),
+                "sample_server": bool(args.sample_server),
+                "server_sampler_interval": float(args.server_sampler_interval),
             },
             ensure_ascii=False,
             indent=2,

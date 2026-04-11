@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -13,6 +15,7 @@ from load.suggest_load_support import (
     evaluate_sla,
     normalize_profile_name,
     normalize_vus,
+    summarize_server_metrics_csv,
     summarize_profile_run,
 )
 
@@ -78,6 +81,111 @@ class LoadSupportTests(unittest.TestCase):
         self.assertIn("`456.7`", report)
         self.assertIn("`120`", report)
 
+    def test_summarize_server_metrics_csv_computes_peaks_and_deltas(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            csv_path = Path(tmp_dir) / "server_metrics.csv"
+            with csv_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(
+                    handle,
+                    fieldnames=[
+                        "timestamp_utc",
+                        "cpu_percent",
+                        "memory_percent",
+                        "memory_used_mb",
+                        "load_1m",
+                        "load_5m",
+                        "load_15m",
+                        "disk_read_mb",
+                        "disk_write_mb",
+                        "net_sent_mb",
+                        "net_recv_mb",
+                        "process_count",
+                    ],
+                )
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "timestamp_utc": "2026-04-12T10:00:00Z",
+                        "cpu_percent": "10",
+                        "memory_percent": "50",
+                        "memory_used_mb": "1024",
+                        "load_1m": "0.50",
+                        "load_5m": "0.40",
+                        "load_15m": "0.30",
+                        "disk_read_mb": "100",
+                        "disk_write_mb": "200",
+                        "net_sent_mb": "300",
+                        "net_recv_mb": "400",
+                        "process_count": "120",
+                    }
+                )
+                writer.writerow(
+                    {
+                        "timestamp_utc": "2026-04-12T10:00:02Z",
+                        "cpu_percent": "90",
+                        "memory_percent": "70",
+                        "memory_used_mb": "1536",
+                        "load_1m": "1.50",
+                        "load_5m": "1.20",
+                        "load_15m": "0.90",
+                        "disk_read_mb": "140",
+                        "disk_write_mb": "260",
+                        "net_sent_mb": "360",
+                        "net_recv_mb": "470",
+                        "process_count": "180",
+                    }
+                )
+
+            summary = summarize_server_metrics_csv(csv_path)
+
+        self.assertEqual(summary["sample_count"], 2)
+        self.assertEqual(summary["cpu_peak"], 90.0)
+        self.assertEqual(summary["memory_percent_peak"], 70.0)
+        self.assertEqual(summary["disk_read_mb_delta"], 40.0)
+        self.assertEqual(summary["net_recv_mb_delta"], 70.0)
+        self.assertEqual(summary["process_count_peak"], 180.0)
+
+    def test_build_report_markdown_includes_server_metrics_when_present(self):
+        summary = {
+            "metrics": {
+                "http_req_duration": {"values": {"avg": 123.4, "p(95)": 456.7, "p(99)": 789.0}},
+                "http_req_failed": {"values": {"rate": 0.02}},
+                "suggest_ok": {"values": {"count": 120}},
+                "suggest_overload": {"values": {"count": 4}},
+                "suggest_error": {"values": {"count": 1}},
+            }
+        }
+        server_metrics = {
+            "sample_count": 3,
+            "start_utc": "2026-04-12T10:00:00Z",
+            "end_utc": "2026-04-12T10:00:03Z",
+            "cpu_avg": 40.0,
+            "cpu_p95": 80.0,
+            "cpu_peak": 85.0,
+            "memory_percent_peak": 72.0,
+            "memory_used_mb_peak": 2048.0,
+            "load_1m_peak": 1.5,
+            "process_count_peak": 220.0,
+            "disk_read_mb_delta": 50.0,
+            "disk_write_mb_delta": 20.0,
+            "net_recv_mb_delta": 100.0,
+            "net_sent_mb_delta": 60.0,
+        }
+
+        report = build_report_markdown(
+            summary,
+            profile="mid",
+            vus=10,
+            duration="1m",
+            base_url="https://lawyer5rp.online",
+            run_id="run123",
+            server_metrics_summary=server_metrics,
+        )
+
+        self.assertIn("Server Telemetry", report)
+        self.assertIn("App / Server Correlation", report)
+        self.assertIn("`85.0`", report)
+
     def test_default_profile_vus_map_uses_recommended_tiers(self):
         mapping = default_profile_vus_map(["short", "mid", "long"])
 
@@ -121,6 +229,11 @@ class LoadSupportTests(unittest.TestCase):
             base_url="https://lawyer5rp.online",
             duration="1m",
             artifacts_root="artifacts/load",
+            server_metrics_summary={
+                "sample_count": 4,
+                "cpu_peak": 75.0,
+                "memory_percent_peak": 66.0,
+            },
         )
         report = build_parallel_report_markdown(summary)
 
@@ -128,7 +241,9 @@ class LoadSupportTests(unittest.TestCase):
         self.assertTrue(summary["all_sla_pass"])
         self.assertEqual(summary["failing_profiles"], [])
         self.assertEqual(summary["profiles"][0]["profile"], "short")
+        self.assertEqual(summary["server_metrics"]["cpu_peak"], 75.0)
         self.assertIn("Parallel Suggest Load Report", report)
+        self.assertIn("Server Telemetry", report)
         self.assertIn("short (5 VUs)", report)
         self.assertIn("SLA pass", report)
 
