@@ -10,7 +10,12 @@ DEFAULT_SUGGEST_PROFILES = ("short", "mid", "long")
 DEFAULT_CONCURRENCY_TIERS = (5, 10, 30, 50)
 DEFAULT_DURATION = "1m"
 DEFAULT_K6_SCRIPT = Path("load/k6/suggest_load.js")
+DEFAULT_MIXED_K6_SCRIPT = Path("load/k6/mixed_load.js")
 SESSION_COOKIE_NAME = "ogp_web_session"
+DEFAULT_GROUP_B_VUS = 10
+DEFAULT_GROUP_A_VUS = 30
+DEFAULT_COLLATERAL_P95_GROWTH_LIMIT = 0.25
+DEFAULT_COLLATERAL_P99_GROWTH_LIMIT = 0.25
 
 
 def new_run_id() -> str:
@@ -44,6 +49,16 @@ def build_artifact_dir(*, artifacts_root: str | Path, run_id: str, profile: str)
 def build_parallel_artifact_dir(*, artifacts_root: str | Path, run_id: str) -> Path:
     normalized_run_id = str(run_id or "").strip() or new_run_id()
     return Path(artifacts_root).expanduser().resolve() / normalized_run_id / "parallel"
+
+
+def build_mixed_artifact_dir(*, artifacts_root: str | Path, run_id: str) -> Path:
+    normalized_run_id = str(run_id or "").strip() or new_run_id()
+    return Path(artifacts_root).expanduser().resolve() / normalized_run_id / "mixed"
+
+
+def build_mixed_phase_artifact_dir(*, artifacts_root: str | Path, run_id: str, phase: str) -> Path:
+    normalized_phase = str(phase or "").strip() or "phase"
+    return build_mixed_artifact_dir(artifacts_root=artifacts_root, run_id=run_id) / normalized_phase
 
 
 def default_profile_vus_map(profiles: tuple[str, ...] | list[str]) -> dict[str, int]:
@@ -84,6 +99,28 @@ def build_k6_env(
     if threshold_error_rate is not None:
         env["THRESHOLD_ERROR_RATE"] = str(max(0.0, float(threshold_error_rate)))
     return env
+
+
+def build_mixed_k6_env(
+    *,
+    base_url: str,
+    session_cookie: str,
+    group_a_profile: str,
+    group_a_vus: int,
+    group_b_vus: int,
+    duration: str,
+    artifact_dir: str | Path,
+) -> dict[str, str]:
+    summary_path = Path(artifact_dir) / "summary.json"
+    return {
+        "BASE_URL": str(base_url or "").rstrip("/"),
+        "SESSION_COOKIE": str(session_cookie or "").strip(),
+        "GROUP_A_PROFILE": normalize_profile_name(group_a_profile),
+        "GROUP_A_VUS": str(max(0, int(group_a_vus))),
+        "GROUP_B_VUS": str(normalize_vus(group_b_vus)),
+        "DURATION": str(duration or DEFAULT_DURATION).strip() or DEFAULT_DURATION,
+        "SUMMARY_PATH": str(summary_path),
+    }
 
 
 def extract_metric_value(summary: dict[str, Any], metric_name: str, nested_key: str) -> float | int | None:
@@ -222,6 +259,117 @@ def summarize_profile_run(
     }
 
 
+def summarize_mixed_phase_run(
+    summary: dict[str, Any],
+    *,
+    phase: str,
+    group_a_profile: str,
+    group_a_vus: int,
+    group_b_vus: int,
+    duration: str,
+    base_url: str,
+    artifact_dir: str | Path,
+    exit_code: int = 0,
+    server_metrics_summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "phase": str(phase or "").strip() or "phase",
+        "group_a_profile": normalize_profile_name(group_a_profile),
+        "group_a_vus": max(0, int(group_a_vus)),
+        "group_b_vus": normalize_vus(group_b_vus),
+        "duration": str(duration or DEFAULT_DURATION).strip() or DEFAULT_DURATION,
+        "base_url": str(base_url or "").rstrip("/"),
+        "artifact_dir": str(Path(artifact_dir)),
+        "exit_code": int(exit_code),
+        "group_a_p95_ms": extract_metric_value(summary, "group_a_req_duration", "p(95)"),
+        "group_a_p99_ms": extract_metric_value(summary, "group_a_req_duration", "p(99)"),
+        "group_a_avg_ms": extract_metric_value(summary, "group_a_req_duration", "avg"),
+        "group_a_ok": extract_metric_value(summary, "group_a_ok", "count"),
+        "group_a_overload": extract_metric_value(summary, "group_a_overload", "count"),
+        "group_a_error": extract_metric_value(summary, "group_a_error", "count"),
+        "group_b_p95_ms": extract_metric_value(summary, "group_b_req_duration", "p(95)"),
+        "group_b_p99_ms": extract_metric_value(summary, "group_b_req_duration", "p(99)"),
+        "group_b_avg_ms": extract_metric_value(summary, "group_b_req_duration", "avg"),
+        "group_b_fail_rate": extract_metric_value(summary, "group_b_req_failed", "rate"),
+        "group_b_ok": extract_metric_value(summary, "group_b_ok", "count"),
+        "group_b_error": extract_metric_value(summary, "group_b_error", "count"),
+        "server_metrics": server_metrics_summary or {},
+    }
+
+
+def _growth_ratio(baseline_value: Any, mixed_value: Any) -> float | None:
+    baseline = _coerce_float(baseline_value)
+    mixed = _coerce_float(mixed_value)
+    if baseline is None or mixed is None or baseline <= 0:
+        return None
+    return (mixed - baseline) / baseline
+
+
+def evaluate_mixed_impact(
+    baseline_phase: dict[str, Any],
+    mixed_phase: dict[str, Any],
+    *,
+    p95_growth_limit: float | None = DEFAULT_COLLATERAL_P95_GROWTH_LIMIT,
+    p99_growth_limit: float | None = DEFAULT_COLLATERAL_P99_GROWTH_LIMIT,
+) -> dict[str, Any]:
+    breaches: list[str] = []
+    baseline_exit_code = int(baseline_phase.get("exit_code") or 0)
+    mixed_exit_code = int(mixed_phase.get("exit_code") or 0)
+    p95_growth = _growth_ratio(baseline_phase.get("group_b_p95_ms"), mixed_phase.get("group_b_p95_ms"))
+    p99_growth = _growth_ratio(baseline_phase.get("group_b_p99_ms"), mixed_phase.get("group_b_p99_ms"))
+
+    if baseline_exit_code != 0:
+        breaches.append("baseline_exit_nonzero")
+    if mixed_exit_code != 0:
+        breaches.append("mixed_exit_nonzero")
+    if p95_growth_limit is not None:
+        if p95_growth is None:
+            breaches.append("missing_p95_growth")
+        elif p95_growth > float(p95_growth_limit):
+            breaches.append("group_b_p95_growth_exceeded")
+    if p99_growth_limit is not None:
+        if p99_growth is None:
+            breaches.append("missing_p99_growth")
+        elif p99_growth > float(p99_growth_limit):
+            breaches.append("group_b_p99_growth_exceeded")
+
+    return {
+        "pass": not breaches,
+        "breaches": breaches,
+        "p95_growth_ratio": p95_growth,
+        "p99_growth_ratio": p99_growth,
+        "p95_growth_limit": p95_growth_limit,
+        "p99_growth_limit": p99_growth_limit,
+    }
+
+
+def build_mixed_summary(
+    *,
+    run_id: str,
+    base_url: str,
+    duration: str,
+    artifacts_root: str | Path,
+    group_a_profile: str,
+    group_a_vus: int,
+    group_b_vus: int,
+    baseline_phase: dict[str, Any],
+    mixed_phase: dict[str, Any],
+    impact_sla: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "run_id": str(run_id or "").strip(),
+        "base_url": str(base_url or "").rstrip("/"),
+        "duration": str(duration or DEFAULT_DURATION).strip() or DEFAULT_DURATION,
+        "artifacts_root": str(Path(artifacts_root)),
+        "group_a_profile": normalize_profile_name(group_a_profile),
+        "group_a_vus": max(0, int(group_a_vus)),
+        "group_b_vus": normalize_vus(group_b_vus),
+        "baseline_phase": baseline_phase,
+        "mixed_phase": mixed_phase,
+        "impact_sla": impact_sla,
+    }
+
+
 def evaluate_sla(
     profile_summary: dict[str, Any],
     *,
@@ -336,6 +484,66 @@ def build_parallel_report_markdown(summary: dict[str, Any]) -> str:
                 f"- SLA breaches: `{', '.join(sla.get('breaches', [])) or 'none'}`",
                 f"- Artifact dir: `{item.get('artifact_dir')}`",
                 "",
+            ]
+        )
+
+    return "\n".join(lines).strip() + "\n"
+
+
+def build_mixed_report_markdown(summary: dict[str, Any]) -> str:
+    impact_sla = summary.get("impact_sla") if isinstance(summary.get("impact_sla"), dict) else {}
+    baseline_phase = summary.get("baseline_phase") if isinstance(summary.get("baseline_phase"), dict) else {}
+    mixed_phase = summary.get("mixed_phase") if isinstance(summary.get("mixed_phase"), dict) else {}
+    lines = [
+        "# Mixed Load Impact Report",
+        "",
+        f"- Run ID: `{summary.get('run_id')}`",
+        f"- Base URL: `{summary.get('base_url')}`",
+        f"- Duration: `{summary.get('duration')}`",
+        f"- Group A profile / VUs: `{summary.get('group_a_profile')}` / `{summary.get('group_a_vus')}`",
+        f"- Group B VUs: `{summary.get('group_b_vus')}`",
+        f"- Impact SLA pass: `{impact_sla.get('pass')}`",
+        f"- Impact breaches: `{', '.join(impact_sla.get('breaches', [])) or 'none'}`",
+        "",
+        "## Group B Baseline",
+        "",
+        f"- `p95`: `{baseline_phase.get('group_b_p95_ms')}`",
+        f"- `p99`: `{baseline_phase.get('group_b_p99_ms')}`",
+        f"- `avg`: `{baseline_phase.get('group_b_avg_ms')}`",
+        f"- `fail_rate`: `{baseline_phase.get('group_b_fail_rate')}`",
+        f"- Artifact dir: `{baseline_phase.get('artifact_dir')}`",
+        "",
+        "## Mixed Run",
+        "",
+        f"- Group A `p95`: `{mixed_phase.get('group_a_p95_ms')}`",
+        f"- Group A `p99`: `{mixed_phase.get('group_a_p99_ms')}`",
+        f"- Group A `suggest_overload`: `{mixed_phase.get('group_a_overload')}`",
+        f"- Group B `p95`: `{mixed_phase.get('group_b_p95_ms')}`",
+        f"- Group B `p99`: `{mixed_phase.get('group_b_p99_ms')}`",
+        f"- Group B `avg`: `{mixed_phase.get('group_b_avg_ms')}`",
+        f"- Group B `fail_rate`: `{mixed_phase.get('group_b_fail_rate')}`",
+        f"- Artifact dir: `{mixed_phase.get('artifact_dir')}`",
+        "",
+        "## Collateral Impact",
+        "",
+        f"- Group B `p95` growth ratio: `{impact_sla.get('p95_growth_ratio')}`",
+        f"- Group B `p99` growth ratio: `{impact_sla.get('p99_growth_ratio')}`",
+        f"- Group B `p95` growth limit: `{impact_sla.get('p95_growth_limit')}`",
+        f"- Group B `p99` growth limit: `{impact_sla.get('p99_growth_limit')}`",
+    ]
+
+    baseline_server = baseline_phase.get("server_metrics") if isinstance(baseline_phase.get("server_metrics"), dict) else {}
+    mixed_server = mixed_phase.get("server_metrics") if isinstance(mixed_phase.get("server_metrics"), dict) else {}
+    if baseline_server.get("sample_count") or mixed_server.get("sample_count"):
+        lines.extend(
+            [
+                "",
+                "## Server Telemetry",
+                "",
+                f"- Baseline CPU peak: `{baseline_server.get('cpu_peak')}`",
+                f"- Baseline memory peak: `{baseline_server.get('memory_percent_peak')}`",
+                f"- Mixed CPU peak: `{mixed_server.get('cpu_peak')}`",
+                f"- Mixed memory peak: `{mixed_server.get('memory_percent_peak')}`",
             ]
         )
 
