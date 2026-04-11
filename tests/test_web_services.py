@@ -333,8 +333,10 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 400)
 
     def test_ai_service_suggest_text_wraps_provider_errors(self):
-        original = ai_service.suggest_description_with_proxy_fallback
-        ai_service.suggest_description_with_proxy_fallback = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("timeout"))
+        original = ai_service.suggest_description_with_proxy_fallback_result
+        ai_service.suggest_description_with_proxy_fallback_result = (
+            lambda **kwargs: (_ for _ in ()).throw(RuntimeError("timeout"))
+        )
         try:
             with self.assertRaises(HTTPException) as ctx:
                 ai_service.suggest_text(
@@ -347,22 +349,29 @@ class WebServiceTests(unittest.TestCase):
                     )
                 )
         finally:
-            ai_service.suggest_description_with_proxy_fallback = original
+            ai_service.suggest_description_with_proxy_fallback_result = original
         self.assertEqual(ctx.exception.status_code, 500)
 
     def test_ai_service_suggest_text_passes_optional_focus_fields(self):
         captured: dict[str, str] = {}
-        original = ai_service.suggest_description_with_proxy_fallback
+        original = ai_service.suggest_description_with_proxy_fallback_result
         original_build_context = ai_service._build_suggest_law_context
 
         def fake_suggest(**kwargs):
             captured.update(kwargs)
-            return "ok"
+            return ai_service.TextGenerationResult(
+                text="ok",
+                usage=ai_service.AiUsageSummary(input_tokens=10, output_tokens=5, total_tokens=15),
+                cache_hit=False,
+                attempt_path="direct",
+                attempt_duration_ms=321,
+                route_policy="direct_first",
+            )
 
-        ai_service.suggest_description_with_proxy_fallback = fake_suggest
+        ai_service.suggest_description_with_proxy_fallback_result = fake_suggest
         ai_service._build_suggest_law_context = lambda **kwargs: "Источник: https://laws.example\nНорма: Статья 20"
         try:
-            text = ai_service.suggest_text(
+            result = ai_service.suggest_text_details(
                 SuggestPayload(
                     victim_name="Victim",
                     org="LSPD",
@@ -375,23 +384,32 @@ class WebServiceTests(unittest.TestCase):
                 server_code="blackberry",
             )
         finally:
-            ai_service.suggest_description_with_proxy_fallback = original
+            ai_service.suggest_description_with_proxy_fallback_result = original
             ai_service._build_suggest_law_context = original_build_context
 
-        self.assertEqual(text, "ok")
+        self.assertEqual(result.text, "ok")
         self.assertEqual(captured["complaint_basis"], "wrongful_article")
         self.assertEqual(captured["main_focus"], "Спорная квалификация")
         self.assertEqual(captured["law_context"], "Источник: https://laws.example\nНорма: Статья 20")
+        self.assertEqual(result.telemetry["attempt_path"], "direct")
+        self.assertEqual(result.telemetry["attempt_duration_ms"], 321)
+        self.assertEqual(result.telemetry["route_policy"], "direct_first")
+        self.assertEqual(result.telemetry["usage_source"], "actual")
 
     def test_suggest_text_details_records_stage_timings_in_metrics_meta(self):
-        original_suggest = ai_service.suggest_description_with_proxy_fallback
+        original_suggest = ai_service.suggest_description_with_proxy_fallback_result
         original_build_context = ai_service._build_suggest_law_context
         original_monotonic = ai_service.monotonic
         ticks = iter((100.0, 100.125, 100.250, 100.500, 100.750, 101.000))
 
         ai_service._build_suggest_law_context = lambda **kwargs: "Источник: https://laws.example\nНорма: Статья 20"
-        ai_service.suggest_description_with_proxy_fallback = (
-            lambda **kwargs: "Описание фактов по жалобе.\n\nУказан ключевой эпизод задержания."
+        ai_service.suggest_description_with_proxy_fallback_result = lambda **kwargs: ai_service.TextGenerationResult(
+            text="Описание фактов по жалобе.\n\nУказан ключевой эпизод задержания.",
+            usage=ai_service.AiUsageSummary(),
+            cache_hit=False,
+            attempt_path="proxy",
+            attempt_duration_ms=250,
+            route_policy="proxy_first",
         )
         ai_service.monotonic = lambda: next(ticks)
         payload = SuggestPayload(
@@ -406,7 +424,7 @@ class WebServiceTests(unittest.TestCase):
         try:
             result = ai_service.suggest_text_details(payload, server_code="blackberry")
         finally:
-            ai_service.suggest_description_with_proxy_fallback = original_suggest
+            ai_service.suggest_description_with_proxy_fallback_result = original_suggest
             ai_service._build_suggest_law_context = original_build_context
             ai_service.monotonic = original_monotonic
 
@@ -456,20 +474,27 @@ class WebServiceTests(unittest.TestCase):
 
     def test_ai_service_suggest_text_uses_lightweight_query_only_for_retrieval(self):
         captured: dict[str, str] = {}
-        original = ai_service.suggest_description_with_proxy_fallback
+        original = ai_service.suggest_description_with_proxy_fallback_result
         original_build_context = ai_service._build_suggest_law_context
 
         def fake_suggest(**kwargs):
             captured["provider_raw_desc"] = kwargs["raw_desc"]
             captured["provider_law_context"] = kwargs["law_context"]
-            return "Описание фактов по жалобе.\n\nУказан ключевой эпизод задержания."
+            return ai_service.TextGenerationResult(
+                text="Описание фактов по жалобе.\n\nУказан ключевой эпизод задержания.",
+                usage=ai_service.AiUsageSummary(),
+                cache_hit=False,
+                attempt_path="proxy",
+                attempt_duration_ms=180,
+                route_policy="proxy_first",
+            )
 
         def fake_context(**kwargs):
             captured["retrieval_query"] = kwargs["question"]
             return "Источник: https://laws.example\nНорма: Статья 20"
 
         raw_desc = " ".join(f"fact{i}" for i in range(120))
-        ai_service.suggest_description_with_proxy_fallback = fake_suggest
+        ai_service.suggest_description_with_proxy_fallback_result = fake_suggest
         ai_service._build_suggest_law_context = fake_context
         try:
             text = ai_service.suggest_text(
@@ -485,7 +510,7 @@ class WebServiceTests(unittest.TestCase):
                 server_code="blackberry",
             )
         finally:
-            ai_service.suggest_description_with_proxy_fallback = original
+            ai_service.suggest_description_with_proxy_fallback_result = original
             ai_service._build_suggest_law_context = original_build_context
 
         self.assertTrue(text.startswith("Описание фактов"))

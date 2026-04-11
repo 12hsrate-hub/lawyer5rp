@@ -642,8 +642,15 @@ class WebApiTests(unittest.TestCase):
     def test_suggest_endpoint_returns_ai_text(self):
         self._register_verify_and_login("tester", "tester9@example.com")
 
-        original_suggest = ai_service.suggest_description_with_proxy_fallback
-        ai_service.suggest_description_with_proxy_fallback = lambda **kwargs: "AI text"
+        original_suggest = ai_service.suggest_description_with_proxy_fallback_result
+        ai_service.suggest_description_with_proxy_fallback_result = lambda **kwargs: ai_service.TextGenerationResult(
+            text="AI text",
+            usage=ai_service.AiUsageSummary(input_tokens=8, output_tokens=3, total_tokens=11),
+            cache_hit=False,
+            attempt_path="direct",
+            attempt_duration_ms=120,
+            route_policy="direct_first",
+        )
         try:
             response = self.client.post(
                 "/api/ai/suggest",
@@ -658,7 +665,7 @@ class WebApiTests(unittest.TestCase):
                 },
             )
         finally:
-            ai_service.suggest_description_with_proxy_fallback = original_suggest
+            ai_service.suggest_description_with_proxy_fallback_result = original_suggest
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["text"], "AI text")
@@ -690,6 +697,9 @@ class WebApiTests(unittest.TestCase):
                     "budget_status": "ok",
                     "budget_warnings": [],
                     "budget_policy": {"flow": "suggest"},
+                    "retrieval_ms": 10,
+                    "openai_ms": 20,
+                    "total_suggest_ms": 30,
                 },
             )()
 
