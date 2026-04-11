@@ -489,7 +489,7 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(sources, ["https://laws.example/base"])
         self.assertEqual(count, 1)
         self.assertEqual(captured["model"], "gpt-5.4")
-        self.assertIn("Не добавляй никакие реальные законы", captured["input"])
+        self.assertIn("Не используй реальные законы", captured["input"])
         self.assertIn("Право на защиту", captured["input"])
 
     def test_law_qa_retries_when_model_returns_empty_text_once(self):
@@ -734,7 +734,7 @@ class WebServiceTests(unittest.TestCase):
         )
         self.assertIn("неверную предпосылку", prompt)
         self.assertIn("опечатками", prompt)
-        self.assertIn("Релевантность подобранных норм низкая", prompt)
+        self.assertIn("Уверенность в подборе норм низкая", prompt)
 
 
     def test_extract_relevant_law_excerpt_uses_hit_window_not_only_document_start(self):
