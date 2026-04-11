@@ -353,12 +353,14 @@ class WebServiceTests(unittest.TestCase):
     def test_ai_service_suggest_text_passes_optional_focus_fields(self):
         captured: dict[str, str] = {}
         original = ai_service.suggest_description_with_proxy_fallback
+        original_build_context = ai_service._build_suggest_law_context
 
         def fake_suggest(**kwargs):
             captured.update(kwargs)
             return "ok"
 
         ai_service.suggest_description_with_proxy_fallback = fake_suggest
+        ai_service._build_suggest_law_context = lambda **kwargs: "Источник: https://laws.example\nНорма: Статья 20"
         try:
             text = ai_service.suggest_text(
                 SuggestPayload(
@@ -369,14 +371,64 @@ class WebServiceTests(unittest.TestCase):
                     raw_desc="Draft",
                     complaint_basis="wrongful_article",
                     main_focus="Спорная квалификация",
-                )
+                ),
+                server_code="blackberry",
             )
         finally:
             ai_service.suggest_description_with_proxy_fallback = original
+            ai_service._build_suggest_law_context = original_build_context
 
         self.assertEqual(text, "ok")
         self.assertEqual(captured["complaint_basis"], "wrongful_article")
         self.assertEqual(captured["main_focus"], "Спорная квалификация")
+        self.assertEqual(captured["law_context"], "Источник: https://laws.example\nНорма: Статья 20")
+
+    def test_build_suggest_law_context_returns_empty_when_retrieval_is_low_confidence(self):
+        original_get_server_config = ai_service.get_server_config
+        original_load_bundle = ai_service.load_law_bundle_chunks
+        original_select_chunks = ai_service._select_law_qa_chunks
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ()
+            law_qa_bundle_path = "law_bundles/blackberry.json"
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service.load_law_bundle_chunks = lambda server_code, bundle_path="": (
+            ai_service._LawChunk(
+                url="https://laws.example/one",
+                document_title="Процессуальный кодекс",
+                article_label="Статья 20",
+                text="Освобождение задержанного.",
+            ),
+        )
+        ai_service._select_law_qa_chunks = lambda chunks, question: (list(chunks), "low")
+        try:
+            context = ai_service._build_suggest_law_context(server_code="blackberry", question="спорный запрос")
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service.load_law_bundle_chunks = original_load_bundle
+            ai_service._select_law_qa_chunks = original_select_chunks
+
+        self.assertEqual(context, "")
+
+    def test_clean_suggest_text_unwraps_code_blocks_and_drops_sources_tail(self):
+        raw = """```text
+Описание фактов по жалобе.
+
+Указан ключевой эпизод задержания.
+```
+
+Источники:
+https://laws.example/article
+"""
+        cleaned = ai_service._clean_suggest_text(raw)
+        self.assertIn("Описание фактов по жалобе.", cleaned)
+        self.assertIn("Указан ключевой эпизод задержания.", cleaned)
+        self.assertNotIn("```", cleaned)
+        self.assertNotIn("Источники", cleaned)
+        self.assertNotIn("https://laws.example/article", cleaned)
 
     def test_ai_service_extract_principal_scan_rejects_bad_model_payload(self):
         original = ai_service.extract_principal_fields_with_proxy_fallback

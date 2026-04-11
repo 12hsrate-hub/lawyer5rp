@@ -280,6 +280,7 @@ def _build_suggest_prompt(
     raw_desc: str,
     complaint_basis: str = "",
     main_focus: str = "",
+    law_context: str = "",
 ) -> str:
     return build_suggest_prompt(
         victim_name=victim_name,
@@ -289,6 +290,7 @@ def _build_suggest_prompt(
         raw_desc=raw_desc,
         complaint_basis=complaint_basis,
         main_focus=main_focus,
+        law_context=law_context,
     )
 
 
@@ -301,6 +303,7 @@ def suggest_description(
     raw_desc: str,
     complaint_basis: str = "",
     main_focus: str = "",
+    law_context: str = "",
 ) -> str:
     prompt = _build_suggest_prompt(
         victim_name=victim_name,
@@ -310,6 +313,7 @@ def suggest_description(
         raw_desc=raw_desc,
         complaint_basis=complaint_basis,
         main_focus=main_focus,
+        law_context=law_context,
     )
     cache = get_ai_cache()
     cache_key = cache.build_key(
@@ -324,6 +328,7 @@ def suggest_description(
             "raw_desc": raw_desc,
             "complaint_basis": complaint_basis,
             "main_focus": main_focus,
+            "law_context": law_context,
         },
     )
     cached = cache.get(cache_key)
@@ -576,6 +581,7 @@ def suggest_description_with_proxy_fallback(
     raw_desc: str,
     complaint_basis: str = "",
     main_focus: str = "",
+    law_context: str = "",
     *,
     status_callback: Callable[[str], None] | None = None,
 ) -> str:
@@ -593,6 +599,7 @@ def suggest_description_with_proxy_fallback(
             raw_desc=raw_desc,
             complaint_basis=complaint_basis,
             main_focus=main_focus,
+            law_context=law_context,
         ),
         status_callback=status_callback,
         direct_status="Подключение к OpenAI без прокси...",

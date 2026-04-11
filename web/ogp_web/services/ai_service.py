@@ -849,6 +849,97 @@ def _request_law_qa_text(*, client, model_name: str, prompt: str, max_output_tok
     )
 
 
+def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: int = 4) -> str:
+    retrieval_query = str(question or "").strip()
+    if not retrieval_query:
+        return ""
+
+    server_config = get_server_config(server_code or DEFAULT_SERVER_CODE)
+    law_sources = [str(item or "").strip() for item in server_config.law_qa_sources if str(item or "").strip()]
+    bundle_path = str(getattr(server_config, "law_qa_bundle_path", "") or "").strip()
+    chunks = list(load_law_bundle_chunks(server_code, bundle_path)) if bundle_path else []
+    if not chunks and law_sources:
+        chunks = list(_build_law_chunk_index_cached(tuple(law_sources)))
+    if not chunks:
+        return ""
+
+    selected, confidence = _select_law_qa_chunks(chunks, retrieval_query)
+    if confidence == "low":
+        return ""
+
+    positive = [(item, _score_law_chunk(item, retrieval_query)) for item in selected]
+    positive = [(item, score) for item, score in positive if score > 0][:max_chunks]
+    if not positive:
+        return ""
+
+    parts: list[str] = []
+    for item, _score in positive:
+        excerpt = _extract_relevant_law_excerpt(item.text, retrieval_query, max_chars=900)
+        if not excerpt:
+            continue
+        parts.append(
+            "\n".join(
+                (
+                    f"Источник: {item.url}",
+                    f"Документ: {item.document_title}",
+                    f"Норма: {item.article_label}",
+                    f"Фрагмент: {excerpt}",
+                )
+            )
+        )
+    return "\n\n".join(parts).strip()
+
+
+def _build_suggest_retrieval_query(payload: SuggestPayload) -> str:
+    return " ".join(
+        part.strip()
+        for part in (
+            payload.complaint_basis,
+            payload.main_focus,
+            payload.org,
+            payload.subject,
+            payload.raw_desc,
+        )
+        if str(part or "").strip()
+    )
+
+
+def _clean_suggest_text(text: str) -> str:
+    normalized = str(text or "").replace("\r\n", "\n").strip()
+    if not normalized:
+        return ""
+
+    normalized = re.sub(r"```(?:[\w+-]+)?\s*([\s\S]*?)```", lambda match: match.group(1).strip(), normalized)
+    normalized = re.sub(
+        r"\n?\s*(?:источники|sources)\s*:\s*[\s\S]*$",
+        "",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+
+    cleaned_lines: list[str] = []
+    for raw_line in normalized.splitlines():
+        line = raw_line.strip()
+        if not line:
+            if cleaned_lines and cleaned_lines[-1] != "":
+                cleaned_lines.append("")
+            continue
+        if re.fullmatch(
+            r"(?i)(?:пункт\s*3|описательная\s+часть\s+жалобы|текст\s+жалобы|вариант\s+текста|готовый\s+текст)",
+            line,
+        ):
+            continue
+        if re.match(r"(?i)^(?:вот|ниже|готовый|обновленный|переписанный)\b.*(?:текст|вариант|пункт\s*3)", line):
+            continue
+        line = re.sub(r"^[-*•]\s+", "", line)
+        line = re.sub(r"^\d+\.\s+", "", line)
+        cleaned_lines.append(line)
+
+    cleaned = "\n".join(cleaned_lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
 def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     question = payload.question.strip()
     if not question:
@@ -914,7 +1005,7 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     return limited, unique_sources, len(chunks)
 
 
-def suggest_text(payload: SuggestPayload) -> str:
+def suggest_text(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> str:
     if not payload.victim_name.strip() or not payload.org.strip() or not payload.subject.strip() or not payload.event_dt.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -928,6 +1019,10 @@ def suggest_text(payload: SuggestPayload) -> str:
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
+    law_context = _build_suggest_law_context(
+        server_code=server_code,
+        question=_build_suggest_retrieval_query(payload),
+    )
 
     try:
         text = suggest_description_with_proxy_fallback(
@@ -940,6 +1035,7 @@ def suggest_text(payload: SuggestPayload) -> str:
             raw_desc=payload.raw_desc.strip(),
             complaint_basis=payload.complaint_basis.strip(),
             main_focus=payload.main_focus.strip(),
+            law_context=law_context,
         )
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
@@ -949,7 +1045,13 @@ def suggest_text(payload: SuggestPayload) -> str:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=["Модель вернула пустой ответ. Попробуйте еще раз."],
         )
-    return text
+    cleaned = _clean_suggest_text(text)
+    if not cleaned:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=["Модель вернула некорректный формат ответа. Попробуйте еще раз."],
+        )
+    return cleaned
 
 
 def extract_principal_scan(payload: PrincipalScanPayload) -> PrincipalScanResult:
