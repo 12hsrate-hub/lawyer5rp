@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+from threading import BoundedSemaphore, Lock
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 
@@ -35,6 +38,51 @@ from ogp_web.storage.user_store import UserStore
 
 
 router = APIRouter(tags=["complaint"])
+
+
+def _env_positive_int(name: str, default: int) -> int:
+    raw = str(os.getenv(name, "") or "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+class SuggestConcurrencyLimiter:
+    def __init__(self, *, max_concurrency: int, retry_after_seconds: int = 3) -> None:
+        self.max_concurrency = max(1, int(max_concurrency or 1))
+        self.retry_after_seconds = max(1, int(retry_after_seconds or 1))
+        self._semaphore = BoundedSemaphore(self.max_concurrency)
+        self._lock = Lock()
+        self._inflight = 0
+
+    def try_acquire(self) -> bool:
+        if not self._semaphore.acquire(blocking=False):
+            return False
+        with self._lock:
+            self._inflight += 1
+        return True
+
+    def release(self) -> None:
+        with self._lock:
+            if self._inflight <= 0:
+                return
+            self._inflight -= 1
+        self._semaphore.release()
+
+    @property
+    def inflight(self) -> int:
+        with self._lock:
+            return self._inflight
+
+
+SUGGEST_CONCURRENCY_LIMITER = SuggestConcurrencyLimiter(
+    max_concurrency=_env_positive_int("OGP_SUGGEST_MAX_CONCURRENCY", 4),
+    retry_after_seconds=_env_positive_int("OGP_SUGGEST_RETRY_AFTER_SECONDS", 3),
+)
 
 
 def _server_config_for_user(store: UserStore, user: AuthUser):
@@ -184,7 +232,34 @@ async def suggest(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> SuggestResponse:
     _validate_server_payload(store, user, org=payload.org, complaint_basis=payload.complaint_basis)
-    result = suggest_text_details(payload, server_code=user.server_code)
+    acquired = SUGGEST_CONCURRENCY_LIMITER.try_acquire()
+    if not acquired:
+        retry_after = str(SUGGEST_CONCURRENCY_LIMITER.retry_after_seconds)
+        metrics_store.log_event(
+            event_type="ai_suggest_overload",
+            username=user.username,
+            server_code=user.server_code,
+            path="/api/ai/suggest",
+            method="POST",
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            meta={
+                "server_code": user.server_code,
+                "complaint_basis": payload.complaint_basis,
+                "main_focus": payload.main_focus,
+                "retry_after_seconds": SUGGEST_CONCURRENCY_LIMITER.retry_after_seconds,
+                "inflight": SUGGEST_CONCURRENCY_LIMITER.inflight,
+                "max_concurrency": SUGGEST_CONCURRENCY_LIMITER.max_concurrency,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=["Сервис AI suggest временно перегружен. Повторите попытку через несколько секунд."],
+            headers={"Retry-After": retry_after},
+        )
+    try:
+        result = await run_in_threadpool(suggest_text_details, payload, server_code=user.server_code)
+    finally:
+        SUGGEST_CONCURRENCY_LIMITER.release()
     metrics_store.log_event(
         event_type="ai_suggest",
         username=user.username,
