@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -31,6 +32,7 @@ from load.suggest_load_support import (
     new_run_id,
     normalize_profile_name,
     normalize_vus,
+    summarize_server_metrics_csv,
 )
 
 
@@ -48,6 +50,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--k6-bin", default="k6", help="Path to k6 binary")
     parser.add_argument("--threshold-p95-ms", type=int, default=0, help="Optional k6 p95 threshold in ms")
     parser.add_argument("--threshold-error-rate", type=float, default=-1.0, help="Optional k6 failure rate threshold")
+    parser.add_argument(
+        "--sample-server",
+        action="store_true",
+        help="Run scripts/server_sampler.py during the load test and save server_metrics.csv",
+    )
+    parser.add_argument("--server-sampler-interval", type=float, default=1.0, help="Server sampler interval in seconds")
+    parser.add_argument("--server-sampler-python", default=sys.executable, help="Python executable for server sampler")
     return parser.parse_args()
 
 
@@ -64,6 +73,25 @@ def _login_for_session_cookie(*, base_url: str, username: str, password: str) ->
     if not cookie:
         raise RuntimeError(f"Login succeeded but {SESSION_COOKIE_NAME!r} cookie was not returned.")
     return cookie
+
+
+def _start_server_sampler(
+    *,
+    python_bin: str,
+    artifact_dir: Path,
+    interval: float,
+) -> tuple[subprocess.Popen[str], Path]:
+    output_path = artifact_dir / "server_metrics.csv"
+    command = [
+        python_bin,
+        "scripts/server_sampler.py",
+        "--output",
+        str(output_path),
+        "--interval",
+        str(interval),
+    ]
+    process = subprocess.Popen(command, cwd=REPO_ROOT)
+    return process, output_path
 
 
 def main() -> int:
@@ -104,20 +132,48 @@ def main() -> int:
         "base_url": args.base_url.rstrip("/"),
         "artifact_dir": str(artifact_dir),
         "k6_script": str(DEFAULT_K6_SCRIPT),
+        "sample_server": bool(args.sample_server),
+        "server_sampler_interval": float(args.server_sampler_interval),
     }
     (artifact_dir / "run_config.json").write_text(
         json.dumps(run_config, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
 
+    sampler_process: subprocess.Popen[str] | None = None
+    sampler_output: Path | None = None
+    if args.sample_server:
+        sampler_process, sampler_output = _start_server_sampler(
+            python_bin=args.server_sampler_python,
+            artifact_dir=artifact_dir,
+            interval=args.server_sampler_interval,
+        )
+        time.sleep(min(max(args.server_sampler_interval, 0.1), 1.0))
+
     command = [
         args.k6_bin,
         "run",
         str(DEFAULT_K6_SCRIPT),
     ]
-    completed = subprocess.run(command, cwd=REPO_ROOT, env=env, check=False)
+    try:
+        completed = subprocess.run(command, cwd=REPO_ROOT, env=env, check=False)
+    finally:
+        if sampler_process is not None:
+            sampler_process.terminate()
+            try:
+                sampler_process.wait(timeout=10.0)
+            except subprocess.TimeoutExpired:
+                sampler_process.kill()
+                sampler_process.wait(timeout=5.0)
 
     summary_path = artifact_dir / "summary.json"
+    server_metrics_summary: dict[str, object] | None = None
+    if sampler_output is not None:
+        server_metrics_summary = summarize_server_metrics_csv(sampler_output)
+        (artifact_dir / "server_metrics_summary.json").write_text(
+            json.dumps(server_metrics_summary, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
     if summary_path.exists():
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
         report = build_report_markdown(
@@ -127,6 +183,7 @@ def main() -> int:
             duration=args.duration,
             base_url=args.base_url.rstrip("/"),
             run_id=run_id,
+            server_metrics_summary=server_metrics_summary,
         )
         (artifact_dir / "report.md").write_text(report, encoding="utf-8")
 

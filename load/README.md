@@ -34,6 +34,8 @@ Artifacts include:
 - `summary.json`
 - `report.md`
 - `run_config.json`
+- `server_metrics.csv` when `--sample-server` is enabled
+- `server_metrics_summary.json` when `--sample-server` is enabled
 
 Parallel runs additionally write:
 
@@ -44,6 +46,8 @@ with:
 - `summary.json`
 - `report.md`
 - `run_config.json`
+- `server_metrics.csv` when `--sample-server` is enabled
+- `server_metrics_summary.json` when `--sample-server` is enabled
 
 ## Example
 
@@ -53,6 +57,8 @@ py scripts/run_suggest_load.py `
   --profile short `
   --vus 10 `
   --duration 1m `
+  --sample-server `
+  --server-sampler-interval 1 `
   --username your_user `
   --password your_password
 ```
@@ -78,6 +84,8 @@ py scripts/run_parallel_load.py `
   --profile-vus mid:10 `
   --profile-vus long:30 `
   --duration 1m `
+  --sample-server `
+  --server-sampler-interval 1 `
   --username your_user `
   --password your_password `
   --fail-on-sla `
@@ -95,8 +103,15 @@ py scripts/run_parallel_load.py `
   --profile-vus mid:10 `
   --profile-vus long:30 `
   --duration 45s `
+  --sample-server `
+  --server-sampler-interval 2 `
   --session-cookie $env:OGP_LOAD_SESSION_COOKIE `
   --fail-on-sla `
   --threshold-p95-ms 2500 `
   --threshold-error-rate 0.05
 ```
+
+## Notes on server telemetry
+
+`scripts/server_sampler.py` uses `psutil` and samples the host where the runner executes.
+For remote/app-server telemetry, run the load harness on the same host as the app or adapt the sampler launch for your deployment topology.
