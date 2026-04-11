@@ -665,6 +665,103 @@ class WebApiTests(unittest.TestCase):
         self.assertTrue(response.json()["generation_id"])
         self.assertIn(response.json()["guard_status"], {"pass", "warn"})
 
+    def test_suggest_endpoint_runs_generation_via_threadpool(self):
+        self._register_verify_and_login("tester_suggest_threadpool", "tester_suggest_threadpool@example.com")
+
+        original_run_in_threadpool = complaint_route.run_in_threadpool
+        original_suggest_details = complaint_route.suggest_text_details
+        original_limiter = complaint_route.SUGGEST_CONCURRENCY_LIMITER
+        complaint_route.SUGGEST_CONCURRENCY_LIMITER = complaint_route.SuggestConcurrencyLimiter(max_concurrency=2, retry_after_seconds=5)
+        captured: dict[str, object] = {}
+
+        def fake_suggest_details(payload, *, server_code):
+            captured["server_code"] = server_code
+            return type(
+                "SuggestTextResult",
+                (),
+                {
+                    "text": "AI text",
+                    "generation_id": "gen_suggest_threadpool",
+                    "guard_status": "pass",
+                    "contract_version": "legal_pipeline.v1",
+                    "warnings": [],
+                    "shadow": {"enabled": False, "profile": "", "diverged": False, "overlap_count": 0},
+                    "telemetry": {},
+                    "budget_status": "ok",
+                    "budget_warnings": [],
+                    "budget_policy": {"flow": "suggest"},
+                },
+            )()
+
+        async def fake_run_in_threadpool(func, *args, **kwargs):
+            captured["func"] = func
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+            return func(*args, **kwargs)
+
+        complaint_route.suggest_text_details = fake_suggest_details
+        complaint_route.run_in_threadpool = fake_run_in_threadpool
+        try:
+            response = self.client.post(
+                "/api/ai/suggest",
+                json={
+                    "victim_name": "Victim",
+                    "org": "LSPD",
+                    "subject": "Officer",
+                    "event_dt": "08.04.2026 14:30",
+                    "raw_desc": "Draft",
+                    "complaint_basis": "wrongful_article",
+                    "main_focus": "Спорная квалификация",
+                },
+            )
+        finally:
+            complaint_route.run_in_threadpool = original_run_in_threadpool
+            complaint_route.suggest_text_details = original_suggest_details
+            complaint_route.SUGGEST_CONCURRENCY_LIMITER = original_limiter
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["text"], "AI text")
+        self.assertIs(captured["func"], fake_suggest_details)
+        self.assertEqual(captured["kwargs"]["server_code"], "blackberry")
+        self.assertEqual(captured["server_code"], "blackberry")
+
+    def test_suggest_endpoint_returns_429_when_limiter_is_saturated(self):
+        self._register_verify_and_login("tester_suggest_overload", "tester_suggest_overload@example.com")
+
+        original_limiter = complaint_route.SUGGEST_CONCURRENCY_LIMITER
+        original_suggest_details = complaint_route.suggest_text_details
+        complaint_route.SUGGEST_CONCURRENCY_LIMITER = complaint_route.SuggestConcurrencyLimiter(max_concurrency=1, retry_after_seconds=7)
+        called = {"suggest": False}
+
+        def fake_suggest_details(payload, *, server_code):
+            called["suggest"] = True
+            return original_suggest_details(payload, server_code=server_code)
+
+        complaint_route.suggest_text_details = fake_suggest_details
+        try:
+            self.assertTrue(complaint_route.SUGGEST_CONCURRENCY_LIMITER.try_acquire())
+            response = self.client.post(
+                "/api/ai/suggest",
+                json={
+                    "victim_name": "Victim",
+                    "org": "LSPD",
+                    "subject": "Officer",
+                    "event_dt": "08.04.2026 14:30",
+                    "raw_desc": "Draft",
+                    "complaint_basis": "wrongful_article",
+                    "main_focus": "Спорная квалификация",
+                },
+            )
+        finally:
+            complaint_route.SUGGEST_CONCURRENCY_LIMITER.release()
+            complaint_route.SUGGEST_CONCURRENCY_LIMITER = original_limiter
+            complaint_route.suggest_text_details = original_suggest_details
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.headers.get("Retry-After"), "7")
+        self.assertFalse(called["suggest"])
+        self.assertTrue(any("перегружен" in item.lower() for item in response.json()["detail"]))
+
     def test_law_qa_test_endpoint_returns_text_and_sources(self):
         self._register_verify_and_login("tester", "tester_law@example.com")
 
