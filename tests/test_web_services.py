@@ -383,6 +383,41 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(captured["main_focus"], "Спорная квалификация")
         self.assertEqual(captured["law_context"], "Источник: https://laws.example\nНорма: Статья 20")
 
+    def test_suggest_text_details_records_stage_timings_in_metrics_meta(self):
+        original_suggest = ai_service.suggest_description_with_proxy_fallback
+        original_build_context = ai_service._build_suggest_law_context
+        original_monotonic = ai_service.monotonic
+        ticks = iter((100.0, 100.125, 100.250, 100.500, 100.750, 101.000))
+
+        ai_service._build_suggest_law_context = lambda **kwargs: "Источник: https://laws.example\nНорма: Статья 20"
+        ai_service.suggest_description_with_proxy_fallback = (
+            lambda **kwargs: "Описание фактов по жалобе.\n\nУказан ключевой эпизод задержания."
+        )
+        ai_service.monotonic = lambda: next(ticks)
+        payload = SuggestPayload(
+            victim_name="Victim",
+            org="LSPD",
+            subject="Officer",
+            event_dt="08.04.2026 14:30",
+            raw_desc="Draft",
+            complaint_basis="wrongful_article",
+            main_focus="Нарушение процедуры",
+        )
+        try:
+            result = ai_service.suggest_text_details(payload, server_code="blackberry")
+        finally:
+            ai_service.suggest_description_with_proxy_fallback = original_suggest
+            ai_service._build_suggest_law_context = original_build_context
+            ai_service.monotonic = original_monotonic
+
+        meta = ai_service.build_suggest_metrics_meta(payload=payload, result=result, server_code="blackberry")
+        self.assertEqual(result.retrieval_ms, 125)
+        self.assertEqual(result.openai_ms, 250)
+        self.assertEqual(result.total_suggest_ms, 1000)
+        self.assertEqual(meta["retrieval_ms"], 125)
+        self.assertEqual(meta["openai_ms"], 250)
+        self.assertEqual(meta["total_suggest_ms"], 1000)
+
     def test_build_suggest_law_context_returns_empty_when_retrieval_is_low_confidence(self):
         original_get_server_config = ai_service.get_server_config
         original_load_bundle = ai_service.load_law_bundle_chunks

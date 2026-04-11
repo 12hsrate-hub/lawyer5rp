@@ -89,6 +89,9 @@ class SuggestTextResult:
     budget_status: str
     budget_warnings: list[str]
     budget_policy: dict[str, object]
+    retrieval_ms: int
+    openai_ms: int
+    total_suggest_ms: int
 
 
 def normalize_ai_feedback_issues(raw_issues: list[str] | tuple[str, ...]) -> tuple[str, ...]:
@@ -1084,6 +1087,9 @@ def _suggest_metrics_meta(
         "budget_status": result.budget_status,
         "budget_warnings": list(result.budget_warnings),
         "budget_policy": result.budget_policy,
+        "retrieval_ms": int(result.retrieval_ms or 0),
+        "openai_ms": int(result.openai_ms or 0),
+        "total_suggest_ms": int(result.total_suggest_ms or 0),
         **result.telemetry,
         "shadow": result.shadow,
     }
@@ -1315,6 +1321,7 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
 
 
 def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> SuggestTextResult:
+    total_started_at = monotonic()
     if not payload.victim_name.strip() or not payload.org.strip() or not payload.subject.strip() or not payload.event_dt.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1332,10 +1339,12 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
     server_config = get_server_config(server_code or DEFAULT_SERVER_CODE)
     shadow = build_shadow_comparison(enabled=False, profile="", primary_matches=(), shadow_matches=())
     suggest_query = _build_suggest_retrieval_query(payload)
+    retrieval_started_at = monotonic()
     law_context = _build_suggest_law_context(
         server_code=server_code,
         question=suggest_query,
     )
+    retrieval_ms = int((monotonic() - retrieval_started_at) * 1000)
     if _server_feature_enabled(server_config, "legal_pipeline_shadow"):
         shadow_profile = str(getattr(server_config, "shadow_suggest_profile", "") or "").strip()
         if shadow_profile and shadow_profile != "suggest":
@@ -1369,7 +1378,7 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
         law_context=law_context,
     )
     try:
-        request_started_at = monotonic()
+        openai_started_at = monotonic()
         text = suggest_description_with_proxy_fallback(
             api_key=api_key,
             proxy_url=proxy_url,
@@ -1384,6 +1393,7 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
         )
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
+    openai_ms = int((monotonic() - openai_started_at) * 1000)
 
     if not text:
         raise HTTPException(
@@ -1396,13 +1406,13 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=["Модель вернула некорректный формат ответа. Попробуйте еще раз."],
         )
-    latency_ms = int((monotonic() - request_started_at) * 1000)
+    total_suggest_ms = int((monotonic() - total_started_at) * 1000)
     telemetry = build_ai_telemetry(
         model_name=OPENAI_TEXT_MODEL,
         prompt_text=prompt_text,
         output_text=cleaned,
         usage=AiUsageSummary(),
-        latency_ms=latency_ms,
+        latency_ms=openai_ms,
         cache_hit=False,
     )
     budget_assessment = evaluate_budget(flow="suggest", telemetry=telemetry)
@@ -1418,6 +1428,9 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
         budget_status=budget_assessment.status,
         budget_warnings=list(budget_assessment.warnings),
         budget_policy=policy_to_meta(budget_assessment.policy),
+        retrieval_ms=retrieval_ms,
+        openai_ms=openai_ms,
+        total_suggest_ms=total_suggest_ms,
     )
 
 

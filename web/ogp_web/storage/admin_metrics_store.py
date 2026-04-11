@@ -735,6 +735,9 @@ class AdminMetricsStore:
         output_tokens: list[int] = []
         total_tokens: list[int] = []
         latency_values: list[int] = []
+        retrieval_values: list[int] = []
+        openai_values: list[int] = []
+        total_suggest_values: list[int] = []
         estimated_cost_total = 0.0
         estimated_cost_count = 0
         budget_warning_count = 0
@@ -748,15 +751,24 @@ class AdminMetricsStore:
             input_value = self._safe_request_count(meta.get("input_tokens"))
             output_value = self._safe_request_count(meta.get("output_tokens"))
             total_value = self._safe_request_count(meta.get("total_tokens"))
-            latency_value = self._safe_request_count(meta.get("latency_ms"))
+            latency_value = self._safe_duration(meta.get("latency_ms"))
+            retrieval_value = self._safe_duration(meta.get("retrieval_ms"))
+            openai_value = self._safe_duration(meta.get("openai_ms"))
+            total_suggest_value = self._safe_duration(meta.get("total_suggest_ms"))
             if input_value:
                 input_tokens.append(input_value)
             if output_value:
                 output_tokens.append(output_value)
             if total_value:
                 total_tokens.append(total_value)
-            if latency_value:
+            if latency_value is not None:
                 latency_values.append(latency_value)
+            if retrieval_value is not None:
+                retrieval_values.append(retrieval_value)
+            if openai_value is not None:
+                openai_values.append(openai_value)
+            if total_suggest_value is not None:
+                total_suggest_values.append(total_suggest_value)
             cost_value = meta.get("estimated_cost_usd")
             try:
                 if cost_value not in (None, ""):
@@ -777,6 +789,13 @@ class AdminMetricsStore:
             "input_tokens_p50": self._percentile(input_tokens, 0.5),
             "total_tokens_p95": self._percentile(total_tokens, 0.95),
             "latency_ms_p50": self._percentile(latency_values, 0.5),
+            "latency_ms_p95": self._percentile(latency_values, 0.95),
+            "retrieval_ms_p50": self._percentile(retrieval_values, 0.5),
+            "retrieval_ms_p95": self._percentile(retrieval_values, 0.95),
+            "openai_ms_p50": self._percentile(openai_values, 0.5),
+            "openai_ms_p95": self._percentile(openai_values, 0.95),
+            "total_suggest_ms_p50": self._percentile(total_suggest_values, 0.5),
+            "total_suggest_ms_p95": self._percentile(total_suggest_values, 0.95),
             "estimated_cost_total_usd": round(estimated_cost_total, 6),
             "estimated_cost_samples": estimated_cost_count,
             "budget_warning_count": budget_warning_count,

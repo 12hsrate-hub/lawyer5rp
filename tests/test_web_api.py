@@ -755,7 +755,14 @@ class WebApiTests(unittest.TestCase):
             flow="law_qa",
             generation_id="gen_admin_1",
             path="/api/ai/law-qa-test",
-            meta={"guard_status": "warn", "bundle_status": "fresh"},
+            meta={
+                "guard_status": "warn",
+                "bundle_status": "fresh",
+                "latency_ms": 210,
+                "retrieval_ms": 35,
+                "openai_ms": 210,
+                "total_suggest_ms": 245,
+            },
         )
         self.admin_store.log_ai_feedback(
             username="tester",
@@ -775,6 +782,10 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(payload["issue_type"], "wrong_law")
         self.assertIn("summary", payload)
         self.assertEqual(payload["summary"]["total_generations"], 1)
+        self.assertEqual(payload["summary"]["latency_ms_p50"], 210)
+        self.assertEqual(payload["summary"]["retrieval_ms_p50"], 35)
+        self.assertEqual(payload["summary"]["openai_ms_p95"], 210)
+        self.assertEqual(payload["summary"]["total_suggest_ms_p95"], 245)
         self.assertTrue(any(item["meta"]["generation_id"] == "gen_admin_1" for item in payload["generations"]))
         self.assertTrue(any(item["meta"]["generation_id"] == "gen_admin_1" for item in payload["feedback"]))
 
