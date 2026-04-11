@@ -48,15 +48,45 @@ class _LawHtmlParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self._chunks: list[str] = []
+        self._ignored_tag_depth = 0
 
     @property
     def text(self) -> str:
         merged = " ".join(chunk.strip() for chunk in self._chunks if chunk and chunk.strip())
         return re.sub(r"\s+", " ", merged).strip()
 
+    def handle_starttag(self, tag: str, attrs) -> None:
+        _ = attrs
+        if tag.lower() in {"script", "style", "noscript", "template"}:
+            self._ignored_tag_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in {"script", "style", "noscript", "template"} and self._ignored_tag_depth > 0:
+            self._ignored_tag_depth -= 1
+
     def handle_data(self, data: str) -> None:
+        if self._ignored_tag_depth > 0:
+            return
         if data:
             self._chunks.append(data)
+
+
+def _clean_law_document_text(text: str) -> str:
+    normalized = str(text or "")
+    # XenForo/forum bootstrap noise that should never reach the model.
+    garbage_patterns = (
+        r"XF\.ready\s*\(\s*\(\)\s*=>.*?(?=Статья|\bГлава\b|\bРаздел\b|\bВажно\b|$)",
+        r"XF\.extendObject\s*\(.*?(?=Статья|\bГлава\b|\bРаздел\b|\bВажно\b|$)",
+        r"cookie:\s*\{.*?\}",
+        r"visitorCounts:\s*\{.*?\}",
+        r"jsMt:\s*\{.*?\}",
+        r"short_date_x_minutes:\s*['\"{].*?['\"}]",
+    )
+    for pattern in garbage_patterns:
+        normalized = re.sub(pattern, " ", normalized, flags=re.IGNORECASE | re.DOTALL)
+    normalized = re.sub(r"\b(?:XF|css\.php|keep-alive|pushAppServerKey|publicPushBadgeUrl)\b.*", " ", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
 
 
 def _extract_keywords(question: str) -> set[str]:
@@ -124,7 +154,7 @@ def _fetch_law_documents(source_urls: list[str], *, max_documents: int = 8, max_
                 continue
             parser = _LawHtmlParser()
             parser.feed(response.text)
-            text = parser.text[:max_doc_chars].strip()
+            text = _clean_law_document_text(parser.text)[:max_doc_chars].strip()
             if text:
                 documents.append({"url": current, "text": text})
     return documents

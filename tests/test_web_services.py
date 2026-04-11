@@ -421,6 +421,21 @@ class WebServiceTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 400)
 
+    def test_law_html_parser_skips_script_content(self):
+        parser = ai_service._LawHtmlParser()
+        parser.feed("<html><body><h1>Кодекс</h1><script>XF.ready(() => bad())</script><p>Статья 1 действует.</p></body></html>")
+        self.assertIn("Кодекс", parser.text)
+        self.assertIn("Статья 1 действует.", parser.text)
+        self.assertNotIn("XF.ready", parser.text)
+
+    def test_clean_law_document_text_removes_xenforo_bootstrap_noise(self):
+        raw = "Важно - Кодекс XF.ready(() => { XF.extendObject(true, XF.config, { cookie: { path: '/' } }) short_date_x_minutes: '{minutes}m' }) Статья 5. Право на защиту."
+        cleaned = ai_service._clean_law_document_text(raw)
+        self.assertIn("Важно - Кодекс", cleaned)
+        self.assertIn("Статья 5. Право на защиту.", cleaned)
+        self.assertNotIn("XF.ready", cleaned)
+        self.assertNotIn("short_date_x_minutes", cleaned)
+
 
 if __name__ == "__main__":
     unittest.main()
