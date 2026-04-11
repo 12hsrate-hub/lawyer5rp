@@ -621,7 +621,7 @@ async function resumeActiveTask() {
   } catch (error) {
     clearActiveTask();
     if (isInterruptedTaskError(error)) {
-      showMessage(formatErrorMessage(error, "Фоновая проверка была прервана."));
+      showMessage("");
     } else {
       showErrors(formatErrorMessage(error, "Не удалось завершить фоновую проверку."));
     }
