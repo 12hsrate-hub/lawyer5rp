@@ -407,12 +407,14 @@ class WebServiceTests(unittest.TestCase):
             ai_service._ensure_law_documents_loaded = original
         self.assertEqual(ctx.exception.status_code, 400)
 
-    def test_ai_service_law_qa_rejects_localhost_name(self):
+    def test_ai_service_law_qa_uses_cached_documents_when_catalog_complete(self):
         self.law_qa_store.replace_server_documents(
             "blackberry",
-            [{"title": "Test", "source_url": "https://example.com/law", "content": "адвокат может присутствовать при обыске"}],
+            [{"title": "Test", "source_url": "https://example.com/law", "content": "??????? ????? ?????????????? ??? ??????"}],
         )
+        original_sources = ai_service.get_law_sources
         original_client = ai_service.create_openai_client
+        ai_service.get_law_sources = lambda _server_code: (type("LawSource", (), {"title": "Test", "url": "https://example.com/law"})(),)
         ai_service.create_openai_client = lambda **_kwargs: type(
             "StubClient",
             (),
@@ -420,14 +422,41 @@ class WebServiceTests(unittest.TestCase):
         )()
         try:
             text, used_sources, indexed_documents = ai_service.answer_law_question(
-                LawQaPayload(server_code="blackberry", question="может ли адвокат быть при обыске", max_answer_chars=2000),
+                LawQaPayload(server_code="blackberry", question="????? ?? ??????? ???? ??? ??????", max_answer_chars=2000),
                 self.law_qa_store,
             )
         finally:
+            ai_service.get_law_sources = original_sources
             ai_service.create_openai_client = original_client
         self.assertEqual(text, "stub answer")
         self.assertEqual(indexed_documents, 1)
         self.assertEqual(used_sources, ["https://example.com/law"])
+
+    def test_ai_service_law_qa_retries_missing_sources_and_rejects_partial_cache(self):
+        self.law_qa_store.replace_server_documents(
+            "blackberry",
+            [{"title": "Cached", "source_url": "https://example.com/cached", "content": "????? ? ??????? ????????"}],
+        )
+        original_sources = ai_service.get_law_sources
+        original_fetch = ai_service._fetch_source_text
+        ai_service.get_law_sources = lambda _server_code: (
+            type("LawSource", (), {"title": "Cached", "url": "https://example.com/cached"})(),
+            type("LawSource", (), {"title": "Missing", "url": "https://example.com/missing"})(),
+        )
+        ai_service._fetch_source_text = lambda url, **_kwargs: ""
+        try:
+            with self.assertRaises(HTTPException) as ctx:
+                ai_service.answer_law_question(
+                    LawQaPayload(server_code="blackberry", question="???????? ??????", max_answer_chars=2000),
+                    self.law_qa_store,
+                )
+        finally:
+            ai_service.get_law_sources = original_sources
+            ai_service._fetch_source_text = original_fetch
+        self.assertEqual(ctx.exception.status_code, 502)
+        self.assertIn("?????????", str(ctx.exception.detail[0]).lower())
+
+
 
 
 if __name__ == "__main__":
