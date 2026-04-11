@@ -34,6 +34,8 @@ const actionEmailField = document.getElementById("admin-action-email-field");
 const actionEmailInput = document.getElementById("admin-action-email");
 const actionPasswordField = document.getElementById("admin-action-password-field");
 const actionPasswordInput = document.getElementById("admin-action-password");
+const actionQuotaField = document.getElementById("admin-action-quota-field");
+const actionQuotaInput = document.getElementById("admin-action-quota");
 const actionConfirmButton = document.getElementById("admin-action-confirm");
 const actionCancelButton = document.getElementById("admin-action-cancel");
 
@@ -52,6 +54,7 @@ let adminSearchTimer = null;
 let adminLiveTimer = null;
 let selectedUser = null;
 let pendingAction = null;
+let selectedBulkUsers = new Set();
 const userIndex = new Map();
 
 const userModal = createModalController({
@@ -143,6 +146,11 @@ function describeApiPath(path) {
     [/^\/api\/admin\/users\/[^/]+\/revoke-gka$/, "Администратор снимает у пользователя тип ГКА-ЗГКА."],
     [/^\/api\/admin\/users\/[^/]+\/email$/, "Администратор вручную меняет email пользователя."],
     [/^\/api\/admin\/users\/[^/]+\/reset-password$/, "Администратор вручную задает новый пароль пользователю."],
+    [/^\/api\/admin\/users\/[^/]+\/deactivate$/, "Администратор мягко деактивирует аккаунт пользователя."],
+    [/^\/api\/admin\/users\/[^/]+\/reactivate$/, "Администратор снимает деактивацию аккаунта."],
+    [/^\/api\/admin\/users\/[^/]+\/daily-quota$/, "Администратор задает суточный лимит API для пользователя."],
+    [/^\/api\/admin\/users\/bulk-actions$/, "Администратор запускает массовую операцию по выбранным пользователям."],
+    [/^\/api\/admin\/tasks\/[^/]+$/, "Проверка статуса фоновой задачи админ-операций."],
     [/^\/api\/complaint-draft$/, "Сохранение, загрузка или очистка черновика жалобы пользователя."],
     [/^\/api\/generate$/, "Генерация итоговой жалобы по заполненной форме."],
     [/^\/api\/generate-rehab$/, "Генерация заявления на реабилитацию."],
@@ -192,6 +200,9 @@ function describeEventType(eventType) {
     admin_revoke_gka: "Администратор снял тип ГКА-ЗГКА.",
     admin_update_email: "Администратор изменил email пользователя.",
     admin_reset_password: "Администратор задал новый пароль пользователю.",
+    admin_deactivate_user: "Администратор деактивировал аккаунт пользователя.",
+    admin_reactivate_user: "Администратор снял деактивацию аккаунта.",
+    admin_set_daily_quota: "Администратор обновил суточную квоту API пользователя.",
   };
   return descriptions[normalized] || "Системное событие без дополнительного описания.";
 }
@@ -209,9 +220,11 @@ function resetActionModalFields() {
   if (actionReasonInput) actionReasonInput.value = "";
   if (actionEmailInput) actionEmailInput.value = "";
   if (actionPasswordInput) actionPasswordInput.value = "";
+  if (actionQuotaInput) actionQuotaInput.value = "";
   if (actionReasonField) actionReasonField.hidden = true;
   if (actionEmailField) actionEmailField.hidden = true;
   if (actionPasswordField) actionPasswordField.hidden = true;
+  if (actionQuotaField) actionQuotaField.hidden = true;
   if (actionConfirmButton) actionConfirmButton.textContent = "Подтвердить";
   setStateIdle(actionModalErrors);
 }
@@ -236,11 +249,17 @@ function openActionModal(config) {
   if (actionPasswordField) {
     actionPasswordField.hidden = !config.askPassword;
   }
+  if (actionQuotaField) {
+    actionQuotaField.hidden = !config.askQuota;
+  }
   if (actionEmailInput && config.defaultEmail) {
     actionEmailInput.value = String(config.defaultEmail);
   }
   if (actionReasonInput && config.defaultReason) {
     actionReasonInput.value = String(config.defaultReason);
+  }
+  if (actionQuotaInput && config.defaultQuota !== undefined) {
+    actionQuotaInput.value = String(config.defaultQuota);
   }
   setStateIdle(actionModalErrors);
   actionModal.open();
@@ -257,6 +276,13 @@ function formatNumber(value) {
 
 function renderBadge(text, tone = "neutral") {
   return `<span class="admin-badge admin-badge--${tone}">${escapeHtml(text)}</span>`;
+}
+
+function riskLabel(user) {
+  const riskScore = Number(user.risk_score || 0);
+  if (riskScore >= 4) return renderBadge("Риск: высокий", "danger");
+  if (riskScore >= 2) return renderBadge("Риск: средний", "info");
+  return renderBadge("Риск: низкий", "success-soft");
 }
 
 function renderFilterChip(label, key) {
@@ -523,8 +549,11 @@ function renderUserStatuses(user) {
   const badges = [
     user.email_verified ? renderBadge("Email OK", "success") : renderBadge("Email не подтвержден", "muted"),
     user.access_blocked ? renderBadge("Заблокирован", "danger") : renderBadge("Активен", "success-soft"),
+    user.deactivated_at ? renderBadge("Деактивирован", "danger") : null,
     user.is_tester ? renderBadge("Тестер", "info") : renderBadge("Обычный", "neutral"),
     user.is_gka ? renderBadge("ГКА-ЗГКА", "info") : null,
+    Number(user.api_quota_daily || 0) > 0 ? renderBadge(`Квота/день: ${Number(user.api_quota_daily || 0)}`, "info") : renderBadge("Квота: без лимита", "muted"),
+    riskLabel(user),
   ];
   return `<div class="admin-badge-row">${badges.filter(Boolean).join("")}</div>`;
 }
@@ -563,10 +592,33 @@ function renderUsers(users, userSort = "complaints") {
     <div class="admin-section-toolbar">
       <p class="legal-section__description">Показано пользователей: ${escapeHtml(String(users.length))}. Сортировка: ${escapeHtml(String(userSort))}</p>
     </div>
+    <div class="admin-section-toolbar">
+      <label class="legal-field">
+        <span class="legal-field__label">Массовое действие</span>
+        <select id="admin-bulk-action">
+          <option value="">Выберите действие</option>
+          <option value="verify_email">Подтвердить email</option>
+          <option value="block">Заблокировать</option>
+          <option value="unblock">Разблокировать</option>
+          <option value="grant_tester">Выдать тестера</option>
+          <option value="revoke_tester">Снять тестера</option>
+          <option value="grant_gka">Выдать ГКА-ЗГКА</option>
+          <option value="revoke_gka">Снять ГКА-ЗГКА</option>
+          <option value="deactivate">Деактивировать</option>
+          <option value="reactivate">Реактивировать</option>
+          <option value="set_daily_quota">Установить квоту/день</option>
+        </select>
+      </label>
+      <input id="admin-bulk-reason" type="text" placeholder="Причина (для block/deactivate)">
+      <input id="admin-bulk-quota" type="number" min="0" step="1" placeholder="Квота/день (для quota)">
+      <button type="button" id="admin-bulk-run" class="ghost-button">Запустить в очереди</button>
+      <span id="admin-bulk-status" class="admin-badge admin-badge--muted">Выбрано: ${selectedBulkUsers.size}</span>
+    </div>
     <div class="legal-table-shell">
       <table class="legal-table admin-table">
         <thead>
           <tr>
+            <th><input type="checkbox" id="admin-users-select-all"></th>
             <th>Пользователь</th>
             <th>Статусы</th>
             <th>Активность</th>
@@ -579,6 +631,7 @@ function renderUsers(users, userSort = "complaints") {
             .map(
               (user) => `
                 <tr class="admin-user-row">
+                  <td><input type="checkbox" data-bulk-user="${escapeHtml(user.username || "")}" ${selectedBulkUsers.has(String(user.username || "").toLowerCase()) ? "checked" : ""}></td>
                   <td>
                     <div class="admin-user-cell">
                       <strong class="admin-user-cell__name">${escapeHtml(user.username || "-")}</strong>
@@ -844,6 +897,7 @@ function renderUserModal(user) {
         <button type="button" class="ghost-button" data-verify-email="${escapeHtml(user.username || "")}">Подтвердить email</button>
         <button type="button" class="ghost-button" data-change-email="${escapeHtml(user.username || "")}" data-current-email="${escapeHtml(user.email || "")}">Сменить email</button>
         <button type="button" class="ghost-button" data-reset-password="${escapeHtml(user.username || "")}">Сбросить пароль</button>
+        <button type="button" class="ghost-button" data-set-quota="${escapeHtml(user.username || "")}" data-current-quota="${escapeHtml(String(user.api_quota_daily || 0))}">Квота API/день</button>
         ${
           user.is_tester
             ? `<button type="button" class="ghost-button" data-revoke-tester="${escapeHtml(user.username || "")}">Снять тестера</button>`
@@ -853,6 +907,11 @@ function renderUserModal(user) {
           user.is_gka
             ? `<button type="button" class="ghost-button" data-revoke-gka="${escapeHtml(user.username || "")}">Снять ГКА-ЗГКА</button>`
             : `<button type="button" class="ghost-button" data-grant-gka="${escapeHtml(user.username || "")}">Выдать ГКА-ЗГКА</button>`
+        }
+        ${
+          user.deactivated_at
+            ? `<button type="button" class="ghost-button" data-reactivate-user="${escapeHtml(user.username || "")}">Реактивировать</button>`
+            : `<button type="button" class="ghost-button" data-deactivate-user="${escapeHtml(user.username || "")}">Деактивировать</button>`
         }
         ${
           user.access_blocked
@@ -1034,6 +1093,63 @@ async function performAdminAction(url, successText, body = null) {
   }
 }
 
+async function pollBulkTask(taskId) {
+  const statusHost = document.getElementById("admin-bulk-status");
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const response = await apiFetch(`/api/admin/tasks/${encodeURIComponent(taskId)}`);
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      setStateError(errorsHost, payload.detail || "Не удалось получить статус bulk-задачи.");
+      return;
+    }
+    const progress = payload.progress || {};
+    if (statusHost) {
+      statusHost.textContent = `Bulk: ${payload.status} (${progress.done || 0}/${progress.total || 0})`;
+    }
+    if (payload.status === "finished") {
+      showMessage(`Bulk завершен: ok ${payload.result?.success_count || 0}, ошибок ${payload.result?.failed_count || 0}.`);
+      selectedBulkUsers = new Set();
+      await loadAdminOverview();
+      return;
+    }
+    if (payload.status === "failed") {
+      setStateError(errorsHost, payload.error || "Bulk-задача завершилась ошибкой.");
+      return;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => window.setTimeout(resolve, 1000));
+  }
+  setStateError(errorsHost, "Таймаут ожидания bulk-задачи.");
+}
+
+async function runBulkAction() {
+  const usernames = Array.from(selectedBulkUsers);
+  if (!usernames.length) {
+    setStateError(errorsHost, "Выберите хотя бы одного пользователя для массовой операции.");
+    return;
+  }
+  const action = String(document.getElementById("admin-bulk-action")?.value || "").trim();
+  if (!action) {
+    setStateError(errorsHost, "Выберите массовое действие.");
+    return;
+  }
+  const reason = String(document.getElementById("admin-bulk-reason")?.value || "").trim();
+  const quotaRaw = String(document.getElementById("admin-bulk-quota")?.value || "").trim();
+  const daily_limit = quotaRaw ? Number(quotaRaw) : null;
+
+  const response = await apiFetch("/api/admin/users/bulk-actions", {
+    method: "POST",
+    body: JSON.stringify({ usernames, action, reason, daily_limit, run_async: true }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, payload.detail || "Не удалось запустить bulk-операцию.");
+    return;
+  }
+  showMessage("Bulk-задача добавлена в очередь.");
+  await pollBulkTask(payload.task_id);
+}
+
 async function handleAdminAction(target) {
   const verifyUsername = target.getAttribute("data-verify-email");
   if (verifyUsername) {
@@ -1111,6 +1227,39 @@ async function handleAdminAction(target) {
     return true;
   }
 
+  const deactivateUsername = target.getAttribute("data-deactivate-user");
+  if (deactivateUsername) {
+    openActionModal({
+      action: "deactivate-user",
+      username: deactivateUsername,
+      askReason: true,
+      title: "Деактивация аккаунта",
+      description: `Пользователь ${deactivateUsername} будет деактивирован (soft-delete).`,
+      confirmLabel: "Деактивировать",
+    });
+    return true;
+  }
+
+  const reactivateUsername = target.getAttribute("data-reactivate-user");
+  if (reactivateUsername) {
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(reactivateUsername)}/reactivate`, "Аккаунт реактивирован.");
+    return true;
+  }
+
+  const setQuotaUsername = target.getAttribute("data-set-quota");
+  if (setQuotaUsername) {
+    openActionModal({
+      action: "set-daily-quota",
+      username: setQuotaUsername,
+      askQuota: true,
+      defaultQuota: target.getAttribute("data-current-quota") || "0",
+      title: "Суточная квота API",
+      description: `Установите лимит API запросов в сутки для ${setQuotaUsername} (0 = без лимита).`,
+      confirmLabel: "Сохранить квоту",
+    });
+    return true;
+  }
+
   return false;
 }
 
@@ -1160,6 +1309,28 @@ async function submitPendingAction() {
       { password },
     );
     closeActionModal();
+    return;
+  }
+
+  if (action === "deactivate-user") {
+    const reason = String(actionReasonInput?.value || "").trim();
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/deactivate`, "Аккаунт пользователя деактивирован.", {
+      reason,
+    });
+    closeActionModal();
+    return;
+  }
+
+  if (action === "set-daily-quota") {
+    const quota = Number(actionQuotaInput?.value || 0);
+    if (!Number.isFinite(quota) || quota < 0) {
+      setStateError(actionModalErrors, "Квота должна быть неотрицательным числом.");
+      return;
+    }
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/daily-quota`, "Квота обновлена.", {
+      daily_limit: quota,
+    });
+    closeActionModal();
   }
 }
 
@@ -1172,6 +1343,44 @@ usersHost?.addEventListener("click", async (event) => {
   const openUser = target.getAttribute("data-open-user");
   if (openUser) {
     openUserModal(openUser);
+    return;
+  }
+  if (target.id === "admin-bulk-run") {
+    await runBulkAction();
+    return;
+  }
+  if (target.id === "admin-users-select-all") {
+    const checked = Boolean(target.checked);
+    const checkboxes = Array.from(usersHost.querySelectorAll("input[data-bulk-user]"));
+    checkboxes.forEach((checkbox) => {
+      checkbox.checked = checked;
+      const username = String(checkbox.getAttribute("data-bulk-user") || "").toLowerCase();
+      if (!username) return;
+      if (checked) {
+        selectedBulkUsers.add(username);
+      } else {
+        selectedBulkUsers.delete(username);
+      }
+    });
+    const statusHost = document.getElementById("admin-bulk-status");
+    if (statusHost) statusHost.textContent = `Выбрано: ${selectedBulkUsers.size}`;
+  }
+});
+
+usersHost?.addEventListener("change", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  const username = target.getAttribute("data-bulk-user");
+  if (username) {
+    if (target.checked) {
+      selectedBulkUsers.add(String(username).toLowerCase());
+    } else {
+      selectedBulkUsers.delete(String(username).toLowerCase());
+    }
+    const statusHost = document.getElementById("admin-bulk-status");
+    if (statusHost) statusHost.textContent = `Выбрано: ${selectedBulkUsers.size}`;
   }
 });
 

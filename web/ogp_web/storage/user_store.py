@@ -246,6 +246,9 @@ class UserStore:
                     password_reset_sent_at TEXT,
                     access_blocked_at TEXT,
                     access_blocked_reason TEXT,
+                    deactivated_at TEXT,
+                    deactivated_reason TEXT,
+                    api_quota_daily INTEGER NOT NULL DEFAULT 0,
                     server_code TEXT NOT NULL DEFAULT 'blackberry',
                     is_tester INTEGER NOT NULL DEFAULT 0,
                     is_gka INTEGER NOT NULL DEFAULT 0,
@@ -268,6 +271,9 @@ class UserStore:
                 "password_reset_sent_at": "ALTER TABLE users ADD COLUMN password_reset_sent_at TEXT",
                 "access_blocked_at": "ALTER TABLE users ADD COLUMN access_blocked_at TEXT",
                 "access_blocked_reason": "ALTER TABLE users ADD COLUMN access_blocked_reason TEXT",
+                "deactivated_at": "ALTER TABLE users ADD COLUMN deactivated_at TEXT",
+                "deactivated_reason": "ALTER TABLE users ADD COLUMN deactivated_reason TEXT",
+                "api_quota_daily": "ALTER TABLE users ADD COLUMN api_quota_daily INTEGER NOT NULL DEFAULT 0",
                 "server_code": f"ALTER TABLE users ADD COLUMN server_code TEXT NOT NULL DEFAULT '{DEFAULT_SERVER_CODE}'",
                 "is_tester": "ALTER TABLE users ADD COLUMN is_tester INTEGER NOT NULL DEFAULT 0",
                 "is_gka": "ALTER TABLE users ADD COLUMN is_gka INTEGER NOT NULL DEFAULT 0",
@@ -600,7 +606,7 @@ class UserStore:
         )
         row = self._fetch_user_by_username(
             normalized,
-            "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka",
+            "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
         )
         return dict(row) if row else {}
 
@@ -785,6 +791,9 @@ class UserStore:
                     u.email_verified_at AS email_verified_at,
                     u.access_blocked_at AS access_blocked_at,
                     u.access_blocked_reason AS access_blocked_reason,
+                    u.deactivated_at AS deactivated_at,
+                    u.deactivated_reason AS deactivated_reason,
+                    COALESCE(u.api_quota_daily, 0) AS api_quota_daily,
                     COALESCE(usr.server_code, '{DEFAULT_SERVER_CODE}') AS server_code,
                     COALESCE(usr.is_tester, FALSE) AS is_tester,
                     COALESCE(usr.is_gka, FALSE) AS is_gka
@@ -870,7 +879,7 @@ class UserStore:
                 raise AuthError("Пользователь не найден.")
             row = self._fetch_user_by_username(
                 normalized,
-                "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka",
+                "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
             )
             return dict(row) if row else {}
         from ogp_web.services.user_admin_store_service import admin_mark_email_verified
@@ -893,7 +902,7 @@ class UserStore:
                 raise AuthError("Пользователь не найден.")
             row = self._fetch_user_by_username(
                 normalized,
-                "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka",
+                "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
             )
             return dict(row) if row else {}
         from ogp_web.services.user_admin_store_service import admin_set_access_blocked
@@ -916,7 +925,7 @@ class UserStore:
                 raise AuthError("Пользователь не найден.")
             row = self._fetch_user_by_username(
                 normalized,
-                "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka",
+                "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
             )
             return dict(row) if row else {}
         from ogp_web.services.user_admin_store_service import admin_clear_access_blocked
@@ -958,7 +967,7 @@ class UserStore:
                 raise AuthError("Пользователь не найден.")
             row = self._fetch_user_by_username(
                 normalized,
-                "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka",
+                "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
             )
             return dict(row) if row else {}
         from ogp_web.services.user_admin_store_service import admin_update_email
@@ -990,12 +999,83 @@ class UserStore:
             )
             refreshed = self._fetch_user_by_username(
                 normalized,
-                "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka",
+                "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
             )
             return dict(refreshed) if refreshed else {}
         from ogp_web.services.user_admin_store_service import admin_reset_password
 
         return admin_reset_password(self, username, new_password)
+
+    def admin_deactivate_user(self, username: str, reason: str = "") -> dict[str, Any]:
+        if self.is_postgres_backend:
+            normalized = _normalize_username(username)
+            rowcount = self._pg_execute(
+                """
+                UPDATE users
+                SET deactivated_at = NOW(),
+                    deactivated_reason = %s,
+                    access_blocked_at = COALESCE(access_blocked_at, NOW()),
+                    access_blocked_reason = COALESCE(NULLIF(access_blocked_reason, ''), %s)
+                WHERE username = %s
+                """,
+                (str(reason or "").strip(), str(reason or "").strip(), normalized),
+            )
+            if rowcount <= 0:
+                raise AuthError("Пользователь не найден.")
+            row = self._fetch_user_by_username(
+                normalized,
+                "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
+            )
+            return dict(row) if row else {}
+        from ogp_web.services.user_admin_store_service import admin_deactivate_user
+
+        return admin_deactivate_user(self, username, reason)
+
+    def admin_reactivate_user(self, username: str) -> dict[str, Any]:
+        if self.is_postgres_backend:
+            normalized = _normalize_username(username)
+            rowcount = self._pg_execute(
+                """
+                UPDATE users
+                SET deactivated_at = NULL,
+                    deactivated_reason = NULL
+                WHERE username = %s
+                """,
+                (normalized,),
+            )
+            if rowcount <= 0:
+                raise AuthError("Пользователь не найден.")
+            row = self._fetch_user_by_username(
+                normalized,
+                "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
+            )
+            return dict(row) if row else {}
+        from ogp_web.services.user_admin_store_service import admin_reactivate_user
+
+        return admin_reactivate_user(self, username)
+
+    def admin_set_daily_quota(self, username: str, daily_limit: int) -> dict[str, Any]:
+        if self.is_postgres_backend:
+            normalized = _normalize_username(username)
+            safe_limit = max(0, int(daily_limit or 0))
+            rowcount = self._pg_execute(
+                """
+                UPDATE users
+                SET api_quota_daily = %s
+                WHERE username = %s
+                """,
+                (safe_limit, normalized),
+            )
+            if rowcount <= 0:
+                raise AuthError("Пользователь не найден.")
+            row = self._fetch_user_by_username(
+                normalized,
+                "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
+            )
+            return dict(row) if row else {}
+        from ogp_web.services.user_admin_store_service import admin_set_daily_quota
+
+        return admin_set_daily_quota(self, username, daily_limit)
 
 
 _DEFAULT_USER_STORE: UserStore | None = None

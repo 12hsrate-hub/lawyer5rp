@@ -320,6 +320,9 @@
                 <option value="admin_revoke_gka">admin_revoke_gka</option>
                 <option value="admin_update_email">admin_update_email</option>
                 <option value="admin_reset_password">admin_reset_password</option>
+                <option value="admin_deactivate_user">admin_deactivate_user</option>
+                <option value="admin_reactivate_user">admin_reactivate_user</option>
+                <option value="admin_set_daily_quota">admin_set_daily_quota</option>
               </select>
             </label>
             <label class="legal-field admin-filter-toggle">
@@ -366,6 +369,10 @@
         <label id="admin-action-password-field" class="legal-field" hidden>
           <span class="legal-field__label">Новый пароль</span>
           <input id="admin-action-password" type="text" placeholder="Новый пароль (минимум 10 символов)" autocomplete="off">
+        </label>
+        <label id="admin-action-quota-field" class="legal-field" hidden>
+          <span class="legal-field__label">Квота API в сутки</span>
+          <input id="admin-action-quota" type="number" min="0" step="1" placeholder="0 = без лимита">
         </label>
       </form>
 

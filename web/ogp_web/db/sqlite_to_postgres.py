@@ -170,6 +170,9 @@ class PostgresMigrationTarget:
                 password_reset_sent_at,
                 access_blocked_at,
                 access_blocked_reason,
+                deactivated_at,
+                deactivated_reason,
+                api_quota_daily,
                 CAST(representative_profile AS TEXT) AS representative_profile_json
             FROM users
             """
@@ -187,6 +190,9 @@ class PostgresMigrationTarget:
                 row["password_reset_sent_at"],
                 row["access_blocked_at"],
                 row["access_blocked_reason"],
+                row["deactivated_at"],
+                row["deactivated_reason"],
+                int(row["api_quota_daily"] or 0),
                 _normalize_json_text(row["representative_profile_json"], default={}),
             )
             for row in rows
@@ -210,9 +216,12 @@ class PostgresMigrationTarget:
                 password_reset_sent_at,
                 access_blocked_at,
                 access_blocked_reason,
+                deactivated_at,
+                deactivated_reason,
+                api_quota_daily,
                 representative_profile
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
             ON CONFLICT (username)
             DO UPDATE SET
                 email = EXCLUDED.email,
@@ -226,6 +235,9 @@ class PostgresMigrationTarget:
                 password_reset_sent_at = EXCLUDED.password_reset_sent_at,
                 access_blocked_at = EXCLUDED.access_blocked_at,
                 access_blocked_reason = EXCLUDED.access_blocked_reason,
+                deactivated_at = EXCLUDED.deactivated_at,
+                deactivated_reason = EXCLUDED.deactivated_reason,
+                api_quota_daily = EXCLUDED.api_quota_daily,
                 representative_profile = EXCLUDED.representative_profile
             """,
             (
@@ -241,6 +253,9 @@ class PostgresMigrationTarget:
                 payload["password_reset_sent_at"],
                 payload["access_blocked_at"],
                 payload["access_blocked_reason"],
+                payload["deactivated_at"],
+                payload["deactivated_reason"],
+                int(payload["api_quota_daily"] or 0),
                 payload["representative_profile_json"],
             ),
         )
@@ -595,6 +610,9 @@ def _build_user_payload(row: dict[str, Any]) -> dict[str, Any]:
         "password_reset_sent_at": _normalize_optional_text(row.get("password_reset_sent_at")),
         "access_blocked_at": _normalize_optional_text(row.get("access_blocked_at")),
         "access_blocked_reason": _normalize_optional_text(row.get("access_blocked_reason")),
+        "deactivated_at": _normalize_optional_text(row.get("deactivated_at")),
+        "deactivated_reason": _normalize_optional_text(row.get("deactivated_reason")),
+        "api_quota_daily": max(0, int(row.get("api_quota_daily") or 0)),
         "representative_profile_json": profile_json,
     }
 
