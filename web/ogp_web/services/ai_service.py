@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from functools import lru_cache
 import os
 import re
 import socket
+from dataclasses import dataclass
 from html.parser import HTMLParser
 from ipaddress import ip_address
 from urllib.parse import urlparse
@@ -17,6 +19,24 @@ from shared.ogp_ai import (
     extract_principal_fields_with_proxy_fallback,
     suggest_description_with_proxy_fallback,
 )
+
+
+@dataclass(frozen=True)
+class _LawChunk:
+    url: str
+    document_title: str
+    article_label: str
+    text: str
+
+
+LAW_QA_QUERY_ALIASES: dict[str, tuple[str, ...]] = {
+    "освобождение": ("освободить", "освобождения", "выпустить", "отпустить", "release"),
+    "задержанный": ("задержание", "задержанного", "detention", "detainee", "удержание"),
+    "основания": ("условия", "случаи", "поводы", "когда"),
+    "адвокат": ("защитник", "защита"),
+    "обыск": ("досмотр", "осмотр"),
+    "залог": ("залога", "bail"),
+}
 
 
 def _humanize_ai_exception(exc: Exception) -> str:
@@ -126,9 +146,117 @@ def _clean_law_document_text(text: str) -> str:
 def _extract_keywords(question: str) -> set[str]:
     return {
         token
-        for token in re.findall(r"[a-zA-Zа-яА-Я0-9_]{4,}", question.lower())
+        for token in re.findall(r"\w{4,}", question.lower(), flags=re.UNICODE)
         if token not in {"когда", "если", "или", "тогда", "where", "what", "which", "with"}
     }
+
+
+def _normalize_law_text(text: str) -> str:
+    normalized = str(text or "").lower().replace("ё", "е")
+    normalized = re.sub(r"[^\w\s]+", " ", normalized, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", normalized, flags=re.UNICODE).strip()
+
+
+def _extract_article_numbers(question: str) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            match
+            for match in re.findall(r"(?:article|ст\.?|статья)\s*(\d{1,3})", str(question or ""), flags=re.IGNORECASE)
+            if match
+        )
+    )
+
+
+def _expand_question_terms(question: str) -> set[str]:
+    normalized_question = _normalize_law_text(question)
+    tokens = {
+        token
+        for token in normalized_question.split()
+        if len(token) >= 3 and token not in {"что", "это", "для", "как", "или", "при", "нет"}
+    }
+    expanded = set(tokens)
+    for token in list(tokens):
+        for key, aliases in LAW_QA_QUERY_ALIASES.items():
+            alias_terms = {_normalize_law_text(key), *(_normalize_law_text(item) for item in aliases)}
+            if token in alias_terms or any(token in alias for alias in alias_terms):
+                expanded.update(alias_terms)
+    return {item for item in expanded if item}
+
+
+def _extract_document_title(text: str, url: str) -> str:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return url
+    article_match = re.search(r"(?i)(?:article|ст\.?|статья)\s*\d{1,3}", normalized)
+    if article_match:
+        candidate = normalized[: article_match.start()].strip(" :-")
+        if candidate:
+            return candidate[:160]
+    return normalized[:160].rsplit(" ", 1)[0].strip() or url
+
+
+def _split_law_document_into_chunks(document: dict[str, str]) -> list[_LawChunk]:
+    text = str(document.get("text") or "").strip()
+    url = str(document.get("url") or "").strip()
+    if not text:
+        return []
+
+    title = _extract_document_title(text, url)
+    article_pattern = r"(?i)(?:article|статья)\s*\d{1,3}(?:\.\d+)?(?:\s*[^.\n\r]{0,160})?\."
+    article_matches = list(re.finditer(article_pattern, text))
+    if not article_matches:
+        return [_LawChunk(url=url, document_title=title, article_label="general", text=text[:4000].strip())]
+
+    chunks: list[_LawChunk] = []
+    for index, match in enumerate(article_matches):
+        start = match.start()
+        end = article_matches[index + 1].start() if index + 1 < len(article_matches) else len(text)
+        chunk_text = text[start:end].strip()
+        article_label = re.sub(r"\s+", " ", match.group(0)).strip(" .:-")[:120]
+        if chunk_text:
+            chunks.append(
+                _LawChunk(
+                    url=url,
+                    document_title=title,
+                    article_label=article_label or "article",
+                    text=chunk_text[:5000].strip(),
+                )
+            )
+    return chunks or [_LawChunk(url=url, document_title=title, article_label="general", text=text[:4000].strip())]
+
+
+def _score_law_chunk(chunk: _LawChunk, question: str) -> int:
+    normalized_text = _normalize_law_text(f"{chunk.document_title} {chunk.article_label} {chunk.text}")
+    normalized_label = _normalize_law_text(chunk.article_label)
+    terms = _expand_question_terms(question)
+    score = 0
+    for term in terms:
+        if not term:
+            continue
+        if term in normalized_label:
+            score += 16
+        if f" {term} " in f" {normalized_text} ":
+            score += 10
+        elif term in normalized_text:
+            score += 5
+
+    for article_number in _extract_article_numbers(question):
+        if re.search(rf"(?i)(?:article|ст\.?|статья)\s*{re.escape(article_number)}\b", normalized_text):
+            score += 40
+
+    if terms:
+        score += sum(1 for term in terms if term in normalized_text) * 3
+        score += sum(1 for term in terms if term in normalized_label) * 8
+    return score
+
+
+@lru_cache(maxsize=16)
+def _build_law_chunk_index_cached(source_urls: tuple[str, ...]) -> tuple[_LawChunk, ...]:
+    documents = _fetch_law_documents(list(source_urls))
+    chunks: list[_LawChunk] = []
+    for document in documents:
+        chunks.extend(_split_law_document_into_chunks(document))
+    return tuple(chunks)
 
 
 def _is_blocked_law_host(host: str) -> bool:
@@ -161,7 +289,7 @@ def _is_blocked_law_host(host: str) -> bool:
     return False
 
 
-def _fetch_law_documents(source_urls: list[str], *, max_documents: int = 8, max_doc_chars: int = 120000) -> list[dict[str, str]]:
+def _fetch_law_documents(source_urls: list[str], *, max_documents: int = 24, max_doc_chars: int = 120000) -> list[dict[str, str]]:
     documents: list[dict[str, str]] = []
     normalized_sources: list[str] = []
 
@@ -257,23 +385,22 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
             detail=["Для выбранного сервера не настроены источники законов."],
         )
 
-    documents = _fetch_law_documents(law_sources)
-    if not documents:
+    chunks = list(_build_law_chunk_index_cached(tuple(law_sources)))
+    if not chunks:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=["Не удалось загрузить законы для выбранного сервера. Проверьте настройку law base."],
         )
 
-    keywords = _extract_keywords(question)
-
-    def score(item: dict[str, str]) -> int:
-        lower_text = item["text"].lower()
-        return sum(1 for keyword in keywords if keyword in lower_text)
-
-    ranked = sorted(documents, key=score, reverse=True)
-    selected = ranked[:4]
+    ranked = sorted(chunks, key=lambda item: _score_law_chunk(item, question), reverse=True)
+    selected = [item for item in ranked[:6] if _score_law_chunk(item, question) > 0] or ranked[:4]
     context_blocks = [
-        f"[Источник: {item['url']}]\n{_extract_relevant_law_excerpt(item['text'], question, max_chars=2500)}"
+        (
+            f"[Источник: {item.url}]\n"
+            f"[Документ: {item.document_title}]\n"
+            f"[Норма: {item.article_label}]\n"
+            f"{_extract_relevant_law_excerpt(item.text, question, max_chars=1800)}"
+        )
         for item in selected
     ]
     prompt = (
@@ -307,7 +434,8 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     if not text:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=["Модель вернула пустой ответ."])
     limited = text[: payload.max_answer_chars].strip()
-    return limited, [item["url"] for item in selected], len(documents)
+    unique_sources = list(dict.fromkeys(item.url for item in selected))
+    return limited, unique_sources, len(chunks)
 
 
 def suggest_text(payload: SuggestPayload) -> str:

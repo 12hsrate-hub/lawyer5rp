@@ -443,7 +443,7 @@ class WebServiceTests(unittest.TestCase):
 
     def test_law_qa_uses_selected_model(self):
         original_get_server_config = ai_service.get_server_config
-        original_fetch_documents = ai_service._fetch_law_documents
+        original_build_index = ai_service._build_law_chunk_index_cached
         original_create_client = ai_service.create_openai_client
 
         class DummyServerConfig:
@@ -462,7 +462,14 @@ class WebServiceTests(unittest.TestCase):
             responses = DummyResponses()
 
         ai_service.get_server_config = lambda server_code: DummyServerConfig()
-        ai_service._fetch_law_documents = lambda source_urls: [{"url": "https://laws.example/base", "text": "Статья 1. Право на защиту."}]
+        ai_service._build_law_chunk_index_cached = lambda source_urls: (
+            ai_service._LawChunk(
+                url="https://laws.example/base",
+                document_title="Процессуальный кодекс",
+                article_label="Статья 1. Право на защиту",
+                text="Статья 1. Право на защиту. Каждый имеет право на защиту.",
+            ),
+        )
         ai_service.create_openai_client = lambda **kwargs: DummyClient()
         try:
             text, sources, count = ai_service.answer_law_question(
@@ -475,7 +482,7 @@ class WebServiceTests(unittest.TestCase):
             )
         finally:
             ai_service.get_server_config = original_get_server_config
-            ai_service._fetch_law_documents = original_fetch_documents
+            ai_service._build_law_chunk_index_cached = original_build_index
             ai_service.create_openai_client = original_create_client
 
         self.assertEqual(text, "Ответ по закону.")
@@ -483,6 +490,45 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(count, 1)
         self.assertEqual(captured["model"], "gpt-5.4")
         self.assertIn("Не добавляй никакие реальные законы", captured["input"])
+        self.assertIn("Право на защиту", captured["input"])
+
+    def test_split_law_document_into_chunks_extracts_articles(self):
+        chunks = ai_service._split_law_document_into_chunks(
+            {
+                "url": "https://laws.example/processual",
+                "text": (
+                    "Процессуальный кодекс штата. "
+                    "Статья 19. Основания задержания. Текст статьи 19. "
+                    "Статья 20. Основания для освобождения задержанного. Текст статьи 20. "
+                    "Статья 21. Следующая норма. Текст статьи 21."
+                ),
+            }
+        )
+
+        self.assertGreaterEqual(len(chunks), 3)
+        self.assertIn("Статья 20", chunks[1].article_label)
+        self.assertIn("освобождения задержанного", chunks[1].text.lower())
+
+    def test_law_qa_prefers_relevant_article_chunk_for_periphrased_query(self):
+        question = "Когда задержанного обязаны отпустить?"
+        relevant_chunk = ai_service._LawChunk(
+            url="https://laws.example/processual",
+            document_title="Процессуальный кодекс",
+            article_label="Статья 20. Основания для освобождения задержанного",
+            text="Статья 20. Основания для освобождения задержанного. Задержанный подлежит освобождению при отсутствии оснований для дальнейшего удержания.",
+        )
+        unrelated_chunk = ai_service._LawChunk(
+            url="https://laws.example/criminal",
+            document_title="Уголовный кодекс",
+            article_label="Статья 5. Общие положения",
+            text="Статья 5. Общие положения уголовной ответственности.",
+        )
+
+        relevant_score = ai_service._score_law_chunk(relevant_chunk, question)
+        unrelated_score = ai_service._score_law_chunk(unrelated_chunk, question)
+
+        self.assertGreater(relevant_score, unrelated_score)
+        self.assertGreater(relevant_score, 0)
 
 
     def test_extract_relevant_law_excerpt_uses_hit_window_not_only_document_start(self):
