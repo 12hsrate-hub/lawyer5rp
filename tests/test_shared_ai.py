@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
+import re
 import unittest
 from pathlib import Path
 
 from shared import ogp_ai
+from shared.ogp_ai_config import get_runtime_exam_scoring_prompt_mode, load_openai_config
 from shared.ogp_ai_prompts import (
+    EXAM_BATCH_SCORING_COMPACT_PROMPT_VERSION,
     EXAM_BATCH_SCORING_PROMPT_VERSION,
+    EXAM_SCORING_COMPACT_PROMPT_VERSION,
     EXAM_SCORING_PROMPT_VERSION,
     PRINCIPAL_SCAN_PROMPT_VERSION,
     SUGGEST_PROMPT_VERSION,
@@ -266,6 +271,170 @@ class SharedAiTests(unittest.TestCase):
         self.assertEqual(stats["heuristic_count"], 1)
         self.assertEqual(stats["llm_count"], 1)
         self.assertEqual(stats["llm_calls"], 1)
+        self.assertEqual(stats["invalid_batch_item_count"], 0)
+        self.assertEqual(stats["retry_batch_items"], 0)
+        self.assertEqual(stats["retry_batch_calls"], 0)
+        self.assertEqual(stats["retry_single_items"], 0)
+        self.assertEqual(stats["retry_single_calls"], 0)
+        self.assertEqual(stats["prompt_mode"], "full")
+        self.assertEqual(stats["prompt_version"], EXAM_BATCH_SCORING_PROMPT_VERSION)
+        self.assertEqual(stats["single_prompt_version"], EXAM_SCORING_PROMPT_VERSION)
+
+    def test_exam_scoring_batch_keeps_all_items_across_chunks(self):
+        class DummyClient:
+            def __init__(self):
+                self.responses = self
+                self.calls = 0
+
+            def create(self, **kwargs):
+                self.calls += 1
+                prompt = str(kwargs.get("input") or "")
+                columns = []
+                for line in prompt.splitlines():
+                    line = line.strip()
+                    if line.startswith("[") and "]" in line:
+                        first = line.split("]", 1)[0][1:]
+                        if first:
+                            columns.append(first)
+                payload = {column.lower(): {"score": 60 + i, "rationale": f"ok {column}"} for i, column in enumerate(columns)}
+                return type("Response", (), {"output_text": json.dumps(payload, ensure_ascii=False)})()
+
+        original_create = ogp_ai.create_openai_client
+        ogp_ai.create_openai_client = lambda api_key, proxy_url="": DummyClient()
+        try:
+            payload, stats = ogp_ai.score_exam_answers_batch_with_proxy_fallback(
+                api_key="key",
+                proxy_url="",
+                items=[
+                    {
+                        "column": col,
+                        "header": f"question {col}",
+                        "user_answer": "alpha",
+                        "correct_answer": "beta",
+                    }
+                    for col in [chr(c) for c in range(ord("G"), ord("T"))]
+                ],
+                return_stats=True,
+            )
+        finally:
+            ogp_ai.create_openai_client = original_create
+
+        expected_columns = {chr(c) for c in range(ord("G"), ord("T"))}
+        self.assertEqual(set(payload.keys()), expected_columns)
+        self.assertEqual(stats["answer_count"], len(expected_columns))
+        self.assertEqual(stats["llm_count"], len(expected_columns))
+        self.assertEqual(stats["llm_calls"], 2)
+        self.assertEqual(stats["invalid_batch_item_count"], 0)
+        for col in expected_columns:
+            self.assertTrue(int(payload[col]["score"]) >= 60)
+
+    def test_exam_scoring_batch_keeps_column_mapping_with_mixed_keys_across_chunks(self):
+        class DummyClient:
+            def __init__(self):
+                self.responses = self
+
+            def create(self, **kwargs):
+                prompt = str(kwargs.get("input") or "")
+                columns = []
+                for line in prompt.splitlines():
+                    line = line.strip()
+                    if line.startswith("[") and "]" in line:
+                        first = line.split("]", 1)[0][1:]
+                        if first and re.fullmatch(r"[A-Z]{1,2}", first):
+                            columns.append(first)
+                payload = {}
+                for column in columns:
+                    if ord(column) % 3 == 0:
+                        key = f" {column.lower()} "
+                    elif ord(column) % 3 == 1:
+                        key = column.lower()
+                    else:
+                        key = f"{column} "
+                    payload[key] = {"score": ord(column), "rationale": f"mapped {column}"}
+                return type("Response", (), {"output_text": json.dumps(payload, ensure_ascii=False)})()
+
+        original_create = ogp_ai.create_openai_client
+        ogp_ai.create_openai_client = lambda api_key, proxy_url="": DummyClient()
+        try:
+            payload, stats = ogp_ai.score_exam_answers_batch_with_proxy_fallback(
+                api_key="key",
+                proxy_url="",
+                items=[
+                    {
+                        "column": col,
+                        "header": f"question {col}",
+                        "user_answer": "alpha",
+                        "correct_answer": "beta",
+                    }
+                    for col in [chr(c) for c in range(ord("G"), ord("T"))]
+                ],
+                return_stats=True,
+            )
+        finally:
+            ogp_ai.create_openai_client = original_create
+
+        expected_columns = {chr(c) for c in range(ord("G"), ord("T"))}
+        self.assertEqual(set(payload.keys()), expected_columns)
+        for col in expected_columns:
+            self.assertEqual(payload[col]["score"], ord(col))
+            self.assertEqual(payload[col]["rationale"], f"mapped {col}")
+        self.assertEqual(stats["answer_count"], len(expected_columns))
+        self.assertEqual(stats["llm_count"], len(expected_columns))
+        self.assertEqual(stats["llm_calls"], 2)
+
+    def test_exam_scoring_batch_normalizes_response_keys(self):
+        class DummyClient:
+            def __init__(self):
+                self.responses = self
+
+            def create(self, **kwargs):
+                return type(
+                    "Response",
+                    (),
+                    {
+                        "output_text": json.dumps(
+                            {" g ": {"score": 77, "rationale": "normalized key"},
+                            " i": {"score": 88, "rationale": "space key"},
+                            "J ": {"score": 99, "rationale": "trailing space"},
+                        },
+                        ensure_ascii=False,
+                        ),
+                    },
+                )()
+
+        original_create = ogp_ai.create_openai_client
+        ogp_ai.create_openai_client = lambda api_key, proxy_url="": DummyClient()
+        try:
+            payload = ogp_ai.score_exam_answers_batch_with_proxy_fallback(
+                api_key="key",
+                proxy_url="",
+                items=[
+                    {
+                        "column": "G",
+                        "header": "question G",
+                        "user_answer": "alpha",
+                        "correct_answer": "beta",
+                    },
+                    {
+                        "column": "I",
+                        "header": "question I",
+                        "user_answer": "alpha",
+                        "correct_answer": "beta",
+                    },
+                    {
+                        "column": "J",
+                        "header": "question J",
+                        "user_answer": "alpha",
+                        "correct_answer": "beta",
+                    },
+                ],
+            )
+        finally:
+            ogp_ai.create_openai_client = original_create
+
+        self.assertEqual(payload["G"]["score"], 77)
+        self.assertEqual(payload["I"]["score"], 88)
+        self.assertEqual(payload["J"]["score"], 99)
 
     def test_extract_response_text_ignores_empty_reasoning_placeholder(self):
         response = type(
@@ -656,6 +825,42 @@ class SharedAiTests(unittest.TestCase):
         self.assertIn("КПЗ LSPD", prompt)
         self.assertIn("The rationale must be one short sentence", prompt)
 
+    def test_exam_scoring_prompt_compact_mode_is_versioned_and_shorter(self):
+        full = build_exam_scoring_prompt_spec(
+            user_answer="A",
+            correct_answer="B",
+            column="N",
+            question="Question",
+            exam_type="Type",
+            key_points=["Point 1", "Point 2"],
+            mode="full",
+        )
+        compact = build_exam_scoring_prompt_spec(
+            user_answer="A",
+            correct_answer="B",
+            column="N",
+            question="Question",
+            exam_type="Type",
+            key_points=["Point 1", "Point 2"],
+            mode="compact",
+        )
+
+        self.assertEqual(full.version, EXAM_SCORING_PROMPT_VERSION)
+        self.assertEqual(compact.version, EXAM_SCORING_COMPACT_PROMPT_VERSION)
+        self.assertLess(len(compact.text), len(full.text))
+        self.assertIn('{"score":78,"rationale":"brief reason"}', compact.text)
+        self.assertNotIn('"matched_points"', compact.text)
+
+    def test_batch_exam_scoring_prompt_compact_mode_is_versioned_and_shorter(self):
+        full = build_batch_exam_scoring_prompt_spec(prompt_items="[F]\nQuestion: test", mode="full")
+        compact = build_batch_exam_scoring_prompt_spec(prompt_items="[F]\nQuestion: test", mode="compact")
+
+        self.assertEqual(full.version, EXAM_BATCH_SCORING_PROMPT_VERSION)
+        self.assertEqual(compact.version, EXAM_BATCH_SCORING_COMPACT_PROMPT_VERSION)
+        self.assertLess(len(compact.text), len(full.text))
+        self.assertIn('{"F":{"score":75,"rationale":"..."}', compact.text)
+        self.assertNotIn('"results"', compact.text)
+
     def test_exam_prompt_builders_are_defined_once(self):
         module_path = Path(__file__).resolve().parents[1] / "shared" / "ogp_ai_prompts.py"
         tree = ast.parse(module_path.read_text(encoding="utf-8"))
@@ -702,6 +907,134 @@ class SharedAiTests(unittest.TestCase):
         self.assertIn("[output_contract]", scan.text)
         self.assertIn("[scoring_rules]", scoring.text)
         self.assertIn("[task]", batch.text)
+
+    def test_load_openai_config_reads_exam_scoring_prompt_mode_from_env(self):
+        previous = os.environ.get("OPENAI_EXAM_SCORING_PROMPT_MODE")
+        os.environ["OPENAI_EXAM_SCORING_PROMPT_MODE"] = "compact"
+        try:
+            compact_config = load_openai_config()
+            os.environ["OPENAI_EXAM_SCORING_PROMPT_MODE"] = "invalid"
+            fallback_config = load_openai_config()
+        finally:
+            if previous is None:
+                os.environ.pop("OPENAI_EXAM_SCORING_PROMPT_MODE", None)
+            else:
+                os.environ["OPENAI_EXAM_SCORING_PROMPT_MODE"] = previous
+
+        self.assertEqual(compact_config.exam_scoring_prompt_mode, "compact")
+        self.assertEqual(fallback_config.exam_scoring_prompt_mode, "full")
+
+    def test_runtime_exam_scoring_prompt_mode_uses_override_file_without_restart(self):
+        previous_mode = os.environ.get("OPENAI_EXAM_SCORING_PROMPT_MODE")
+        previous_file = os.environ.get("OPENAI_EXAM_SCORING_PROMPT_MODE_FILE")
+        tmpdir = make_temporary_directory()
+        override_path = Path(tmpdir.name) / "exam_prompt_mode.override"
+        try:
+            os.environ["OPENAI_EXAM_SCORING_PROMPT_MODE"] = "compact"
+            os.environ["OPENAI_EXAM_SCORING_PROMPT_MODE_FILE"] = str(override_path)
+
+            self.assertEqual(get_runtime_exam_scoring_prompt_mode(), "compact")
+
+            override_path.write_text("full\n", encoding="utf-8")
+            self.assertEqual(get_runtime_exam_scoring_prompt_mode(), "full")
+
+            override_path.write_text("compact\n", encoding="utf-8")
+            self.assertEqual(get_runtime_exam_scoring_prompt_mode(), "compact")
+        finally:
+            if previous_mode is None:
+                os.environ.pop("OPENAI_EXAM_SCORING_PROMPT_MODE", None)
+            else:
+                os.environ["OPENAI_EXAM_SCORING_PROMPT_MODE"] = previous_mode
+            if previous_file is None:
+                os.environ.pop("OPENAI_EXAM_SCORING_PROMPT_MODE_FILE", None)
+            else:
+                os.environ["OPENAI_EXAM_SCORING_PROMPT_MODE_FILE"] = previous_file
+            tmpdir.cleanup()
+
+    def test_runtime_exam_scoring_prompt_mode_invalid_override_rolls_back_to_full(self):
+        previous_mode = os.environ.get("OPENAI_EXAM_SCORING_PROMPT_MODE")
+        previous_file = os.environ.get("OPENAI_EXAM_SCORING_PROMPT_MODE_FILE")
+        tmpdir = make_temporary_directory()
+        override_path = Path(tmpdir.name) / "exam_prompt_mode.override"
+        try:
+            os.environ["OPENAI_EXAM_SCORING_PROMPT_MODE"] = "compact"
+            os.environ["OPENAI_EXAM_SCORING_PROMPT_MODE_FILE"] = str(override_path)
+            override_path.write_text("garbage\n", encoding="utf-8")
+
+            self.assertEqual(get_runtime_exam_scoring_prompt_mode(), "full")
+        finally:
+            if previous_mode is None:
+                os.environ.pop("OPENAI_EXAM_SCORING_PROMPT_MODE", None)
+            else:
+                os.environ["OPENAI_EXAM_SCORING_PROMPT_MODE"] = previous_mode
+            if previous_file is None:
+                os.environ.pop("OPENAI_EXAM_SCORING_PROMPT_MODE_FILE", None)
+            else:
+                os.environ["OPENAI_EXAM_SCORING_PROMPT_MODE_FILE"] = previous_file
+            tmpdir.cleanup()
+
+    def test_batch_scoring_stats_pick_up_runtime_prompt_mode_override(self):
+        class DummyClient:
+            def __init__(self):
+                self.responses = self
+
+            def create(self, **kwargs):
+                return type("Response", (), {"output_text": '{"H": {"score": 77, "rationale": "ok"}}'})()
+
+        original_create = ogp_ai.create_openai_client
+        previous_mode = os.environ.get("OPENAI_EXAM_SCORING_PROMPT_MODE")
+        previous_file = os.environ.get("OPENAI_EXAM_SCORING_PROMPT_MODE_FILE")
+        tmpdir = make_temporary_directory()
+        override_path = Path(tmpdir.name) / "exam_prompt_mode.override"
+        ogp_ai.create_openai_client = lambda api_key, proxy_url="": DummyClient()
+        try:
+            os.environ["OPENAI_EXAM_SCORING_PROMPT_MODE"] = "compact"
+            os.environ["OPENAI_EXAM_SCORING_PROMPT_MODE_FILE"] = str(override_path)
+
+            _, compact_stats = ogp_ai.score_exam_answers_batch_with_proxy_fallback(
+                api_key="key",
+                proxy_url="",
+                items=[
+                    {
+                        "column": "H",
+                        "header": "question H",
+                        "user_answer": "alpha beta gamma",
+                        "correct_answer": "delta epsilon zeta",
+                    },
+                ],
+                return_stats=True,
+            )
+
+            override_path.write_text("full\n", encoding="utf-8")
+            _, full_stats = ogp_ai.score_exam_answers_batch_with_proxy_fallback(
+                api_key="key",
+                proxy_url="",
+                items=[
+                    {
+                        "column": "I",
+                        "header": "question I",
+                        "user_answer": "alpha beta gamma",
+                        "correct_answer": "delta epsilon zeta",
+                    },
+                ],
+                return_stats=True,
+            )
+        finally:
+            ogp_ai.create_openai_client = original_create
+            if previous_mode is None:
+                os.environ.pop("OPENAI_EXAM_SCORING_PROMPT_MODE", None)
+            else:
+                os.environ["OPENAI_EXAM_SCORING_PROMPT_MODE"] = previous_mode
+            if previous_file is None:
+                os.environ.pop("OPENAI_EXAM_SCORING_PROMPT_MODE_FILE", None)
+            else:
+                os.environ["OPENAI_EXAM_SCORING_PROMPT_MODE_FILE"] = previous_file
+            tmpdir.cleanup()
+
+        self.assertEqual(compact_stats["prompt_mode"], "compact")
+        self.assertEqual(compact_stats["prompt_version"], EXAM_BATCH_SCORING_COMPACT_PROMPT_VERSION)
+        self.assertEqual(full_stats["prompt_mode"], "full")
+        self.assertEqual(full_stats["prompt_version"], EXAM_BATCH_SCORING_PROMPT_VERSION)
 
 
 if __name__ == "__main__":

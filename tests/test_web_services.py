@@ -21,7 +21,7 @@ from fastapi import HTTPException
 
 from ogp_web.db.backends.sqlite import SQLiteBackend
 from ogp_web.schemas import ComplaintPayload, LawQaPayload, PrincipalScanPayload, RehabPayload, SuggestPayload, VictimPayload
-from ogp_web.services import ai_service, auth_service, complaint_service, email_service, exam_sheet_service
+from ogp_web.services import ai_service, auth_service, complaint_service, email_service, exam_import_service, exam_sheet_service
 from ogp_web.services.auth_service import AuthUser
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.storage.user_store import UserStore
@@ -519,6 +519,55 @@ class WebServiceTests(unittest.TestCase):
         self.assertIn("wrongful_article procedural_violation LSPD Officer", captured["retrieval_query"])
         self.assertNotIn("fact100", captured["retrieval_query"])
 
+    def test_suggest_text_retries_with_compacted_context_on_context_window_error(self):
+        captured_calls: list[dict[str, object]] = []
+        original = ai_service.suggest_description_with_proxy_fallback_result
+        original_build_context = ai_service._build_suggest_law_context
+
+        def fake_suggest(**kwargs):
+            captured_calls.append(kwargs)
+            if len(captured_calls) == 1:
+                raise RuntimeError(
+                    '{"error":{"message":"Your input exceeds the context window of this model.","code":"context_length_exceeded"}}'
+                )
+            return ai_service.TextGenerationResult(
+                text="Описание фактов по жалобе.",
+                usage=ai_service.AiUsageSummary(input_tokens=20, output_tokens=10, total_tokens=30),
+                cache_hit=False,
+                attempt_path="direct",
+                attempt_duration_ms=210,
+                route_policy="direct_first",
+            )
+
+        ai_service.suggest_description_with_proxy_fallback_result = fake_suggest
+        ai_service._build_suggest_law_context = lambda **kwargs: ("Статья 20. " + ("текст " * 1600)).strip()
+        try:
+            result = ai_service.suggest_text_details(
+                SuggestPayload(
+                    victim_name="Victim",
+                    org="LSPD",
+                    subject="Officer",
+                    event_dt="08.04.2026 14:30",
+                    raw_desc="Draft",
+                    complaint_basis="wrongful_article",
+                    main_focus="procedural_violation",
+                ),
+                server_code="blackberry",
+            )
+        finally:
+            ai_service.suggest_description_with_proxy_fallback_result = original
+            ai_service._build_suggest_law_context = original_build_context
+
+        self.assertEqual(result.text, "Описание фактов по жалобе.")
+        self.assertEqual(len(captured_calls), 2)
+        self.assertIn("suggest_context_compacted", result.warnings)
+        self.assertTrue(bool(result.telemetry.get("context_compacted")))
+        self.assertGreaterEqual(int(result.telemetry.get("context_compaction_level") or 0), 1)
+        self.assertLess(
+            len(str(captured_calls[1]["law_context"] or "")),
+            len(str(captured_calls[0]["law_context"] or "")),
+        )
+
     def test_build_suggest_law_context_returns_empty_when_retrieval_is_low_confidence(self):
         original_get_server_config = ai_service.get_server_config
         original_load_bundle = ai_service.load_law_bundle_chunks
@@ -548,6 +597,366 @@ class WebServiceTests(unittest.TestCase):
             ai_service._select_law_qa_chunks = original_select_chunks
 
         self.assertEqual(context, "")
+
+    def test_retry_invalid_batch_scores_uses_mini_batch_before_single_retry(self):
+        original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
+        original_single = exam_import_service.score_exam_answer_with_proxy_fallback
+        batch_calls: list[dict[str, object]] = []
+        single_calls: list[str] = []
+
+        def fake_batch(**kwargs):
+            batch_calls.append(kwargs)
+            return (
+                {
+                    "G": {"score": 91, "rationale": "Исправлено мини-батчем."},
+                    "H": {"score": 1, "rationale": exam_import_service.DEFAULT_INVALID_BATCH_RATIONALE},
+                    "I": {"score": 1, "rationale": exam_import_service.DEFAULT_INVALID_BATCH_RATIONALE},
+                },
+                {
+                    "answer_count": 3,
+                    "heuristic_count": 0,
+                    "cache_hit_count": 0,
+                    "llm_count": 3,
+                    "llm_calls": 1,
+                },
+            )
+
+        def fake_single(**kwargs):
+            single_calls.append(str(kwargs["column"]))
+            return {"score": 87, "rationale": f"Исправлено одиночной проверкой {kwargs['column']}."}
+
+        score_items = [
+            {"column": "G", "header": "QG", "user_answer": "UG", "correct_answer": "CG"},
+            {"column": "H", "header": "QH", "user_answer": "UH", "correct_answer": "CH"},
+            {"column": "I", "header": "QI", "user_answer": "UI", "correct_answer": "CI"},
+        ]
+        results = {
+            "G": {"score": 1, "rationale": exam_import_service.DEFAULT_INVALID_BATCH_RATIONALE},
+            "H": {"score": 1, "rationale": exam_import_service.DEFAULT_INVALID_BATCH_RATIONALE},
+            "I": {"score": 1, "rationale": exam_import_service.DEFAULT_INVALID_BATCH_RATIONALE},
+        }
+        stats = exam_import_service._empty_scoring_stats()
+
+        exam_import_service.score_exam_answers_batch_with_proxy_fallback = fake_batch
+        exam_import_service.score_exam_answer_with_proxy_fallback = fake_single
+        try:
+            with self.assertLogs(exam_import_service.logger, level="WARNING") as logs:
+                retried = exam_import_service.retry_invalid_batch_scores(
+                    api_key="key",
+                    proxy_url="",
+                    source_row=42,
+                    score_items=score_items,
+                    results=results,
+                    stats=stats,
+                )
+        finally:
+            exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
+            exam_import_service.score_exam_answer_with_proxy_fallback = original_single
+
+        self.assertEqual(len(batch_calls), 1)
+        self.assertEqual([item["column"] for item in batch_calls[0]["items"]], ["G", "H", "I"])
+        self.assertEqual(batch_calls[0]["chunk_size"], exam_import_service.RETRY_BATCH_CHUNK_SIZE)
+        self.assertEqual(batch_calls[0]["return_stats"], True)
+        self.assertEqual(single_calls, ["H", "I"])
+        self.assertEqual(retried["G"]["score"], 91)
+        self.assertEqual(retried["H"]["score"], 87)
+        self.assertEqual(retried["I"]["score"], 87)
+        self.assertEqual(stats["invalid_batch_item_count"], 3)
+        self.assertEqual(stats["retry_batch_items"], 3)
+        self.assertEqual(stats["retry_batch_calls"], 1)
+        self.assertEqual(stats["retry_single_items"], 2)
+        self.assertEqual(stats["retry_single_calls"], 2)
+        self.assertEqual(stats["llm_count"], 5)
+        self.assertEqual(stats["llm_calls"], 3)
+        joined_logs = "\n".join(logs.output)
+        self.assertIn("source_row=42 column=G", joined_logs)
+        self.assertIn("batch_initial > invalid_batch > retry_batch > retry_batch_resolved", joined_logs)
+        self.assertIn("source_row=42 column=H", joined_logs)
+        self.assertIn("retry_single > retry_single_resolved", joined_logs)
+
+    def test_retry_invalid_batch_scores_skips_fallback_when_batch_results_are_valid(self):
+        original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
+        original_single = exam_import_service.score_exam_answer_with_proxy_fallback
+
+        def unexpected_batch(**kwargs):
+            raise AssertionError(f"mini-batch retry should not run: {kwargs}")
+
+        def unexpected_single(**kwargs):
+            raise AssertionError(f"single retry should not run: {kwargs}")
+
+        score_items = [
+            {"column": "G", "header": "QG", "user_answer": "UG", "correct_answer": "CG"},
+            {"column": "H", "header": "QH", "user_answer": "UH", "correct_answer": "CH"},
+        ]
+        results = {
+            "G": {"score": 91, "rationale": "ok"},
+            "H": {"score": 77, "rationale": "ok"},
+        }
+        stats = exam_import_service._empty_scoring_stats()
+
+        exam_import_service.score_exam_answers_batch_with_proxy_fallback = unexpected_batch
+        exam_import_service.score_exam_answer_with_proxy_fallback = unexpected_single
+        try:
+            retried = exam_import_service.retry_invalid_batch_scores(
+                api_key="key",
+                proxy_url="",
+                source_row=15,
+                score_items=score_items,
+                results=results,
+                stats=stats,
+            )
+        finally:
+            exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
+            exam_import_service.score_exam_answer_with_proxy_fallback = original_single
+
+        self.assertEqual(retried, results)
+        self.assertEqual(stats["invalid_batch_item_count"], 0)
+        self.assertEqual(stats["retry_batch_items"], 0)
+        self.assertEqual(stats["retry_batch_calls"], 0)
+        self.assertEqual(stats["retry_single_items"], 0)
+        self.assertEqual(stats["retry_single_calls"], 0)
+        self.assertEqual(stats["llm_count"], 0)
+        self.assertEqual(stats["llm_calls"], 0)
+
+    def test_retry_invalid_batch_scores_uses_single_retry_only_for_one_invalid_item(self):
+        original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
+        original_single = exam_import_service.score_exam_answer_with_proxy_fallback
+        single_calls: list[str] = []
+
+        def unexpected_batch(**kwargs):
+            raise AssertionError(f"mini-batch retry should not run for one invalid item: {kwargs}")
+
+        def fake_single(**kwargs):
+            single_calls.append(str(kwargs["column"]))
+            return {"score": 84, "rationale": "resolved singly"}
+
+        score_items = [
+            {"column": "G", "header": "QG", "user_answer": "UG", "correct_answer": "CG"},
+        ]
+        results = {
+            "G": {"score": 1, "rationale": exam_import_service.DEFAULT_INVALID_BATCH_RATIONALE},
+        }
+        stats = exam_import_service._empty_scoring_stats()
+
+        exam_import_service.score_exam_answers_batch_with_proxy_fallback = unexpected_batch
+        exam_import_service.score_exam_answer_with_proxy_fallback = fake_single
+        try:
+            with self.assertLogs(exam_import_service.logger, level="WARNING") as logs:
+                retried = exam_import_service.retry_invalid_batch_scores(
+                    api_key="key",
+                    proxy_url="",
+                    source_row=16,
+                    score_items=score_items,
+                    results=results,
+                    stats=stats,
+                )
+        finally:
+            exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
+            exam_import_service.score_exam_answer_with_proxy_fallback = original_single
+
+        self.assertEqual(single_calls, ["G"])
+        self.assertEqual(retried["G"]["score"], 84)
+        self.assertEqual(stats["invalid_batch_item_count"], 1)
+        self.assertEqual(stats["retry_batch_items"], 0)
+        self.assertEqual(stats["retry_batch_calls"], 0)
+        self.assertEqual(stats["retry_single_items"], 1)
+        self.assertEqual(stats["retry_single_calls"], 1)
+        self.assertEqual(stats["llm_count"], 1)
+        self.assertEqual(stats["llm_calls"], 1)
+        joined_logs = "\n".join(logs.output)
+        self.assertIn("source_row=16 column=G", joined_logs)
+        self.assertIn("batch_initial > invalid_batch > retry_single > retry_single_resolved", joined_logs)
+        self.assertNotIn("retry_batch", joined_logs)
+
+    def test_retry_invalid_batch_scores_falls_back_to_single_when_mini_batch_fails(self):
+        original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
+        original_single = exam_import_service.score_exam_answer_with_proxy_fallback
+        batch_calls: list[dict[str, object]] = []
+        single_calls: list[str] = []
+
+        def failing_batch(**kwargs):
+            batch_calls.append(kwargs)
+            raise RuntimeError("mini-batch failed")
+
+        def fake_single(**kwargs):
+            single_calls.append(str(kwargs["column"]))
+            return {"score": 79, "rationale": f"resolved singly {kwargs['column']}"}
+
+        score_items = [
+            {"column": "G", "header": "QG", "user_answer": "UG", "correct_answer": "CG"},
+            {"column": "H", "header": "QH", "user_answer": "UH", "correct_answer": "CH"},
+        ]
+        results = {
+            "G": {"score": 1, "rationale": exam_import_service.DEFAULT_INVALID_BATCH_RATIONALE},
+            "H": {"score": 1, "rationale": exam_import_service.DEFAULT_INVALID_BATCH_RATIONALE},
+        }
+        stats = exam_import_service._empty_scoring_stats()
+
+        exam_import_service.score_exam_answers_batch_with_proxy_fallback = failing_batch
+        exam_import_service.score_exam_answer_with_proxy_fallback = fake_single
+        try:
+            with self.assertLogs(exam_import_service.logger, level="WARNING") as logs:
+                retried = exam_import_service.retry_invalid_batch_scores(
+                    api_key="key",
+                    proxy_url="",
+                    source_row=17,
+                    score_items=score_items,
+                    results=results,
+                    stats=stats,
+                )
+        finally:
+            exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
+            exam_import_service.score_exam_answer_with_proxy_fallback = original_single
+
+        self.assertEqual(len(batch_calls), 1)
+        self.assertEqual([item["column"] for item in batch_calls[0]["items"]], ["G", "H"])
+        self.assertEqual(single_calls, ["G", "H"])
+        self.assertEqual(retried["G"]["score"], 79)
+        self.assertEqual(retried["H"]["score"], 79)
+        self.assertEqual(stats["invalid_batch_item_count"], 2)
+        self.assertEqual(stats["retry_batch_items"], 0)
+        self.assertEqual(stats["retry_batch_calls"], 0)
+        self.assertEqual(stats["retry_single_items"], 2)
+        self.assertEqual(stats["retry_single_calls"], 2)
+        self.assertEqual(stats["llm_count"], 2)
+        self.assertEqual(stats["llm_calls"], 2)
+        joined_logs = "\n".join(logs.output)
+        self.assertIn("source_row=17 column=G", joined_logs)
+        self.assertIn("retry_batch_failed > retry_single > retry_single_resolved", joined_logs)
+
+    def test_score_exam_answers_if_needed_normalizes_case_mismatched_result_columns(self):
+        original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
+        original_single = exam_import_service.score_exam_answer_with_proxy_fallback
+        captured: list[dict[str, object]] = []
+
+        def fake_batch(**kwargs):
+            captured.append(kwargs)
+            fake_stats = exam_import_service._empty_scoring_stats()
+            fake_stats["llm_count"] = 2
+            fake_stats["llm_calls"] = 1
+            return (
+                {
+                    " g ": {"score": 91, "rationale": "Готово через batch"},
+                    "h": {"score": 82, "rationale": "Case-variant key"},
+                },
+                fake_stats,
+            )
+
+        class FakeStore:
+            def __init__(self):
+                self.saved = None
+
+            def save_exam_scores(self, source_row: int, scores: list[dict[str, object]]):
+                self.saved = (source_row, list(scores))
+
+            def get_entry(self, source_row: int):
+                return entry
+
+        score_items = [
+            {
+                "column": "G",
+                "header": "Вопрос G",
+                "user_answer": "Ответ G",
+                "correct_answer": "Эталон G",
+                "question": "QG",
+                "exam_type": "type",
+            },
+            {
+                "column": "H",
+                "header": "Вопрос H",
+                "user_answer": "Ответ H",
+                "correct_answer": "Эталон H",
+                "question": "QH",
+                "exam_type": "type",
+            },
+        ]
+        entry = {
+            "source_row": 777,
+            "payload": {"submitted": "2026-04-11", "full_name": "Student"},
+            "exam_scores": [],
+        }
+
+        exam_import_service.score_exam_answers_batch_with_proxy_fallback = fake_batch
+        exam_import_service.score_exam_answer_with_proxy_fallback = lambda **kwargs: {
+            "score": 1,
+            "rationale": "не должен быть использован",
+        }
+        store = FakeStore()
+        try:
+            did_score, stats = exam_import_service.score_exam_answers_if_needed(
+                store=store,
+                entry=entry,
+                build_exam_score_items=lambda payload: score_items,
+            )
+        finally:
+            exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
+            exam_import_service.score_exam_answer_with_proxy_fallback = original_single
+
+        self.assertTrue(did_score)
+        self.assertEqual(stats["llm_count"], 2)
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(store.saved[0], 777)
+        scored = {item["column"]: item for item in store.saved[1]}
+        self.assertEqual(scored["G"]["score"], 91)
+        self.assertEqual(scored["H"]["score"], 82)
+        self.assertEqual(scored["G"]["rationale"], "Готово через batch")
+        self.assertEqual(scored["H"]["rationale"], "Case-variant key")
+
+    def test_build_row_scoring_result_logs_prompt_version_meta(self):
+        original_score_if_needed = exam_import_service.score_exam_answers_if_needed
+
+        class FakeStore:
+            def get_entry(self, source_row: int):
+                return {
+                    "source_row": source_row,
+                    "payload": {},
+                    "exam_scores": [
+                        {
+                            "column": "G",
+                            "header": "Question G",
+                            "user_answer": "Answer",
+                            "correct_answer": "Reference",
+                            "score": 88,
+                            "rationale": "ok",
+                        }
+                    ],
+                }
+
+        class FakeMetricsStore:
+            def __init__(self):
+                self.events: list[dict[str, object]] = []
+
+            def log_event(self, **kwargs):
+                self.events.append(kwargs)
+
+        def fake_score(store, entry, *, build_exam_score_items, force_rescore=False):
+            _ = store, entry, build_exam_score_items, force_rescore
+            stats = exam_import_service._empty_scoring_stats()
+            stats["llm_count"] = 1
+            stats["prompt_mode"] = "compact"
+            stats["prompt_version"] = "exam_batch_scoring.compact.v8"
+            stats["single_prompt_version"] = "exam_scoring.compact.v8"
+            return True, stats
+
+        exam_import_service.score_exam_answers_if_needed = fake_score
+        try:
+            metrics_store = FakeMetricsStore()
+            result = exam_import_service.build_row_scoring_result(
+                source_row=7,
+                user=AuthUser(username="tester"),
+                store=FakeStore(),
+                metrics_store=metrics_store,
+                build_exam_score_items=lambda payload: [],
+            )
+        finally:
+            exam_import_service.score_exam_answers_if_needed = original_score_if_needed
+
+        self.assertEqual(result["source_row"], 7)
+        self.assertEqual(len(metrics_store.events), 1)
+        meta = metrics_store.events[0]["meta"]
+        self.assertEqual(meta["prompt_mode"], "compact")
+        self.assertEqual(meta["prompt_version"], "exam_batch_scoring.compact.v8")
+        self.assertEqual(meta["single_prompt_version"], "exam_scoring.compact.v8")
 
     def test_clean_suggest_text_unwraps_code_blocks_and_drops_sources_tail(self):
         raw = """```text
@@ -797,6 +1206,65 @@ https://laws.example/article
         self.assertEqual(sources, ["https://laws.example/base"])
         self.assertEqual(count, 1)
         self.assertEqual(dummy_client.responses.calls, 2)
+
+    def test_law_qa_retries_with_compacted_context_on_context_window_error(self):
+        original_get_server_config = ai_service.get_server_config
+        original_build_index = ai_service._build_law_chunk_index_cached
+        original_create_client = ai_service.create_openai_client
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ("https://laws.example/base",)
+
+        class DummyResponses:
+            def __init__(self):
+                self.calls = 0
+                self.prompt_lengths: list[int] = []
+
+            def create(self, **kwargs):
+                self.calls += 1
+                self.prompt_lengths.append(len(str(kwargs.get("input") or "")))
+                if self.calls == 1:
+                    raise RuntimeError(
+                        '{"error":{"message":"Your input exceeds the context window of this model.","code":"context_length_exceeded"}}'
+                    )
+                return type("GoodResponse", (), {"output_text": "Ответ после сжатия контекста"})()
+
+        class DummyClient:
+            def __init__(self):
+                self.responses = DummyResponses()
+
+        dummy_client = DummyClient()
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service._build_law_chunk_index_cached = lambda source_urls: (
+            ai_service._LawChunk(
+                url="https://laws.example/base",
+                document_title="Процессуальный кодекс",
+                article_label="Статья 20",
+                text=("Основания освобождения задержанного. " * 220).strip(),
+            ),
+        )
+        ai_service.create_openai_client = lambda **kwargs: dummy_client
+        try:
+            result = ai_service.answer_law_question_details(
+                LawQaPayload(
+                    server_code="blackberry",
+                    model="gpt-5-mini",
+                    question="Когда обязаны освободить задержанного?",
+                    max_answer_chars=2000,
+                )
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service._build_law_chunk_index_cached = original_build_index
+            ai_service.create_openai_client = original_create_client
+
+        self.assertEqual(result.text, "Ответ после сжатия контекста")
+        self.assertGreaterEqual(dummy_client.responses.calls, 2)
+        self.assertIn("law_qa_context_compacted", result.warnings)
+        self.assertTrue(bool(result.telemetry.get("context_compacted")))
+        self.assertGreaterEqual(int(result.telemetry.get("context_compaction_level") or 0), 1)
 
     def test_law_qa_prefers_structured_bundle_before_html_fetch(self):
         original_get_server_config = ai_service.get_server_config

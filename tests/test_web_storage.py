@@ -1459,6 +1459,41 @@ class PostgresAdminMetricsStoreTests(unittest.TestCase):
                 meta={"kind": "complaint"},
             )
         )
+        self.assertTrue(
+            store.log_event(
+                event_type="ai_exam_scoring",
+                username="alpha",
+                server_code="blackberry",
+                path="/api/exam-import/score",
+                method="POST",
+                status_code=200,
+                meta={
+                    "rows_scored": 2,
+                    "answer_count": 8,
+                    "heuristic_count": 2,
+                    "cache_hit_count": 1,
+                    "llm_count": 4,
+                    "llm_calls": 2,
+                    "invalid_batch_item_count": 1,
+                    "retry_batch_items": 1,
+                    "retry_batch_calls": 1,
+                    "retry_single_items": 1,
+                    "retry_single_calls": 1,
+                    "scoring_ms": 240,
+                },
+            )
+        )
+        self.assertTrue(
+            store.log_event(
+                event_type="exam_import_score_failures",
+                username="alpha",
+                server_code="blackberry",
+                path="/api/exam-import/score",
+                method="POST",
+                status_code=200,
+                meta={"scored_count": 0, "failed_count": 1, "failed_rows": [10]},
+            )
+        )
 
         overview = store.get_overview(
             users=[
@@ -1474,8 +1509,23 @@ class PostgresAdminMetricsStoreTests(unittest.TestCase):
                 }
             ]
         )
-        self.assertEqual(overview["totals"]["events_total"], 2)
+        self.assertEqual(overview["totals"]["events_total"], 4)
         self.assertEqual(overview["totals"]["complaints_total"], 1)
+        self.assertEqual(overview["totals"]["ai_exam_scoring_total"], 1)
+        self.assertEqual(overview["totals"]["ai_exam_scoring_rows"], 2)
+        self.assertEqual(overview["totals"]["ai_exam_scoring_answers"], 8)
+        self.assertEqual(overview["totals"]["ai_exam_heuristic_total"], 2)
+        self.assertEqual(overview["totals"]["ai_exam_cache_total"], 1)
+        self.assertEqual(overview["totals"]["ai_exam_llm_total"], 4)
+        self.assertEqual(overview["totals"]["ai_exam_llm_calls_total"], 2)
+        self.assertEqual(overview["totals"]["ai_exam_invalid_batch_items_total"], 1)
+        self.assertEqual(overview["totals"]["ai_exam_retry_batch_items_total"], 1)
+        self.assertEqual(overview["totals"]["ai_exam_retry_batch_calls_total"], 1)
+        self.assertEqual(overview["totals"]["ai_exam_retry_single_items_total"], 1)
+        self.assertEqual(overview["totals"]["ai_exam_retry_single_calls_total"], 1)
+        self.assertEqual(overview["totals"]["ai_exam_failure_total"], 1)
+        self.assertEqual(overview["totals"]["ai_exam_scoring_ms_p50"], 240)
+        self.assertEqual(overview["totals"]["ai_exam_scoring_ms_p95"], 240)
         self.assertEqual(overview["users"][0]["api_requests"], 1)
         self.assertEqual(overview["users"][0]["complaints"], 1)
         self.assertEqual(overview["top_endpoints"][0]["path"], "/api/test")

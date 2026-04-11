@@ -537,7 +537,7 @@ class AdminMetricsStore:
             ).fetchall()
         }
 
-    def _load_ai_exam_stats(self, conn) -> dict[str, int]:
+    def _load_ai_exam_stats(self, conn) -> dict[str, object]:
         stats = {
             "ai_exam_scoring_total": 0,
             "ai_exam_scoring_rows": 0,
@@ -547,6 +547,13 @@ class AdminMetricsStore:
             "ai_exam_llm_total": 0,
             "ai_exam_llm_calls_total": 0,
             "ai_exam_failure_total": 0,
+            "ai_exam_invalid_batch_items_total": 0,
+            "ai_exam_retry_batch_items_total": 0,
+            "ai_exam_retry_batch_calls_total": 0,
+            "ai_exam_retry_single_items_total": 0,
+            "ai_exam_retry_single_calls_total": 0,
+            "ai_exam_scoring_ms_p50": None,
+            "ai_exam_scoring_ms_p95": None,
         }
         rows = conn.execute(
             """
@@ -555,6 +562,7 @@ class AdminMetricsStore:
             WHERE event_type IN ('ai_exam_scoring', 'exam_import_score_failures', 'exam_import_row_score_error')
             """
         ).fetchall()
+        scoring_ms_values: list[int] = []
         for row in rows:
             event_type = str(row["event_type"] or "")
             meta = self._decode_json_field(row["meta_json"])
@@ -566,8 +574,19 @@ class AdminMetricsStore:
                 stats["ai_exam_cache_total"] += int(meta.get("cache_hit_count") or 0)
                 stats["ai_exam_llm_total"] += int(meta.get("llm_count") or 0)
                 stats["ai_exam_llm_calls_total"] += int(meta.get("llm_calls") or 0)
+                stats["ai_exam_invalid_batch_items_total"] += int(meta.get("invalid_batch_item_count") or 0)
+                stats["ai_exam_retry_batch_items_total"] += int(meta.get("retry_batch_items") or 0)
+                stats["ai_exam_retry_batch_calls_total"] += int(meta.get("retry_batch_calls") or 0)
+                stats["ai_exam_retry_single_items_total"] += int(meta.get("retry_single_items") or 0)
+                stats["ai_exam_retry_single_calls_total"] += int(meta.get("retry_single_calls") or 0)
+                scoring_ms = self._safe_duration(meta.get("scoring_ms"))
+                if scoring_ms is not None:
+                    scoring_ms_values.append(scoring_ms)
             else:
                 stats["ai_exam_failure_total"] += 1
+        if scoring_ms_values:
+            stats["ai_exam_scoring_ms_p50"] = self._percentile(scoring_ms_values, 0.5)
+            stats["ai_exam_scoring_ms_p95"] = self._percentile(scoring_ms_values, 0.95)
         return stats
 
     def _load_latest_event(self, conn, event_types: tuple[str, ...]) -> dict[str, Any] | None:

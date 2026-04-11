@@ -964,6 +964,47 @@ def _response_diagnostics(response: object) -> str:
     )
 
 
+def _is_context_window_error(exc: Exception) -> bool:
+    raw = str(exc or "").strip().lower()
+    return (
+        "context_length_exceeded" in raw
+        or "context window" in raw
+        or "maximum context length" in raw
+        or ("input exceeds" in raw and "context" in raw)
+    )
+
+
+def _truncate_law_excerpt(text: str, *, max_chars: int) -> str:
+    normalized = str(text or "").strip()
+    if max_chars <= 0 or len(normalized) <= max_chars:
+        return normalized
+    head = normalized[: max_chars + 1]
+    split_index = head.rfind(" ")
+    if split_index < max(0, int(max_chars * 0.6)):
+        split_index = max_chars
+    return head[:split_index].rstrip(" ,;:-") + "..."
+
+
+def _build_law_qa_context_blocks_limited(
+    retrieval_result,
+    *,
+    max_blocks: int,
+    max_excerpt_chars: int,
+) -> list[str]:
+    context_blocks: list[str] = []
+    for match in retrieval_result.matches[: max(1, int(max_blocks))]:
+        excerpt = _truncate_law_excerpt(match.excerpt or match.chunk.text, max_chars=max_excerpt_chars)
+        context_blocks.append(
+            (
+                f"[\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a: {match.chunk.url}]\n"
+                f"[\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442: {match.chunk.document_title}]\n"
+                f"[\u041d\u043e\u0440\u043c\u0430: {match.chunk.article_label}]\n"
+                f"{excerpt}"
+            )
+        )
+    return context_blocks
+
+
 def _request_law_qa_text(*, client, model_name: str, prompt: str, max_output_tokens: int) -> tuple[str, AiUsageSummary]:
     attempts = (
         prompt,
@@ -1281,6 +1322,17 @@ def _clean_suggest_text(text: str) -> str:
     return cleaned.strip()
 
 
+def _truncate_suggest_value(value: str, *, max_chars: int) -> str:
+    normalized = str(value or "").strip()
+    if max_chars <= 0 or len(normalized) <= max_chars:
+        return normalized
+    head = normalized[: max_chars + 1]
+    split_index = head.rfind(" ")
+    if split_index < max(0, int(max_chars * 0.6)):
+        split_index = max_chars
+    return head[:split_index].rstrip(" ,;:-") + "..."
+
+
 def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
     question = payload.question.strip()
     if not question:
@@ -1335,28 +1387,57 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
                 shadow_matches=shadow_result.matches,
             )
 
-    context_blocks = _build_law_qa_context_blocks(retrieval_result)
-    prompt = _build_law_qa_prompt(
-        server_name=retrieval_result.server_name,
-        server_code=retrieval_result.server_code,
-        model_name=model_name,
-        question=question,
-        max_answer_chars=payload.max_answer_chars,
-        context_blocks=context_blocks,
-        retrieval_confidence=retrieval_result.confidence,
+    context_attempts = (
+        _build_law_qa_context_blocks(retrieval_result),
+        _build_law_qa_context_blocks_limited(retrieval_result, max_blocks=8, max_excerpt_chars=900),
+        _build_law_qa_context_blocks_limited(retrieval_result, max_blocks=5, max_excerpt_chars=650),
+        _build_law_qa_context_blocks_limited(retrieval_result, max_blocks=3, max_excerpt_chars=420),
+        _build_law_qa_context_blocks_limited(retrieval_result, max_blocks=2, max_excerpt_chars=280),
     )
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
     request_started_at = monotonic()
+    prompt = ""
+    text = ""
+    usage = AiUsageSummary()
+    compaction_level = 0
     try:
         client = create_openai_client(api_key=api_key, proxy_url=proxy_url)
-        text, usage = _request_law_qa_text(
-            client=client,
-            model_name=model_name,
-            prompt=prompt,
-            max_output_tokens=800,
-        )
+        for attempt_index, context_blocks in enumerate(context_attempts):
+            if not context_blocks:
+                continue
+            prompt = _build_law_qa_prompt(
+                server_name=retrieval_result.server_name,
+                server_code=retrieval_result.server_code,
+                model_name=model_name,
+                question=question,
+                max_answer_chars=payload.max_answer_chars,
+                context_blocks=context_blocks,
+                retrieval_confidence=retrieval_result.confidence,
+            )
+            try:
+                text, usage = _request_law_qa_text(
+                    client=client,
+                    model_name=model_name,
+                    prompt=prompt,
+                    max_output_tokens=800,
+                )
+                compaction_level = attempt_index
+                break
+            except HTTPException:
+                raise
+            except Exception as exc:
+                if _is_context_window_error(exc) and attempt_index < len(context_attempts) - 1:
+                    LOGGER.warning(
+                        "Law QA prompt exceeded context window for model %s; retrying with compact context level=%s",
+                        model_name,
+                        attempt_index + 1,
+                    )
+                    continue
+                raise
+        if not text:
+            raise RuntimeError("Law QA generation failed without response text after context retries.")
     except Exception as exc:
         if isinstance(exc, HTTPException):
             raise
@@ -1379,6 +1460,13 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
         allowed_source_urls=used_sources,
         bundle_health=retrieval_result.bundle_health,
     )
+    telemetry_meta = telemetry_to_meta(telemetry)
+    telemetry_meta.update(
+        {
+            "context_compaction_level": compaction_level,
+            "context_compacted": bool(compaction_level > 0),
+        }
+    )
     return LawQaAnswerResult(
         text=limited,
         generation_id=generation_id,
@@ -1393,14 +1481,15 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
         bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
         warnings=list(
             dict.fromkeys(
-                retrieval_result.bundle_health.warnings
-                + guard_result.warning_codes
-                + budget_assessment.warnings
+                list(retrieval_result.bundle_health.warnings)
+                + list(guard_result.warning_codes)
+                + list(budget_assessment.warnings)
+                + (["law_qa_context_compacted"] if compaction_level > 0 else [])
             )
         ),
         shadow=_shadow_to_dict(shadow),
         selected_norms=_build_law_qa_selected_norms(retrieval_result),
-        telemetry=telemetry_to_meta(telemetry),
+        telemetry=telemetry_meta,
         budget_status=budget_assessment.status,
         budget_warnings=list(budget_assessment.warnings),
         budget_policy=policy_to_meta(budget_assessment.policy),
@@ -1459,33 +1548,69 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
                 shadow_matches=shadow_result.matches,
             )
 
-    prompt_text = build_suggest_prompt(
-        victim_name=payload.victim_name.strip(),
-        org=payload.org.strip(),
-        subject=payload.subject.strip(),
-        event_dt=payload.event_dt.strip(),
-        raw_desc=payload.raw_desc.strip(),
-        complaint_basis=payload.complaint_basis.strip(),
-        main_focus=payload.main_focus.strip(),
-        law_context=law_context,
+    victim_name = payload.victim_name.strip()
+    org = payload.org.strip()
+    subject = payload.subject.strip()
+    event_dt = payload.event_dt.strip()
+    complaint_basis = payload.complaint_basis.strip()
+    main_focus = payload.main_focus.strip()
+    raw_desc = payload.raw_desc.strip()
+    suggest_attempts = (
+        (raw_desc, law_context),
+        (raw_desc, _truncate_suggest_value(law_context, max_chars=2600)),
+        (raw_desc, _truncate_suggest_value(law_context, max_chars=1500)),
+        (_truncate_suggest_value(raw_desc, max_chars=8000), _truncate_suggest_value(law_context, max_chars=1200)),
+        (_truncate_suggest_value(raw_desc, max_chars=5000), _truncate_suggest_value(law_context, max_chars=700)),
     )
+
+    prompt_text = ""
+    generation_result: TextGenerationResult | None = None
+    openai_ms = 0
+    suggest_compaction_level = 0
+    request_started_at = monotonic()
     try:
-        request_started_at = monotonic()
-        generation_result = suggest_description_with_proxy_fallback_result(
-            api_key=api_key,
-            proxy_url=proxy_url,
-            victim_name=payload.victim_name.strip(),
-            org=payload.org.strip(),
-            subject=payload.subject.strip(),
-            event_dt=payload.event_dt.strip(),
-            raw_desc=payload.raw_desc.strip(),
-            complaint_basis=payload.complaint_basis.strip(),
-            main_focus=payload.main_focus.strip(),
-            law_context=law_context,
-        )
+        for attempt_index, (attempt_raw_desc, attempt_law_context) in enumerate(suggest_attempts):
+            prompt_text = build_suggest_prompt(
+                victim_name=victim_name,
+                org=org,
+                subject=subject,
+                event_dt=event_dt,
+                raw_desc=attempt_raw_desc,
+                complaint_basis=complaint_basis,
+                main_focus=main_focus,
+                law_context=attempt_law_context,
+            )
+            try:
+                generation_result = suggest_description_with_proxy_fallback_result(
+                    api_key=api_key,
+                    proxy_url=proxy_url,
+                    victim_name=victim_name,
+                    org=org,
+                    subject=subject,
+                    event_dt=event_dt,
+                    raw_desc=attempt_raw_desc,
+                    complaint_basis=complaint_basis,
+                    main_focus=main_focus,
+                    law_context=attempt_law_context,
+                )
+                suggest_compaction_level = attempt_index
+                break
+            except Exception as exc:
+                if _is_context_window_error(exc) and attempt_index < len(suggest_attempts) - 1:
+                    LOGGER.warning(
+                        "Suggest prompt exceeded context window; retrying with compact context level=%s",
+                        attempt_index + 1,
+                    )
+                    continue
+                raise
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
     openai_ms = int((monotonic() - request_started_at) * 1000)
+    if generation_result is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=["Не удалось получить ответ модели после повторных попыток."],
+        )
 
     text = generation_result.text
     if not text:
@@ -1516,6 +1641,8 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
             "attempt_path": generation_result.attempt_path,
             "attempt_duration_ms": generation_result.attempt_duration_ms,
             "route_policy": generation_result.route_policy,
+            "context_compaction_level": suggest_compaction_level,
+            "context_compacted": bool(suggest_compaction_level > 0),
         }
     )
     return SuggestTextResult(
@@ -1523,7 +1650,13 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
         generation_id=generation_id,
         guard_status=guard_result.status,
         contract_version=LEGAL_PIPELINE_CONTRACT_VERSION,
-        warnings=list(dict.fromkeys(guard_result.warning_codes + budget_assessment.warnings)),
+        warnings=list(
+            dict.fromkeys(
+                list(guard_result.warning_codes)
+                + list(budget_assessment.warnings)
+                + (["suggest_context_compacted"] if suggest_compaction_level > 0 else [])
+            )
+        ),
         shadow=_shadow_to_dict(shadow),
         telemetry=telemetry_meta,
         budget_status=budget_assessment.status,

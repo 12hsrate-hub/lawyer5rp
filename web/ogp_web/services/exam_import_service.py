@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+import time
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -14,6 +16,70 @@ from shared.ogp_ai import score_exam_answers_batch_with_proxy_fallback
 
 
 logger = logging.getLogger(__name__)
+RETRY_BATCH_CHUNK_SIZE = 4
+_SCORING_STAT_KEYS = (
+    "answer_count",
+    "heuristic_count",
+    "cache_hit_count",
+    "llm_count",
+    "llm_calls",
+    "invalid_batch_item_count",
+    "retry_batch_items",
+    "retry_batch_calls",
+    "retry_single_items",
+    "retry_single_calls",
+    "scoring_ms",
+)
+_SCORING_META_KEYS = ("prompt_mode", "prompt_version", "single_prompt_version")
+
+
+def _empty_scoring_stats() -> dict[str, object]:
+    stats: dict[str, object] = {key: 0 for key in _SCORING_STAT_KEYS}
+    stats.update({key: "" for key in _SCORING_META_KEYS})
+    return stats
+
+
+def _merge_scoring_stats(target: dict[str, object], extra: dict[str, object], *, include_answer_count: bool = True) -> None:
+    for key in _SCORING_STAT_KEYS:
+        if key == "answer_count" and not include_answer_count:
+            continue
+        target[key] = int(target.get(key) or 0) + int(extra.get(key) or 0)
+    for key in _SCORING_META_KEYS:
+        current = str(target.get(key) or "").strip()
+        incoming = str(extra.get(key) or "").strip()
+        if not current and incoming:
+            target[key] = incoming
+
+
+def _is_invalid_batch_result(result: dict[str, object] | None) -> bool:
+    rationale = str((result or {}).get("rationale") or "").strip()
+    return rationale == DEFAULT_INVALID_BATCH_RATIONALE
+
+
+def _append_stage(stage_trace: dict[str, list[str]], column: str, stage: str) -> None:
+    stage_trace.setdefault(str(column), []).append(stage)
+
+
+def _normalize_exam_column_key(column: object) -> str:
+    normalized = str(column or "").strip().upper()
+    return re.sub(r"\s+", "", normalized)
+
+
+def _log_stage_trace(
+    *,
+    source_row: int,
+    column: str,
+    stages: list[str],
+    result: dict[str, object] | None,
+) -> None:
+    logger.warning(
+        "Exam scoring stage trace source_row=%s column=%s stages=%s final_score=%s final_rationale=%s",
+        source_row,
+        column,
+        " > ".join(stages),
+        (result or {}).get("score"),
+        str((result or {}).get("rationale") or "").strip(),
+    )
 
 
 def fill_question_g_fields(entry: dict[str, object]) -> None:
@@ -53,19 +119,62 @@ def retry_invalid_batch_scores(
     *,
     api_key: str,
     proxy_url: str,
+    source_row: int,
     score_items: list[dict[str, str]],
     results: dict[str, dict[str, object]],
-    stats: dict[str, int],
+    stats: dict[str, object],
 ) -> dict[str, dict[str, object]]:
-    item_by_column = {str(item["column"]): item for item in score_items}
+    item_by_column = {_normalize_exam_column_key(item["column"]): item for item in score_items}
     retried_results = dict(results)
-    for column, result in list(results.items()):
-        rationale = str((result or {}).get("rationale") or "").strip()
-        if rationale != DEFAULT_INVALID_BATCH_RATIONALE:
-            continue
-        item = item_by_column.get(str(column))
+    normalized_results = {_normalize_exam_column_key(column): result for column, result in results.items()}
+    invalid_columns = [column for column, result in normalized_results.items() if _is_invalid_batch_result(result)]
+    invalid_items = [item_by_column[column] for column in invalid_columns if column in item_by_column]
+    for column, result in normalized_results.items():
+        retried_results[column] = result
+    stage_trace: dict[str, list[str]] = {}
+    for column in invalid_columns:
+        _append_stage(stage_trace, column, "batch_initial")
+        _append_stage(stage_trace, column, "invalid_batch")
+    stats["invalid_batch_item_count"] += len(invalid_items)
+
+    if len(invalid_items) > 1:
+        for item in invalid_items:
+            _append_stage(stage_trace, str(item["column"]), "retry_batch")
+        try:
+            retry_results, retry_stats = score_exam_answers_batch_with_proxy_fallback(
+                api_key=api_key,
+                proxy_url=proxy_url,
+                items=invalid_items,
+                return_stats=True,
+                chunk_size=RETRY_BATCH_CHUNK_SIZE,
+            )
+            stats["retry_batch_items"] += len(invalid_items)
+            stats["retry_batch_calls"] += int(retry_stats.get("llm_calls") or 0)
+            _merge_scoring_stats(stats, retry_stats, include_answer_count=False)
+            for column, result in retry_results.items():
+                normalized_column = _normalize_exam_column_key(column)
+                retried_results[normalized_column] = result
+                if _is_invalid_batch_result(result):
+                    _append_stage(stage_trace, normalized_column, "retry_batch_invalid")
+                else:
+                    _append_stage(stage_trace, normalized_column, "retry_batch_resolved")
+        except Exception:
+            logger.exception(
+                "Mini-batch retry failed for source_row=%s invalid exam scoring items=%s",
+                source_row,
+                len(invalid_items),
+            )
+            for item in invalid_items:
+                _append_stage(stage_trace, str(item["column"]), "retry_batch_failed")
+
+    remaining_invalid_columns = [
+        column for column in invalid_columns if _is_invalid_batch_result(retried_results.get(column))
+    ]
+    for column in remaining_invalid_columns:
+        item = item_by_column.get(column)
         if not item:
             continue
+        _append_stage(stage_trace, column, "retry_single")
         try:
             retried_results[str(column)] = score_exam_answer_with_proxy_fallback(
                 api_key=api_key,
@@ -77,10 +186,26 @@ def retry_invalid_batch_scores(
                 exam_type=str(item.get("exam_type") or ""),
                 key_points=[str(point).strip() for point in (item.get("key_points") or []) if str(point).strip()],
             )
+            stats["retry_single_items"] += 1
+            stats["retry_single_calls"] += 1
             stats["llm_calls"] += 1
             stats["llm_count"] += 1
+            _append_stage(stage_trace, column, "retry_single_resolved")
         except Exception:
-            logger.exception("Single-score retry failed for source column=%s after invalid batch result", column)
+            _append_stage(stage_trace, column, "retry_single_failed")
+            logger.exception(
+                "Single-score retry failed for source_row=%s column=%s after invalid batch result",
+                source_row,
+                column,
+            )
+
+    for column, stages in stage_trace.items():
+        _log_stage_trace(
+            source_row=source_row,
+            column=column,
+            stages=stages,
+            result=retried_results.get(column),
+        )
     return retried_results
 
 
@@ -90,9 +215,9 @@ def score_exam_answers_if_needed(
     *,
     build_exam_score_items,
     force_rescore: bool = False,
-) -> tuple[bool, dict[str, int]]:
+) -> tuple[bool, dict[str, object]]:
     payload = entry.get("payload") or {}
-    empty_stats = {"answer_count": 0, "heuristic_count": 0, "cache_hit_count": 0, "llm_count": 0, "llm_calls": 0}
+    empty_stats = _empty_scoring_stats()
     if not isinstance(payload, dict):
         entry["exam_scores"] = []
         fill_question_g_fields(entry)
@@ -110,15 +235,18 @@ def score_exam_answers_if_needed(
     score_items = build_exam_score_items(payload)
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
+    start_ts = time.perf_counter()
     results, stats = score_exam_answers_batch_with_proxy_fallback(
         api_key=api_key,
         proxy_url=proxy_url,
         items=score_items,
         return_stats=True,
     )
+    stats["scoring_ms"] = int((time.perf_counter() - start_ts) * 1000)
     results = retry_invalid_batch_scores(
         api_key=api_key,
         proxy_url=proxy_url,
+        source_row=int(entry["source_row"]),
         score_items=score_items,
         results=results,
         stats=stats,
@@ -126,8 +254,12 @@ def score_exam_answers_if_needed(
     entry["exam_scores"] = [
         {
             **item,
-            "score": int(results.get(item["column"], {}).get("score", 1)),
-            "rationale": str(results.get(item["column"], {}).get("rationale", "") or ""),
+            "score": int(
+                results.get(_normalize_exam_column_key(item["column"]), {}).get("score", 1),
+            ),
+            "rationale": str(
+                results.get(_normalize_exam_column_key(item["column"]), {}).get("rationale", "") or "",
+            ),
         }
         for item in score_items
     ]
@@ -188,9 +320,9 @@ def serialize_http_exception(exc: HTTPException) -> str:
     return str(detail).strip() or "Не удалось завершить задачу."
 
 
-def score_pending_rows(store: ExamAnswersStore, *, build_exam_score_items) -> tuple[int, dict[str, int], list[dict[str, object]]]:
+def score_pending_rows(store: ExamAnswersStore, *, build_exam_score_items) -> tuple[int, dict[str, object], list[dict[str, object]]]:
     scored_count = 0
-    aggregate_stats = {"answer_count": 0, "heuristic_count": 0, "cache_hit_count": 0, "llm_count": 0, "llm_calls": 0}
+    aggregate_stats = _empty_scoring_stats()
     failures: list[dict[str, object]] = []
     pending_entries = store.list_entries_needing_scores(limit=500)
     for pending in pending_entries:
@@ -201,8 +333,7 @@ def score_pending_rows(store: ExamAnswersStore, *, build_exam_score_items) -> tu
             did_score, stats = score_exam_answers_if_needed(store, detailed_entry, build_exam_score_items=build_exam_score_items)
             if did_score:
                 scored_count += 1
-                for key in aggregate_stats:
-                    aggregate_stats[key] += int(stats.get(key) or 0)
+                _merge_scoring_stats(aggregate_stats, stats)
         except Exception as exc:
             source_row = int(pending["source_row"])
             logger.exception("Exam batch scoring failed for source_row=%s", source_row)
@@ -216,10 +347,10 @@ def score_pending_rows_with_progress(
     build_exam_score_items,
     progress_callback=None,
     mode: str = "missing_only",
-) -> tuple[int, dict[str, int], list[dict[str, object]], int]:
+) -> tuple[int, dict[str, object], list[dict[str, object]], int]:
     scored_count = 0
     processed_count = 0
-    aggregate_stats = {"answer_count": 0, "heuristic_count": 0, "cache_hit_count": 0, "llm_count": 0, "llm_calls": 0}
+    aggregate_stats = _empty_scoring_stats()
     failures: list[dict[str, object]] = []
     pending_entries = store.list_entries_needing_scores(limit=500)
     total_count = len(pending_entries)
@@ -246,8 +377,7 @@ def score_pending_rows_with_progress(
             did_score, stats = score_exam_answers_if_needed(store, detailed_entry, build_exam_score_items=build_exam_score_items)
             if did_score:
                 scored_count += 1
-                for key in aggregate_stats:
-                    aggregate_stats[key] += int(stats.get(key) or 0)
+                _merge_scoring_stats(aggregate_stats, stats)
         except Exception as exc:
             logger.exception("Exam batch scoring failed for source_row=%s", source_row)
             failures.append({"source_row": source_row, "error": exc})
@@ -380,7 +510,7 @@ def build_failed_rescoring_result(
     progress_callback=None,
 ) -> dict[str, object]:
     rescored_count = 0
-    scoring_stats = {"answer_count": 0, "heuristic_count": 0, "cache_hit_count": 0, "llm_count": 0, "llm_calls": 0}
+    scoring_stats = _empty_scoring_stats()
     failures: list[dict[str, object]] = []
     candidates = store.list_entries_with_failed_scores(limit=500)
 
@@ -398,8 +528,7 @@ def build_failed_rescoring_result(
             )
             if did_score:
                 rescored_count += 1
-                for key in scoring_stats:
-                    scoring_stats[key] += int(stats.get(key) or 0)
+                _merge_scoring_stats(scoring_stats, stats)
         except Exception as exc:
             logger.exception("Exam failed-row rescoring failed for source_row=%s", source_row)
             failures.append({"source_row": source_row, "error": exc})

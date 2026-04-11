@@ -5,8 +5,12 @@ from dataclasses import dataclass
 
 SUGGEST_PROMPT_VERSION = "suggest.v26"
 PRINCIPAL_SCAN_PROMPT_VERSION = "principal_scan.v2"
-EXAM_SCORING_PROMPT_VERSION = "exam_scoring.v7"
-EXAM_BATCH_SCORING_PROMPT_VERSION = "exam_batch_scoring.v7"
+EXAM_SCORING_PROMPT_MODE_FULL = "full"
+EXAM_SCORING_PROMPT_MODE_COMPACT = "compact"
+EXAM_SCORING_PROMPT_VERSION = "exam_scoring.full.v8"
+EXAM_SCORING_COMPACT_PROMPT_VERSION = "exam_scoring.compact.v8"
+EXAM_BATCH_SCORING_PROMPT_VERSION = "exam_batch_scoring.full.v8"
+EXAM_BATCH_SCORING_COMPACT_PROMPT_VERSION = "exam_batch_scoring.compact.v8"
 
 
 @dataclass(frozen=True)
@@ -23,6 +27,25 @@ def _render_prompt_sections(*sections: tuple[str, str]) -> str:
         if normalized:
             parts.append(f"[{title}]\n{normalized}")
     return "\n\n".join(parts).strip()
+
+
+def normalize_exam_scoring_prompt_mode(mode: str) -> str:
+    normalized = str(mode or "").strip().lower()
+    if normalized == EXAM_SCORING_PROMPT_MODE_COMPACT:
+        return EXAM_SCORING_PROMPT_MODE_COMPACT
+    return EXAM_SCORING_PROMPT_MODE_FULL
+
+
+def get_exam_scoring_prompt_version(mode: str = EXAM_SCORING_PROMPT_MODE_FULL) -> str:
+    if normalize_exam_scoring_prompt_mode(mode) == EXAM_SCORING_PROMPT_MODE_COMPACT:
+        return EXAM_SCORING_COMPACT_PROMPT_VERSION
+    return EXAM_SCORING_PROMPT_VERSION
+
+
+def get_batch_exam_scoring_prompt_version(mode: str = EXAM_SCORING_PROMPT_MODE_FULL) -> str:
+    if normalize_exam_scoring_prompt_mode(mode) == EXAM_SCORING_PROMPT_MODE_COMPACT:
+        return EXAM_BATCH_SCORING_COMPACT_PROMPT_VERSION
+    return EXAM_BATCH_SCORING_PROMPT_VERSION
 
 
 SUGGEST_ALLOWED_SOURCES = """
@@ -632,12 +655,64 @@ def build_exam_scoring_prompt_spec(
     question: str = "",
     exam_type: str = "",
     key_points: list[str] | None = None,
+    mode: str = EXAM_SCORING_PROMPT_MODE_FULL,
 ) -> PromptSpec:
+    prompt_mode = normalize_exam_scoring_prompt_mode(mode)
     normalized_key_points = [str(item).strip() for item in (key_points or []) if str(item).strip()]
     key_points_text = "\n".join(f"- {item}" for item in normalized_key_points) or "- not provided"
+    if prompt_mode == EXAM_SCORING_PROMPT_MODE_COMPACT:
+        return PromptSpec(
+            name="exam_scoring",
+            version=get_exam_scoring_prompt_version(prompt_mode),
+            text=_render_prompt_sections(
+                (
+                    "system",
+                    """
+Evaluate one legal exam answer conservatively.
+Return only valid JSON.
+""",
+                ),
+                (
+                    "task",
+                    f"""
+Column: {column}
+Exam type: {exam_type}
+Question: {question}
+Draft reference answer: {correct_answer}
+Student answer: {user_answer}
+Minimal required points:
+{key_points_text}
+""",
+                ),
+                (
+                    "scoring_rules",
+                    """
+Score 1-100 by legal meaning and core conclusion.
+- 100: fully correct
+- 80-99: mostly correct, minor omissions
+- 60-79: partly correct
+- 30-59: weak or materially incomplete
+- 1-29: wrong, contradictory, or empty
+Prefer the lower score when required legal points are missing.
+Do not invent facts or legal meaning not stated in the answer.
+""",
+                ),
+                (
+                    "output_contract",
+                    """
+Return only JSON:
+{"score":78,"rationale":"brief reason"}
+
+The fields "score" and "rationale" are mandatory.
+The rationale must be one short sentence.
+Legacy compatibility hint: include "score" as a numeric value in range 1-100 ("score": 1-100).
+""",
+                ),
+            ),
+        )
     return PromptSpec(
         name="exam_scoring",
-        version=EXAM_SCORING_PROMPT_VERSION,
+        version=get_exam_scoring_prompt_version(prompt_mode),
         text=_render_prompt_sections(
             (
                 "system",
@@ -722,6 +797,7 @@ def build_exam_scoring_prompt(
     question: str = "",
     exam_type: str = "",
     key_points: list[str] | None = None,
+    mode: str = EXAM_SCORING_PROMPT_MODE_FULL,
 ) -> str:
     return build_exam_scoring_prompt_spec(
         user_answer=user_answer,
@@ -730,13 +806,59 @@ def build_exam_scoring_prompt(
         question=question,
         exam_type=exam_type,
         key_points=key_points,
+        mode=mode,
     ).text
 
 
-def build_batch_exam_scoring_prompt_spec(*, prompt_items: str) -> PromptSpec:
+def build_batch_exam_scoring_prompt_spec(
+    *,
+    prompt_items: str,
+    mode: str = EXAM_SCORING_PROMPT_MODE_FULL,
+) -> PromptSpec:
+    prompt_mode = normalize_exam_scoring_prompt_mode(mode)
+    if prompt_mode == EXAM_SCORING_PROMPT_MODE_COMPACT:
+        return PromptSpec(
+            name="exam_batch_scoring",
+            version=get_batch_exam_scoring_prompt_version(prompt_mode),
+            text=_render_prompt_sections(
+                (
+                    "system",
+                    """
+Evaluate multiple legal exam answers with one consistent rubric.
+Return only valid JSON.
+""",
+                ),
+                (
+                    "task",
+                    f"""
+For each item, compare the student answer with the draft reference answer and return a score plus a brief rationale.
+
+Items:
+{prompt_items}
+""",
+                ),
+                (
+                    "scoring_rules",
+                    """
+Score 1-100 by legal meaning and core conclusion.
+Prefer the lower score when required legal points are missing.
+Use one consistent rubric across all items.
+""",
+                ),
+                (
+                    "output_contract",
+                    """
+Return only JSON:
+{"F":{"score":75,"rationale":"..."},"G":{"score":100,"rationale":"..."}}
+
+The fields "score" and "rationale" are mandatory for every item.
+""",
+                ),
+            ),
+        )
     return PromptSpec(
         name="exam_batch_scoring",
-        version=EXAM_BATCH_SCORING_PROMPT_VERSION,
+        version=get_batch_exam_scoring_prompt_version(prompt_mode),
         text=_render_prompt_sections(
             (
                 "system",
@@ -802,5 +924,9 @@ Also acceptable fallback JSON:
     )
 
 
-def build_batch_exam_scoring_prompt(*, prompt_items: str) -> str:
-    return build_batch_exam_scoring_prompt_spec(prompt_items=prompt_items).text
+def build_batch_exam_scoring_prompt(
+    *,
+    prompt_items: str,
+    mode: str = EXAM_SCORING_PROMPT_MODE_FULL,
+) -> str:
+    return build_batch_exam_scoring_prompt_spec(prompt_items=prompt_items, mode=mode).text

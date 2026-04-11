@@ -10,16 +10,17 @@ from typing import Callable
 
 from shared.ogp_ai_cache import get_ai_cache
 from shared.ogp_ai_cache import AiCache
-from shared.ogp_ai_config import load_openai_config
+from shared.ogp_ai_config import get_runtime_exam_scoring_prompt_mode, load_openai_config
 from shared.ogp_ai_prompts import (
-    EXAM_BATCH_SCORING_PROMPT_VERSION,
-    EXAM_SCORING_PROMPT_VERSION,
+    EXAM_SCORING_PROMPT_MODE_FULL,
     PRINCIPAL_SCAN_PROMPT_VERSION,
     SUGGEST_PROMPT_VERSION,
     build_batch_exam_scoring_prompt,
     build_exam_scoring_prompt,
     build_principal_scan_prompt,
     build_suggest_prompt,
+    get_batch_exam_scoring_prompt_version,
+    get_exam_scoring_prompt_version,
 )
 from shared.ogp_core import is_valid_http_url
 
@@ -37,6 +38,7 @@ _MIN_SUBSTRING_MATCH_LENGTH = 12
 _HIGH_JACCARD_THRESHOLD = 0.8
 _VERY_HIGH_JACCARD_THRESHOLD = 0.94
 _BATCH_SCORING_CHUNK_SIZE = 12
+_RETRY_BATCH_SCORING_CHUNK_SIZE = 4
 OPENAI_PROXY_ONLY = _OPENAI_CONFIG.proxy_only
 OPENAI_ROUTE_POLICY = _OPENAI_CONFIG.route_policy
 _OPENAI_CONCURRENCY_LIMITS = {
@@ -49,6 +51,19 @@ _OPENAI_SEMAPHORES = {
     key: threading.BoundedSemaphore(value=limit)
     for key, limit in _OPENAI_CONCURRENCY_LIMITS.items()
 }
+
+
+def _current_exam_prompt_mode() -> str:
+    resolved = get_runtime_exam_scoring_prompt_mode()
+    return resolved or EXAM_SCORING_PROMPT_MODE_FULL
+
+
+def _current_exam_prompt_version() -> str:
+    return get_exam_scoring_prompt_version(_current_exam_prompt_mode())
+
+
+def _current_exam_batch_prompt_version() -> str:
+    return get_batch_exam_scoring_prompt_version(_current_exam_prompt_mode())
 
 
 @dataclass(frozen=True)
@@ -196,6 +211,11 @@ def _coerce_usage_int(value: object) -> int:
         return 0
 
 
+def _normalize_exam_column_key(column: object) -> str:
+    normalized = str(column or "").strip().upper().replace(" ", "")
+    return re.sub(r"\s+", "", normalized)
+
+
 def _sanitize_response_text(text: str) -> str:
     lines = [line.strip() for line in str(text or "").replace("\r", "").split("\n")]
     filtered = [
@@ -310,7 +330,7 @@ def _extract_batch_results_map(raw_payload: dict[str, object] | None) -> dict[st
         for item in results:
             if not isinstance(item, dict):
                 continue
-            column = str(item.get("column") or "").strip().upper()
+            column = _normalize_exam_column_key(item.get("column"))
             if not column:
                 continue
             mapped[column] = item
@@ -319,7 +339,7 @@ def _extract_batch_results_map(raw_payload: dict[str, object] | None) -> dict[st
 
     fallback: dict[str, dict[str, object]] = {}
     for key, value in raw_payload.items():
-        column = str(key or "").strip().upper()
+        column = _normalize_exam_column_key(key)
         if not column:
             continue
         if not isinstance(value, dict):
@@ -574,7 +594,7 @@ def _build_exam_score_cache_key(
         operation="score_exam_answer",
         model=OPENAI_EXAM_SCORING_MODEL,
         payload={
-            "prompt_version": EXAM_SCORING_PROMPT_VERSION,
+            "prompt_version": _current_exam_prompt_version(),
             "column": column,
             "question": question,
             "exam_type": exam_type,
@@ -674,6 +694,7 @@ def _score_exam_answer_cached_or_estimated(
             question=question,
             exam_type=exam_type,
             key_points=key_points,
+            mode=_current_exam_prompt_mode(),
         ),
     )
     payload = _extract_json_object(extract_response_text(response))
@@ -682,13 +703,21 @@ def _score_exam_answer_cached_or_estimated(
     return result, True
 
 
-def _empty_exam_batch_stats() -> dict[str, int]:
+def _empty_exam_batch_stats() -> dict[str, object]:
     return {
         "answer_count": 0,
         "heuristic_count": 0,
         "cache_hit_count": 0,
         "llm_count": 0,
         "llm_calls": 0,
+        "invalid_batch_item_count": 0,
+        "retry_batch_items": 0,
+        "retry_batch_calls": 0,
+        "retry_single_items": 0,
+        "retry_single_calls": 0,
+        "prompt_mode": _current_exam_prompt_mode(),
+        "prompt_version": _current_exam_batch_prompt_version(),
+        "single_prompt_version": _current_exam_prompt_version(),
     }
 
 
@@ -857,11 +886,13 @@ def score_exam_answers_batch_with_proxy_fallback(
     proxy_url: str,
     items: list[dict[str, object]],
     return_stats: bool = False,
-) -> dict[str, dict[str, object]] | tuple[dict[str, dict[str, object]], dict[str, int]]:
+    chunk_size: int = _BATCH_SCORING_CHUNK_SIZE,
+) -> dict[str, dict[str, object]] | tuple[dict[str, dict[str, object]], dict[str, object]]:
     stats = _empty_exam_batch_stats()
     stats["answer_count"] = len(items)
     if not items:
         return ({}, stats) if return_stats else {}
+    chunk_size = max(1, int(chunk_size or _BATCH_SCORING_CHUNK_SIZE))
 
     exact_results: dict[str, dict[str, object]] = {}
     pending_items: list[dict[str, str]] = []
@@ -913,13 +944,13 @@ def score_exam_answers_batch_with_proxy_fallback(
 
     def run(client):
         all_results: dict[str, dict[str, object]] = {}
-        for start in range(0, len(pending_items), _BATCH_SCORING_CHUNK_SIZE):
-            chunk_items = pending_items[start : start + _BATCH_SCORING_CHUNK_SIZE]
+        for start in range(0, len(pending_items), chunk_size):
+            chunk_items = pending_items[start : start + chunk_size]
             cache_key = cache.build_key(
                 operation="score_exam_answers_batch",
                 model=OPENAI_EXAM_SCORING_MODEL,
                 payload={
-                    "prompt_version": EXAM_BATCH_SCORING_PROMPT_VERSION,
+                    "prompt_version": _current_exam_batch_prompt_version(),
                     "items": [
                         {
                             "column": item["column"],
@@ -940,7 +971,10 @@ def score_exam_answers_batch_with_proxy_fallback(
                 stats["cache_hit_count"] += len(chunk_items)
                 continue
 
-            prompt = build_batch_exam_scoring_prompt(prompt_items=_chunk_items(chunk_items))
+            prompt = build_batch_exam_scoring_prompt(
+                prompt_items=_chunk_items(chunk_items),
+                mode=_current_exam_prompt_mode(),
+            )
             stats["llm_calls"] += 1
             stats["llm_count"] += len(chunk_items)
             response = client.responses.create(model=OPENAI_EXAM_SCORING_MODEL, input=prompt)
@@ -949,7 +983,7 @@ def score_exam_answers_batch_with_proxy_fallback(
             chunk_results: dict[str, dict[str, object]] = {}
             for item in chunk_items:
                 column = item["column"]
-                payload = raw_by_column.get(str(column or "").upper())
+                payload = raw_by_column.get(_normalize_exam_column_key(column))
                 normalized_result = _normalize_exam_result(payload, fallback_rationale=DEFAULT_INVALID_BATCH_RATIONALE)
                 chunk_results[column] = normalized_result
                 per_item_cache_key = _build_exam_score_cache_key(

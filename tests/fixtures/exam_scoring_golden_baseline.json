@@ -1,0 +1,39 @@
+{
+  "version": "exam_scoring_golden.v1",
+  "generated_at": "2026-04-12",
+  "max_regression_cases": 0,
+  "cases": [
+    {
+      "id": "exact_match",
+      "user_answer": "Сотрудник обязан разъяснить права задержанному.",
+      "correct_answer": "Сотрудник обязан разъяснить права задержанному.",
+      "expected_estimator_available": true,
+      "expected_score_min": 100,
+      "expected_score_max": 100
+    },
+    {
+      "id": "empty_answer",
+      "user_answer": "",
+      "correct_answer": "Основание освобождения описано в статье 20.",
+      "expected_estimator_available": true,
+      "expected_score_min": 1,
+      "expected_score_max": 1
+    },
+    {
+      "id": "high_overlap_paraphrase",
+      "user_answer": "Освобождение допустимо при наличии предусмотренных условий и оплаты залога.",
+      "correct_answer": "Освобождение возможно при наличии законных оснований и внесении залога.",
+      "expected_estimator_available": false,
+      "expected_score_min": 80,
+      "expected_score_max": 100
+    },
+    {
+      "id": "clear_mismatch",
+      "user_answer": "Ответ про дорожный кодекс без связи с вопросом.",
+      "correct_answer": "Задержанному разъясняют права и дают доступ к адвокату.",
+      "expected_estimator_available": false,
+      "expected_score_min": 1,
+      "expected_score_max": 40
+    }
+  ]
+}
