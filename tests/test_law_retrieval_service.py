@@ -12,6 +12,7 @@ for candidate in (ROOT_DIR, WEB_DIR):
 
 from ogp_web.services.law_bundle_service import LawChunk
 from ogp_web.services.law_retrieval_service import retrieve_law_context, unique_sources
+from ogp_web.services import ai_service
 
 
 class TestLawRetrievalService:
@@ -145,3 +146,98 @@ class TestLawRetrievalService:
         assert result.profile == "suggest"
         assert len(result.matches) <= 4
         assert result.matches[0].chunk.article_label == "Article 22"
+        assert result.prefilter_count == 2
+        assert result.rerank_candidate_count == 2
+        assert result.rerank_ms >= 0
+
+    def test_two_stage_ranking_scores_only_top_k_prefilter_candidates(self):
+        chunks = [
+            LawChunk(
+                url=f"https://laws.example/article-{index}",
+                document_title="Procedural Code",
+                article_label=f"Article {index}",
+                text=f"Norm {index}",
+            )
+            for index in range(1, 13)
+        ]
+        scored_labels: list[str] = []
+
+        result = retrieve_law_context(
+            server_code="blackberry",
+            query="release grounds",
+            excerpt_chars=120,
+            profile="suggest",
+            get_server_config_func=lambda _: SimpleNamespace(
+                code="blackberry",
+                name="BlackBerry",
+                law_qa_sources=("https://laws.example/base",),
+                law_qa_bundle_path="",
+            ),
+            load_law_bundle_chunks_func=lambda server_code, bundle_path: [],
+            build_law_chunk_index_func=lambda source_urls: chunks,
+            select_chunks_func=lambda chunks, query, profile="law_qa": (list(chunks), "high"),
+            score_chunk_func=lambda item, query: scored_labels.append(item.article_label) or 10,
+            extract_excerpt_func=lambda text, query, max_chars=0: text,
+        )
+
+        assert result.prefilter_count == 12
+        assert result.rerank_candidate_count == 8
+        assert len(scored_labels) == 8
+        assert len(result.matches) <= 4
+
+    def test_suggest_profile_with_real_scoring_keeps_bail_norms_near_top(self):
+        chunks = [
+            LawChunk(
+                url="https://laws.example/admin-14",
+                document_title="Administrative Code",
+                article_label="Article 14",
+                text="Release on bail. Bail amount follows the sanction of the imputed article.",
+            ),
+            LawChunk(
+                url="https://laws.example/admin-22-1",
+                document_title="Administrative Code",
+                article_label="Article 22.1",
+                text="Violation of the visit regime. Penalty from 10 to 30 days. Bail 8000.",
+            ),
+            LawChunk(
+                url="https://laws.example/general-detention",
+                document_title="Procedural Code",
+                article_label="general",
+                text="General detention overview and rights of the detainee.",
+            ),
+            LawChunk(
+                url="https://laws.example/admin-15",
+                document_title="Administrative Code",
+                article_label="Article 15 part 1",
+                text="Minor hooliganism and public order disruption.",
+            ),
+            LawChunk(
+                url="https://laws.example/other",
+                document_title="Traffic Code",
+                article_label="Article 51",
+                text="Convoy and motorcade rules.",
+            ),
+        ]
+
+        result = retrieve_law_context(
+            server_code="blackberry",
+            query="Как назначается сумма залога по нескольким административным статьям",
+            excerpt_chars=120,
+            profile="suggest",
+            get_server_config_func=lambda _: SimpleNamespace(
+                code="blackberry",
+                name="BlackBerry",
+                law_qa_sources=("https://laws.example/base",),
+                law_qa_bundle_path="",
+            ),
+            load_law_bundle_chunks_func=lambda server_code, bundle_path: [],
+            build_law_chunk_index_func=lambda source_urls: chunks,
+            select_chunks_func=ai_service._select_law_qa_chunks,
+            score_chunk_func=ai_service._score_law_chunk,
+            extract_excerpt_func=lambda text, query, max_chars=0: text[:max_chars or len(text)],
+        )
+
+        labels = [match.chunk.article_label for match in result.matches]
+        assert labels[0] == "Article 14"
+        assert "Article 22.1" in labels
+        assert len(labels) <= 4
