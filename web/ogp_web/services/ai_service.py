@@ -1220,17 +1220,28 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
     return "\n\n".join(parts).strip()
 
 
-def _build_suggest_retrieval_query(payload: SuggestPayload) -> str:
+def _normalize_suggest_retrieval_fragment(value: str, *, max_chars: int | None = None) -> str:
+    normalized = re.sub(r"\s+", " ", str(value or "").strip())
+    if max_chars is None or max_chars <= 0 or len(normalized) <= max_chars:
+        return normalized
+    truncated = normalized[: max_chars + 1]
+    cutoff = truncated.rfind(" ")
+    if cutoff < max(0, int(max_chars * 0.6)):
+        cutoff = max_chars
+    return truncated[:cutoff].rstrip(" ,;:-") + "…"
+
+
+def build_suggest_retrieval_query_light(payload: SuggestPayload, *, raw_desc_limit: int = 360) -> str:
     return " ".join(
-        part.strip()
+        part
         for part in (
-            payload.complaint_basis,
-            payload.main_focus,
-            payload.org,
-            payload.subject,
-            payload.raw_desc,
+            _normalize_suggest_retrieval_fragment(payload.complaint_basis),
+            _normalize_suggest_retrieval_fragment(payload.main_focus),
+            _normalize_suggest_retrieval_fragment(payload.org),
+            _normalize_suggest_retrieval_fragment(payload.subject),
+            _normalize_suggest_retrieval_fragment(payload.raw_desc, max_chars=raw_desc_limit),
         )
-        if str(part or "").strip()
+        if part
     )
 
 
@@ -1419,7 +1430,7 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
     generation_id = new_generation_id()
     server_config = get_server_config(server_code or DEFAULT_SERVER_CODE)
     shadow = build_shadow_comparison(enabled=False, profile="", primary_matches=(), shadow_matches=())
-    suggest_query = _build_suggest_retrieval_query(payload)
+    suggest_query = build_suggest_retrieval_query_light(payload)
     retrieval_started_at = monotonic()
     law_context = _build_suggest_law_context(
         server_code=server_code,

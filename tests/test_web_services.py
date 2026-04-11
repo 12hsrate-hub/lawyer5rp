@@ -418,6 +418,82 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(meta["openai_ms"], 250)
         self.assertEqual(meta["total_suggest_ms"], 1000)
 
+    def test_build_suggest_retrieval_query_light_formats_fields_in_expected_order(self):
+        payload = SuggestPayload(
+            victim_name="Victim",
+            org="  LSPD  ",
+            subject="  Officer North  ",
+            event_dt="08.04.2026 14:30",
+            raw_desc="  First fact.\nSecond fact.  ",
+            complaint_basis="  wrongful_article  ",
+            main_focus="  procedural_violation  ",
+        )
+
+        query = ai_service.build_suggest_retrieval_query_light(payload)
+
+        self.assertEqual(
+            query,
+            "wrongful_article procedural_violation LSPD Officer North First fact. Second fact.",
+        )
+
+    def test_build_suggest_retrieval_query_light_truncates_only_raw_desc_fragment(self):
+        payload = SuggestPayload(
+            victim_name="Victim",
+            org="LSPD",
+            subject="Officer",
+            event_dt="08.04.2026 14:30",
+            raw_desc=" ".join(f"token{i}" for i in range(80)),
+            complaint_basis="wrongful_article",
+            main_focus="procedural_violation",
+        )
+
+        query = ai_service.build_suggest_retrieval_query_light(payload, raw_desc_limit=48)
+
+        self.assertTrue(query.startswith("wrongful_article procedural_violation LSPD Officer "))
+        self.assertIn("token0", query)
+        self.assertNotIn("token20", query)
+        self.assertTrue(query.endswith("…"))
+
+    def test_ai_service_suggest_text_uses_lightweight_query_only_for_retrieval(self):
+        captured: dict[str, str] = {}
+        original = ai_service.suggest_description_with_proxy_fallback
+        original_build_context = ai_service._build_suggest_law_context
+
+        def fake_suggest(**kwargs):
+            captured["provider_raw_desc"] = kwargs["raw_desc"]
+            captured["provider_law_context"] = kwargs["law_context"]
+            return "Описание фактов по жалобе.\n\nУказан ключевой эпизод задержания."
+
+        def fake_context(**kwargs):
+            captured["retrieval_query"] = kwargs["question"]
+            return "Источник: https://laws.example\nНорма: Статья 20"
+
+        raw_desc = " ".join(f"fact{i}" for i in range(120))
+        ai_service.suggest_description_with_proxy_fallback = fake_suggest
+        ai_service._build_suggest_law_context = fake_context
+        try:
+            text = ai_service.suggest_text(
+                SuggestPayload(
+                    victim_name="Victim",
+                    org="LSPD",
+                    subject="Officer",
+                    event_dt="08.04.2026 14:30",
+                    raw_desc=raw_desc,
+                    complaint_basis="wrongful_article",
+                    main_focus="procedural_violation",
+                ),
+                server_code="blackberry",
+            )
+        finally:
+            ai_service.suggest_description_with_proxy_fallback = original
+            ai_service._build_suggest_law_context = original_build_context
+
+        self.assertTrue(text.startswith("Описание фактов"))
+        self.assertEqual(captured["provider_raw_desc"], raw_desc)
+        self.assertEqual(captured["provider_law_context"], "Источник: https://laws.example\nНорма: Статья 20")
+        self.assertIn("wrongful_article procedural_violation LSPD Officer", captured["retrieval_query"])
+        self.assertNotIn("fact100", captured["retrieval_query"])
+
     def test_build_suggest_law_context_returns_empty_when_retrieval_is_low_confidence(self):
         original_get_server_config = ai_service.get_server_config
         original_load_bundle = ai_service.load_law_bundle_chunks
