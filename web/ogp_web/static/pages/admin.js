@@ -26,7 +26,15 @@ const liveStatusHost = document.getElementById("admin-live-status");
 const refreshNowButton = document.getElementById("admin-refresh-now");
 const userModalBody = document.getElementById("admin-user-modal-body");
 
-const { apiFetch, parsePayload, showText, clearText, escapeHtml, createModalController } = window.OGPWeb;
+const {
+  apiFetch,
+  parsePayload,
+  setStateSuccess,
+  setStateError,
+  setStateIdle,
+  escapeHtml,
+  createModalController,
+} = window.OGPWeb;
 const ADMIN_COLLAPSE_STORAGE_KEY = "ogp_admin_collapsible_sections";
 
 let adminSearchTimer = null;
@@ -174,11 +182,11 @@ function describeEventType(eventType) {
 }
 
 function showMessage(text) {
-  showText(messageHost, text);
+  setStateSuccess(messageHost, text);
 }
 
 function clearMessage() {
-  clearText(messageHost);
+  setStateIdle(messageHost);
 }
 
 function formatNumber(value) {
@@ -801,7 +809,7 @@ async function loadAdminPerformance({ silent = false } = {}) {
     if (!response.ok) {
       const payload = await parsePayload(response);
       if (!silent) {
-        showText(errorsHost, payload.detail || "Не удалось загрузить метрики производительности.");
+        setStateError(errorsHost, payload.detail || "Не удалось загрузить метрики производительности.");
       }
       return;
     }
@@ -809,14 +817,14 @@ async function loadAdminPerformance({ silent = false } = {}) {
     renderPerformance(payload);
   } catch (error) {
     if (!silent) {
-      showText(errorsHost, error?.message || "Не удалось загрузить метрики производительности.");
+      setStateError(errorsHost, error?.message || "Не удалось загрузить метрики производительности.");
     }
   }
 }
 
 async function loadAdminOverview({ silent = false } = {}) {
   if (!silent) {
-    clearText(errorsHost);
+    setStateIdle(errorsHost);
     clearMessage();
     showOverviewLoading();
   } else {
@@ -828,7 +836,7 @@ async function loadAdminOverview({ silent = false } = {}) {
     if (!response.ok) {
       const payload = await parsePayload(response);
       if (!silent) {
-        showText(errorsHost, payload.detail || "Не удалось загрузить данные админ-панели.");
+        setStateError(errorsHost, payload.detail || "Не удалось загрузить данные админ-панели.");
       } else {
         setLiveStatus("Live: ошибка обновления", "danger");
       }
@@ -852,7 +860,7 @@ async function loadAdminOverview({ silent = false } = {}) {
     }
   } catch (error) {
     if (!silent) {
-      showText(errorsHost, error?.message || "Не удалось загрузить данные админ-панели.");
+      setStateError(errorsHost, error?.message || "Не удалось загрузить данные админ-панели.");
     } else {
       setLiveStatus("Live: ошибка обновления", "danger");
     }
@@ -933,7 +941,7 @@ function downloadCsv(url) {
 }
 
 async function performAdminAction(url, successText, body = null) {
-  clearText(errorsHost);
+  setStateIdle(errorsHost);
   clearMessage();
   try {
     const response = await apiFetch(url, {
@@ -942,13 +950,13 @@ async function performAdminAction(url, successText, body = null) {
     });
     if (!response.ok) {
       const payload = await parsePayload(response);
-      showText(errorsHost, payload.detail || "Не удалось выполнить действие администратора.");
+      setStateError(errorsHost, payload.detail || "Не удалось выполнить действие администратора.");
       return;
     }
     showMessage(successText);
     await loadAdminOverview();
   } catch (error) {
-    showText(errorsHost, error?.message || "Не удалось выполнить действие администратора.");
+    setStateError(errorsHost, error?.message || "Не удалось выполнить действие администратора.");
   }
 }
 

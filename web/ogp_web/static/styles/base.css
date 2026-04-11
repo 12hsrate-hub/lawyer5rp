@@ -362,6 +362,73 @@ a.button-link:hover {
   white-space: pre-line;
 }
 
+.ui-state {
+  position: relative;
+}
+
+.ui-state--loading {
+  background: rgba(35, 78, 82, 0.1);
+  border-color: rgba(35, 78, 82, 0.35);
+  color: var(--brand);
+}
+
+.ui-state--loading::before,
+.ui-state--success::before,
+.ui-state--error::before,
+.ui-state--empty::before {
+  content: "";
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  margin-right: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+.ui-state--loading::before {
+  border: 2px solid rgba(35, 78, 82, 0.35);
+  border-top-color: currentColor;
+  animation: spin 0.85s linear infinite;
+}
+
+.ui-state--success {
+  background: var(--success-soft);
+  border-color: rgba(31, 95, 68, 0.26);
+  color: var(--success);
+}
+
+.ui-state--success::before {
+  background: currentColor;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--success-soft) 78%, transparent);
+}
+
+.ui-state--error {
+  background: var(--error-soft);
+  border-color: rgba(166, 27, 27, 0.25);
+  color: var(--error);
+}
+
+.ui-state--error::before {
+  background: currentColor;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--error-soft) 86%, transparent);
+}
+
+.ui-state--empty {
+  background: rgba(138, 164, 181, 0.14);
+  border-color: rgba(138, 164, 181, 0.35);
+  color: var(--muted);
+}
+
+.ui-state--empty::before {
+  display: none;
+}
+
+.ui-state--idle {
+  background: inherit;
+  border-color: inherit;
+  color: inherit;
+}
+
 input.is-invalid,
 textarea.is-invalid,
 select.is-invalid {

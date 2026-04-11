@@ -36,7 +36,7 @@ const plaintiffOcrProgress = document.getElementById("court-claim-plaintiff-ocr-
 const plaintiffOcrProgressText = document.getElementById("court-claim-plaintiff-ocr-progress-text");
 const plaintiffOcrFileName = document.getElementById("court-claim-plaintiff-ocr-file-name");
 
-const { apiFetch, parsePayload, redirectIfUnauthorized } = window.OGPWeb;
+const { apiFetch, parsePayload, setStateSuccess, setStateError, setStateIdle, redirectIfUnauthorized } = window.OGPWeb;
 const { wireSingleUsePrincipalOcr, bindFilePickerLabel, createUiResetter } = window.OGPOcr;
 const bindDigitsOnly = window.OGPForm?.bindDigitsOnly || (() => {});
 const draftOwner = (form?.dataset?.username || "anonymous").trim().toLowerCase();
@@ -233,15 +233,19 @@ function getSignatureText() {
 }
 
 function setMessage(text) {
-  if (!messageHost) return;
-  messageHost.hidden = !text;
-  messageHost.textContent = text;
+  if (!text) {
+    setStateIdle(messageHost);
+    return;
+  }
+  setStateSuccess(messageHost, text);
 }
 
 function setErrors(text) {
-  if (!errorsHost) return;
-  errorsHost.hidden = !text;
-  errorsHost.textContent = text;
+  if (!text) {
+    setStateIdle(errorsHost);
+    return;
+  }
+  setStateError(errorsHost, text);
 }
 
 function getClaimKindOptions(courtType) {

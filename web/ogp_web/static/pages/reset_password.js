@@ -1,14 +1,14 @@
 const resetPasswordForm = document.getElementById("reset-password-form");
 const resetErrors = document.getElementById("reset-errors");
-const { apiFetch, parsePayload, showText, clearText } = window.OGPWeb;
+const { apiFetch, parsePayload, setStateError, setStateIdle } = window.OGPWeb;
 const setButtonBusy = window.OGPForm?.setButtonBusy || (() => {});
 
 function showResetErrors(lines) {
-  showText(resetErrors, lines);
+  setStateError(resetErrors, Array.isArray(lines) ? lines.join("\n") : String(lines || ""));
 }
 
 function clearResetErrors() {
-  clearText(resetErrors);
+  setStateIdle(resetErrors);
 }
 
 resetPasswordForm.addEventListener("submit", async (event) => {

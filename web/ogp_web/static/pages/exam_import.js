@@ -23,13 +23,14 @@ const detailScore = document.getElementById("exam-detail-score");
 const {
   apiFetch,
   parsePayload,
-  showText,
-  clearText,
+  setStateError,
+  setStateIdle,
+  setStateSuccess,
   createModalController,
   escapeHtml,
   redirectIfUnauthorized,
 } = window.OGPWeb;
-const { showOptionalText, bindLogout } = window.OGPPage;
+const { bindLogout } = window.OGPPage;
 const ExamView = window.OGPExamImportView;
 
 const detailModal = createModalController({
@@ -46,15 +47,19 @@ let latestEntries = [];
 let initialEntriesLoaded = false;
 
 function showErrors(lines) {
-  showText(errorBox, lines);
+  setStateError(errorBox, Array.isArray(lines) ? lines.join("\n") : String(lines || ""));
 }
 
 function clearErrors() {
-  clearText(errorBox);
+  setStateIdle(errorBox);
 }
 
 function showMessage(text) {
-  showOptionalText(messageBox, text);
+  if (!text) {
+    setStateIdle(messageBox);
+    return;
+  }
+  setStateSuccess(messageBox, text);
 }
 
 function saveActiveTask(task) {

@@ -24,6 +24,62 @@ window.OGPWeb = {
     host.textContent = "";
   },
 
+  setState(host, state) {
+    if (!host) {
+      return;
+    }
+    host.hidden = false;
+    const normalized = String(state || "idle");
+    host.classList.remove(
+      "ui-state",
+      "ui-state--idle",
+      "ui-state--loading",
+      "ui-state--success",
+      "ui-state--error",
+      "ui-state--empty",
+    );
+    host.classList.add("ui-state", `ui-state--${normalized}`);
+    if (normalized === "idle") {
+      host.classList.add("ui-state--idle");
+    }
+  },
+
+  setStateIdle(host, text = "") {
+    if (!host) {
+      return;
+    }
+    host.hidden = true;
+    host.classList.remove(
+      "ui-state",
+      "ui-state--loading",
+      "ui-state--success",
+      "ui-state--error",
+      "ui-state--empty",
+      "ui-state--idle",
+    );
+    host.textContent = text || "";
+  },
+
+  setStateLoading(host, text = "") {
+    this.setState(host, "loading");
+    host.textContent = String(text || "");
+  },
+
+  setStateSuccess(host, text = "") {
+    this.setState(host, "success");
+    host.textContent = String(text || "");
+  },
+
+  setStateError(host, text = "") {
+    this.setState(host, "error");
+    host.textContent = String(text || "");
+  },
+
+  setStateEmpty(host, text = "") {
+    this.setState(host, "empty");
+    host.textContent = String(text || "");
+  },
+
   escapeHtml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")

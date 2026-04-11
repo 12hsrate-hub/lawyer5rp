@@ -31,9 +31,17 @@ const complaintProgressText = document.getElementById("complaint-progress-text")
 const complaintProgressBar = document.getElementById("complaint-progress-bar");
 const complaintProgressHost = document.querySelector(".legal-form-progress");
 
-const { apiFetch, parsePayload, showText, clearText, redirectIfUnauthorized, createModalController } = window.OGPWeb;
+const {
+  apiFetch,
+  parsePayload,
+  setStateError,
+  setStateIdle,
+  setStateSuccess,
+  redirectIfUnauthorized,
+  createModalController,
+} = window.OGPWeb;
 const { wireSingleUsePrincipalOcr, bindFilePickerLabel, createUiResetter } = window.OGPOcr;
-const { showOptionalText, bindLogout } = window.OGPPage;
+const { bindLogout } = window.OGPPage;
 const { parseJsonScript, bindDigitsOnly, bindDynamicAddButtons, addDynamicField, setCurrentDate, setFieldValue } =
   window.OGPForm;
 const { createPresetState, applyState, collectDraftState, buildPayload } = window.OGPComplaintPayload;
@@ -109,19 +117,19 @@ const resetComplaintOcrUi = createUiResetter({
 });
 
 function showErrors(lines) {
-  showText(errors, lines);
+  setStateError(errors, Array.isArray(lines) ? lines.join("\n") : String(lines || ""));
 }
 
 function clearErrors() {
-  clearText(errors);
+  setStateIdle(errors);
 }
 
 function showAiErrors(lines) {
-  showText(aiErrors, lines);
+  setStateError(aiErrors, Array.isArray(lines) ? lines.join("\n") : String(lines || ""));
 }
 
 function clearAiErrors() {
-  clearText(aiErrors);
+  setStateIdle(aiErrors);
 }
 
 function setAiBusy(isBusy, text = "") {
@@ -147,7 +155,11 @@ function setBbcodeBusy(isBusy, text = "") {
 }
 
 function showAppMessage(text) {
-  showOptionalText(appMessage, text);
+  if (!text) {
+    setStateIdle(appMessage);
+    return;
+  }
+  setStateSuccess(appMessage, text);
 }
 
 function scrollToErrors() {

@@ -1,10 +1,22 @@
 window.OGPPage = {
-  showOptionalText(host, text) {
+  showOptionalText(host, text, state = "success") {
     if (!text) {
-      window.OGPWeb.clearText(host);
+      window.OGPWeb.setStateIdle(host);
       return;
     }
-    window.OGPWeb.showText(host, text);
+    if (state === "error") {
+      window.OGPWeb.setStateError(host, text);
+      return;
+    }
+    if (state === "loading") {
+      window.OGPWeb.setStateLoading(host, text);
+      return;
+    }
+    if (state === "empty") {
+      window.OGPWeb.setStateEmpty(host, text);
+      return;
+    }
+    window.OGPWeb.setStateSuccess(host, text);
   },
 
   bindLogout(button, { message = "Вы вышли из аккаунта." } = {}) {

@@ -12,37 +12,49 @@ const profileProgressHost = document.getElementById("profile-progress-host");
 const profileSubmitButton = profileForm?.querySelector("button[type='submit']");
 const passwordSubmitButton = passwordForm?.querySelector("button[type='submit']");
 
-const { apiFetch, parsePayload, showText, clearText, redirectIfUnauthorized } = window.OGPWeb;
-const { showOptionalText, bindLogout } = window.OGPPage;
+const { apiFetch, parsePayload, setStateError, setStateIdle, setStateSuccess, redirectIfUnauthorized } = window.OGPWeb;
+const { bindLogout } = window.OGPPage;
 const bindDigitsOnly = window.OGPForm?.bindDigitsOnly || (() => {});
 const setButtonBusy = window.OGPForm?.setButtonBusy || (() => {});
 
 function showProfileErrors(lines) {
-  showText(profileErrors, lines);
+  setStateError(profileErrors, Array.isArray(lines) ? lines.join("\n") : String(lines || ""));
 }
 
 function clearProfileErrors() {
-  clearText(profileErrors);
+  setStateIdle(profileErrors);
 }
 
 function showProfileMessage(text) {
-  showOptionalText(profileMessage, text);
+  if (!text) {
+    setStateIdle(profileMessage);
+    return;
+  }
+  setStateSuccess(profileMessage, text);
 }
 
 function showPasswordErrors(lines) {
-  showText(passwordErrors, lines);
+  setStateError(passwordErrors, Array.isArray(lines) ? lines.join("\n") : String(lines || ""));
 }
 
 function clearPasswordErrors() {
-  clearText(passwordErrors);
+  setStateIdle(passwordErrors);
 }
 
 function showPasswordMessage(text) {
-  showOptionalText(passwordMessage, text);
+  if (!text) {
+    setStateIdle(passwordMessage);
+    return;
+  }
+  setStateSuccess(passwordMessage, text);
 }
 
 function showAppMessage(text) {
-  showOptionalText(appMessage, text);
+  if (!text) {
+    setStateIdle(appMessage);
+    return;
+  }
+  setStateSuccess(appMessage, text);
 }
 
 function fillProfileForm(profile) {
