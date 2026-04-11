@@ -34,7 +34,7 @@ def list_users(store: UserStore, *, limit: int | None = None) -> list[dict[str, 
     with store._connect() as conn:
         rows = conn.execute(
             """
-            SELECT username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka
+            SELECT username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka
             FROM users
             ORDER BY created_at DESC, username ASC
             {limit_clause}
@@ -209,6 +209,68 @@ def admin_reset_password(store: UserStore, username: str, new_password: str) -> 
     )
     refreshed = store._fetch_user_by_username(
         normalized,
-        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka",
+        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
     )
     return dict(refreshed) if refreshed else {}
+
+
+def admin_deactivate_user(store: UserStore, username: str, reason: str = "") -> dict[str, Any]:
+    normalized = _normalize_username(username)
+    rowcount = store._execute(
+        """
+        UPDATE users
+        SET deactivated_at = CURRENT_TIMESTAMP,
+            deactivated_reason = ?,
+            access_blocked_at = COALESCE(access_blocked_at, CURRENT_TIMESTAMP),
+            access_blocked_reason = COALESCE(NULLIF(access_blocked_reason, ''), ?)
+        WHERE username = ?
+        """,
+        (str(reason or "").strip(), str(reason or "").strip(), normalized),
+    )
+    if rowcount <= 0:
+        raise AuthError("Пользователь не найден.")
+    row = store._fetch_user_by_username(
+        normalized,
+        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
+    )
+    return dict(row) if row else {}
+
+
+def admin_reactivate_user(store: UserStore, username: str) -> dict[str, Any]:
+    normalized = _normalize_username(username)
+    rowcount = store._execute(
+        """
+        UPDATE users
+        SET deactivated_at = NULL,
+            deactivated_reason = NULL
+        WHERE username = ?
+        """,
+        (normalized,),
+    )
+    if rowcount <= 0:
+        raise AuthError("Пользователь не найден.")
+    row = store._fetch_user_by_username(
+        normalized,
+        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
+    )
+    return dict(row) if row else {}
+
+
+def admin_set_daily_quota(store: UserStore, username: str, daily_limit: int) -> dict[str, Any]:
+    normalized = _normalize_username(username)
+    safe_limit = max(0, int(daily_limit or 0))
+    rowcount = store._execute(
+        """
+        UPDATE users
+        SET api_quota_daily = ?
+        WHERE username = ?
+        """,
+        (safe_limit, normalized),
+    )
+    if rowcount <= 0:
+        raise AuthError("Пользователь не найден.")
+    row = store._fetch_user_by_username(
+        normalized,
+        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
+    )
+    return dict(row) if row else {}

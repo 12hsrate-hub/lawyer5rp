@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import uuid
 from copy import deepcopy
 from typing import Any
 from time import monotonic
@@ -10,7 +11,14 @@ from datetime import datetime, timezone
 
 from ogp_web.dependencies import get_admin_metrics_store, get_exam_answers_store, get_user_store
 from ogp_web.server_config import build_permission_set, get_server_config
-from ogp_web.schemas import AdminBlockPayload, AdminEmailUpdatePayload, AdminPasswordResetPayload
+from ogp_web.schemas import (
+    AdminBlockPayload,
+    AdminBulkActionPayload,
+    AdminDeactivatePayload,
+    AdminEmailUpdatePayload,
+    AdminPasswordResetPayload,
+    AdminQuotaPayload,
+)
 from ogp_web.services.auth_service import AuthError, AuthUser, require_admin_user
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
@@ -22,6 +30,8 @@ router = APIRouter(tags=["admin"])
 _PERFORMANCE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _PERFORMANCE_CACHE_TTL_SECONDS = 10
 _PERFORMANCE_CACHE_LOCK = threading.Lock()
+_ADMIN_TASKS: dict[str, dict[str, Any]] = {}
+_ADMIN_TASKS_LOCK = threading.Lock()
 
 
 def _cache_key(*, window_minutes: int, top_endpoints: int) -> str:
@@ -45,6 +55,120 @@ def _load_cached_performance_payload(cache_key: str) -> dict[str, Any] | None:
 def _store_performance_payload(cache_key: str, payload: dict[str, Any]) -> None:
     with _PERFORMANCE_CACHE_LOCK:
         _PERFORMANCE_CACHE[cache_key] = (monotonic(), deepcopy(payload))
+
+
+def _put_admin_task(task: dict[str, Any]) -> None:
+    with _ADMIN_TASKS_LOCK:
+        _ADMIN_TASKS[str(task["task_id"])] = deepcopy(task)
+
+
+def _patch_admin_task(task_id: str, **changes: Any) -> None:
+    with _ADMIN_TASKS_LOCK:
+        current = _ADMIN_TASKS.get(task_id)
+        if not current:
+            return
+        current.update(changes)
+        _ADMIN_TASKS[task_id] = current
+
+
+def _load_admin_task(task_id: str) -> dict[str, Any] | None:
+    with _ADMIN_TASKS_LOCK:
+        item = _ADMIN_TASKS.get(task_id)
+        return deepcopy(item) if item else None
+
+
+def _apply_bulk_action(
+    *,
+    payload: AdminBulkActionPayload,
+    user: AuthUser,
+    metrics_store: AdminMetricsStore,
+    user_store: UserStore,
+    task_id: str | None = None,
+) -> dict[str, Any]:
+    action = str(payload.action or "").strip().lower()
+    usernames = [str(item or "").strip().lower() for item in payload.usernames if str(item or "").strip()]
+    if not usernames:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Не переданы пользователи для массовой операции."])
+
+    results: list[dict[str, Any]] = []
+    success_count = 0
+    for index, username in enumerate(usernames, start=1):
+        try:
+            if action == "verify_email":
+                user_store.admin_mark_email_verified(username)
+                event_type = "admin_verify_email"
+                meta: dict[str, Any] = {"target_username": username, "bulk": True}
+                path = f"/api/admin/users/{username}/verify-email"
+            elif action == "block":
+                user_store.admin_set_access_blocked(username, payload.reason)
+                event_type = "admin_block_user"
+                meta = {"target_username": username, "reason": payload.reason, "bulk": True}
+                path = f"/api/admin/users/{username}/block"
+            elif action == "unblock":
+                user_store.admin_clear_access_blocked(username)
+                event_type = "admin_unblock_user"
+                meta = {"target_username": username, "bulk": True}
+                path = f"/api/admin/users/{username}/unblock"
+            elif action == "grant_tester":
+                user_store.admin_set_tester_status(username, True)
+                event_type = "admin_grant_tester"
+                meta = {"target_username": username, "bulk": True}
+                path = f"/api/admin/users/{username}/grant-tester"
+            elif action == "revoke_tester":
+                user_store.admin_set_tester_status(username, False)
+                event_type = "admin_revoke_tester"
+                meta = {"target_username": username, "bulk": True}
+                path = f"/api/admin/users/{username}/revoke-tester"
+            elif action == "grant_gka":
+                user_store.admin_set_gka_status(username, True)
+                event_type = "admin_grant_gka"
+                meta = {"target_username": username, "bulk": True}
+                path = f"/api/admin/users/{username}/grant-gka"
+            elif action == "revoke_gka":
+                user_store.admin_set_gka_status(username, False)
+                event_type = "admin_revoke_gka"
+                meta = {"target_username": username, "bulk": True}
+                path = f"/api/admin/users/{username}/revoke-gka"
+            elif action == "deactivate":
+                user_store.admin_deactivate_user(username, payload.reason)
+                event_type = "admin_deactivate_user"
+                meta = {"target_username": username, "reason": payload.reason, "bulk": True}
+                path = f"/api/admin/users/{username}/deactivate"
+            elif action == "reactivate":
+                user_store.admin_reactivate_user(username)
+                event_type = "admin_reactivate_user"
+                meta = {"target_username": username, "bulk": True}
+                path = f"/api/admin/users/{username}/reactivate"
+            elif action == "set_daily_quota":
+                user_store.admin_set_daily_quota(username, int(payload.daily_limit or 0))
+                event_type = "admin_set_daily_quota"
+                meta = {"target_username": username, "daily_limit": int(payload.daily_limit or 0), "bulk": True}
+                path = f"/api/admin/users/{username}/daily-quota"
+            else:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[f"Неизвестное bulk-действие: {action}."])
+            metrics_store.log_event(
+                event_type=event_type,
+                username=user.username,
+                server_code=user.server_code,
+                path=path,
+                method="POST",
+                status_code=200,
+                meta=meta,
+            )
+            success_count += 1
+            results.append({"username": username, "ok": True})
+        except Exception as exc:  # noqa: BLE001
+            results.append({"username": username, "ok": False, "error": str(exc)})
+        if task_id:
+            _patch_admin_task(task_id, progress={"done": index, "total": len(usernames)})
+
+    return {
+        "action": action,
+        "total": len(usernames),
+        "success_count": success_count,
+        "failed_count": len(usernames) - success_count,
+        "results": results,
+    }
 
 
 def _admin_template_payload(request: Request, user: AuthUser, *, admin_focus: str) -> dict[str, Any]:
@@ -291,10 +415,28 @@ async def admin_user_details(
         "is_tester": bool(target.get("is_tester")),
     }
 
+    recent_events = [event for event in overview.get("recent_events", []) if str(event.get("username", "")).strip().lower() == normalized][:20]
+    failed_events = [event for event in recent_events if int(event.get("status_code") or 0) >= 400]
+    activity_snapshot = {
+        "api_requests": int(target.get("api_requests") or 0),
+        "failed_api_requests": int(target.get("failed_api_requests") or 0),
+        "complaints": int(target.get("complaints") or 0),
+        "rehabs": int(target.get("rehabs") or 0),
+        "ai_suggestions": int(target.get("ai_suggestions") or 0),
+        "ai_ocr_requests": int(target.get("ai_ocr_requests") or 0),
+        "resource_units": int(target.get("resource_units") or 0),
+        "risk_score": int(target.get("risk_score") or 0),
+        "risk_flags": list(target.get("risk_flags") or []),
+        "recent_events_count": len(recent_events),
+        "recent_errors_count": len(failed_events),
+    }
+
     return {
         "user": target,
         "effective_permissions": effective_permissions,
         "recent_admin_actions": recent_actions,
+        "recent_events": recent_events,
+        "activity_snapshot": activity_snapshot,
     }
 
 
@@ -656,3 +798,136 @@ async def admin_reset_password(
         meta={"target_username": username},
     )
     return {"ok": True, "user": result}
+
+
+@router.post("/api/admin/users/{username}/deactivate")
+async def admin_deactivate_user(
+    username: str,
+    payload: AdminDeactivatePayload,
+    user: AuthUser = Depends(require_admin_user),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    user_store: UserStore = Depends(get_user_store),
+):
+    try:
+        result = user_store.admin_deactivate_user(username, payload.reason)
+    except AuthError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    metrics_store.log_event(
+        event_type="admin_deactivate_user",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/users/{username}/deactivate",
+        method="POST",
+        status_code=200,
+        meta={"target_username": username, "reason": payload.reason},
+    )
+    return {"ok": True, "user": result}
+
+
+@router.post("/api/admin/users/{username}/reactivate")
+async def admin_reactivate_user(
+    username: str,
+    user: AuthUser = Depends(require_admin_user),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    user_store: UserStore = Depends(get_user_store),
+):
+    try:
+        result = user_store.admin_reactivate_user(username)
+    except AuthError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    metrics_store.log_event(
+        event_type="admin_reactivate_user",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/users/{username}/reactivate",
+        method="POST",
+        status_code=200,
+        meta={"target_username": username},
+    )
+    return {"ok": True, "user": result}
+
+
+@router.post("/api/admin/users/{username}/daily-quota")
+async def admin_set_daily_quota(
+    username: str,
+    payload: AdminQuotaPayload,
+    user: AuthUser = Depends(require_admin_user),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    user_store: UserStore = Depends(get_user_store),
+):
+    try:
+        result = user_store.admin_set_daily_quota(username, payload.daily_limit)
+    except AuthError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    metrics_store.log_event(
+        event_type="admin_set_daily_quota",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/users/{username}/daily-quota",
+        method="POST",
+        status_code=200,
+        meta={"target_username": username, "daily_limit": payload.daily_limit},
+    )
+    return {"ok": True, "user": result}
+
+
+@router.post("/api/admin/users/bulk-actions")
+async def admin_bulk_actions(
+    payload: AdminBulkActionPayload,
+    user: AuthUser = Depends(require_admin_user),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    user_store: UserStore = Depends(get_user_store),
+):
+    if payload.run_async:
+        task_id = f"admin-bulk-{uuid.uuid4().hex}"
+        created_at = datetime.now(timezone.utc).isoformat()
+        _put_admin_task(
+            {
+                "task_id": task_id,
+                "status": "queued",
+                "created_at": created_at,
+                "started_at": "",
+                "finished_at": "",
+                "progress": {"done": 0, "total": len(payload.usernames)},
+                "result": None,
+                "error": "",
+            }
+        )
+
+        def _runner() -> None:
+            _patch_admin_task(task_id, status="running", started_at=datetime.now(timezone.utc).isoformat())
+            try:
+                result = _apply_bulk_action(
+                    payload=payload,
+                    user=user,
+                    metrics_store=metrics_store,
+                    user_store=user_store,
+                    task_id=task_id,
+                )
+                _patch_admin_task(
+                    task_id,
+                    status="finished",
+                    finished_at=datetime.now(timezone.utc).isoformat(),
+                    result=result,
+                )
+            except Exception as exc:  # noqa: BLE001
+                _patch_admin_task(
+                    task_id,
+                    status="failed",
+                    finished_at=datetime.now(timezone.utc).isoformat(),
+                    error=str(exc),
+                )
+
+        threading.Thread(target=_runner, daemon=True).start()
+        return {"ok": True, "task_id": task_id, "status": "queued"}
+
+    result = _apply_bulk_action(payload=payload, user=user, metrics_store=metrics_store, user_store=user_store)
+    return {"ok": True, "status": "finished", "result": result}
+
+
+@router.get("/api/admin/tasks/{task_id}")
+async def admin_task_status(task_id: str, _: AuthUser = Depends(require_admin_user)):
+    task = _load_admin_task(task_id)
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Задача не найдена."])
+    return task

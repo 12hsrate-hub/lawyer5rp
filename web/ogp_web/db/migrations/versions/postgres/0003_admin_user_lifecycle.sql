@@ -1,0 +1,4 @@
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS deactivated_reason TEXT,
+    ADD COLUMN IF NOT EXISTS api_quota_daily INTEGER NOT NULL DEFAULT 0;

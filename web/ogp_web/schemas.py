@@ -214,6 +214,22 @@ class AdminPasswordResetPayload(BaseModel):
     password: str = ""
 
 
+class AdminDeactivatePayload(BaseModel):
+    reason: str = ""
+
+
+class AdminQuotaPayload(BaseModel):
+    daily_limit: int = Field(default=0, ge=0, le=1_000_000)
+
+
+class AdminBulkActionPayload(BaseModel):
+    usernames: List[str] = Field(default_factory=list)
+    action: str = ""
+    reason: str = ""
+    daily_limit: int | None = Field(default=None, ge=0, le=1_000_000)
+    run_async: bool = True
+
+
 class ProfileResponse(BaseModel):
     representative: RepresentativePayload
     server_code: str = ""

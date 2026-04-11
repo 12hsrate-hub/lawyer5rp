@@ -429,14 +429,21 @@ class AdminMetricsStore:
         ]
 
     def _load_user_metrics(self, conn) -> dict[str, dict[str, Any]]:
+        api_requests_24h_sql = (
+            "SUM(CASE WHEN event_type = 'api_request' AND created_at >= NOW() - INTERVAL '1 day' THEN 1 ELSE 0 END)"
+            if self.is_postgres_backend
+            else "SUM(CASE WHEN event_type = 'api_request' AND created_at >= datetime('now', '-1 day') THEN 1 ELSE 0 END)"
+        )
         return {
             str(row["username"] or ""): dict(row)
             for row in conn.execute(
-                """
+                f"""
                 SELECT
                     username,
                     MAX(server_code) AS server_code,
                     SUM(CASE WHEN event_type = 'api_request' THEN 1 ELSE 0 END) AS api_requests,
+                    SUM(CASE WHEN event_type = 'api_request' AND status_code >= 400 THEN 1 ELSE 0 END) AS failed_api_requests,
+                    {api_requests_24h_sql} AS api_requests_24h,
                     SUM(CASE WHEN event_type = 'complaint_generated' THEN 1 ELSE 0 END) AS complaints,
                     SUM(CASE WHEN event_type = 'rehab_generated' THEN 1 ELSE 0 END) AS rehabs,
                     SUM(CASE WHEN event_type = 'ai_suggest' THEN 1 ELSE 0 END) AS ai_suggestions,
@@ -545,6 +552,8 @@ class AdminMetricsStore:
                     "is_tester": bool(int(user.get("is_tester") or 0)),
                     "is_gka": bool(int(user.get("is_gka") or 0)),
                     "api_requests": int(metrics.get("api_requests") or 0),
+                    "failed_api_requests": int(metrics.get("failed_api_requests") or 0),
+                    "api_requests_24h": int(metrics.get("api_requests_24h") or 0),
                     "complaints": int(metrics.get("complaints") or 0),
                     "rehabs": int(metrics.get("rehabs") or 0),
                     "ai_suggestions": int(metrics.get("ai_suggestions") or 0),
@@ -556,6 +565,26 @@ class AdminMetricsStore:
                 }
             )
         return users_with_metrics
+
+    def _attach_risk_flags(self, users_with_metrics: list[dict[str, Any]]) -> None:
+        for item in users_with_metrics:
+            api_requests = int(item.get("api_requests") or 0)
+            failed_api_requests = int(item.get("failed_api_requests") or 0)
+            api_requests_24h = int(item.get("api_requests_24h") or 0)
+            failure_rate = (failed_api_requests / api_requests) if api_requests else 0.0
+            flags: list[str] = []
+            score = 0
+            if api_requests_24h >= 400:
+                flags.append("burst_24h")
+                score += 2
+            if failure_rate >= 0.2 and api_requests >= 20:
+                flags.append("high_error_rate")
+                score += 2
+            if api_requests >= 1500:
+                flags.append("heavy_usage")
+                score += 1
+            item["risk_flags"] = flags
+            item["risk_score"] = score
 
     def _filter_users(
         self,
@@ -680,6 +709,7 @@ class AdminMetricsStore:
             gka_only=gka_only,
             unverified_only=unverified_only,
         )
+        self._attach_risk_flags(users_with_metrics)
         self._sort_users(users_with_metrics, user_sort=user_sort)
 
         return {
