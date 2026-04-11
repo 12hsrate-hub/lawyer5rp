@@ -718,6 +718,7 @@
   color: #275a35;
 }
 
+.exam-status-badge--warn,
 .exam-score-badge--warn {
   background: rgba(239, 236, 206, 0.95);
   border-color: rgba(201, 191, 124, 0.95);

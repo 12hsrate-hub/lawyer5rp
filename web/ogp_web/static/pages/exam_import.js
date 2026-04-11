@@ -257,14 +257,16 @@ function renderRowQuickStats(entries, visibleEntries) {
 
   const total = entries.length;
   const pending = entries.filter((entry) => getEntryStatusKey(entry) === "pending").length;
-  const problem = entries.filter((entry) => getEntryStatusKey(entry) === "problem").length;
-  const ok = entries.filter((entry) => getEntryStatusKey(entry) === "ok").length;
+  const poor = entries.filter((entry) => getEntryStatusKey(entry) === "poor").length;
+  const medium = entries.filter((entry) => getEntryStatusKey(entry) === "medium").length;
+  const good = entries.filter((entry) => getEntryStatusKey(entry) === "good").length;
 
   rowQuickStats.innerHTML = `
     <span class="exam-status-badge exam-status-badge--neutral">Показано: ${escapeHtml(String(visibleEntries.length))} из ${escapeHtml(String(total))}</span>
-    <span class="exam-status-badge exam-status-badge--pending">Ожидают: ${escapeHtml(String(pending))}</span>
-    <span class="exam-status-badge exam-status-badge--problem">С замечаниями: ${escapeHtml(String(problem))}</span>
-    <span class="exam-status-badge exam-status-badge--ok">Без замечаний: ${escapeHtml(String(ok))}</span>
+    <span class="exam-status-badge exam-status-badge--pending">Ожидают оценки: ${escapeHtml(String(pending))}</span>
+    <span class="exam-status-badge exam-status-badge--problem">Слабый результат: ${escapeHtml(String(poor))}</span>
+    <span class="exam-status-badge exam-status-badge--warn">Средний результат: ${escapeHtml(String(medium))}</span>
+    <span class="exam-status-badge exam-status-badge--ok">Хороший результат: ${escapeHtml(String(good))}</span>
   `;
 }
 

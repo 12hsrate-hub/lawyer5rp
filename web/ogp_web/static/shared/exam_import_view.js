@@ -2,12 +2,15 @@ window.OGPExamImportView = {
   getEntryStatus(entry) {
     const average = Number(entry?.average_score);
     if (entry?.average_score == null || Number.isNaN(average)) {
-      return { key: "pending", label: "Ожидает проверки", tone: "pending" };
+      return { key: "pending", label: "Ожидает оценки", tone: "pending" };
     }
-    if (average >= 100) {
-      return { key: "ok", label: "Проверен без замечаний", tone: "ok" };
+    if (average >= 73) {
+      return { key: "good", label: "Сдан хорошо", tone: "ok" };
     }
-    return { key: "problem", label: "Есть замечания", tone: "problem" };
+    if (average > 55) {
+      return { key: "medium", label: "Сдан на среднем уровне", tone: "warn" };
+    }
+    return { key: "poor", label: "Сдан слабо", tone: "problem" };
   },
 
   getScoreTone(score) {
@@ -15,10 +18,10 @@ window.OGPExamImportView = {
     if (!Number.isFinite(value)) {
       return "pending";
     }
-    if (value >= 90) {
+    if (value >= 73) {
       return "ok";
     }
-    if (value >= 70) {
+    if (value > 55) {
       return "warn";
     }
     return "problem";
@@ -77,7 +80,7 @@ window.OGPExamImportView = {
         const status = this.getEntryStatus(entry);
         return `
           <tr
-            data-source-row="${escapeHtml(entry.source_row ?? "")}" 
+            data-source-row="${escapeHtml(entry.source_row ?? "")}"
             data-row-status="${escapeHtml(status.key)}"
             data-row-name="${escapeHtml(String(entry.full_name ?? "").toLowerCase())}"
             data-row-discord="${escapeHtml(String(entry.discord_tag ?? "").toLowerCase())}"
@@ -123,16 +126,16 @@ window.OGPExamImportView = {
     host.hidden = false;
     const scoreRange = this.formatScoreRange(examScores);
     const scores = examScores.map((item) => Number(item?.score)).filter((value) => Number.isFinite(value));
-    const failedCount = scores.filter((value) => value < 100).length;
-    const exactCount = scores.filter((value) => value >= 100).length;
-    const highRiskCount = scores.filter((value) => value < 70).length;
+    const goodCount = scores.filter((value) => value >= 73).length;
+    const mediumCount = scores.filter((value) => value > 55 && value < 73).length;
+    const poorCount = scores.filter((value) => value <= 55).length;
 
     host.innerHTML = `
       <div class="legal-section__header">
         <div>
           <p class="legal-section__eyebrow">Проверка ответов</p>
           <h3 class="legal-section__title">Сравнение по ключу ${escapeHtml(scoreRange)}</h3>
-          <p class="legal-section__description">Средний балл: <strong>${escapeHtml(averageText)}</strong>. Ниже показано сравнение вопроса, ответа, эталона и логики проверки.</p>
+          <p class="legal-section__description">Средний балл: <strong>${escapeHtml(averageText)}</strong>. Ниже собраны вопрос, ответ кандидата, эталон и пояснение по оценке.</p>
         </div>
       </div>
       <div class="exam-score-summary">
@@ -141,16 +144,16 @@ window.OGPExamImportView = {
           <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(examScores.length))}</strong>
         </article>
         <article class="legal-status-card">
-          <span class="legal-status-card__label">Без замечаний</span>
-          <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(exactCount))}</strong>
+          <span class="legal-status-card__label">Хороший уровень</span>
+          <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(goodCount))}</strong>
         </article>
         <article class="legal-status-card">
-          <span class="legal-status-card__label">С замечаниями</span>
-          <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(failedCount))}</strong>
+          <span class="legal-status-card__label">Средний уровень</span>
+          <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(mediumCount))}</strong>
         </article>
         <article class="legal-status-card">
-          <span class="legal-status-card__label">Критично (<70)</span>
-          <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(highRiskCount))}</strong>
+          <span class="legal-status-card__label">Слабый уровень</span>
+          <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(poorCount))}</strong>
         </article>
       </div>
       <div class="legal-table-shell exam-detail-shell">

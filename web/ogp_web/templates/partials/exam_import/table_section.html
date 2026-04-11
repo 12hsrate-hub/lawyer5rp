@@ -3,7 +3,7 @@
     <div>
       <p class="legal-section__eyebrow">Последние записи</p>
       <h2 class="legal-section__title">Импортированные ответы</h2>
-      <p class="legal-section__description">По каждой строке можно открыть полный разбор: вопрос, ответ кандидата, эталон, логика и итоговый балл.</p>
+      <p class="legal-section__description">По каждой строке можно открыть полный разбор: вопрос, ответ кандидата, эталон, логику проверки и итоговый балл.</p>
     </div>
   </div>
 
@@ -13,12 +13,13 @@
       <input id="exam-row-search" type="search" placeholder="Например: 2, Nikitos, sna190111, 516666">
     </label>
     <label class="legal-field exam-import-filter-field">
-      <span class="legal-field__label">Статус строк</span>
+      <span class="legal-field__label">Статус строки</span>
       <select id="exam-row-filter">
         <option value="all">Все строки</option>
-        <option value="pending">Только ожидают проверки</option>
-        <option value="problem">Только с замечаниями</option>
-        <option value="ok">Только без замечаний</option>
+        <option value="pending">Только ожидают оценки</option>
+        <option value="poor">Только с низким результатом</option>
+        <option value="medium">Только со средним результатом</option>
+        <option value="good">Только с хорошим результатом</option>
       </select>
     </label>
   </div>
@@ -47,15 +48,19 @@
           {% set score = entry.average_score %}
           {% if score is none %}
             {% set row_status = "pending" %}
-            {% set row_status_label = "Ожидает проверки" %}
+            {% set row_status_label = "Ожидает оценки" %}
             {% set row_status_tone = "pending" %}
-          {% elif score >= 100 %}
-            {% set row_status = "ok" %}
-            {% set row_status_label = "Проверен без замечаний" %}
+          {% elif score >= 73 %}
+            {% set row_status = "good" %}
+            {% set row_status_label = "Сдан хорошо" %}
             {% set row_status_tone = "ok" %}
+          {% elif score > 55 %}
+            {% set row_status = "medium" %}
+            {% set row_status_label = "Сдан на среднем уровне" %}
+            {% set row_status_tone = "warn" %}
           {% else %}
-            {% set row_status = "problem" %}
-            {% set row_status_label = "Есть замечания" %}
+            {% set row_status = "poor" %}
+            {% set row_status_label = "Сдан слабо" %}
             {% set row_status_tone = "problem" %}
           {% endif %}
           <tr
