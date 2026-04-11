@@ -30,12 +30,20 @@
       </aside>
     </header>
     {% include "partials/page_nav.html" %}
+    <nav class="segmented-tabs segmented-tabs--section" aria-label="Режим админки">
+      <a class="segmented-tabs__link{% if admin_focus != 'users' %} is-active{% endif %}" href="/admin/dashboard">Dashboard</a>
+      <a class="segmented-tabs__link{% if admin_focus == 'users' %} is-active{% endif %}" href="/admin/users">Пользователи и аудит</a>
+    </nav>
     <nav class="legal-section-jump" aria-label="Навигация по разделам админ-панели">
       <a class="legal-section-jump__link" href="#admin-section-filters">Фильтры</a>
+      {% if admin_focus != "users" %}
       <a class="legal-section-jump__link" href="#admin-section-totals">Сводка</a>
       <a class="legal-section-jump__link" href="#admin-section-import">Импорт экзаменов</a>
+      {% endif %}
+      {% if admin_focus == "users" %}
       <a class="legal-section-jump__link" href="#admin-section-users">Пользователи</a>
       <a class="legal-section-jump__link" href="#admin-section-events">События</a>
+      {% endif %}
     </nav>
 
     <section class="panel legal-card">
@@ -126,6 +134,7 @@
         </div>
       </section>
 
+      {% if admin_focus != "users" %}
       <section id="admin-section-totals" class="legal-subcard admin-collapsible" data-collapsible-section="totals">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
@@ -215,7 +224,9 @@
           <div id="admin-top-endpoints"></div>
         </div>
       </section>
+      {% endif %}
 
+      {% if admin_focus == "users" %}
       <section id="admin-section-users" class="legal-subcard admin-collapsible" data-collapsible-section="users">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
@@ -322,6 +333,7 @@
           <div id="admin-events"></div>
         </div>
       </section>
+      {% endif %}
     </section>
   </div>
 
@@ -332,6 +344,36 @@
       <div id="admin-user-modal-body" class="legal-description"></div>
       <div class="modal-actions">
         <button type="button" id="admin-user-modal-ok" class="primary-button">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="admin-action-modal" class="modal-backdrop" hidden>
+    <div class="modal-card legal-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-action-modal-title">
+      <button type="button" id="admin-action-modal-close" class="modal-close" aria-label="Закрыть">×</button>
+      <h2 id="admin-action-modal-title">Подтверждение действия</h2>
+      <p id="admin-action-modal-description" class="legal-section__description"></p>
+
+      <form id="admin-action-form" class="legal-field-grid">
+        <label id="admin-action-reason-field" class="legal-field" hidden>
+          <span class="legal-field__label">Причина</span>
+          <textarea id="admin-action-reason" rows="3" placeholder="Укажите причину действия"></textarea>
+        </label>
+        <label id="admin-action-email-field" class="legal-field" hidden>
+          <span class="legal-field__label">Новый email</span>
+          <input id="admin-action-email" type="email" placeholder="name@example.com" inputmode="email" autocomplete="off">
+        </label>
+        <label id="admin-action-password-field" class="legal-field" hidden>
+          <span class="legal-field__label">Новый пароль</span>
+          <input id="admin-action-password" type="text" placeholder="Новый пароль (минимум 10 символов)" autocomplete="off">
+        </label>
+      </form>
+
+      <div id="admin-action-modal-errors" class="errors legal-message ui-state ui-state--idle" hidden></div>
+
+      <div class="modal-actions">
+        <button type="button" id="admin-action-cancel" class="ghost-button">Отмена</button>
+        <button type="button" id="admin-action-confirm" class="primary-button">Подтвердить</button>
       </div>
     </div>
   </div>

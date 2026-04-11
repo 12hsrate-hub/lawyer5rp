@@ -25,6 +25,17 @@ const liveIntervalField = document.getElementById("admin-live-interval");
 const liveStatusHost = document.getElementById("admin-live-status");
 const refreshNowButton = document.getElementById("admin-refresh-now");
 const userModalBody = document.getElementById("admin-user-modal-body");
+const actionModalTitle = document.getElementById("admin-action-modal-title");
+const actionModalDescription = document.getElementById("admin-action-modal-description");
+const actionModalErrors = document.getElementById("admin-action-modal-errors");
+const actionReasonField = document.getElementById("admin-action-reason-field");
+const actionReasonInput = document.getElementById("admin-action-reason");
+const actionEmailField = document.getElementById("admin-action-email-field");
+const actionEmailInput = document.getElementById("admin-action-email");
+const actionPasswordField = document.getElementById("admin-action-password-field");
+const actionPasswordInput = document.getElementById("admin-action-password");
+const actionConfirmButton = document.getElementById("admin-action-confirm");
+const actionCancelButton = document.getElementById("admin-action-cancel");
 
 const {
   apiFetch,
@@ -40,10 +51,14 @@ const ADMIN_COLLAPSE_STORAGE_KEY = "ogp_admin_collapsible_sections";
 let adminSearchTimer = null;
 let adminLiveTimer = null;
 let selectedUser = null;
+let pendingAction = null;
 const userIndex = new Map();
 
 const userModal = createModalController({
   modal: document.getElementById("admin-user-modal"),
+});
+const actionModal = createModalController({
+  modal: document.getElementById("admin-action-modal"),
 });
 
 function loadCollapsibleState() {
@@ -189,6 +204,53 @@ function clearMessage() {
   setStateIdle(messageHost);
 }
 
+function resetActionModalFields() {
+  pendingAction = null;
+  if (actionReasonInput) actionReasonInput.value = "";
+  if (actionEmailInput) actionEmailInput.value = "";
+  if (actionPasswordInput) actionPasswordInput.value = "";
+  if (actionReasonField) actionReasonField.hidden = true;
+  if (actionEmailField) actionEmailField.hidden = true;
+  if (actionPasswordField) actionPasswordField.hidden = true;
+  if (actionConfirmButton) actionConfirmButton.textContent = "Подтвердить";
+  setStateIdle(actionModalErrors);
+}
+
+function openActionModal(config) {
+  pendingAction = config;
+  if (actionModalTitle) {
+    actionModalTitle.textContent = config.title || "Подтверждение действия";
+  }
+  if (actionModalDescription) {
+    actionModalDescription.textContent = config.description || "";
+  }
+  if (actionConfirmButton) {
+    actionConfirmButton.textContent = config.confirmLabel || "Подтвердить";
+  }
+  if (actionReasonField) {
+    actionReasonField.hidden = !config.askReason;
+  }
+  if (actionEmailField) {
+    actionEmailField.hidden = !config.askEmail;
+  }
+  if (actionPasswordField) {
+    actionPasswordField.hidden = !config.askPassword;
+  }
+  if (actionEmailInput && config.defaultEmail) {
+    actionEmailInput.value = String(config.defaultEmail);
+  }
+  if (actionReasonInput && config.defaultReason) {
+    actionReasonInput.value = String(config.defaultReason);
+  }
+  setStateIdle(actionModalErrors);
+  actionModal.open();
+}
+
+function closeActionModal() {
+  actionModal.close();
+  resetActionModalFields();
+}
+
 function formatNumber(value) {
   return new Intl.NumberFormat("ru-RU").format(Number(value || 0));
 }
@@ -250,6 +312,9 @@ function setLiveStatus(text, tone = "muted") {
 }
 
 function renderTotals(totals) {
+  if (!totalsHost) {
+    return;
+  }
   const items = [
     ["Пользователи", totals.users_total, "Всего аккаунтов в системе"],
     ["API-запросы", totals.api_requests_total, "Накопленная активность API"],
@@ -321,6 +386,9 @@ function renderPerformance(payload) {
 }
 
 function renderTopEndpoints(items) {
+  if (!endpointsHost) {
+    return;
+  }
   if (!items.length) {
     endpointsHost.innerHTML = '<p class="legal-section__description">Пока нет данных по API-запросам.</p>';
     return;
@@ -478,6 +546,9 @@ function renderUserActivity(user) {
 }
 
 function renderUsers(users, userSort = "complaints") {
+  if (!usersHost) {
+    return;
+  }
   userIndex.clear();
   users.forEach((user) => {
     userIndex.set(String(user.username || "").toLowerCase(), user);
@@ -536,6 +607,9 @@ function renderUsers(users, userSort = "complaints") {
 }
 
 function renderEvents(events) {
+  if (!eventsHost) {
+    return;
+  }
   if (!events.length) {
     eventsHost.innerHTML = '<p class="legal-section__description">Событий по текущему фильтру нет.</p>';
     return;
@@ -975,8 +1049,14 @@ async function handleAdminAction(target) {
 
   const blockUsername = target.getAttribute("data-block-user");
   if (blockUsername) {
-    const reason = window.prompt("Причина блокировки (необязательно):", "") || "";
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(blockUsername)}/block`, "Доступ пользователя заблокирован.", { reason });
+    openActionModal({
+      action: "block-user",
+      username: blockUsername,
+      askReason: true,
+      title: "Блокировка пользователя",
+      description: `Вы блокируете пользователя ${blockUsername}. При необходимости укажите причину.`,
+      confirmLabel: "Заблокировать",
+    });
     return true;
   }
 
@@ -1006,29 +1086,84 @@ async function handleAdminAction(target) {
 
   const changeEmailUsername = target.getAttribute("data-change-email");
   if (changeEmailUsername) {
-    const currentEmail = target.getAttribute("data-current-email") || "";
-    const email = window.prompt("Новый email пользователя:", currentEmail) || "";
-    if (!email.trim()) {
-      return true;
-    }
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(changeEmailUsername)}/email`, "Email пользователя обновлен.", { email });
+    openActionModal({
+      action: "change-email",
+      username: changeEmailUsername,
+      askEmail: true,
+      defaultEmail: target.getAttribute("data-current-email") || "",
+      title: "Смена email",
+      description: `Укажите новый email для пользователя ${changeEmailUsername}.`,
+      confirmLabel: "Сохранить email",
+    });
     return true;
   }
 
   const resetPasswordUsername = target.getAttribute("data-reset-password");
   if (resetPasswordUsername) {
-    const password = window.prompt("Новый пароль пользователя:") || "";
-    if (!password.trim()) {
-      return true;
-    }
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(resetPasswordUsername)}/reset-password`, "Пароль пользователя обновлен.", { password });
+    openActionModal({
+      action: "reset-password",
+      username: resetPasswordUsername,
+      askPassword: true,
+      title: "Сброс пароля",
+      description: `Введите новый пароль для пользователя ${resetPasswordUsername}.`,
+      confirmLabel: "Сменить пароль",
+    });
     return true;
   }
 
   return false;
 }
 
-usersHost.addEventListener("click", async (event) => {
+async function submitPendingAction() {
+  if (!pendingAction) {
+    return;
+  }
+  setStateIdle(actionModalErrors);
+  const action = pendingAction.action;
+  const username = String(pendingAction.username || "");
+
+  if (action === "block-user") {
+    const reason = String(actionReasonInput?.value || "").trim();
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/block`, "Доступ пользователя заблокирован.", {
+      reason,
+    });
+    closeActionModal();
+    return;
+  }
+
+  if (action === "change-email") {
+    const email = String(actionEmailInput?.value || "").trim();
+    if (!email) {
+      setStateError(actionModalErrors, "Укажите новый email.");
+      return;
+    }
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/email`, "Email пользователя обновлен.", {
+      email,
+    });
+    closeActionModal();
+    return;
+  }
+
+  if (action === "reset-password") {
+    const password = String(actionPasswordInput?.value || "").trim();
+    if (!password) {
+      setStateError(actionModalErrors, "Введите новый пароль.");
+      return;
+    }
+    if (password.length < 10) {
+      setStateError(actionModalErrors, "Пароль должен быть не короче 10 символов.");
+      return;
+    }
+    await performAdminAction(
+      `/api/admin/users/${encodeURIComponent(username)}/reset-password`,
+      "Пароль пользователя обновлен.",
+      { password },
+    );
+    closeActionModal();
+  }
+}
+
+usersHost?.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
     return;
@@ -1084,10 +1219,19 @@ userModal.bind(
   document.getElementById("admin-user-modal-close"),
   document.getElementById("admin-user-modal-ok"),
 );
+actionModal.bind(
+  document.getElementById("admin-action-modal-close"),
+  document.getElementById("admin-action-cancel"),
+);
+
+actionConfirmButton?.addEventListener("click", submitPendingAction);
+actionCancelButton?.addEventListener("click", closeActionModal);
+document.getElementById("admin-action-modal-close")?.addEventListener("click", resetActionModalFields);
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     userModal.close();
+    closeActionModal();
   }
 });
 
@@ -1103,6 +1247,7 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+resetActionModalFields();
 initCollapsibles();
 Promise.all([
   loadAdminOverview(),

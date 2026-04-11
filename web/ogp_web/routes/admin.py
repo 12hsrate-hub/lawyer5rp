@@ -4,7 +4,7 @@ import threading
 from copy import deepcopy
 from typing import Any
 from time import monotonic
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, Response
 from datetime import datetime, timezone
 
@@ -47,30 +47,277 @@ def _store_performance_payload(cache_key: str, payload: dict[str, Any]) -> None:
         _PERFORMANCE_CACHE[cache_key] = (monotonic(), deepcopy(payload))
 
 
-@router.get("/admin", response_class=HTMLResponse)
-async def admin_page(request: Request, user: AuthUser = Depends(require_admin_user)):
+def _admin_template_payload(request: Request, user: AuthUser, *, admin_focus: str) -> dict[str, Any]:
     user_store = request.app.state.user_store
     server_config = get_server_config(user_store.get_server_code(user.username))
     permissions = build_permission_set(user_store, user.username, server_config)
+    return page_context(
+        username=user.username,
+        nav_active="admin",
+        is_admin=permissions.is_admin,
+        show_test_pages=permissions.can_access_exam_import,
+        show_tester_pages=permissions.can_access_court_claims,
+        page_nav_items=[
+            {"key": item.key, "label": item.label, "href": item.href}
+            for item in server_config.page_nav_items
+            if permissions.allows(item.permission)
+        ],
+        server_code=server_config.code,
+        server_name=server_config.name,
+        app_title=server_config.app_title,
+        admin_focus=admin_focus,
+    )
+
+
+@router.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request, user: AuthUser = Depends(require_admin_user)):
     return templates.TemplateResponse(
         request,
         "admin.html",
-        page_context(
-            username=user.username,
-            nav_active="admin",
-            is_admin=permissions.is_admin,
-            show_test_pages=permissions.can_access_exam_import,
-            show_tester_pages=permissions.can_access_court_claims,
-            page_nav_items=[
-                {"key": item.key, "label": item.label, "href": item.href}
-                for item in server_config.page_nav_items
-                if permissions.allows(item.permission)
-            ],
-            server_code=server_config.code,
-            server_name=server_config.name,
-            app_title=server_config.app_title,
-        ),
+        _admin_template_payload(request, user, admin_focus="dashboard"),
     )
+
+
+@router.get("/admin/dashboard", response_class=HTMLResponse)
+async def admin_dashboard_page(request: Request, user: AuthUser = Depends(require_admin_user)):
+    return templates.TemplateResponse(
+        request,
+        "admin.html",
+        _admin_template_payload(request, user, admin_focus="dashboard"),
+    )
+
+
+@router.get("/admin/users", response_class=HTMLResponse)
+async def admin_users_page(request: Request, user: AuthUser = Depends(require_admin_user)):
+    return templates.TemplateResponse(
+        request,
+        "admin.html",
+        _admin_template_payload(request, user, admin_focus="users"),
+    )
+
+
+@router.get("/api/admin/dashboard")
+async def admin_dashboard_data(
+    user: AuthUser = Depends(require_admin_user),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    exam_store: ExamAnswersStore = Depends(get_exam_answers_store),
+    user_store: UserStore = Depends(get_user_store),
+):
+    _ = user
+    users = user_store.list_users()
+    overview = metrics_store.get_overview(users=users)
+    performance = metrics_store.get_performance_overview(window_minutes=30, top_endpoints=5)
+    exam_import = metrics_store.get_exam_import_summary(pending_scores=exam_store.count_entries_needing_scores())
+    totals = overview.get("totals", {})
+    users_with_metrics = overview.get("users", [])
+    blocked_count = sum(1 for row in users_with_metrics if row.get("access_blocked"))
+    unverified_count = sum(1 for row in users_with_metrics if not row.get("email_verified"))
+
+    kpis = [
+        {
+            "id": "users_total",
+            "label": "Всего аккаунтов",
+            "value": int(totals.get("users_total") or 0),
+            "period": "за все время",
+            "status": "neutral",
+        },
+        {
+            "id": "events_last_24h",
+            "label": "Активность за сутки",
+            "value": int(totals.get("events_last_24h") or 0),
+            "period": "24 часа",
+            "status": "neutral",
+        },
+        {
+            "id": "complaints_total",
+            "label": "Подготовлено жалоб",
+            "value": int(totals.get("complaints_total") or 0),
+            "period": "за все время",
+            "status": "success-soft",
+        },
+        {
+            "id": "rehabs_total",
+            "label": "Подготовлено реабилитаций",
+            "value": int(totals.get("rehabs_total") or 0),
+            "period": "за все время",
+            "status": "success-soft",
+        },
+        {
+            "id": "pending_scores",
+            "label": "Ожидают проверки экзамена",
+            "value": int(exam_import.get("pending_scores") or 0),
+            "period": "текущее состояние",
+            "status": "warn",
+        },
+        {
+            "id": "error_rate",
+            "label": "Доля ошибок API",
+            "value": f"{round(float(performance.get('error_rate') or 0) * 100, 2)}%",
+            "period": "30 минут",
+            "status": "danger" if float(performance.get("error_rate") or 0) >= 0.05 else "neutral",
+        },
+        {
+            "id": "blocked_accounts",
+            "label": "Заблокированные аккаунты",
+            "value": blocked_count,
+            "period": "текущее состояние",
+            "status": "danger" if blocked_count else "neutral",
+        },
+        {
+            "id": "unverified_accounts",
+            "label": "Неподтвержденные email",
+            "value": unverified_count,
+            "period": "текущее состояние",
+            "status": "warn" if unverified_count else "neutral",
+        },
+    ]
+
+    alerts: list[dict[str, Any]] = []
+    if float(performance.get("error_rate") or 0) >= 0.05:
+        alerts.append(
+            {
+                "severity": "danger",
+                "title": "Высокая доля ошибок API",
+                "description": "Проверьте журнал событий и проблемные endpoint'ы.",
+                "action_url": "/admin#admin-section-events",
+            }
+        )
+    if int(exam_import.get("pending_scores") or 0) > 0:
+        alerts.append(
+            {
+                "severity": "warn",
+                "title": "Есть очередь проверки экзаменов",
+                "description": "Запустите проверку импортированных строк.",
+                "action_url": "/exam-import-test",
+            }
+        )
+    if blocked_count:
+        alerts.append(
+            {
+                "severity": "warn",
+                "title": "Есть заблокированные аккаунты",
+                "description": "Проверьте причины блокировки и актуальность ограничений.",
+                "action_url": "/admin#admin-section-users",
+            }
+        )
+
+    quick_links = [
+        {"label": "Пользователи", "url": "/admin#admin-section-users"},
+        {"label": "Импорт экзаменов", "url": "/admin#admin-section-import"},
+        {"label": "События и ошибки", "url": "/admin#admin-section-events"},
+        {"label": "Профиль", "url": "/profile"},
+    ]
+
+    return {
+        "kpis": kpis,
+        "alerts": alerts,
+        "quick_links": quick_links,
+        "recent_events": overview.get("recent_events", [])[:10],
+        "top_endpoints": performance.get("endpoint_overview", []),
+        "generated_at": performance.get("generated_at"),
+    }
+
+
+@router.get("/api/admin/users")
+async def admin_users_data(
+    user: AuthUser = Depends(require_admin_user),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    user_store: UserStore = Depends(get_user_store),
+    search: str = "",
+    blocked_only: bool = False,
+    tester_only: bool = False,
+    gka_only: bool = False,
+    unverified_only: bool = False,
+    user_sort: str = "complaints",
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+):
+    _ = user
+    overview = metrics_store.get_overview(
+        users=user_store.list_users(),
+        search=search,
+        blocked_only=blocked_only,
+        tester_only=tester_only,
+        gka_only=gka_only,
+        unverified_only=unverified_only,
+        user_sort=user_sort,
+    )
+    users = overview.get("users", [])
+    total = len(users)
+    paged = users[offset : offset + limit]
+    return {
+        "items": paged,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "filters": {
+            "search": search,
+            "blocked_only": blocked_only,
+            "tester_only": tester_only,
+            "gka_only": gka_only,
+            "unverified_only": unverified_only,
+            "user_sort": user_sort,
+        },
+    }
+
+
+@router.get("/api/admin/users/{username}")
+async def admin_user_details(
+    username: str,
+    user: AuthUser = Depends(require_admin_user),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    user_store: UserStore = Depends(get_user_store),
+):
+    _ = user
+    normalized = str(username or "").strip().lower()
+    overview = metrics_store.get_overview(users=user_store.list_users(), search=normalized)
+    users = overview.get("users", [])
+    target = next((item for item in users if str(item.get("username", "")).strip().lower() == normalized), None)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Пользователь не найден."])
+
+    recent_actions = [
+        event
+        for event in overview.get("recent_events", [])
+        if str(event.get("username", "")).strip().lower() == normalized
+        or str((event.get("meta") or {}).get("target_username", "")).strip().lower() == normalized
+    ][:20]
+
+    effective_permissions = {
+        "can_access_admin": bool(target.get("is_admin")),
+        "can_access_exam_import": bool(target.get("is_admin") or target.get("is_tester")),
+        "can_access_test_pages": bool(target.get("is_tester")),
+        "is_gka": bool(target.get("is_gka")),
+        "is_tester": bool(target.get("is_tester")),
+    }
+
+    return {
+        "user": target,
+        "effective_permissions": effective_permissions,
+        "recent_admin_actions": recent_actions,
+    }
+
+
+@router.get("/api/admin/role-history")
+async def admin_role_history(
+    user: AuthUser = Depends(require_admin_user),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    user_store: UserStore = Depends(get_user_store),
+    limit: int = Query(default=100, ge=1, le=1000),
+):
+    _ = user
+    overview = metrics_store.get_overview(users=user_store.list_users())
+    role_events = {
+        "admin_grant_tester",
+        "admin_revoke_tester",
+        "admin_grant_gka",
+        "admin_revoke_gka",
+    }
+    items = [event for event in overview.get("recent_events", []) if str(event.get("event_type", "")) in role_events]
+    return {
+        "items": items[:limit],
+        "total": len(items),
+    }
 
 
 @router.get("/api/admin/overview")
