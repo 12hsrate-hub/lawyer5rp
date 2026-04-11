@@ -1,30 +1,30 @@
-<section id="complaint-section-victim" class="panel legal-card legal-section legal-section--victim">
+﻿<section id="complaint-section-victim" class="panel legal-card legal-section legal-section--victim">
   <div class="legal-section__header">
     <div>
-      <p class="legal-section__eyebrow">Раздел 1</p>
-      <h2 class="legal-section__title">Потерпевший</h2>
-      <p class="legal-section__description">Данные лица, в интересах которого подаётся обращение.</p>
+      <p class="legal-section__eyebrow">Р Р°Р·РґРµР» 1</p>
+      <h2 class="legal-section__title">РџРѕС‚РµСЂРїРµРІС€РёР№</h2>
+      <p class="legal-section__description">Р”Р°РЅРЅС‹Рµ Р»РёС†Р°, РІ РёРЅС‚РµСЂРµСЃР°С… РєРѕС‚РѕСЂРѕРіРѕ РїРѕРґР°С‘С‚СЃСЏ РѕР±СЂР°С‰РµРЅРёРµ.</p>
     </div>
   </div>
 
   <div class="legal-field-grid legal-field-grid--two">
     <label class="legal-field">
-      <span class="legal-field__label">ФИО</span>
-      <input name="victim_name" placeholder="Имя Фамилия" required>
+      <span class="legal-field__label">Р¤РРћ</span>
+      <input name="victim_name" placeholder="РРјСЏ Р¤Р°РјРёР»РёСЏ" required>
     </label>
 
     <label class="legal-field">
-      <span class="legal-field__label">Паспорт</span>
+      <span class="legal-field__label">РџР°СЃРїРѕСЂС‚</span>
       <input name="victim_passport" placeholder="123456" maxlength="6" required>
     </label>
 
     <label class="legal-field">
-      <span class="legal-field__label">Адрес</span>
+      <span class="legal-field__label">РђРґСЂРµСЃ</span>
       <input name="victim_address" placeholder="Los Santos, Vespucci Blvd, 1" value="-">
     </label>
 
     <label class="legal-field">
-      <span class="legal-field__label">Телефон</span>
+      <span class="legal-field__label">РўРµР»РµС„РѕРЅ</span>
       <input name="victim_phone" placeholder="1234567" inputmode="numeric" maxlength="7" pattern="\d{7}" required>
     </label>
 
@@ -34,7 +34,7 @@
     </label>
 
     <label class="legal-field">
-      <span class="legal-field__label">Скан паспорта URL</span>
+      <span class="legal-field__label">РЎРєР°РЅ РїР°СЃРїРѕСЂС‚Р° URL</span>
       <input name="victim_scan" type="url" placeholder="https://example.com/passport" required>
     </label>
   </div>
@@ -42,25 +42,33 @@
   <section class="legal-subcard legal-subcard--ocr">
     <div class="legal-subcard__header">
       <div>
-        <h3 class="legal-subcard__title">Автозаполнение по договору</h3>
-        <p class="legal-subcard__description">Загрузите 4-ю страницу договора, чтобы автоматически заполнить данные доверителя.</p>
+        <h3 class="legal-subcard__title">РђРІС‚РѕР·Р°РїРѕР»РЅРµРЅРёРµ РїРѕ РґРѕРіРѕРІРѕСЂСѓ</h3>
+        <p class="legal-subcard__description">Р—Р°РіСЂСѓР·РёС‚Рµ 4-СЋ СЃС‚СЂР°РЅРёС†Сѓ РґРѕРіРѕРІРѕСЂР°, С‡С‚РѕР±С‹ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё Р·Р°РїРѕР»РЅРёС‚СЊ РґР°РЅРЅС‹Рµ РґРѕРІРµСЂРёС‚РµР»СЏ.</p>
       </div>
     </div>
 
     <div class="legal-ocr">
       <div class="legal-ocr__controls">
         <label class="legal-file-field">
-          <span class="legal-field__label">Файл договора</span>
+          <span class="legal-field__label">Р¤Р°Р№Р» РґРѕРіРѕРІРѕСЂР°</span>
           <div class="legal-file-picker">
-            <label class="secondary-button legal-file-picker__button" for="complaint-ocr-file">Файл</label>
-            <span id="complaint-ocr-file-name" class="legal-file-picker__name">Файл не выбран</span>
+            <label class="secondary-button legal-file-picker__button" for="complaint-ocr-file">Р¤Р°Р№Р»</label>
+            <span id="complaint-ocr-file-name" class="legal-file-picker__name">Р¤Р°Р№Р» РЅРµ РІС‹Р±СЂР°РЅ</span>
             <input id="complaint-ocr-file" class="legal-file-picker__input" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
           </div>
         </label>
-        <button type="button" id="complaint-ocr-btn" class="secondary-button">Распознать данные</button>
+                <button
+          type="button"
+          id="complaint-ocr-btn"
+          class="primary-button legal-ocr__submit"
+          aria-describedby="complaint-ocr-status"
+          disabled
+        >
+          Распознать данные
+        </button>
       </div>
 
-      <div id="complaint-ocr-status" class="legal-ocr__status">Статус: ожидает изображение.</div>
+      <div id="complaint-ocr-status" class="legal-ocr__status">РЎС‚Р°С‚СѓСЃ: РѕР¶РёРґР°РµС‚ РёР·РѕР±СЂР°Р¶РµРЅРёРµ.</div>
       <div id="complaint-ocr-progress" class="progress-box legal-ocr__progress" hidden>
         <span class="spinner" aria-hidden="true"></span>
         <span id="complaint-ocr-progress-text"></span>

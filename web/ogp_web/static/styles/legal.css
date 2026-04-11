@@ -487,6 +487,17 @@
   font-size: 14px;
 }
 
+.legal-ocr__submit {
+  min-width: 210px;
+  font-weight: 600;
+}
+
+.legal-ocr__submit:disabled {
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}
+
 .legal-inline-action {
   white-space: nowrap;
 }
@@ -1173,6 +1184,11 @@
 
   .admin-table__path {
     max-width: 220px;
+  }
+
+  .legal-ocr__submit {
+    width: 100%;
+    min-width: 0;
   }
 }
 
