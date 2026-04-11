@@ -326,6 +326,8 @@ def _extract_relevant_law_excerpt(text: str, question: str, *, max_chars: int = 
     normalized_text = str(text or "").strip()
     if not normalized_text:
         return ""
+    if len(normalized_text) <= max_chars:
+        return normalized_text
 
     keywords = sorted(_extract_keywords(question), key=len, reverse=True)
     if not keywords:
@@ -347,27 +349,19 @@ def _extract_relevant_law_excerpt(text: str, question: str, *, max_chars: int = 
     if not hit_positions:
         return normalized_text[:max_chars].strip()
 
-    snippets: list[str] = []
-    seen_windows: set[tuple[int, int]] = set()
-    radius = max_chars // 3
-    for position in sorted(hit_positions)[:3]:
-        start = max(0, position - radius)
-        end = min(len(normalized_text), position + radius)
-        window_key = (start, end)
-        if window_key in seen_windows:
-            continue
-        seen_windows.add(window_key)
-        snippet = normalized_text[start:end].strip()
-        if start > 0:
-            snippet = "... " + snippet
-        if end < len(normalized_text):
-            snippet = snippet + " ..."
-        snippets.append(snippet)
+    anchor = min(hit_positions)
+    radius = max_chars // 2
+    start = max(0, anchor - radius)
+    end = min(len(normalized_text), start + max_chars)
+    if end - start < max_chars:
+        start = max(0, end - max_chars)
 
-    combined = "\n\n".join(snippets).strip()
-    if len(combined) <= max_chars:
-        return combined
-    return combined[:max_chars].rsplit(" ", 1)[0].strip()
+    snippet = normalized_text[start:end].strip()
+    if start > 0:
+        snippet = "... " + snippet
+    if end < len(normalized_text):
+        snippet = snippet + " ..."
+    return snippet
 
 
 def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
