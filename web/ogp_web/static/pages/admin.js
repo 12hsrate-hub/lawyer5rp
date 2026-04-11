@@ -201,7 +201,7 @@ function renderFilterChip(label, key) {
   return `
     <button type="button" class="admin-filter-chip" data-clear-filter="${escapeHtml(key)}">
       <span>${escapeHtml(label)}</span>
-      <span class="admin-filter-chip__close" aria-hidden="true">Г—</span>
+      <span class="admin-filter-chip__close" aria-hidden="true">×</span>
     </button>
   `;
 }
@@ -313,7 +313,7 @@ function renderPerformance(payload) {
       <span class="admin-user-cell__secondary">Окно: ${escapeHtml(String(payload?.window_minutes ?? "—"))} мин</span>
     </article>
     <article class="legal-status-card">
-      <span class="legal-status-card__label">РўРѕРї endpoint</span>
+      <span class="legal-status-card__label">Топ endpoint</span>
       <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(top[0]?.path || "—"))}</strong>
       <span class="admin-user-cell__secondary">Запросов: ${escapeHtml(String(top[0]?.count || 0))}</span>
     </article>
@@ -438,7 +438,7 @@ function renderActiveFilters(filters) {
   if (filters.gka_only) chips.push(renderFilterChip("Только ГКА-ЗГКА", "gka_only"));
   if (filters.unverified_only) chips.push(renderFilterChip("Только без подтверждения email", "unverified_only"));
   if (filters.event_search) chips.push(renderFilterChip(`События: ${filters.event_search}`, "event_search"));
-  if (filters.event_type) chips.push(renderFilterChip(`РўРёРї: ${filters.event_type}`, "event_type"));
+  if (filters.event_type) chips.push(renderFilterChip(`Тип: ${filters.event_type}`, "event_type"));
   if (filters.failed_events_only) chips.push(renderFilterChip("Только ошибки", "failed_events_only"));
 
   if (!chips.length) {
@@ -551,7 +551,7 @@ function renderEvents(events) {
           <tr>
             <th>Время</th>
             <th>Пользователь</th>
-            <th>РўРёРї</th>
+            <th>Тип</th>
             <th>Путь</th>
             <th>Статус</th>
             <th>ms</th>
