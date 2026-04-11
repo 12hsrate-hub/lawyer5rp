@@ -25,10 +25,21 @@
   </header>
 
   {% include "partials/page_nav.html" %}
-  <nav class="legal-section-jump" aria-label="Навигация по разделам профиля">
+  <nav class="legal-section-jump legal-section-jump--sticky" aria-label="Навигация по разделам профиля">
     <a class="legal-section-jump__link" href="#profile-section-main">Основные данные</a>
     <a class="legal-section-jump__link" href="#profile-section-password">Смена пароля</a>
   </nav>
+
+  <section class="panel legal-card legal-form-progress-card" aria-live="polite">
+    <div class="legal-form-progress-card__head">
+      <p class="legal-section__eyebrow">Заполнение профиля</p>
+      <strong id="profile-progress-text" class="legal-form-progress-card__value">Профиль: 0/6</strong>
+    </div>
+    <div id="profile-progress-host" class="legal-form-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <span id="profile-progress-bar" class="legal-form-progress__bar"></span>
+    </div>
+    <p class="legal-form-progress-card__hint">Поддерживайте профиль полным: эти поля автоматически подставляются в документы.</p>
+  </section>
 
   <div id="app-message" class="success-box legal-message" hidden></div>
   <div id="profile-errors" class="errors legal-message" hidden></div>
@@ -51,17 +62,17 @@
           <div class="legal-field-grid legal-field-grid--two">
             <label class="legal-field">
               <span class="legal-field__label">ФИО представителя</span>
-              <input name="name" placeholder="Имя Фамилия">
+              <input name="name" placeholder="Имя Фамилия" data-profile-track="true">
             </label>
 
             <label class="legal-field">
               <span class="legal-field__label">Паспорт</span>
-              <input name="passport" placeholder="123456" maxlength="6">
+              <input name="passport" placeholder="123456" maxlength="6" data-profile-track="true">
             </label>
 
             <label class="legal-field legal-field--full">
               <span class="legal-field__label">Адрес</span>
-              <input name="address" placeholder="Los Santos, Vespucci Blvd, 1">
+              <input name="address" placeholder="Los Santos, Vespucci Blvd, 1" data-profile-track="true">
             </label>
           </div>
         </section>
@@ -78,17 +89,17 @@
           <div class="legal-field-grid legal-field-grid--two">
             <label class="legal-field">
               <span class="legal-field__label">Телефон</span>
-              <input name="phone" placeholder="1234567" inputmode="numeric" maxlength="7" pattern="\d{7}">
+              <input name="phone" placeholder="1234567" inputmode="numeric" maxlength="7" pattern="\d{7}" data-profile-track="true">
             </label>
 
             <label class="legal-field">
               <span class="legal-field__label">Discord</span>
-              <input name="discord" placeholder="nickname">
+              <input name="discord" placeholder="nickname" data-profile-track="true">
             </label>
 
             <label class="legal-field legal-field--full">
               <span class="legal-field__label">Скан паспорта URL</span>
-              <input name="passport_scan_url" type="url" placeholder="https://example.com/passport">
+              <input name="passport_scan_url" type="url" placeholder="https://example.com/passport" data-profile-track="true">
             </label>
           </div>
 

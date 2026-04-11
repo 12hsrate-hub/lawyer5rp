@@ -36,6 +36,17 @@
   align-items: center;
 }
 
+.legal-section-jump--sticky {
+  position: sticky;
+  top: 12px;
+  z-index: 12;
+  padding: 10px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--line) 90%, white);
+  background: color-mix(in srgb, var(--surface) 86%, #f6ede3);
+  backdrop-filter: blur(8px);
+}
+
 .legal-section-jump__link {
   display: inline-flex;
   align-items: center;
@@ -53,6 +64,12 @@
   transform: translateY(-1px);
   border-color: var(--line-strong);
   background: color-mix(in srgb, var(--surface) 68%, #e7d8c6);
+}
+
+.legal-section-jump__link.is-active {
+  border-color: color-mix(in srgb, var(--brand) 42%, var(--line));
+  background: color-mix(in srgb, var(--brand) 14%, #f5ece1);
+  color: var(--brand-strong);
 }
 
 .legal-form-progress-card {

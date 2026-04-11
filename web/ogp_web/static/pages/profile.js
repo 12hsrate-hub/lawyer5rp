@@ -6,6 +6,9 @@ const passwordErrors = document.getElementById("password-errors");
 const passwordMessage = document.getElementById("password-message");
 const appMessage = document.getElementById("app-message");
 const logoutBtn = document.getElementById("logout-btn");
+const profileProgressText = document.getElementById("profile-progress-text");
+const profileProgressBar = document.getElementById("profile-progress-bar");
+const profileProgressHost = document.getElementById("profile-progress-host");
 
 const { apiFetch, parsePayload, showText, clearText, redirectIfUnauthorized } = window.OGPWeb;
 const { showOptionalText, bindLogout } = window.OGPPage;
@@ -46,6 +49,7 @@ function fillProfileForm(profile) {
   profileForm.elements.namedItem("phone").value = profile.phone || "";
   profileForm.elements.namedItem("discord").value = profile.discord || "";
   profileForm.elements.namedItem("passport_scan_url").value = profile.passport_scan_url || "";
+  updateProfileProgress();
 }
 
 function collectProfilePayload() {
@@ -58,6 +62,25 @@ function collectProfilePayload() {
     discord: data.get("discord")?.toString().trim() || "",
     passport_scan_url: data.get("passport_scan_url")?.toString().trim() || "",
   };
+}
+
+function updateProfileProgress() {
+  if (!profileForm || !profileProgressText || !profileProgressBar || !profileProgressHost) {
+    return;
+  }
+  const trackedFields = [...profileForm.querySelectorAll("[data-profile-track='true']")];
+  const total = trackedFields.length;
+  if (!total) {
+    profileProgressText.textContent = "Профиль: 0/0";
+    profileProgressBar.style.width = "0%";
+    profileProgressHost.setAttribute("aria-valuenow", "0");
+    return;
+  }
+  const filled = trackedFields.filter((field) => String(field.value || "").trim() !== "").length;
+  const percent = Math.round((filled / total) * 100);
+  profileProgressText.textContent = `Профиль: ${filled}/${total}`;
+  profileProgressBar.style.width = `${percent}%`;
+  profileProgressHost.setAttribute("aria-valuenow", String(percent));
 }
 
 async function loadProfile() {
@@ -97,6 +120,9 @@ profileForm.addEventListener("submit", async (event) => {
   showAppMessage("Данные представителя обновлены и сразу используются в рабочих формах.");
 });
 
+profileForm.addEventListener("input", updateProfileProgress);
+profileForm.addEventListener("change", updateProfileProgress);
+
 passwordForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   clearPasswordErrors();
@@ -134,3 +160,4 @@ passwordForm?.addEventListener("submit", async (event) => {
 bindLogout(logoutBtn);
 bindDigitsOnly(profileForm, "phone", 7);
 loadProfile();
+updateProfileProgress();

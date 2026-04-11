@@ -254,6 +254,15 @@ button:disabled {
   opacity: 0.65;
 }
 
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 button:hover,
 a.button-link:hover {
   transform: translateY(-1px);
