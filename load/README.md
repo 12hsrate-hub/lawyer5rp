@@ -9,6 +9,7 @@ This directory contains the single-profile load testing foundation for `/api/ai/
 - `scripts/run_suggest_load.py`: wrapper that logs in, runs k6, and writes artifacts
 - `scripts/run_parallel_load.py`: launches multiple profile runs in parallel and writes a consolidated report
 - `scripts/run_mixed_load.py`: runs Group B baseline + mixed Group A/Group B impact test with collateral-impact SLA
+- `scripts/evaluate_suggest_rollout.py`: combines single / parallel / mixed summaries into a rollout decision
 - `load/suggest_load_support.py`: shared helpers for artifact layout and report generation
 
 ## Supported payload profiles
@@ -147,3 +148,21 @@ py scripts/run_mixed_load.py `
 
 `scripts/server_sampler.py` uses `psutil` and samples the host where the runner executes.
 For remote/app-server telemetry, run the load harness on the same host as the app or adapt the sampler launch for your deployment topology.
+
+## Rollout evaluation
+
+After collecting single, parallel, and mixed artifacts, evaluate them together:
+
+```powershell
+py scripts/evaluate_suggest_rollout.py `
+  --single-summary artifacts/load/<single_run>/<profile>/summary.json `
+  --parallel-summary artifacts/load/<parallel_run>/parallel/summary.json `
+  --mixed-summary artifacts/load/<mixed_run>/mixed/summary.json `
+  --stage telemetry_only `
+  --output-dir artifacts/load/<evaluation_run>/rollout `
+  --fail-on-blockers
+```
+
+For staged enablement, rollback order, and operational thresholds, see:
+
+- [docs/suggest_rollout_safety_runbook.md](../docs/suggest_rollout_safety_runbook.md)

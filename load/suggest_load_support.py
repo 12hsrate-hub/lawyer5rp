@@ -16,6 +16,8 @@ DEFAULT_GROUP_B_VUS = 10
 DEFAULT_GROUP_A_VUS = 30
 DEFAULT_COLLATERAL_P95_GROWTH_LIMIT = 0.25
 DEFAULT_COLLATERAL_P99_GROWTH_LIMIT = 0.25
+DEFAULT_SINGLE_P95_THRESHOLD_MS = 2500
+DEFAULT_SINGLE_ERROR_RATE_THRESHOLD = 0.05
 
 
 def new_run_id() -> str:
@@ -370,6 +372,86 @@ def build_mixed_summary(
     }
 
 
+def evaluate_single_summary(
+    summary: dict[str, Any],
+    *,
+    threshold_p95_ms: float | None = DEFAULT_SINGLE_P95_THRESHOLD_MS,
+    threshold_error_rate: float | None = DEFAULT_SINGLE_ERROR_RATE_THRESHOLD,
+) -> dict[str, Any]:
+    p95_ms = extract_metric_value(summary, "http_req_duration", "p(95)")
+    p99_ms = extract_metric_value(summary, "http_req_duration", "p(99)")
+    avg_ms = extract_metric_value(summary, "http_req_duration", "avg")
+    fail_rate = extract_metric_value(summary, "http_req_failed", "rate")
+    suggest_ok = extract_metric_value(summary, "suggest_ok", "count")
+    suggest_overload = extract_metric_value(summary, "suggest_overload", "count")
+    suggest_error = extract_metric_value(summary, "suggest_error", "count")
+
+    breaches: list[str] = []
+    if threshold_p95_ms is not None:
+        if not isinstance(p95_ms, (int, float)):
+            breaches.append("missing_p95")
+        elif float(p95_ms) > float(threshold_p95_ms):
+            breaches.append("p95_exceeded")
+    if threshold_error_rate is not None:
+        if not isinstance(fail_rate, (int, float)):
+            breaches.append("missing_fail_rate")
+        elif float(fail_rate) > float(threshold_error_rate):
+            breaches.append("error_rate_exceeded")
+
+    return {
+        "pass": not breaches,
+        "breaches": breaches,
+        "p95_ms": p95_ms,
+        "p99_ms": p99_ms,
+        "avg_ms": avg_ms,
+        "fail_rate": fail_rate,
+        "suggest_ok": suggest_ok,
+        "suggest_overload": suggest_overload,
+        "suggest_error": suggest_error,
+        "threshold_p95_ms": threshold_p95_ms,
+        "threshold_error_rate": threshold_error_rate,
+    }
+
+
+def build_rollout_summary(
+    *,
+    stage: str,
+    single_evaluation: dict[str, Any],
+    parallel_summary: dict[str, Any],
+    mixed_summary: dict[str, Any],
+) -> dict[str, Any]:
+    parallel_pass = bool(parallel_summary.get("all_sla_pass", False))
+    mixed_impact = mixed_summary.get("impact_sla") if isinstance(mixed_summary.get("impact_sla"), dict) else {}
+    mixed_pass = bool(mixed_impact.get("pass", False))
+    single_pass = bool(single_evaluation.get("pass", False))
+
+    blockers: list[str] = []
+    if not single_pass:
+        blockers.append("single_summary_failed")
+    if not parallel_pass:
+        blockers.append("parallel_summary_failed")
+    if not mixed_pass:
+        blockers.append("mixed_summary_failed")
+
+    next_action = "proceed"
+    if blockers:
+        next_action = "rollback_or_hold"
+    elif str(stage or "").strip() == "telemetry_only":
+        next_action = "enable_optimization_flags"
+    elif str(stage or "").strip() == "optimization":
+        next_action = "consider_limits_stage"
+
+    return {
+        "stage": str(stage or "").strip() or "telemetry_only",
+        "pass": not blockers,
+        "blockers": blockers,
+        "next_action": next_action,
+        "single": single_evaluation,
+        "parallel": parallel_summary,
+        "mixed": mixed_summary,
+    }
+
+
 def evaluate_sla(
     profile_summary: dict[str, Any],
     *,
@@ -547,6 +629,43 @@ def build_mixed_report_markdown(summary: dict[str, Any]) -> str:
             ]
         )
 
+    return "\n".join(lines).strip() + "\n"
+
+
+def build_rollout_report_markdown(summary: dict[str, Any]) -> str:
+    single = summary.get("single") if isinstance(summary.get("single"), dict) else {}
+    parallel = summary.get("parallel") if isinstance(summary.get("parallel"), dict) else {}
+    mixed = summary.get("mixed") if isinstance(summary.get("mixed"), dict) else {}
+    mixed_impact = mixed.get("impact_sla") if isinstance(mixed.get("impact_sla"), dict) else {}
+    lines = [
+        "# Suggest Rollout Safety Report",
+        "",
+        f"- Stage: `{summary.get('stage')}`",
+        f"- Pass: `{summary.get('pass')}`",
+        f"- Blockers: `{', '.join(summary.get('blockers', [])) or 'none'}`",
+        f"- Next action: `{summary.get('next_action')}`",
+        "",
+        "## Single-profile check",
+        "",
+        f"- Pass: `{single.get('pass')}`",
+        f"- `p95`: `{single.get('p95_ms')}`",
+        f"- `p99`: `{single.get('p99_ms')}`",
+        f"- `fail_rate`: `{single.get('fail_rate')}`",
+        f"- `suggest_overload`: `{single.get('suggest_overload')}`",
+        f"- Breaches: `{', '.join(single.get('breaches', [])) or 'none'}`",
+        "",
+        "## Parallel-profile check",
+        "",
+        f"- Pass: `{parallel.get('all_sla_pass')}`",
+        f"- Failing profiles: `{', '.join(parallel.get('failing_profiles', [])) or 'none'}`",
+        "",
+        "## Mixed-load collateral impact",
+        "",
+        f"- Pass: `{mixed_impact.get('pass')}`",
+        f"- Group B p95 growth: `{mixed_impact.get('p95_growth_ratio')}`",
+        f"- Group B p99 growth: `{mixed_impact.get('p99_growth_ratio')}`",
+        f"- Breaches: `{', '.join(mixed_impact.get('breaches', [])) or 'none'}`",
+    ]
     return "\n".join(lines).strip() + "\n"
 
 

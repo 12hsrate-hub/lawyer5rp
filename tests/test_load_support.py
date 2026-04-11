@@ -8,6 +8,8 @@ from pathlib import Path
 from load.suggest_load_support import (
     DEFAULT_COLLATERAL_P95_GROWTH_LIMIT,
     DEFAULT_COLLATERAL_P99_GROWTH_LIMIT,
+    DEFAULT_SINGLE_ERROR_RATE_THRESHOLD,
+    DEFAULT_SINGLE_P95_THRESHOLD_MS,
     build_parallel_report_markdown,
     build_parallel_summary,
     build_artifact_dir,
@@ -15,10 +17,13 @@ from load.suggest_load_support import (
     build_mixed_k6_env,
     build_mixed_report_markdown,
     build_mixed_summary,
+    build_rollout_report_markdown,
+    build_rollout_summary,
     build_report_markdown,
     default_profile_vus_map,
     evaluate_sla,
     evaluate_mixed_impact,
+    evaluate_single_summary,
     normalize_profile_name,
     normalize_vus,
     summarize_server_metrics_csv,
@@ -193,6 +198,27 @@ class LoadSupportTests(unittest.TestCase):
         self.assertIn("App / Server Correlation", report)
         self.assertIn("`85.0`", report)
 
+    def test_evaluate_single_summary_flags_threshold_breach(self):
+        summary = {
+            "metrics": {
+                "http_req_duration": {"values": {"avg": 120.0, "p(95)": 2600.0, "p(99)": 3000.0}},
+                "http_req_failed": {"values": {"rate": 0.06}},
+                "suggest_ok": {"values": {"count": 100}},
+                "suggest_overload": {"values": {"count": 3}},
+                "suggest_error": {"values": {"count": 2}},
+            }
+        }
+
+        evaluation = evaluate_single_summary(
+            summary,
+            threshold_p95_ms=DEFAULT_SINGLE_P95_THRESHOLD_MS,
+            threshold_error_rate=DEFAULT_SINGLE_ERROR_RATE_THRESHOLD,
+        )
+
+        self.assertFalse(evaluation["pass"])
+        self.assertIn("p95_exceeded", evaluation["breaches"])
+        self.assertIn("error_rate_exceeded", evaluation["breaches"])
+
     def test_build_mixed_k6_env_sets_group_a_and_group_b(self):
         env = build_mixed_k6_env(
             base_url="https://lawyer5rp.online/",
@@ -360,6 +386,42 @@ class LoadSupportTests(unittest.TestCase):
         self.assertIn("Mixed Load Impact Report", report)
         self.assertIn("Collateral Impact", report)
         self.assertIn("Server Telemetry", report)
+
+    def test_build_rollout_summary_and_report_capture_blockers(self):
+        single_evaluation = {
+            "pass": True,
+            "breaches": [],
+            "p95_ms": 1200.0,
+            "p99_ms": 1800.0,
+            "fail_rate": 0.01,
+            "suggest_overload": 0,
+        }
+        parallel_summary = {
+            "all_sla_pass": True,
+            "failing_profiles": [],
+        }
+        mixed_summary = {
+            "impact_sla": {
+                "pass": False,
+                "breaches": ["group_b_p95_growth_exceeded"],
+                "p95_growth_ratio": 0.31,
+                "p99_growth_ratio": 0.18,
+            }
+        }
+
+        rollout = build_rollout_summary(
+            stage="optimization",
+            single_evaluation=single_evaluation,
+            parallel_summary=parallel_summary,
+            mixed_summary=mixed_summary,
+        )
+        report = build_rollout_report_markdown(rollout)
+
+        self.assertFalse(rollout["pass"])
+        self.assertEqual(rollout["next_action"], "rollback_or_hold")
+        self.assertIn("mixed_summary_failed", rollout["blockers"])
+        self.assertIn("Suggest Rollout Safety Report", report)
+        self.assertIn("rollback_or_hold", report)
 
 
 if __name__ == "__main__":
