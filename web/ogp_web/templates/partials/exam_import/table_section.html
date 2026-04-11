@@ -1,11 +1,28 @@
-<section id="exam-import-section-table" class="panel legal-card legal-section">
+﻿<section id="exam-import-section-table" class="panel legal-card legal-section">
   <div class="legal-section__header">
     <div>
       <p class="legal-section__eyebrow">Последние записи</p>
       <h2 class="legal-section__title">Импортированные ответы</h2>
-      <p class="legal-section__description">По каждой строке можно открыть просмотр всех столбцов и значений, которые пришли из таблицы.</p>
+      <p class="legal-section__description">По каждой строке можно открыть полный разбор: вопрос, ответ кандидата, эталон, логика и итоговый балл.</p>
     </div>
   </div>
+
+  <div class="admin-section-toolbar exam-import-toolbar">
+    <label class="legal-field exam-import-filter-field">
+      <span class="legal-field__label">Поиск по строке, имени, Discord или паспорту</span>
+      <input id="exam-row-search" type="search" placeholder="Например: 2, Nikitos, sna190111, 516666">
+    </label>
+    <label class="legal-field exam-import-filter-field">
+      <span class="legal-field__label">Статус строк</span>
+      <select id="exam-row-filter">
+        <option value="all">Все строки</option>
+        <option value="pending">Только ожидают проверки</option>
+        <option value="problem">Только с замечаниями</option>
+        <option value="ok">Только без замечаний</option>
+      </select>
+    </label>
+  </div>
+  <div id="exam-row-quick-stats" class="exam-row-quick-stats"></div>
 
   <div class="legal-table-shell">
     <table class="legal-table">
@@ -19,6 +36,7 @@
           <th>Формат</th>
           <th>Ответов</th>
           <th>Средний балл</th>
+          <th>Статус</th>
           <th>Импортировано</th>
           <th>Действия</th>
         </tr>
@@ -26,7 +44,27 @@
       <tbody id="exam-import-rows">
         {% if exam_entries %}
           {% for entry in exam_entries %}
-          <tr data-source-row="{{ entry.source_row }}">
+          {% set score = entry.average_score %}
+          {% if score is none %}
+            {% set row_status = "pending" %}
+            {% set row_status_label = "Ожидает проверки" %}
+            {% set row_status_tone = "pending" %}
+          {% elif score >= 100 %}
+            {% set row_status = "ok" %}
+            {% set row_status_label = "Проверен без замечаний" %}
+            {% set row_status_tone = "ok" %}
+          {% else %}
+            {% set row_status = "problem" %}
+            {% set row_status_label = "Есть замечания" %}
+            {% set row_status_tone = "problem" %}
+          {% endif %}
+          <tr
+            data-source-row="{{ entry.source_row }}"
+            data-row-status="{{ row_status }}"
+            data-row-name="{{ entry.full_name|lower }}"
+            data-row-discord="{{ entry.discord_tag|lower }}"
+            data-row-passport="{{ entry.passport|lower }}"
+          >
             <td>{{ entry.source_row }}</td>
             <td>{{ entry.submitted_at }}</td>
             <td>{{ entry.full_name }}</td>
@@ -35,6 +73,7 @@
             <td>{{ entry.exam_format }}</td>
             <td>{{ entry.answer_count }}</td>
             <td class="exam-average-cell">{% if entry.average_score is not none %}{{ entry.average_score }} / 100{% else %}—{% endif %}</td>
+            <td><span class="exam-status-badge exam-status-badge--{{ row_status_tone }}">{{ row_status_label }}</span></td>
             <td>{{ entry.imported_at }}</td>
             <td>
               <div class="legal-inline-actions">
@@ -48,7 +87,7 @@
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="10" class="legal-table__empty">База пока пустая. Первый импорт создаст записи из Google Sheets.</td>
+            <td colspan="11" class="legal-table__empty">База пока пустая. Первый импорт создаст записи из Google Sheets.</td>
           </tr>
         {% endif %}
       </tbody>

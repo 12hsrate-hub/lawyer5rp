@@ -66,3 +66,7 @@ echo "Deployed commit: $(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/nul
 echo "Health:"
 curl -fsS "${HEALTH_URL}"
 echo
+
+if [[ -x "${APP_ROOT}/scripts/smoke_web.sh" ]]; then
+  "${APP_ROOT}/scripts/smoke_web.sh"
+fi

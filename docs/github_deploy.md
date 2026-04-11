@@ -68,6 +68,7 @@ What the deploy script does:
 - runs PostgreSQL migrations
 - restarts the FastAPI process
 - checks `/health`
+- runs `scripts/smoke_web.sh` (if executable on the server)
 
 ## GitHub Actions auto-deploy
 
@@ -96,6 +97,12 @@ Manual checks after deploy:
 curl -sS http://127.0.0.1:8000/health
 curl -sS -i http://127.0.0.1:8000/api/admin/overview
 tail -n 80 /srv/lawyer5rp.ru/web/data/logs/server.out
+```
+
+If needed, run smoke checks manually:
+
+```bash
+bash /srv/lawyer5rp.ru/scripts/smoke_web.sh
 ```
 
 `/api/admin/overview` returns `401 Unauthorized` without a logged-in session. That is expected.

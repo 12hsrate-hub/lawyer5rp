@@ -612,6 +612,81 @@
   overflow: auto;
 }
 
+.exam-import-toolbar {
+  gap: 14px;
+}
+
+.exam-import-filter-field {
+  min-width: min(360px, 100%);
+  flex: 1 1 320px;
+}
+
+.exam-row-quick-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.exam-status-badge,
+.exam-score-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(214, 201, 189, 0.95);
+  background: rgba(246, 241, 235, 0.94);
+  color: #6f6258;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.exam-status-badge--neutral {
+  background: rgba(246, 241, 235, 0.94);
+  border-color: rgba(214, 201, 189, 0.95);
+  color: #6f6258;
+}
+
+.exam-status-badge--pending,
+.exam-score-badge--pending {
+  background: rgba(255, 243, 215, 0.92);
+  border-color: rgba(226, 195, 132, 0.95);
+  color: #73531a;
+}
+
+.exam-status-badge--ok,
+.exam-score-badge--ok {
+  background: rgba(225, 242, 231, 0.92);
+  border-color: rgba(159, 198, 169, 0.95);
+  color: #275a35;
+}
+
+.exam-score-badge--warn {
+  background: rgba(239, 236, 206, 0.95);
+  border-color: rgba(201, 191, 124, 0.95);
+  color: #5f5a1a;
+}
+
+.exam-status-badge--problem,
+.exam-score-badge--problem {
+  background: rgba(251, 231, 231, 0.94);
+  border-color: rgba(223, 161, 161, 0.95);
+  color: #8b2f2f;
+}
+
+.exam-score-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.exam-detail-transparency {
+  margin-top: 16px;
+}
+
 .primary-button,
 .secondary-button,
 .ghost-button {
@@ -953,6 +1028,20 @@
   margin-top: 14px;
 }
 
+.admin-live-toolbar {
+  align-items: end;
+}
+
+.admin-live-toggle {
+  min-width: 190px;
+}
+
+.admin-performance-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .admin-exam-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1047,13 +1136,25 @@
   .admin-user-detail-grid,
   .admin-user-summary-grid,
   .admin-exam-grid,
-  .admin-exam-meta {
+  .admin-exam-meta,
+  .exam-score-summary,
+  .admin-performance-grid {
     grid-template-columns: 1fr;
   }
 
   .segmented-tabs {
     width: 100%;
-    grid-auto-flow: row;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .segmented-tabs__item {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .legal-section-jump {
@@ -1140,6 +1241,13 @@
   .legal-table {
     min-width: 620px;
     font-size: 13px;
+  }
+
+  .exam-status-badge,
+  .exam-score-badge {
+    min-height: 26px;
+    padding: 0 9px;
+    font-size: 11px;
   }
 
   .legal-table th,

@@ -1,6 +1,6 @@
-{% extends "layouts/base.html" %}
+﻿{% extends "layouts/base.html" %}
 
-{% block title %}Админ-панель | {{ app_title }}{% endblock %}
+{% block title %}РђРґРјРёРЅ-РїР°РЅРµР»СЊ | {{ app_title }}{% endblock %}
 
 {% block page_scripts %}
   <script src="{{ url_for('static', path='pages/admin.js') }}?v={{ static_asset_version }}" defer></script>
@@ -11,40 +11,40 @@
     <header class="legal-header">
       <div class="legal-header__main">
         <p class="legal-header__eyebrow">OGP Builder</p>
-        <h1 class="legal-header__title">Админ-панель</h1>
+        <h1 class="legal-header__title">РђРґРјРёРЅ-РїР°РЅРµР»СЊ</h1>
         <p class="legal-header__description">
-          Управление пользователями, импортом экзаменов, событиями и операционными метриками.
+          РЈРїСЂР°РІР»РµРЅРёРµ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏРјРё, РёРјРїРѕСЂС‚РѕРј СЌРєР·Р°РјРµРЅРѕРІ, СЃРѕР±С‹С‚РёСЏРјРё Рё РѕРїРµСЂР°С†РёРѕРЅРЅС‹РјРё РјРµС‚СЂРёРєР°РјРё.
         </p>
       </div>
       <aside class="legal-user-card">
         <div class="legal-user-card__top">
-          <span class="legal-user-card__label">Администратор</span>
+          <span class="legal-user-card__label">РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ</span>
           <strong class="legal-user-card__value">{{ username }}</strong>
         </div>
-        <p class="legal-user-card__text">Быстрый доступ к ключевым разделам и управлению доступом.</p>
+        <p class="legal-user-card__text">Р‘С‹СЃС‚СЂС‹Р№ РґРѕСЃС‚СѓРї Рє РєР»СЋС‡РµРІС‹Рј СЂР°Р·РґРµР»Р°Рј Рё СѓРїСЂР°РІР»РµРЅРёСЋ РґРѕСЃС‚СѓРїРѕРј.</p>
         <div class="legal-user-card__actions">
-          <a class="button-link secondary-button" href="/complaint">К жалобе</a>
-          <a class="button-link ghost-button" href="/profile">Профиль</a>
-          <button type="button" id="logout-btn" class="ghost-button">Выйти</button>
+          <a class="button-link secondary-button" href="/complaint">Рљ Р¶Р°Р»РѕР±Рµ</a>
+          <a class="button-link ghost-button" href="/profile">РџСЂРѕС„РёР»СЊ</a>
+          <button type="button" id="logout-btn" class="ghost-button">Р’С‹Р№С‚Рё</button>
         </div>
       </aside>
     </header>
     {% include "partials/page_nav.html" %}
-    <nav class="legal-section-jump" aria-label="Навигация по разделам админ-панели">
-      <a class="legal-section-jump__link" href="#admin-section-filters">Фильтры</a>
-      <a class="legal-section-jump__link" href="#admin-section-totals">Сводка</a>
-      <a class="legal-section-jump__link" href="#admin-section-import">Импорт экзаменов</a>
-      <a class="legal-section-jump__link" href="#admin-section-users">Пользователи</a>
-      <a class="legal-section-jump__link" href="#admin-section-events">События</a>
+    <nav class="legal-section-jump" aria-label="РќР°РІРёРіР°С†РёСЏ РїРѕ СЂР°Р·РґРµР»Р°Рј Р°РґРјРёРЅ-РїР°РЅРµР»Рё">
+      <a class="legal-section-jump__link" href="#admin-section-filters">Р¤РёР»СЊС‚СЂС‹</a>
+      <a class="legal-section-jump__link" href="#admin-section-totals">РЎРІРѕРґРєР°</a>
+      <a class="legal-section-jump__link" href="#admin-section-import">РРјРїРѕСЂС‚ СЌРєР·Р°РјРµРЅРѕРІ</a>
+      <a class="legal-section-jump__link" href="#admin-section-users">РџРѕР»СЊР·РѕРІР°С‚РµР»Рё</a>
+      <a class="legal-section-jump__link" href="#admin-section-events">РЎРѕР±С‹С‚РёСЏ</a>
     </nav>
 
     <section class="panel legal-card">
       <div class="legal-section__header">
         <div>
-          <p class="legal-section__eyebrow">Администрирование</p>
-          <h1 class="legal-section__title">Панель ресурсов и активности</h1>
+          <p class="legal-section__eyebrow">РђРґРјРёРЅРёСЃС‚СЂРёСЂРѕРІР°РЅРёРµ</p>
+          <h1 class="legal-section__title">РџР°РЅРµР»СЊ СЂРµСЃСѓСЂСЃРѕРІ Рё Р°РєС‚РёРІРЅРѕСЃС‚Рё</h1>
           <p class="legal-section__description">
-            Здесь собрана сводка по пользователям, запросам к API, AI-операциям, оцениванию экзамена и итоговым документам.
+            Р—РґРµСЃСЊ СЃРѕР±СЂР°РЅР° СЃРІРѕРґРєР° РїРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏРј, Р·Р°РїСЂРѕСЃР°Рј Рє API, AI-РѕРїРµСЂР°С†РёСЏРј, РѕС†РµРЅРёРІР°РЅРёСЋ СЌРєР·Р°РјРµРЅР° Рё РёС‚РѕРіРѕРІС‹Рј РґРѕРєСѓРјРµРЅС‚Р°Рј.
           </p>
         </div>
       </div>
@@ -55,8 +55,8 @@
       <section id="admin-section-filters" class="legal-subcard admin-collapsible" data-collapsible-section="filters">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
-            <span class="legal-field__label">Поиск и фильтры</span>
-            <p class="legal-section__description">Управление выборкой пользователей и событий.</p>
+            <span class="legal-field__label">РџРѕРёСЃРє Рё С„РёР»СЊС‚СЂС‹</span>
+            <p class="legal-section__description">РЈРїСЂР°РІР»РµРЅРёРµ РІС‹Р±РѕСЂРєРѕР№ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ Рё СЃРѕР±С‹С‚РёР№.</p>
           </div>
           <button
             type="button"
@@ -66,55 +66,71 @@
             aria-expanded="true"
             aria-controls="admin-filters-content"
           >
-            Скрыть
+            РЎРєСЂС‹С‚СЊ
           </button>
         </div>
         <div id="admin-filters-content" class="admin-collapsible__content">
           <div class="legal-field-grid legal-field-grid--two">
             <label class="legal-field legal-field--full">
-              <span class="legal-field__label">Поиск по пользователю или email</span>
-              <input id="admin-user-search" type="search" placeholder="username или email">
+              <span class="legal-field__label">РџРѕРёСЃРє РїРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ РёР»Рё email</span>
+              <input id="admin-user-search" type="search" placeholder="username РёР»Рё email">
             </label>
             <label class="legal-field">
-              <span class="legal-field__label">Сортировка пользователей</span>
+              <span class="legal-field__label">РЎРѕСЂС‚РёСЂРѕРІРєР° РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№</span>
               <select id="admin-user-sort">
-                <option value="complaints">По жалобам</option>
-                <option value="api_requests">По API-активности</option>
-                <option value="last_seen">По последней активности</option>
-                <option value="created_at">По дате регистрации</option>
-                <option value="username">По username</option>
+                <option value="complaints">РџРѕ Р¶Р°Р»РѕР±Р°Рј</option>
+                <option value="api_requests">РџРѕ API-Р°РєС‚РёРІРЅРѕСЃС‚Рё</option>
+                <option value="last_seen">РџРѕ РїРѕСЃР»РµРґРЅРµР№ Р°РєС‚РёРІРЅРѕСЃС‚Рё</option>
+                <option value="created_at">РџРѕ РґР°С‚Рµ СЂРµРіРёСЃС‚СЂР°С†РёРё</option>
+                <option value="username">РџРѕ username</option>
               </select>
             </label>
             <label class="legal-field admin-filter-toggle">
-              <span class="legal-field__label">Только заблокированные</span>
+              <span class="legal-field__label">РўРѕР»СЊРєРѕ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅРЅС‹Рµ</span>
               <input id="admin-filter-blocked" class="admin-filter-toggle__input" type="checkbox">
             </label>
             <label class="legal-field admin-filter-toggle">
-              <span class="legal-field__label">Только тестеры</span>
+              <span class="legal-field__label">РўРѕР»СЊРєРѕ С‚РµСЃС‚РµСЂС‹</span>
               <input id="admin-filter-tester" class="admin-filter-toggle__input" type="checkbox">
             </label>
             <label class="legal-field admin-filter-toggle">
-              <span class="legal-field__label">Только ГКА-ЗГКА</span>
+              <span class="legal-field__label">РўРѕР»СЊРєРѕ Р“РљРђ-Р—Р“РљРђ</span>
               <input id="admin-filter-gka" class="admin-filter-toggle__input" type="checkbox">
             </label>
             <label class="legal-field admin-filter-toggle">
-              <span class="legal-field__label">Только без подтверждения email</span>
+              <span class="legal-field__label">РўРѕР»СЊРєРѕ Р±РµР· РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ email</span>
               <input id="admin-filter-unverified" class="admin-filter-toggle__input" type="checkbox">
             </label>
           </div>
           <div class="admin-section-toolbar">
-            <button type="button" id="admin-reset-filters" class="ghost-button">Сбросить фильтры</button>
-            <button type="button" id="admin-export-users" class="ghost-button">CSV пользователей</button>
+            <button type="button" id="admin-reset-filters" class="ghost-button">РЎР±СЂРѕСЃРёС‚СЊ С„РёР»СЊС‚СЂС‹</button>
+            <button type="button" id="admin-export-users" class="ghost-button">CSV РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№</button>
           </div>
           <div id="admin-active-filters" class="admin-filter-chips" hidden></div>
+          <div class="admin-section-toolbar admin-live-toolbar">
+            <label class="legal-field admin-live-toggle">
+              <span class="legal-field__label">Live обновление</span>
+              <input id="admin-live-refresh" class="admin-filter-toggle__input" type="checkbox" checked>
+            </label>
+            <label class="legal-field">
+              <span class="legal-field__label">Интервал (сек)</span>
+              <select id="admin-live-interval">
+                <option value="15">15</option>
+                <option value="30" selected>30</option>
+                <option value="60">60</option>
+              </select>
+            </label>
+            <button type="button" id="admin-refresh-now" class="ghost-button">Обновить сейчас</button>
+            <span id="admin-live-status" class="admin-badge admin-badge--muted">Live: включено</span>
+          </div>
         </div>
       </section>
 
       <section id="admin-section-totals" class="legal-subcard admin-collapsible" data-collapsible-section="totals">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
-            <span class="legal-field__label">Сводные показатели</span>
-            <p class="legal-section__description">Главные метрики системы и нагрузки.</p>
+            <span class="legal-field__label">РЎРІРѕРґРЅС‹Рµ РїРѕРєР°Р·Р°С‚РµР»Рё</span>
+            <p class="legal-section__description">Р“Р»Р°РІРЅС‹Рµ РјРµС‚СЂРёРєРё СЃРёСЃС‚РµРјС‹ Рё РЅР°РіСЂСѓР·РєРё.</p>
           </div>
           <button
             type="button"
@@ -124,7 +140,7 @@
             aria-expanded="true"
             aria-controls="admin-totals-content"
           >
-            Скрыть
+            РЎРєСЂС‹С‚СЊ
           </button>
         </div>
         <div id="admin-totals-content" class="admin-collapsible__content">
@@ -132,12 +148,34 @@
         </div>
       </section>
 
+      
+      <section class="legal-subcard admin-collapsible" data-collapsible-section="performance">
+        <div class="legal-subcard__header admin-collapsible__header">
+          <div>
+            <span class="legal-field__label">Производительность</span>
+            <p class="legal-section__description">Короткий срез p95/p50, ошибок и нагрузки по последнему окну.</p>
+          </div>
+          <button
+            type="button"
+            class="ghost-button admin-collapsible__toggle"
+            data-collapsible-target="admin-performance-content"
+            data-expanded-default="true"
+            aria-expanded="true"
+            aria-controls="admin-performance-content"
+          >
+            Скрыть
+          </button>
+        </div>
+        <div id="admin-performance-content" class="admin-collapsible__content">
+          <div id="admin-performance" class="admin-performance-grid"></div>
+        </div>
+      </section>
       <section id="admin-section-import" class="legal-subcard admin-collapsible" data-collapsible-section="exam-import">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
-            <span class="legal-field__label">Операционный блок экзаменов</span>
+            <span class="legal-field__label">РћРїРµСЂР°С†РёРѕРЅРЅС‹Р№ Р±Р»РѕРє СЌРєР·Р°РјРµРЅРѕРІ</span>
             <p class="legal-section__description">
-              Состояние импорта из Google Sheets, очередь на проверку и последние ошибки AI-оценивания.
+              РЎРѕСЃС‚РѕСЏРЅРёРµ РёРјРїРѕСЂС‚Р° РёР· Google Sheets, РѕС‡РµСЂРµРґСЊ РЅР° РїСЂРѕРІРµСЂРєСѓ Рё РїРѕСЃР»РµРґРЅРёРµ РѕС€РёР±РєРё AI-РѕС†РµРЅРёРІР°РЅРёСЏ.
             </p>
           </div>
           <button
@@ -148,7 +186,7 @@
             aria-expanded="true"
             aria-controls="admin-exam-import-content"
           >
-            Скрыть
+            РЎРєСЂС‹С‚СЊ
           </button>
         </div>
         <div id="admin-exam-import-content" class="admin-collapsible__content">
@@ -159,8 +197,8 @@
       <section class="legal-subcard admin-collapsible" data-collapsible-section="top-endpoints">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
-            <span class="legal-field__label">Топ API-ручек</span>
-            <p class="legal-section__description">Часто используемые API-маршруты и их назначение.</p>
+            <span class="legal-field__label">РўРѕРї API-СЂСѓС‡РµРє</span>
+            <p class="legal-section__description">Р§Р°СЃС‚Рѕ РёСЃРїРѕР»СЊР·СѓРµРјС‹Рµ API-РјР°СЂС€СЂСѓС‚С‹ Рё РёС… РЅР°Р·РЅР°С‡РµРЅРёРµ.</p>
           </div>
           <button
             type="button"
@@ -170,7 +208,7 @@
             aria-expanded="false"
             aria-controls="admin-top-endpoints-content"
           >
-            Показать
+            РџРѕРєР°Р·Р°С‚СЊ
           </button>
         </div>
         <div id="admin-top-endpoints-content" class="admin-collapsible__content" hidden>
@@ -181,8 +219,8 @@
       <section id="admin-section-users" class="legal-subcard admin-collapsible" data-collapsible-section="users">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
-            <span class="legal-field__label">Пользователи</span>
-            <p class="legal-section__description">Список аккаунтов и быстрый доступ к управлению.</p>
+            <span class="legal-field__label">РџРѕР»СЊР·РѕРІР°С‚РµР»Рё</span>
+            <p class="legal-section__description">РЎРїРёСЃРѕРє Р°РєРєР°СѓРЅС‚РѕРІ Рё Р±С‹СЃС‚СЂС‹Р№ РґРѕСЃС‚СѓРї Рє СѓРїСЂР°РІР»РµРЅРёСЋ.</p>
           </div>
           <button
             type="button"
@@ -192,7 +230,7 @@
             aria-expanded="true"
             aria-controls="admin-users-content"
           >
-            Скрыть
+            РЎРєСЂС‹С‚СЊ
           </button>
         </div>
         <div id="admin-users-content" class="admin-collapsible__content">
@@ -203,9 +241,9 @@
       <section class="legal-subcard admin-collapsible" data-collapsible-section="admin-audit">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
-            <span class="legal-field__label">Аудит администратора</span>
+            <span class="legal-field__label">РђСѓРґРёС‚ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°</span>
             <p class="legal-section__description">
-              Последние ручные действия администратора по пользователям и доступам.
+              РџРѕСЃР»РµРґРЅРёРµ СЂСѓС‡РЅС‹Рµ РґРµР№СЃС‚РІРёСЏ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР° РїРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏРј Рё РґРѕСЃС‚СѓРїР°Рј.
             </p>
           </div>
           <button
@@ -216,7 +254,7 @@
             aria-expanded="false"
             aria-controls="admin-admin-events-content"
           >
-            Показать
+            РџРѕРєР°Р·Р°С‚СЊ
           </button>
         </div>
         <div id="admin-admin-events-content" class="admin-collapsible__content" hidden>
@@ -227,8 +265,8 @@
       <section id="admin-section-events" class="legal-subcard admin-collapsible" data-collapsible-section="events">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
-            <span class="legal-field__label">Последние события</span>
-            <p class="legal-section__description">Журнал системной активности и технических событий.</p>
+            <span class="legal-field__label">РџРѕСЃР»РµРґРЅРёРµ СЃРѕР±С‹С‚РёСЏ</span>
+            <p class="legal-section__description">Р–СѓСЂРЅР°Р» СЃРёСЃС‚РµРјРЅРѕР№ Р°РєС‚РёРІРЅРѕСЃС‚Рё Рё С‚РµС…РЅРёС‡РµСЃРєРёС… СЃРѕР±С‹С‚РёР№.</p>
           </div>
           <button
             type="button"
@@ -238,19 +276,19 @@
             aria-expanded="false"
             aria-controls="admin-events-content"
           >
-            Показать
+            РџРѕРєР°Р·Р°С‚СЊ
           </button>
         </div>
         <div id="admin-events-content" class="admin-collapsible__content" hidden>
           <div class="legal-field-grid legal-field-grid--two">
             <label class="legal-field legal-field--full">
-              <span class="legal-field__label">Поиск по событиям</span>
-              <input id="admin-event-search" type="search" placeholder="username или путь API">
+              <span class="legal-field__label">РџРѕРёСЃРє РїРѕ СЃРѕР±С‹С‚РёСЏРј</span>
+              <input id="admin-event-search" type="search" placeholder="username РёР»Рё РїСѓС‚СЊ API">
             </label>
             <label class="legal-field">
-              <span class="legal-field__label">Тип события</span>
+              <span class="legal-field__label">РўРёРї СЃРѕР±С‹С‚РёСЏ</span>
               <select id="admin-event-type">
-                <option value="">Все типы</option>
+                <option value="">Р’СЃРµ С‚РёРїС‹</option>
                 <option value="api_request">api_request</option>
                 <option value="complaint_generated">complaint_generated</option>
                 <option value="rehab_generated">rehab_generated</option>
@@ -274,12 +312,12 @@
               </select>
             </label>
             <label class="legal-field admin-filter-toggle">
-              <span class="legal-field__label">Только ошибки</span>
+              <span class="legal-field__label">РўРѕР»СЊРєРѕ РѕС€РёР±РєРё</span>
               <input id="admin-filter-failed-events" class="admin-filter-toggle__input" type="checkbox">
             </label>
           </div>
           <div class="admin-section-toolbar">
-            <button type="button" id="admin-export-events" class="ghost-button">CSV событий</button>
+            <button type="button" id="admin-export-events" class="ghost-button">CSV СЃРѕР±С‹С‚РёР№</button>
           </div>
           <div id="admin-events"></div>
         </div>
@@ -289,12 +327,13 @@
 
   <div id="admin-user-modal" class="modal-backdrop" hidden>
     <div class="modal-card modal-card--wide legal-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-user-modal-title">
-      <button type="button" id="admin-user-modal-close" class="modal-close" aria-label="Закрыть">×</button>
-      <h2 id="admin-user-modal-title">Карточка пользователя</h2>
+      <button type="button" id="admin-user-modal-close" class="modal-close" aria-label="Р—Р°РєСЂС‹С‚СЊ">Г—</button>
+      <h2 id="admin-user-modal-title">РљР°СЂС‚РѕС‡РєР° РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ</h2>
       <div id="admin-user-modal-body" class="legal-description"></div>
       <div class="modal-actions">
-        <button type="button" id="admin-user-modal-ok" class="primary-button">Закрыть</button>
+        <button type="button" id="admin-user-modal-ok" class="primary-button">Р—Р°РєСЂС‹С‚СЊ</button>
       </div>
     </div>
   </div>
 {% endblock %}
+

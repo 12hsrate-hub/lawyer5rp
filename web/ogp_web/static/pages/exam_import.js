@@ -1,4 +1,4 @@
-const importButton = document.getElementById("exam-import-btn");
+﻿const importButton = document.getElementById("exam-import-btn");
 const scoreButton = document.getElementById("exam-score-btn");
 const rescoreFailedButton = document.getElementById("exam-rescore-failed-btn");
 const progressBox = document.getElementById("exam-import-progress");
@@ -12,6 +12,9 @@ const lastImportedValue = document.getElementById("exam-last-imported");
 const lastDeltaValue = document.getElementById("exam-last-delta");
 const lastScoredValue = document.getElementById("exam-last-scored");
 const rowsHost = document.getElementById("exam-import-rows");
+const rowSearchField = document.getElementById("exam-row-search");
+const rowFilterField = document.getElementById("exam-row-filter");
+const rowQuickStats = document.getElementById("exam-row-quick-stats");
 const logoutBtn = document.getElementById("logout-btn");
 const detailMeta = document.getElementById("exam-detail-meta");
 const detailBody = document.getElementById("exam-detail-body");
@@ -39,6 +42,8 @@ let progressHintTimer = null;
 let progressElapsedTimer = null;
 let progressStartedAt = 0;
 let progressBaseText = "";
+let latestEntries = [];
+let initialEntriesLoaded = false;
 
 function showErrors(lines) {
   showText(errorBox, lines);
@@ -184,8 +189,115 @@ function setBusy(isBusy, text = "", options = {}) {
   }
 }
 
+function parseAverageText(value) {
+  const text = String(value || "").trim();
+  if (!text || text === "—") {
+    return null;
+  }
+  const match = text.match(/\d+(?:[.,]\d+)?/);
+  if (!match) {
+    return null;
+  }
+  const numeric = Number(match[0].replace(",", "."));
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function getEntryStatusKey(entry) {
+  return ExamView.getEntryStatus(entry).key;
+}
+
+function ensureInitialEntries() {
+  if (initialEntriesLoaded || !rowsHost) {
+    return;
+  }
+  initialEntriesLoaded = true;
+
+  const rows = Array.from(rowsHost.querySelectorAll("tr[data-source-row]"));
+  latestEntries = rows.map((row) => {
+    const cells = Array.from(row.querySelectorAll("td"));
+    return {
+      source_row: Number(row.dataset.sourceRow || 0),
+      submitted_at: cells[1]?.textContent?.trim() || "",
+      full_name: cells[2]?.textContent?.trim() || "",
+      discord_tag: cells[3]?.textContent?.trim() || "",
+      passport: cells[4]?.textContent?.trim() || "",
+      exam_format: cells[5]?.textContent?.trim() || "",
+      answer_count: Number(cells[6]?.textContent?.trim() || 0),
+      average_score: parseAverageText(cells[7]?.textContent?.trim() || ""),
+      imported_at: cells[9]?.textContent?.trim() || "",
+    };
+  });
+}
+
+function renderRowQuickStats(entries, visibleEntries) {
+  if (!rowQuickStats) {
+    return;
+  }
+
+  const total = entries.length;
+  const pending = entries.filter((entry) => getEntryStatusKey(entry) === "pending").length;
+  const problem = entries.filter((entry) => getEntryStatusKey(entry) === "problem").length;
+  const ok = entries.filter((entry) => getEntryStatusKey(entry) === "ok").length;
+
+  rowQuickStats.innerHTML = `
+    <span class="exam-status-badge exam-status-badge--neutral">Показано: ${escapeHtml(String(visibleEntries.length))} из ${escapeHtml(String(total))}</span>
+    <span class="exam-status-badge exam-status-badge--pending">Ожидают: ${escapeHtml(String(pending))}</span>
+    <span class="exam-status-badge exam-status-badge--problem">С замечаниями: ${escapeHtml(String(problem))}</span>
+    <span class="exam-status-badge exam-status-badge--ok">Без замечаний: ${escapeHtml(String(ok))}</span>
+  `;
+}
+
+function applyEntryFilters(entries) {
+  const normalizedSearch = String(rowSearchField?.value || "").trim().toLowerCase();
+  const statusFilter = String(rowFilterField?.value || "all").trim();
+
+  return entries.filter((entry) => {
+    const statusMatch = statusFilter === "all" ? true : getEntryStatusKey(entry) === statusFilter;
+    if (!statusMatch) {
+      return false;
+    }
+
+    if (!normalizedSearch) {
+      return true;
+    }
+
+    const haystack = [
+      String(entry.source_row || ""),
+      String(entry.full_name || "").toLowerCase(),
+      String(entry.discord_tag || "").toLowerCase(),
+      String(entry.passport || "").toLowerCase(),
+      String(entry.exam_format || "").toLowerCase(),
+    ].join(" ");
+
+    return haystack.includes(normalizedSearch);
+  });
+}
+
 function renderRows(entries) {
-  ExamView.renderRows(rowsHost, entries, escapeHtml);
+  if (!rowsHost) {
+    return;
+  }
+  const filtered = applyEntryFilters(entries);
+  if (!filtered.length && entries.length) {
+    rowsHost.innerHTML = `
+      <tr>
+        <td colspan="11" class="legal-table__empty">По текущим фильтрам строки не найдены. Снимите фильтры или измените запрос.</td>
+      </tr>
+    `;
+  } else {
+    ExamView.renderRows(rowsHost, filtered, escapeHtml);
+  }
+  renderRowQuickStats(entries, filtered);
+}
+
+function renderCurrentRows() {
+  ensureInitialEntries();
+  renderRows(latestEntries || []);
+}
+
+function setEntries(entries) {
+  latestEntries = Array.isArray(entries) ? [...entries] : [];
+  renderCurrentRows();
 }
 
 function applySummary(payload) {
@@ -205,7 +317,11 @@ function applySummary(payload) {
   if (lastScoredValue) {
     lastScoredValue.textContent = String(payload.scored_count ?? 0);
   }
-  renderRows(payload.latest_entries || []);
+  if (Array.isArray(payload.latest_entries)) {
+    setEntries(payload.latest_entries);
+  } else {
+    renderCurrentRows();
+  }
 }
 
 function renderDetail(entry) {
@@ -230,6 +346,12 @@ function updateRowAverage(sourceRow, averageText) {
   if (averageCell) {
     averageCell.textContent = averageText;
   }
+  const statusCell = row?.children?.[8];
+  if (statusCell) {
+    const average = parseAverageText(averageText);
+    const entryStatus = ExamView.getEntryStatus({ average_score: average });
+    statusCell.innerHTML = `<span class="exam-status-badge exam-status-badge--${escapeHtml(entryStatus.tone)}">${escapeHtml(entryStatus.label)}</span>`;
+  }
   const actionsCell = row?.lastElementChild;
   if (actionsCell) {
     actionsCell.innerHTML = `
@@ -238,6 +360,18 @@ function updateRowAverage(sourceRow, averageText) {
       </div>
     `;
   }
+
+  latestEntries = latestEntries.map((entry) => {
+    if (Number(entry.source_row) !== Number(sourceRow)) {
+      return entry;
+    }
+    const parsedAverage = parseAverageText(averageText);
+    return {
+      ...entry,
+      average_score: parsedAverage,
+    };
+  });
+  renderCurrentRows();
 }
 
 async function requestJson(url, errorText, options = { method: "GET" }) {
@@ -265,11 +399,32 @@ function describeTaskStatus(task) {
   if (task?.task_type === "bulk_rescore_failed") {
     return progressLine
       ? `Перепроверяю строки с некорректными результатами. ${progressLine}.`
-      : "Перепроверяю только строки с некорректными результатами. Некорректная запись здесь означает строку с непроверенными полями или запись, помеченную как требующую повторной проверки.";
+      : "Перепроверяю только строки с некорректными результатами.";
   }
   return progressLine
     ? `Проверяю строки без финальной оценки. ${progressLine}.`
-    : "Проверяю только те тесты, у которых еще нет финальной оценки. Для некорректных записей используйте отдельную кнопку перепроверки.";
+    : "Проверяю только те тесты, у которых еще нет финальной оценки.";
+}
+
+function buildBulkResultMessage(payload, mode = "default") {
+  const scored = mode === "rescore"
+    ? Number(payload.rescored_failed_count ?? payload.scored_count ?? 0)
+    : Number(payload.scored_count ?? 0);
+  const failedFieldCount = Number(payload.failed_field_count ?? 0);
+  const failedRowCount = Array.isArray(payload.failed_rows) ? payload.failed_rows.length : 0;
+
+  if (!failedFieldCount) {
+    if (mode === "rescore") {
+      return "Перепроверка завершена: некорректных полей больше нет.";
+    }
+    return `Проверка завершена: оценено ${scored} тестов.`;
+  }
+
+  if (mode === "rescore") {
+    return `Перепроверка завершена: переоценено ${scored} строк. Строк с непроверенными полями осталось: ${failedRowCount}, всего таких полей: ${failedFieldCount}.`;
+  }
+
+  return `Проверка завершена: оценено ${scored} тестов. Строк с непроверенными полями: ${failedRowCount}, всего таких полей: ${failedFieldCount}.`;
 }
 
 async function pollTaskUntilFinished(taskId, errorText) {
@@ -375,13 +530,7 @@ async function runScoring() {
     saveActiveTask(task);
     const payload = await pollTaskUntilFinished(task.task_id, "Не удалось проверить тесты.");
     applySummary(payload);
-    const failedFieldCount = Number(payload.failed_field_count ?? 0);
-    const failedRowCount = Array.isArray(payload.failed_rows) ? payload.failed_rows.length : 0;
-    showMessage(
-      failedFieldCount
-        ? `Проверка завершена: оценено ${payload.scored_count ?? 0} тестов. Строк с непроверенными полями: ${failedRowCount}, всего таких полей: ${failedFieldCount}.`
-        : `Проверка завершена: оценено ${payload.scored_count ?? 0} тестов.`,
-    );
+    showMessage(buildBulkResultMessage(payload, "default"));
   } catch (error) {
     clearActiveTask();
     showErrors(formatErrorMessage(error, "Не удалось проверить тесты."));
@@ -393,7 +542,7 @@ async function runScoring() {
 async function runRescoreFailed() {
   clearErrors();
   showMessage("");
-  setBusy(true, "Перепроверяю строки с непроверенными полями. Старые оценки будут проигнорированы, и запросы уйдут на повторную AI-проверку...", {
+  setBusy(true, "Перепроверяю строки с непроверенными полями. Старые оценки будут проигнорированы...", {
     longRunning: true,
   });
 
@@ -406,13 +555,7 @@ async function runRescoreFailed() {
     saveActiveTask(task);
     const payload = await pollTaskUntilFinished(task.task_id, "Не удалось перепроверить некорректные ответы.");
     applySummary(payload);
-    const failedFieldCount = Number(payload.failed_field_count ?? 0);
-    const failedRowCount = Array.isArray(payload.failed_rows) ? payload.failed_rows.length : 0;
-    showMessage(
-      failedFieldCount
-        ? `Перепроверка завершена: переоценено ${payload.rescored_failed_count ?? payload.scored_count ?? 0} строк. Строк с непроверенными полями осталось: ${failedRowCount}, всего таких полей: ${failedFieldCount}.`
-        : "Перепроверка завершена: некорректных полей больше нет.",
-    );
+    showMessage(buildBulkResultMessage(payload, "rescore"));
   } catch (error) {
     clearActiveTask();
     showErrors(formatErrorMessage(error, "Не удалось перепроверить некорректные ответы."));
@@ -449,23 +592,11 @@ async function resumeActiveTask() {
     }
 
     if (activeTask.task_type === "bulk_rescore_failed") {
-      const failedFieldCount = Number(payload.failed_field_count ?? 0);
-      const failedRowCount = Array.isArray(payload.failed_rows) ? payload.failed_rows.length : 0;
-      showMessage(
-        failedFieldCount
-          ? `Перепроверка завершена: переоценено ${payload.rescored_failed_count ?? payload.scored_count ?? 0} строк. Строк с непроверенными полями осталось: ${failedRowCount}, всего таких полей: ${failedFieldCount}.`
-          : "Перепроверка завершена: некорректных полей больше нет.",
-      );
+      showMessage(buildBulkResultMessage(payload, "rescore"));
       return;
     }
 
-    const failedFieldCount = Number(payload.failed_field_count ?? 0);
-    const failedRowCount = Array.isArray(payload.failed_rows) ? payload.failed_rows.length : 0;
-    showMessage(
-      failedFieldCount
-        ? `Проверка завершена: оценено ${payload.scored_count ?? 0} тестов. Строк с непроверенными полями: ${failedRowCount}, всего таких полей: ${failedFieldCount}.`
-        : `Проверка завершена: оценено ${payload.scored_count ?? 0} тестов.`,
-    );
+    showMessage(buildBulkResultMessage(payload, "default"));
   } catch (error) {
     clearActiveTask();
     showErrors(formatErrorMessage(error, "Не удалось завершить фоновую проверку."));
@@ -477,6 +608,9 @@ async function resumeActiveTask() {
 importButton?.addEventListener("click", runImport);
 scoreButton?.addEventListener("click", runScoring);
 rescoreFailedButton?.addEventListener("click", runRescoreFailed);
+
+rowSearchField?.addEventListener("input", renderCurrentRows);
+rowFilterField?.addEventListener("change", renderCurrentRows);
 
 rowsHost?.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : null;
@@ -505,4 +639,6 @@ document.addEventListener("keydown", (event) => {
 });
 
 bindLogout(logoutBtn);
+ensureInitialEntries();
+renderCurrentRows();
 resumeActiveTask();
