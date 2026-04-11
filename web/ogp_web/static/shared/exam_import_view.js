@@ -1,4 +1,4 @@
-﻿window.OGPExamImportView = {
+window.OGPExamImportView = {
   getEntryStatus(entry) {
     const average = Number(entry?.average_score);
     if (entry?.average_score == null || Number.isNaN(average)) {
