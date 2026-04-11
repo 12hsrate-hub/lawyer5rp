@@ -163,6 +163,18 @@ def _check_openai_health() -> dict[str, object]:
     return details
 
 
+def _ensure_utf8_charset(content_type: str) -> str:
+    normalized = (content_type or "").strip()
+    if not normalized:
+        return normalized
+    base = normalized.split(";", 1)[0].strip().lower()
+    if "charset=" in normalized.lower():
+        return normalized
+    if base.startswith("text/") or base in {"application/json", "application/javascript", "application/xml"}:
+        return f"{normalized}; charset=utf-8"
+    return normalized
+
+
 def _close_app_resources(app: FastAPI) -> None:
     if getattr(app.state, "_resources_closed", False):
         return
@@ -236,6 +248,9 @@ def create_app(
     @app.middleware("http")
     async def add_security_headers(request, call_next):
         response = await call_next(request)
+        normalized_content_type = _ensure_utf8_charset(response.headers.get("content-type", ""))
+        if normalized_content_type:
+            response.headers["Content-Type"] = normalized_content_type
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
