@@ -107,6 +107,57 @@ def _extract_json_object(raw_text: str) -> dict[str, object]:
     raise RuntimeError("Модель не вернула корректный JSON-объект.")
 
 
+def _response_part_value(item: object, key: str, default=None):
+    if isinstance(item, dict):
+        return item.get(key, default)
+    return getattr(item, key, default)
+
+
+def _sanitize_response_text(text: str) -> str:
+    lines = [line.strip() for line in str(text or "").replace("\r", "").split("\n")]
+    filtered = [
+        line
+        for line in lines
+        if line and line.lower() not in {"reasoning", "empty reasoning item"}
+    ]
+    return "\n".join(filtered).strip()
+
+
+def extract_response_text(response: object) -> str:
+    direct = _sanitize_response_text(_response_part_value(response, "output_text", "") or "")
+    if direct:
+        return direct
+
+    output_items = _response_part_value(response, "output", None) or []
+    message_chunks: list[str] = []
+    for output_item in output_items:
+        if str(_response_part_value(output_item, "type", "") or "").lower() != "message":
+            continue
+        for content_item in _response_part_value(output_item, "content", None) or []:
+            content_type = str(_response_part_value(content_item, "type", "") or "").lower()
+            if content_type == "reasoning":
+                continue
+            text = _response_part_value(content_item, "text", None)
+            if isinstance(text, str):
+                cleaned = _sanitize_response_text(text)
+                if cleaned:
+                    message_chunks.append(cleaned)
+                continue
+            nested_value = _response_part_value(text, "value", None)
+            if isinstance(nested_value, str):
+                cleaned = _sanitize_response_text(nested_value)
+                if cleaned:
+                    message_chunks.append(cleaned)
+                continue
+            fallback_text = _response_part_value(content_item, "output_text", None)
+            if isinstance(fallback_text, str):
+                cleaned = _sanitize_response_text(fallback_text)
+                if cleaned:
+                    message_chunks.append(cleaned)
+
+    return "\n".join(chunk for chunk in message_chunks if chunk).strip()
+
+
 def _coerce_exam_score(raw_score: object, *, fallback: int = 1) -> int:
     try:
         if isinstance(raw_score, bool):
@@ -264,7 +315,7 @@ def suggest_description(
         return cached["text"].strip()
 
     response = client.responses.create(model=OPENAI_TEXT_MODEL, input=prompt)
-    text = (response.output_text or "").strip()
+    text = extract_response_text(response)
     cache.set(cache_key, {"text": text})
     return text
 
@@ -296,7 +347,7 @@ def extract_principal_fields(
             }
         ],
     )
-    payload = _extract_json_object(response.output_text or "")
+    payload = _extract_json_object(extract_response_text(response))
     cache.set(cache_key, payload)
     return payload
 
@@ -440,7 +491,7 @@ def _score_exam_answer_cached_or_estimated(
             key_points=key_points,
         ),
     )
-    payload = _extract_json_object(response.output_text or "")
+    payload = _extract_json_object(extract_response_text(response))
     result = _normalize_exam_result(payload, fallback_rationale=DEFAULT_EXAM_RATIONALE)
     cache.set(cache_key, result)
     return result, True
@@ -654,7 +705,7 @@ def score_exam_answers_batch_with_proxy_fallback(
             stats["llm_calls"] += 1
             stats["llm_count"] += len(chunk_items)
             response = client.responses.create(model=OPENAI_EXAM_SCORING_MODEL, input=prompt)
-            raw = _extract_json_object(response.output_text or "")
+            raw = _extract_json_object(extract_response_text(response))
             raw_by_column = _extract_batch_results_map(raw)
             chunk_results: dict[str, dict[str, object]] = {}
             for item in chunk_items:

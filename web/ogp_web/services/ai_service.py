@@ -16,6 +16,7 @@ from ogp_web.schemas import LawQaPayload, PrincipalScanPayload, PrincipalScanRes
 from ogp_web.server_config import DEFAULT_SERVER_CODE, get_server_config
 from shared.ogp_ai import (
     create_openai_client,
+    extract_response_text,
     extract_principal_fields_with_proxy_fallback,
     suggest_description_with_proxy_fallback,
 )
@@ -424,7 +425,7 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
 
-    text = (response.output_text or "").strip()
+    text = extract_response_text(response)
     if not text:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=["Модель вернула пустой ответ."])
     limited = text[: payload.max_answer_chars].strip()

@@ -181,6 +181,30 @@ class SharedAiTests(unittest.TestCase):
         self.assertEqual(stats["llm_count"], 1)
         self.assertEqual(stats["llm_calls"], 1)
 
+    def test_extract_response_text_ignores_empty_reasoning_placeholder(self):
+        response = type(
+            "Response",
+            (),
+            {
+                "output_text": "Reasoning\nEmpty reasoning item",
+                "output": [
+                    type(
+                        "OutputItem",
+                        (),
+                        {
+                            "type": "message",
+                            "content": [
+                                type("ContentItem", (), {"type": "reasoning", "text": ""})(),
+                                type("ContentItem", (), {"type": "output_text", "text": "Нормальный ответ"})(),
+                            ],
+                        },
+                    )()
+                ],
+            },
+        )()
+
+        self.assertEqual(ogp_ai.extract_response_text(response), "Нормальный ответ")
+
     def test_suggest_description_uses_cache_when_enabled(self):
         tmpdir = make_temporary_directory()
         previous_enabled = os.environ.get("OGP_AI_CACHE_ENABLED")
