@@ -248,7 +248,7 @@ async def law_qa_test_page(
             law_qa_servers=[
                 {"code": item.code, "name": item.name}
                 for item in list_server_configs()
-                if item.law_qa_sources
+                if item.law_qa_sources or item.law_qa_bundle_path
             ],
             law_qa_sources=list(server_config.law_qa_sources),
             law_qa_models=list(get_law_qa_model_choices()),

@@ -38,6 +38,7 @@ class ServerConfig:
     enabled_pages: frozenset[str] = field(default_factory=frozenset)
     feature_flags: frozenset[str] = field(default_factory=frozenset)
     law_qa_sources: tuple[str, ...] = ()
+    law_qa_bundle_path: str = ""
     exam_sheet_url: str = ""
     complaint_forum_url: str = ""
     complaint_test_preset: dict[str, object] = field(default_factory=dict)

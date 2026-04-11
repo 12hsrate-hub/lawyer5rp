@@ -563,6 +563,59 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(count, 1)
         self.assertEqual(dummy_client.responses.calls, 2)
 
+    def test_law_qa_prefers_structured_bundle_before_html_fetch(self):
+        original_get_server_config = ai_service.get_server_config
+        original_load_bundle = ai_service.load_law_bundle_chunks
+        original_build_index = ai_service._build_law_chunk_index_cached
+        original_create_client = ai_service.create_openai_client
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ("https://laws.example/fallback",)
+            law_qa_bundle_path = "law_bundles/blackberry.json"
+
+        class DummyResponses:
+            def create(self, **kwargs):
+                return type("DummyResponse", (), {"output_text": "Ответ из bundle"})()
+
+        class DummyClient:
+            responses = DummyResponses()
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service.load_law_bundle_chunks = lambda server_code, bundle_path="": (
+            ai_service._LawChunk(
+                url="https://laws.example/bundle",
+                document_title="Уголовный кодекс",
+                article_label="Статья 23. Необходимая оборона",
+                text="Статья 23. Необходимая оборона. Текст нормы.",
+            ),
+        )
+
+        def fail_if_html_fetch(source_urls):
+            raise AssertionError(f"html fallback should not be used: {source_urls}")
+
+        ai_service._build_law_chunk_index_cached = fail_if_html_fetch
+        ai_service.create_openai_client = lambda **kwargs: DummyClient()
+        try:
+            text, sources, count = ai_service.answer_law_question(
+                LawQaPayload(
+                    server_code="blackberry",
+                    model="gpt-5.4",
+                    question="Какие обстоятельства исключают преступность деяния?",
+                    max_answer_chars=2000,
+                )
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service.load_law_bundle_chunks = original_load_bundle
+            ai_service._build_law_chunk_index_cached = original_build_index
+            ai_service.create_openai_client = original_create_client
+
+        self.assertEqual(text, "Ответ из bundle")
+        self.assertEqual(sources, ["https://laws.example/bundle"])
+        self.assertEqual(count, 1)
+
     def test_split_law_document_into_chunks_extracts_articles(self):
         chunks = ai_service._split_law_document_into_chunks(
             {

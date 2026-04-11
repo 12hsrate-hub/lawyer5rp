@@ -168,6 +168,7 @@ BLACKBERRY_SERVER_CONFIG = ServerConfig(
         "https://forum.gta5rp.com/threads/zakon-o-predprinimatelskoi-dejatelnosti-i-nalogooblozhenii-redakcija-ot-26-ijulja-2025-goda.827261/",
         "https://forum.gta5rp.com/threads/zakon-o-gosudarstvennoi-taine-v-shtate-san-andreas-redakcija-ot-27-ijunja-2025-goda.827290/",
     ),
+    law_qa_bundle_path="law_bundles/blackberry.json",
     exam_sheet_url=EXAM_SHEET_URL,
     complaint_forum_url="https://forum.gta5rp.com/forums/zhaloby-v-prokuraturu.748/",
     complaint_test_preset=BLACKBERRY_TEST_COMPLAINT_PRESET,

@@ -5,7 +5,6 @@ import logging
 import os
 import re
 import socket
-from dataclasses import dataclass
 from html.parser import HTMLParser
 from ipaddress import ip_address
 from urllib.parse import urlparse
@@ -15,6 +14,7 @@ from fastapi import HTTPException, status
 
 from ogp_web.schemas import LawQaPayload, PrincipalScanPayload, PrincipalScanResult, SuggestPayload
 from ogp_web.server_config import DEFAULT_SERVER_CODE, get_server_config
+from ogp_web.services.law_bundle_service import LawChunk, load_law_bundle_chunks
 from shared.ogp_ai import (
     create_openai_client,
     extract_response_text,
@@ -25,12 +25,7 @@ from shared.ogp_ai import (
 LOGGER = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class _LawChunk:
-    url: str
-    document_title: str
-    article_label: str
-    text: str
+_LawChunk = LawChunk
 
 
 LAW_QA_QUERY_ALIASES: dict[str, tuple[str, ...]] = {
@@ -40,8 +35,10 @@ LAW_QA_QUERY_ALIASES: dict[str, tuple[str, ...]] = {
     "адвокат": ("защитник", "защита"),
     "обыск": ("досмотр", "осмотр"),
     "залог": ("залога", "bail"),
+    "преступность": ("преступления", "уголовный", "уголовного"),
+    "исключают": ("исключается", "исключающие", "исключение"),
+    "деяние": ("действие", "бездействие"),
 }
-
 
 def _humanize_ai_exception(exc: Exception) -> str:
     raw = str(exc).strip() or exc.__class__.__name__
@@ -154,12 +151,10 @@ def _extract_keywords(question: str) -> set[str]:
         if token not in {"когда", "если", "или", "тогда", "where", "what", "which", "with"}
     }
 
-
 def _normalize_law_text(text: str) -> str:
     normalized = str(text or "").lower().replace("ё", "е")
     normalized = re.sub(r"[^\w\s]+", " ", normalized, flags=re.UNICODE)
     return re.sub(r"\s+", " ", normalized, flags=re.UNICODE).strip()
-
 
 def _extract_article_numbers(question: str) -> tuple[str, ...]:
     return tuple(
@@ -185,7 +180,6 @@ def _expand_question_terms(question: str) -> set[str]:
             if token in alias_terms or any(token in alias for alias in alias_terms):
                 expanded.update(alias_terms)
     return {item for item in expanded if item}
-
 
 def _extract_document_title(text: str, url: str) -> str:
     normalized = str(text or "").strip()
@@ -429,13 +423,16 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     server_code = payload.server_code or DEFAULT_SERVER_CODE
     server_config = get_server_config(server_code)
     law_sources = [str(item or "").strip() for item in server_config.law_qa_sources if str(item or "").strip()]
-    if not law_sources:
+    bundle_path = str(getattr(server_config, "law_qa_bundle_path", "") or "").strip()
+    chunks = list(load_law_bundle_chunks(server_code, bundle_path)) if bundle_path else []
+    if not chunks and not law_sources:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=["Для выбранного сервера не настроены источники законов."],
         )
 
-    chunks = list(_build_law_chunk_index_cached(tuple(law_sources)))
+    if not chunks:
+        chunks = list(_build_law_chunk_index_cached(tuple(law_sources)))
     if not chunks:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
