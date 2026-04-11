@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import re
+import socket
+from ipaddress import ip_address
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
@@ -78,10 +80,45 @@ def _extract_keywords(question: str) -> set[str]:
     }
 
 
+def _is_blocked_law_host(host: str) -> bool:
+    normalized = (host or "").strip().strip(".").lower()
+    if not normalized:
+        return True
+    if normalized in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    if normalized.endswith(".local"):
+        return True
+    try:
+        resolved = socket.getaddrinfo(normalized, None, type=socket.SOCK_STREAM)
+    except OSError:
+        return True
+    for _, _, _, _, sockaddr in resolved:
+        ip_raw = str(sockaddr[0]).split("%", 1)[0]
+        try:
+            addr = ip_address(ip_raw)
+        except ValueError:
+            continue
+        if (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_link_local
+            or addr.is_multicast
+            or addr.is_reserved
+            or addr.is_unspecified
+        ):
+            return True
+    return False
+
+
 def _fetch_law_documents(root_url: str, *, max_documents: int = 8, max_doc_chars: int = 9000) -> list[dict[str, str]]:
     parsed_root = urlparse(root_url)
     if parsed_root.scheme not in {"http", "https"} or not parsed_root.netloc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Укажите корректный URL законодательной базы (http/https)."])
+    if _is_blocked_law_host(parsed_root.hostname or ""):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=["Указанный хост недоступен для law Q&A. Используйте публичный домен с законодательной базой."],
+        )
 
     allowed_host = parsed_root.netloc.lower()
     queue = [root_url]

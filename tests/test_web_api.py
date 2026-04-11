@@ -24,6 +24,7 @@ from ogp_web.app import create_app
 from ogp_web.db.backends.sqlite import SQLiteBackend
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
+from ogp_web.routes import complaint as complaint_route
 from ogp_web.routes import exam_import as exam_import_route
 from ogp_web.services import ai_service
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
@@ -620,8 +621,8 @@ class WebApiTests(unittest.TestCase):
     def test_law_qa_test_endpoint_returns_text_and_sources(self):
         self._register_verify_and_login("tester", "tester_law@example.com")
 
-        original = ai_service.answer_law_question
-        ai_service.answer_law_question = lambda payload: ("Ответ по нормам", ["https://laws.example/base"], 3)
+        original = complaint_route.answer_law_question
+        complaint_route.answer_law_question = lambda payload: ("Ответ по нормам", ["https://laws.example/base"], 3)
         try:
             response = self.client.post(
                 "/api/ai/law-qa-test",
@@ -632,7 +633,7 @@ class WebApiTests(unittest.TestCase):
                 },
             )
         finally:
-            ai_service.answer_law_question = original
+            complaint_route.answer_law_question = original
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -645,6 +646,20 @@ class WebApiTests(unittest.TestCase):
         response = self.client.get("/law-qa-test")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Q&A по законодательной базе", response.text)
+
+    def test_law_qa_test_endpoint_forbidden_for_user_without_tester_access(self):
+        self._register_verify_and_login("plainlawuser", "plainlawuser@example.com")
+
+        response = self.client.post(
+            "/api/ai/law-qa-test",
+            json={
+                "laws_root_url": "https://laws.example/base",
+                "question": "test question",
+                "max_answer_chars": 2000,
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
 
     def test_generate_rehab_flow_uses_saved_profile(self):
         self._register_verify_and_login("tester", "tester10@example.com")

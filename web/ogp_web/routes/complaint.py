@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.concurrency import run_in_threadpool
 
 from ogp_web.dependencies import get_admin_metrics_store, get_user_store
 from ogp_web.schemas import (
@@ -16,7 +17,7 @@ from ogp_web.schemas import (
     SuggestPayload,
     SuggestResponse,
 )
-from ogp_web.server_config import get_server_config
+from ogp_web.server_config import build_permission_set, get_server_config
 from ogp_web.services.ai_service import answer_law_question, extract_principal_scan, suggest_text
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
@@ -29,6 +30,16 @@ router = APIRouter(tags=["complaint"])
 
 def _server_config_for_user(store: UserStore, user: AuthUser):
     return get_server_config(user.server_code or store.get_server_code(user.username))
+
+
+def _ensure_law_qa_permission(store: UserStore, user: AuthUser) -> None:
+    server_config = _server_config_for_user(store, user)
+    permissions = build_permission_set(store, user.username, server_config)
+    if not permissions.can_access_court_claims:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=["Недостаточно прав для доступа к тестовому Q&A по законам."],
+        )
 
 
 def _validate_server_payload(store: UserStore, user: AuthUser, *, org: str = "", complaint_basis: str = "") -> None:
@@ -211,9 +222,11 @@ async def extract_principal(
 async def law_qa_test(
     payload: LawQaPayload,
     user: AuthUser = Depends(require_user),
+    store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> LawQaResponse:
-    text, used_sources, indexed_documents = answer_law_question(payload)
+    _ensure_law_qa_permission(store, user)
+    text, used_sources, indexed_documents = await run_in_threadpool(answer_law_question, payload)
     metrics_store.log_event(
         event_type="ai_law_qa_test",
         username=user.username,

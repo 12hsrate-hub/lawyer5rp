@@ -20,7 +20,7 @@ import httpx
 from fastapi import HTTPException
 
 from ogp_web.db.backends.sqlite import SQLiteBackend
-from ogp_web.schemas import ComplaintPayload, PrincipalScanPayload, RehabPayload, SuggestPayload, VictimPayload
+from ogp_web.schemas import ComplaintPayload, LawQaPayload, PrincipalScanPayload, RehabPayload, SuggestPayload, VictimPayload
 from ogp_web.services import ai_service, auth_service, complaint_service, email_service, exam_sheet_service
 from ogp_web.services.auth_service import AuthUser
 from ogp_web.storage.user_repository import UserRepository
@@ -387,6 +387,28 @@ class WebServiceTests(unittest.TestCase):
         finally:
             ai_service.extract_principal_fields_with_proxy_fallback = original
         self.assertEqual(ctx.exception.status_code, 502)
+
+    def test_ai_service_law_qa_rejects_private_or_local_hosts(self):
+        with self.assertRaises(HTTPException) as ctx:
+            ai_service.answer_law_question(
+                LawQaPayload(
+                    laws_root_url="http://127.0.0.1/laws",
+                    question="test question",
+                    max_answer_chars=2000,
+                )
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_ai_service_law_qa_rejects_localhost_name(self):
+        with self.assertRaises(HTTPException) as ctx:
+            ai_service.answer_law_question(
+                LawQaPayload(
+                    laws_root_url="http://localhost/laws",
+                    question="test question",
+                    max_answer_chars=2000,
+                )
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
 
 
 if __name__ == "__main__":

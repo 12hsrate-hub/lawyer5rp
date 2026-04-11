@@ -12,7 +12,12 @@ function setMessage(message) {
 function setErrors(errors) {
   if (!errorsBox) return;
   const list = Array.isArray(errors) ? errors.filter(Boolean) : [];
-  errorsBox.innerHTML = list.map((item) => `<div>${String(item)}</div>`).join("");
+  errorsBox.textContent = "";
+  list.forEach((item) => {
+    const row = document.createElement("div");
+    row.textContent = String(item);
+    errorsBox.appendChild(row);
+  });
   errorsBox.hidden = list.length === 0;
 }
 
