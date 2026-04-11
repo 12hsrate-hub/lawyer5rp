@@ -7,7 +7,7 @@
     <div class="legal-header__main">
       <p class="legal-header__eyebrow">Тестовый раздел</p>
       <h1 class="legal-header__title">Q&A по законодательной базе</h1>
-      <p class="legal-header__description">Введите вопрос и ссылку на законодательную базу сервера. Сервис подтянет страницу и вложенные ссылки этого же домена, затем сформирует ответ со ссылками на источники.</p>
+      <p class="legal-header__description">Выберите сервер и задайте вопрос. Ответ формируется по уже загруженной в базу законодательной базе.</p>
     </div>
   </section>
 
@@ -20,11 +20,18 @@
         <div class="legal-section__header">
           <div>
             <p class="legal-section__eyebrow">Параметры запроса</p>
-            <h2 class="legal-section__title">Источник и вопрос</h2>
+            <h2 class="legal-section__title">Сервер и вопрос</h2>
           </div>
         </div>
         <div class="legal-field-grid">
-          {{ ui.field_text("laws-root-url", "Ссылка на законы", "https://.../law", "", "", "url", "required") }}
+          <label class="legal-field">
+            <span class="legal-field__label">Сервер</span>
+            <select id="law-server-code" class="legal-input" required>
+              {% for server in law_qa_servers %}
+              <option value="{{ server.code }}">{{ server.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
           {{ ui.field_text("max-answer-chars", "Лимит символов ответа", "2200", "2200", "", "number", "min='600' max='5000' step='100'") }}
           <label class="legal-field legal-field--full">
             <span class="legal-field__label">Вопрос</span>
@@ -33,6 +40,14 @@
         </div>
         <div class="actions legal-toolbar legal-toolbar--result">
           <button type="submit">Получить ответ</button>
+        </div>
+        <div class="legal-field legal-field--full">
+          <span class="legal-field__label">Источники для выбранного сервера</span>
+          <ul id="law-source-list">
+            {% for source in law_qa_sources %}
+            <li><a href="{{ source.url }}" target="_blank" rel="noopener noreferrer">{{ source.title }}</a></li>
+            {% endfor %}
+          </ul>
         </div>
       </section>
 
@@ -48,5 +63,8 @@
     </div>
   </form>
 </div>
+<script>
+  window.OGP_LAW_QA_SOURCES = {{ law_qa_sources | tojson }};
+</script>
 <script src="{{ url_for('static', path='pages/law_qa_test.js') }}?v={{ static_asset_version }}" defer></script>
 {% endblock %}

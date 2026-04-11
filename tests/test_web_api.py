@@ -622,12 +622,12 @@ class WebApiTests(unittest.TestCase):
         self._register_verify_and_login("tester", "tester_law@example.com")
 
         original = complaint_route.answer_law_question
-        complaint_route.answer_law_question = lambda payload: ("Ответ по нормам", ["https://laws.example/base"], 3)
+        complaint_route.answer_law_question = lambda payload, _store: ("Ответ по нормам", ["https://laws.example/base"], 3)
         try:
             response = self.client.post(
                 "/api/ai/law-qa-test",
                 json={
-                    "laws_root_url": "https://laws.example/base",
+                    "server_code": "blackberry",
                     "question": "Какая норма регулирует доступ адвоката?",
                     "max_answer_chars": 2000,
                 },
@@ -653,7 +653,7 @@ class WebApiTests(unittest.TestCase):
         response = self.client.post(
             "/api/ai/law-qa-test",
             json={
-                "laws_root_url": "https://laws.example/base",
+                "server_code": "blackberry",
                 "question": "test question",
                 "max_answer_chars": 2000,
             },

@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import os
 import re
-import socket
-from ipaddress import ip_address
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlparse
 
 import httpx
 
 from fastapi import HTTPException, status
 
 from ogp_web.schemas import LawQaPayload, PrincipalScanPayload, PrincipalScanResult, SuggestPayload
+from ogp_web.services.law_qa_catalog import get_law_sources
+from ogp_web.storage.law_qa_store import LawQaStore
 from shared.ogp_ai import (
     create_openai_client,
     extract_principal_fields_with_proxy_fallback,
@@ -80,95 +79,54 @@ def _extract_keywords(question: str) -> set[str]:
     }
 
 
-def _is_blocked_law_host(host: str) -> bool:
-    normalized = (host or "").strip().strip(".").lower()
-    if not normalized:
-        return True
-    if normalized in {"localhost", "127.0.0.1", "::1"}:
-        return True
-    if normalized.endswith(".local"):
-        return True
-    try:
-        resolved = socket.getaddrinfo(normalized, None, type=socket.SOCK_STREAM)
-    except OSError:
-        return True
-    for _, _, _, _, sockaddr in resolved:
-        ip_raw = str(sockaddr[0]).split("%", 1)[0]
-        try:
-            addr = ip_address(ip_raw)
-        except ValueError:
-            continue
-        if (
-            addr.is_private
-            or addr.is_loopback
-            or addr.is_link_local
-            or addr.is_multicast
-            or addr.is_reserved
-            or addr.is_unspecified
-        ):
-            return True
-    return False
+def _fetch_source_text(url: str, *, max_doc_chars: int = 12000) -> str:
+    with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+        response = client.get(url)
+        response.raise_for_status()
+    content_type = (response.headers.get("content-type") or "").lower()
+    if "text/html" not in content_type:
+        return ""
+    parser = _LawHtmlParser()
+    parser.feed(response.text)
+    return parser.text[:max_doc_chars].strip()
 
 
-def _fetch_law_documents(root_url: str, *, max_documents: int = 8, max_doc_chars: int = 9000) -> list[dict[str, str]]:
-    parsed_root = urlparse(root_url)
-    if parsed_root.scheme not in {"http", "https"} or not parsed_root.netloc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Укажите корректный URL законодательной базы (http/https)."])
-    if _is_blocked_law_host(parsed_root.hostname or ""):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=["Указанный хост недоступен для law Q&A. Используйте публичный домен с законодательной базой."],
-        )
-
-    allowed_host = parsed_root.netloc.lower()
-    queue = [root_url]
-    seen: set[str] = set()
+def _ensure_law_documents_loaded(store: LawQaStore, server_code: str) -> list[dict[str, str]]:
+    existing = store.list_documents(server_code)
+    if existing:
+        return existing
+    sources = get_law_sources(server_code)
+    if not sources:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Для выбранного сервера база законов не настроена."])
     documents: list[dict[str, str]] = []
-
-    with httpx.Client(timeout=8.0, follow_redirects=True) as client:
-        while queue and len(documents) < max_documents:
-            current = queue.pop(0)
-            if current in seen:
-                continue
-            seen.add(current)
-            try:
-                response = client.get(current)
-                response.raise_for_status()
-            except Exception:
-                continue
-            content_type = (response.headers.get("content-type") or "").lower()
-            if "text/html" not in content_type:
-                continue
-            parser = _LawHtmlParser()
-            parser.feed(response.text)
-            text = parser.text[:max_doc_chars].strip()
-            if text:
-                documents.append({"url": current, "text": text})
-            for raw_href in parser.links:
-                candidate = urljoin(current, raw_href).strip()
-                if not candidate.startswith(("http://", "https://")):
-                    continue
-                parsed = urlparse(candidate)
-                if parsed.netloc.lower() != allowed_host:
-                    continue
-                if candidate not in seen and candidate not in queue and len(queue) < 40:
-                    queue.append(candidate)
-    return documents
+    for source in sources:
+        try:
+            text = _fetch_source_text(source.url)
+        except Exception:
+            continue
+        if not text:
+            continue
+        documents.append({"title": source.title, "source_url": source.url, "content": text})
+    if not documents:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=["Не удалось загрузить законодательную базу сервера. Попробуйте позже или обратитесь к администратору."],
+        )
+    store.replace_server_documents(server_code, documents)
+    return store.list_documents(server_code)
 
 
-def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
-    laws_root_url = payload.laws_root_url.strip()
+def answer_law_question(payload: LawQaPayload, law_qa_store: LawQaStore) -> tuple[str, list[str], int]:
+    server_code = str(payload.server_code or "blackberry").strip().lower()
     question = payload.question.strip()
-    if not laws_root_url:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Добавьте ссылку на законодательную базу сервера."])
     if not question:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Введите вопрос для анализа."])
 
-    documents = _fetch_law_documents(laws_root_url)
+    documents = _ensure_law_documents_loaded(law_qa_store, server_code)
     if not documents:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=["Не удалось загрузить законы по ссылке. Проверьте доступность страниц и дайте дополнительные ссылки на разделы."],
+            detail=["Законодательная база сервера не содержит документов для анализа."],
         )
 
     keywords = _extract_keywords(question)
@@ -179,7 +137,7 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
 
     ranked = sorted(documents, key=score, reverse=True)
     selected = ranked[:4]
-    context_blocks = [f"[Источник: {item['url']}]\n{item['text'][:2500]}" for item in selected]
+    context_blocks = [f"[Источник: {item['title']} — {item['url']}]\n{item['text'][:2500]}" for item in selected]
     prompt = (
         "Ты юридический ассистент игрового сервера. Отвечай только на основе переданной законодательной базы.\n"
         "Если данных недостаточно, прямо так и скажи и попроси дополнительные ссылки.\n"

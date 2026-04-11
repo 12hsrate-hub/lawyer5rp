@@ -6,6 +6,7 @@ from ogp_web.server_config import PermissionSet, build_permission_set, get_serve
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore, get_default_admin_metrics_store
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
 from ogp_web.storage.exam_answers_store import ExamAnswersStore, get_default_exam_answers_store
+from ogp_web.storage.law_qa_store import LawQaStore, get_default_law_qa_store
 from ogp_web.storage.user_store import UserStore, get_default_user_store
 
 
@@ -27,6 +28,13 @@ def get_admin_metrics_store(request: Request) -> AdminMetricsStore:
     store = getattr(request.app.state, "admin_metrics_store", None)
     if store is None:
         return get_default_admin_metrics_store()
+    return store
+
+
+def get_law_qa_store(request: Request) -> LawQaStore:
+    store = getattr(request.app.state, "law_qa_store", None)
+    if store is None:
+        return get_default_law_qa_store()
     return store
 
 

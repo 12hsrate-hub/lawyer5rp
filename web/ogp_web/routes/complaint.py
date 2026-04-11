@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 
-from ogp_web.dependencies import get_admin_metrics_store, get_user_store
+from ogp_web.dependencies import get_admin_metrics_store, get_law_qa_store, get_user_store
 from ogp_web.schemas import (
     ComplaintDraftPayload,
     ComplaintDraftResponse,
@@ -22,6 +22,7 @@ from ogp_web.services.ai_service import answer_law_question, extract_principal_s
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
+from ogp_web.storage.law_qa_store import LawQaStore
 from ogp_web.storage.user_store import UserStore
 
 
@@ -223,10 +224,11 @@ async def law_qa_test(
     payload: LawQaPayload,
     user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
+    law_qa_store: LawQaStore = Depends(get_law_qa_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> LawQaResponse:
     _ensure_law_qa_permission(store, user)
-    text, used_sources, indexed_documents = await run_in_threadpool(answer_law_question, payload)
+    text, used_sources, indexed_documents = await run_in_threadpool(answer_law_question, payload, law_qa_store)
     metrics_store.log_event(
         event_type="ai_law_qa_test",
         username=user.username,
@@ -236,7 +238,7 @@ async def law_qa_test(
         resource_units=len(payload.question or "") + len(text),
         meta={
             "server_code": user.server_code,
-            "laws_root_url": payload.laws_root_url,
+            "qa_server_code": payload.server_code,
             "indexed_documents": indexed_documents,
             "used_sources_count": len(used_sources),
             "max_answer_chars": payload.max_answer_chars,

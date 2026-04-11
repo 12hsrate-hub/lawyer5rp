@@ -35,6 +35,7 @@ from ogp_web.services.auth_service import _get_secret_key, get_current_user
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore, get_default_admin_metrics_store
 from ogp_web.storage.exam_answers_store import ExamAnswersStore, get_default_exam_answers_store
+from ogp_web.storage.law_qa_store import LawQaStore, get_default_law_qa_store
 from ogp_web.storage.user_store import UserStore, get_default_user_store
 from ogp_web.web import STATIC_DIR, _normalized_url
 
@@ -193,6 +194,7 @@ def create_app(
     user_store: UserStore | None = None,
     exam_answers_store: ExamAnswersStore | None = None,
     admin_metrics_store: AdminMetricsStore | None = None,
+    law_qa_store: LawQaStore | None = None,
 ) -> FastAPI:
     _configure_web_logging()
     _get_secret_key()
@@ -207,6 +209,7 @@ def create_app(
     app.state.user_store = user_store or get_default_user_store()
     app.state.exam_answers_store = exam_answers_store or get_default_exam_answers_store()
     app.state.admin_metrics_store = admin_metrics_store or get_default_admin_metrics_store()
+    app.state.law_qa_store = law_qa_store or get_default_law_qa_store()
     app.state.rate_limiter = create_rate_limiter(app.state.user_store.backend)
     exam_import_tasks_db_path = (
         admin_metrics_store.db_path.parent / "exam_import_tasks.db"

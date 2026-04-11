@@ -2,6 +2,7 @@ const form = document.getElementById("law-qa-form");
 const messageBox = document.getElementById("law-qa-message");
 const errorsBox = document.getElementById("law-qa-errors");
 const resultField = document.getElementById("law-qa-result");
+const sourceList = document.getElementById("law-source-list");
 
 function setMessage(message) {
   if (!messageBox) return;
@@ -31,7 +32,7 @@ form?.addEventListener("submit", async (event) => {
   submitButton?.setAttribute("disabled", "disabled");
   try {
     const payload = {
-      laws_root_url: document.getElementById("laws-root-url")?.value?.trim() || "",
+      server_code: document.getElementById("law-server-code")?.value?.trim() || "blackberry",
       question: document.getElementById("law-question")?.value?.trim() || "",
       max_answer_chars: Number(document.getElementById("max-answer-chars")?.value || 2200),
     };
@@ -55,3 +56,18 @@ form?.addEventListener("submit", async (event) => {
     submitButton?.removeAttribute("disabled");
   }
 });
+
+if (sourceList) {
+  const initialSources = Array.isArray(window.OGP_LAW_QA_SOURCES) ? window.OGP_LAW_QA_SOURCES : [];
+  sourceList.innerHTML = "";
+  initialSources.forEach((item) => {
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.href = String(item.url || "");
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.textContent = String(item.title || item.url || "");
+    li.appendChild(a);
+    sourceList.appendChild(li);
+  });
+}

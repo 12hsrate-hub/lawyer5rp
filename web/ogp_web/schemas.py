@@ -128,6 +128,7 @@ class SuggestResponse(BaseModel):
 
 
 class LawQaPayload(BaseModel):
+    server_code: str = "blackberry"
     laws_root_url: str = ""
     question: str = ""
     max_answer_chars: int = 2200
