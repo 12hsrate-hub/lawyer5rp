@@ -73,6 +73,8 @@ class LawBundleServiceTests(unittest.TestCase):
                 json.dumps(
                     {
                         "server_code": "blackberry",
+                        "generated_at_utc": "2026-04-11T12:00:00+00:00",
+                        "sources": [{"url": "https://laws.example/criminal"}],
                         "articles": [
                             {
                                 "url": "https://laws.example/criminal",
@@ -94,6 +96,42 @@ class LawBundleServiceTests(unittest.TestCase):
         self.assertEqual(len(chunks), 1)
         self.assertEqual(chunks[0].document_title, "Уголовный кодекс")
         self.assertEqual(chunks[0].article_label, "Статья 23. Необходимая оборона")
+
+    def test_load_law_bundle_meta_reads_generation_details(self):
+        tmpdir = make_temporary_directory()
+        try:
+            bundle_path = Path(tmpdir.name) / "bundle.json"
+            bundle_path.write_text(
+                json.dumps(
+                    {
+                        "server_code": "blackberry",
+                        "generated_at_utc": "2026-04-11T12:00:00+00:00",
+                        "sources": [{"url": "https://laws.example/criminal"}],
+                        "articles": [
+                            {
+                                "url": "https://laws.example/criminal",
+                                "document_title": "Criminal Code",
+                                "article_label": "Article 23",
+                                "text": "Self-defense.",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            meta = law_bundle_service.load_law_bundle_meta("blackberry", str(bundle_path))
+        finally:
+            tmpdir.cleanup()
+
+        self.assertIsNotNone(meta)
+        assert meta is not None
+        self.assertEqual(meta.server_code, "blackberry")
+        self.assertEqual(meta.generated_at_utc, "2026-04-11T12:00:00+00:00")
+        self.assertEqual(meta.source_count, 1)
+        self.assertEqual(meta.chunk_count, 1)
+        self.assertTrue(meta.fingerprint)
 
     def test_split_structured_text_moves_trailing_chapter_heading_to_next_articles(self):
         chunks = law_bundle_service._split_structured_text_into_chunks(

@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from ogp_web.server_config import DEFAULT_SERVER_CODE
-from ogp_web.services.law_bundle_service import LawChunk
+from ogp_web.services.law_bundle_service import LawChunk, load_law_bundle_meta
+from ogp_web.services.legal_pipeline_service import BundleHealth, build_bundle_health
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,7 @@ class LawRetrievalResult:
     bundle_path: str
     configured_sources: tuple[str, ...]
     indexed_chunk_count: int
+    bundle_health: BundleHealth
     matches: tuple[LawRetrievalMatch, ...]
 
 
@@ -58,6 +60,8 @@ def retrieve_law_context(
         str(item or "").strip() for item in getattr(server_config, "law_qa_sources", ()) if str(item or "").strip()
     )
     bundle_path = str(getattr(server_config, "law_qa_bundle_path", "") or "").strip()
+    bundle_max_age_hours = int(getattr(server_config, "law_qa_bundle_max_age_hours", 168) or 168)
+    bundle_meta = load_law_bundle_meta(normalized_server_code, bundle_path) if bundle_path else None
 
     chunks = list(load_law_bundle_chunks_func(normalized_server_code, bundle_path)) if bundle_path else []
     if not chunks and configured_sources:
@@ -78,6 +82,13 @@ def retrieve_law_context(
     )
     matches = _rerank_matches(matches, retrieval_query, profile)
     matches = matches[: _profile_target_count(profile, confidence)]
+    bundle_health = build_bundle_health(
+        generated_at=getattr(bundle_meta, "generated_at_utc", "") if bundle_meta else "",
+        source_count=getattr(bundle_meta, "source_count", 0) if bundle_meta else len(configured_sources),
+        chunk_count=getattr(bundle_meta, "chunk_count", 0) if bundle_meta else len(chunks),
+        fingerprint=getattr(bundle_meta, "fingerprint", "") if bundle_meta else "",
+        max_age_hours=bundle_max_age_hours,
+    )
 
     return LawRetrievalResult(
         server_code=str(getattr(server_config, "code", normalized_server_code) or normalized_server_code),
@@ -89,6 +100,7 @@ def retrieve_law_context(
         bundle_path=bundle_path,
         configured_sources=configured_sources,
         indexed_chunk_count=len(chunks),
+        bundle_health=bundle_health,
         matches=matches,
     )
 

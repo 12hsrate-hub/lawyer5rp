@@ -658,6 +658,8 @@ class WebApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["text"], "AI text")
+        self.assertTrue(response.json()["generation_id"])
+        self.assertIn(response.json()["guard_status"], {"pass", "warn"})
 
     def test_law_qa_test_endpoint_returns_text_and_sources(self):
         self._register_verify_and_login("tester", "tester_law@example.com")
@@ -668,10 +670,18 @@ class WebApiTests(unittest.TestCase):
             (),
             {
                 "text": "Ответ по нормам",
+                "generation_id": "gen123",
                 "used_sources": ["https://laws.example/base"],
                 "indexed_documents": 3,
                 "retrieval_confidence": "high",
                 "retrieval_profile": "law_qa",
+                "guard_status": "pass",
+                "contract_version": "legal_pipeline.v1",
+                "bundle_status": "fresh",
+                "bundle_generated_at": "2026-04-11T12:00:00+00:00",
+                "bundle_fingerprint": "abc123",
+                "warnings": [],
+                "shadow": {"enabled": False, "profile": "", "diverged": False, "overlap_count": 0},
                 "selected_norms": [
                     {
                         "source_url": "https://laws.example/base",
@@ -704,6 +714,53 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(payload["retrieval_confidence"], "high")
         self.assertEqual(payload["retrieval_profile"], "law_qa")
         self.assertEqual(payload["selected_norms"][0]["article_label"], "Статья 20")
+
+    def test_ai_feedback_endpoint_records_normalized_feedback(self):
+        self._register_verify_and_login("tester", "tester_feedback@example.com")
+
+        response = self.client.post(
+            "/api/ai/feedback",
+            json={
+                "generation_id": "gen_feedback_1",
+                "flow": "law_qa",
+                "issues": ["wronglaw", "fact"],
+                "note": "Need a more precise article.",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["generation_id"], "gen_feedback_1")
+        self.assertEqual(payload["flow"], "law_qa")
+        self.assertEqual(payload["normalized_issues"], ["wrong_law", "wrong_fact"])
+
+    def test_admin_ai_pipeline_endpoint_returns_generations_and_feedback(self):
+        self.admin_store.log_ai_generation(
+            username="tester",
+            server_code="blackberry",
+            flow="law_qa",
+            generation_id="gen_admin_1",
+            path="/api/ai/law-qa-test",
+            meta={"guard_status": "warn", "bundle_status": "fresh"},
+        )
+        self.admin_store.log_ai_feedback(
+            username="tester",
+            server_code="blackberry",
+            generation_id="gen_admin_1",
+            flow="law_qa",
+            normalized_issues=["wrong_law"],
+            note="Article mismatch",
+        )
+
+        self._register_verify_and_login("12345", "admin_pipeline@example.com")
+        response = self.client.get("/api/admin/ai-pipeline?flow=law_qa&issue_type=wrong_law")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["flow"], "law_qa")
+        self.assertEqual(payload["issue_type"], "wrong_law")
+        self.assertTrue(any(item["meta"]["generation_id"] == "gen_admin_1" for item in payload["generations"]))
+        self.assertTrue(any(item["meta"]["generation_id"] == "gen_admin_1" for item in payload["feedback"]))
 
     def test_law_qa_test_page_available_for_tester(self):
         self._register_verify_and_login("tester", "tester_law_page@example.com")

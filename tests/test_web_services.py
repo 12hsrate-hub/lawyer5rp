@@ -835,6 +835,10 @@ https://laws.example/article
         self.assertIn("опечатками", prompt)
         self.assertIn("Уверенность в подборе норм низкая", prompt)
 
+    def test_normalize_ai_feedback_issues_maps_aliases_to_stable_codes(self):
+        issues = ai_service.normalize_ai_feedback_issues(["wronglaw", "fact", "unknown-custom"])
+
+        self.assertEqual(issues, ("wrong_law", "wrong_fact", "other"))
 
     def test_extract_relevant_law_excerpt_uses_hit_window_not_only_document_start(self):
         text = (

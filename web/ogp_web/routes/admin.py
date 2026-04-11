@@ -384,6 +384,31 @@ async def admin_dashboard_data(
     }
 
 
+@router.get("/api/admin/ai-pipeline")
+async def admin_ai_pipeline_data(
+    flow: str = Query(default="", max_length=32),
+    issue_type: str = Query(default="", max_length=64),
+    limit: int = Query(default=50, ge=1, le=200),
+    user: AuthUser = Depends(require_admin_user),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    _ = user
+    normalized_flow = str(flow or "").strip().lower()
+    normalized_issue_type = str(issue_type or "").strip().lower()
+    return {
+        "flow": normalized_flow,
+        "issue_type": normalized_issue_type,
+        "limit": limit,
+        "generations": metrics_store.list_ai_generation_logs(flow=normalized_flow, limit=limit),
+        "feedback": metrics_store.list_ai_feedback(
+            flow=normalized_flow,
+            issue_type=normalized_issue_type,
+            limit=limit,
+        ),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @router.get("/api/admin/users")
 async def admin_users_data(
     user: AuthUser = Depends(require_admin_user),

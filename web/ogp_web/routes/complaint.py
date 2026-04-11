@@ -5,6 +5,8 @@ from fastapi.concurrency import run_in_threadpool
 
 from ogp_web.dependencies import get_admin_metrics_store, get_user_store
 from ogp_web.schemas import (
+    AiFeedbackPayload,
+    AiFeedbackResponse,
     ComplaintDraftPayload,
     ComplaintDraftResponse,
     ComplaintPayload,
@@ -18,7 +20,14 @@ from ogp_web.schemas import (
     SuggestResponse,
 )
 from ogp_web.server_config import build_permission_set, get_server_config
-from ogp_web.services.ai_service import answer_law_question_details, extract_principal_scan, suggest_text
+from ogp_web.services.ai_service import (
+    answer_law_question_details,
+    build_law_qa_metrics_meta,
+    build_suggest_metrics_meta,
+    extract_principal_scan,
+    normalize_ai_feedback_issues,
+    suggest_text_details,
+)
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -175,23 +184,37 @@ async def suggest(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> SuggestResponse:
     _validate_server_payload(store, user, org=payload.org, complaint_basis=payload.complaint_basis)
-    text = suggest_text(payload, server_code=user.server_code)
+    result = suggest_text_details(payload, server_code=user.server_code)
     metrics_store.log_event(
         event_type="ai_suggest",
         username=user.username,
         path="/api/ai/suggest",
         method="POST",
         status_code=200,
-        resource_units=len(payload.raw_desc or "") + len(text),
+        resource_units=len(payload.raw_desc or "") + len(result.text),
         meta={
             "server_code": user.server_code,
             "complaint_basis": payload.complaint_basis,
             "main_focus": payload.main_focus,
             "input_chars": len(payload.raw_desc or ""),
-            "output_chars": len(text),
+            "output_chars": len(result.text),
         },
     )
-    return SuggestResponse(text=text)
+    metrics_store.log_ai_generation(
+        username=user.username,
+        server_code=user.server_code,
+        flow="suggest",
+        generation_id=result.generation_id,
+        path="/api/ai/suggest",
+        meta=build_suggest_metrics_meta(payload=payload, result=result, server_code=user.server_code),
+    )
+    return SuggestResponse(
+        text=result.text,
+        generation_id=result.generation_id,
+        guard_status=result.guard_status,
+        contract_version=result.contract_version,
+        warnings=result.warnings,
+    )
 
 
 @router.post("/api/ai/extract-principal", response_model=PrincipalScanResult)
@@ -246,11 +269,73 @@ async def law_qa_test(
             "max_answer_chars": payload.max_answer_chars,
         },
     )
+    metrics_store.log_ai_generation(
+        username=user.username,
+        server_code=effective_server_code,
+        flow="law_qa",
+        generation_id=result.generation_id,
+        path="/api/ai/law-qa-test",
+        meta=build_law_qa_metrics_meta(payload=payload, result=result, used_sources=result.used_sources),
+    )
     return LawQaResponse(
         text=result.text,
+        generation_id=result.generation_id,
         used_sources=result.used_sources,
         indexed_documents=result.indexed_documents,
         retrieval_confidence=result.retrieval_confidence,
         retrieval_profile=result.retrieval_profile,
+        guard_status=result.guard_status,
+        contract_version=result.contract_version,
+        bundle_status=result.bundle_status,
+        bundle_generated_at=result.bundle_generated_at,
+        bundle_fingerprint=result.bundle_fingerprint,
+        warnings=result.warnings,
+        shadow=result.shadow,
         selected_norms=result.selected_norms,
+    )
+
+
+@router.post("/api/ai/feedback", response_model=AiFeedbackResponse)
+async def ai_feedback(
+    payload: AiFeedbackPayload,
+    user: AuthUser = Depends(require_user),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+) -> AiFeedbackResponse:
+    generation_id = str(payload.generation_id or "").strip()
+    flow = str(payload.flow or "").strip().lower()
+    if not generation_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=["generation_id is required."],
+        )
+    if flow not in {"law_qa", "suggest"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=["flow must be law_qa or suggest."],
+        )
+
+    normalized_issues = list(normalize_ai_feedback_issues(payload.issues))
+    if not normalized_issues and not str(payload.note or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=["Provide at least one issue or a short note."],
+        )
+
+    feedback_id = f"fb_{generation_id[:8]}"
+    metrics_store.log_ai_feedback(
+        username=user.username,
+        server_code=user.server_code,
+        generation_id=generation_id,
+        flow=flow,
+        normalized_issues=normalized_issues,
+        note=payload.note,
+        expected_reference=payload.expected_reference,
+        helpful=payload.helpful,
+    )
+    return AiFeedbackResponse(
+        feedback_id=feedback_id,
+        generation_id=generation_id,
+        flow=flow,
+        normalized_issues=normalized_issues,
+        message="Feedback recorded.",
     )

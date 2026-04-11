@@ -125,6 +125,10 @@ class SuggestPayload(BaseModel):
 
 class SuggestResponse(BaseModel):
     text: str
+    generation_id: str = ""
+    guard_status: str = ""
+    contract_version: str = ""
+    warnings: List[str] = Field(default_factory=list)
 
 
 class LawQaPayload(BaseModel):
@@ -156,11 +160,47 @@ class LawQaPayload(BaseModel):
 
 class LawQaResponse(BaseModel):
     text: str
+    generation_id: str = ""
     used_sources: List[str] = Field(default_factory=list)
     indexed_documents: int = 0
     retrieval_confidence: str = ""
     retrieval_profile: str = ""
+    guard_status: str = ""
+    contract_version: str = ""
+    bundle_status: str = ""
+    bundle_generated_at: str = ""
+    bundle_fingerprint: str = ""
+    warnings: List[str] = Field(default_factory=list)
+    shadow: dict[str, Any] = Field(default_factory=dict)
     selected_norms: List[dict[str, Any]] = Field(default_factory=list)
+
+
+class AiFeedbackPayload(BaseModel):
+    generation_id: str = ""
+    flow: str = ""
+    issues: List[str] = Field(default_factory=list)
+    note: str = ""
+    expected_reference: str = ""
+    helpful: bool | None = None
+
+    @field_validator("generation_id")
+    @classmethod
+    def validate_generation_id(cls, value: str) -> str:
+        return str(value or "").strip()
+
+    @field_validator("flow")
+    @classmethod
+    def validate_flow(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower()
+        return normalized
+
+
+class AiFeedbackResponse(BaseModel):
+    feedback_id: str
+    generation_id: str
+    flow: str
+    normalized_issues: List[str] = Field(default_factory=list)
+    message: str = ""
 
 
 class PrincipalScanPayload(BaseModel):

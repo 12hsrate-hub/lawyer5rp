@@ -17,6 +17,17 @@ from fastapi import HTTPException, status
 from ogp_web.schemas import LawQaPayload, PrincipalScanPayload, PrincipalScanResult, SuggestPayload
 from ogp_web.server_config import DEFAULT_SERVER_CODE, get_server_config
 from ogp_web.services.law_bundle_service import LawChunk, load_law_bundle_chunks
+from ogp_web.services.legal_pipeline_service import (
+    LEGAL_PIPELINE_CONTRACT_VERSION,
+    ShadowComparison,
+    build_shadow_comparison,
+    guard_law_qa_answer,
+    guard_suggest_answer,
+    mask_text_preview,
+    new_generation_id,
+    normalize_feedback_issues,
+    short_text_hash,
+)
 from ogp_web.services.law_retrieval_service import retrieve_law_context, unique_sources
 from shared.ogp_ai import (
     create_openai_client,
@@ -24,8 +35,10 @@ from shared.ogp_ai import (
     extract_principal_fields_with_proxy_fallback,
     suggest_description_with_proxy_fallback,
 )
+from shared.ogp_ai_prompts import SUGGEST_PROMPT_VERSION
 
 LOGGER = logging.getLogger(__name__)
+LAW_QA_PROMPT_VERSION = "law_qa.v2"
 
 
 _LawChunk = LawChunk
@@ -34,11 +47,33 @@ _LawChunk = LawChunk
 @dataclass(frozen=True)
 class LawQaAnswerResult:
     text: str
+    generation_id: str
     used_sources: list[str]
     indexed_documents: int
     retrieval_confidence: str
     retrieval_profile: str
+    guard_status: str
+    contract_version: str
+    bundle_status: str
+    bundle_generated_at: str
+    bundle_fingerprint: str
+    warnings: list[str]
+    shadow: dict[str, object]
     selected_norms: list[dict[str, object]]
+
+
+@dataclass(frozen=True)
+class SuggestTextResult:
+    text: str
+    generation_id: str
+    guard_status: str
+    contract_version: str
+    warnings: list[str]
+    shadow: dict[str, object]
+
+
+def normalize_ai_feedback_issues(raw_issues: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    return normalize_feedback_issues(raw_issues)
 
 
 LAW_QA_STOPWORDS = {
@@ -910,6 +945,131 @@ def _build_law_qa_selected_norms(retrieval_result, *, max_excerpt_chars: int = 2
     return items
 
 
+def _server_feature_enabled(server_config: object, feature_name: str) -> bool:
+    checker = getattr(server_config, "has_feature", None)
+    if callable(checker):
+        try:
+            return bool(checker(feature_name))
+        except Exception:
+            return False
+    feature_flags = getattr(server_config, "feature_flags", ()) or ()
+    return str(feature_name or "").strip() in set(feature_flags)
+
+
+def _shadow_to_dict(shadow: ShadowComparison) -> dict[str, object]:
+    return {
+        "enabled": bool(shadow.enabled),
+        "profile": shadow.profile,
+        "diverged": bool(shadow.diverged),
+        "overlap_count": int(shadow.overlap_count),
+        "primary_labels": list(shadow.primary_labels),
+        "shadow_labels": list(shadow.shadow_labels),
+    }
+
+
+def _build_shadow_retrieval(
+    *,
+    server_code: str,
+    query: str,
+    excerpt_chars: int,
+    profile: str,
+    shadow_profile: str,
+) -> ShadowComparison:
+    normalized_shadow_profile = str(shadow_profile or "").strip()
+    if not normalized_shadow_profile or normalized_shadow_profile == profile:
+        return build_shadow_comparison(
+            enabled=False,
+            profile=normalized_shadow_profile,
+            primary_matches=(),
+            shadow_matches=(),
+        )
+
+    primary_result = _retrieve_law_context(
+        server_code=server_code,
+        query=query,
+        excerpt_chars=excerpt_chars,
+        profile=profile,
+    )
+    shadow_result = _retrieve_law_context(
+        server_code=server_code,
+        query=query,
+        excerpt_chars=excerpt_chars,
+        profile=normalized_shadow_profile,
+    )
+    return build_shadow_comparison(
+        enabled=True,
+        profile=normalized_shadow_profile,
+        primary_matches=primary_result.matches,
+        shadow_matches=shadow_result.matches,
+    )
+
+
+def _law_qa_metrics_meta(
+    *,
+    payload: LawQaPayload,
+    result: LawQaAnswerResult,
+    used_sources: list[str],
+) -> dict[str, object]:
+    return {
+        "generation_id": result.generation_id,
+        "flow": "law_qa",
+        "contract_version": result.contract_version,
+        "prompt_version": LAW_QA_PROMPT_VERSION,
+        "server_code": payload.server_code,
+        "model": payload.model,
+        "input_chars": len(payload.question or ""),
+        "input_hash": short_text_hash(payload.question or ""),
+        "input_preview": mask_text_preview(payload.question or "", max_chars=180),
+        "output_chars": len(result.text or ""),
+        "output_hash": short_text_hash(result.text or ""),
+        "output_preview": mask_text_preview(result.text or "", max_chars=220),
+        "retrieval_profile": result.retrieval_profile,
+        "retrieval_confidence": result.retrieval_confidence,
+        "bundle_status": result.bundle_status,
+        "bundle_generated_at": result.bundle_generated_at,
+        "bundle_fingerprint": result.bundle_fingerprint,
+        "guard_status": result.guard_status,
+        "guard_warnings": list(result.warnings),
+        "used_sources_count": len(used_sources),
+        "selected_norms_count": len(result.selected_norms),
+        "shadow": result.shadow,
+    }
+
+
+def _suggest_metrics_meta(
+    *,
+    payload: SuggestPayload,
+    result: SuggestTextResult,
+    server_code: str,
+) -> dict[str, object]:
+    return {
+        "generation_id": result.generation_id,
+        "flow": "suggest",
+        "contract_version": result.contract_version,
+        "prompt_version": SUGGEST_PROMPT_VERSION,
+        "server_code": server_code,
+        "complaint_basis": payload.complaint_basis,
+        "main_focus": payload.main_focus,
+        "input_chars": len(payload.raw_desc or ""),
+        "input_hash": short_text_hash(payload.raw_desc or ""),
+        "input_preview": mask_text_preview(payload.raw_desc or "", max_chars=180),
+        "output_chars": len(result.text or ""),
+        "output_hash": short_text_hash(result.text or ""),
+        "output_preview": mask_text_preview(result.text or "", max_chars=220),
+        "guard_status": result.guard_status,
+        "guard_warnings": list(result.warnings),
+        "shadow": result.shadow,
+    }
+
+
+def build_law_qa_metrics_meta(*, payload: LawQaPayload, result: LawQaAnswerResult, used_sources: list[str]) -> dict[str, object]:
+    return _law_qa_metrics_meta(payload=payload, result=result, used_sources=used_sources)
+
+
+def build_suggest_metrics_meta(*, payload: SuggestPayload, result: SuggestTextResult, server_code: str) -> dict[str, object]:
+    return _suggest_metrics_meta(payload=payload, result=result, server_code=server_code)
+
+
 def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: int = 4) -> str:
     retrieval_query = str(question or "").strip()
     if not retrieval_query:
@@ -1005,6 +1165,7 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
         )
 
     model_name = resolve_law_qa_model(payload.model)
+    generation_id = new_generation_id()
     retrieval_result = _retrieve_law_context(
         server_code=payload.server_code or DEFAULT_SERVER_CODE,
         query=question,
@@ -1030,6 +1191,24 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
                 "\u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0443 law base."
             ],
         )
+
+    server_config = get_server_config(retrieval_result.server_code)
+    shadow = build_shadow_comparison(enabled=False, profile="", primary_matches=retrieval_result.matches, shadow_matches=())
+    if _server_feature_enabled(server_config, "legal_pipeline_shadow"):
+        shadow_profile = str(getattr(server_config, "shadow_law_qa_profile", "") or "").strip()
+        if shadow_profile and shadow_profile != retrieval_result.profile:
+            shadow_result = _retrieve_law_context(
+                server_code=retrieval_result.server_code,
+                query=question,
+                excerpt_chars=1800,
+                profile=shadow_profile,
+            )
+            shadow = build_shadow_comparison(
+                enabled=True,
+                profile=shadow_profile,
+                primary_matches=retrieval_result.matches,
+                shadow_matches=shadow_result.matches,
+            )
 
     context_blocks = _build_law_qa_context_blocks(retrieval_result)
     prompt = _build_law_qa_prompt(
@@ -1058,12 +1237,26 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
 
     limited = text[: payload.max_answer_chars].strip()
+    used_sources = list(unique_sources(retrieval_result))
+    guard_result = guard_law_qa_answer(
+        text=limited,
+        allowed_source_urls=used_sources,
+        bundle_health=retrieval_result.bundle_health,
+    )
     return LawQaAnswerResult(
         text=limited,
-        used_sources=list(unique_sources(retrieval_result)),
+        generation_id=generation_id,
+        used_sources=used_sources,
         indexed_documents=retrieval_result.indexed_chunk_count,
         retrieval_confidence=retrieval_result.confidence,
         retrieval_profile=retrieval_result.profile,
+        guard_status=guard_result.status,
+        contract_version=LEGAL_PIPELINE_CONTRACT_VERSION,
+        bundle_status=retrieval_result.bundle_health.status,
+        bundle_generated_at=retrieval_result.bundle_health.generated_at,
+        bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
+        warnings=list(dict.fromkeys(retrieval_result.bundle_health.warnings + guard_result.warning_codes)),
+        shadow=_shadow_to_dict(shadow),
         selected_norms=_build_law_qa_selected_norms(retrieval_result),
     )
 
@@ -1073,7 +1266,7 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     return result.text, result.used_sources, result.indexed_documents
 
 
-def suggest_text(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> str:
+def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> SuggestTextResult:
     if not payload.victim_name.strip() or not payload.org.strip() or not payload.subject.strip() or not payload.event_dt.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1087,10 +1280,35 @@ def suggest_text(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_C
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
+    generation_id = new_generation_id()
+    server_config = get_server_config(server_code or DEFAULT_SERVER_CODE)
+    shadow = build_shadow_comparison(enabled=False, profile="", primary_matches=(), shadow_matches=())
+    suggest_query = _build_suggest_retrieval_query(payload)
     law_context = _build_suggest_law_context(
         server_code=server_code,
-        question=_build_suggest_retrieval_query(payload),
+        question=suggest_query,
     )
+    if _server_feature_enabled(server_config, "legal_pipeline_shadow"):
+        shadow_profile = str(getattr(server_config, "shadow_suggest_profile", "") or "").strip()
+        if shadow_profile and shadow_profile != "suggest":
+            primary_result = _retrieve_law_context(
+                server_code=server_code,
+                query=suggest_query,
+                excerpt_chars=900,
+                profile="suggest",
+            )
+            shadow_result = _retrieve_law_context(
+                server_code=server_code,
+                query=suggest_query,
+                excerpt_chars=900,
+                profile=shadow_profile,
+            )
+            shadow = build_shadow_comparison(
+                enabled=True,
+                profile=shadow_profile,
+                primary_matches=primary_result.matches,
+                shadow_matches=shadow_result.matches,
+            )
 
     try:
         text = suggest_description_with_proxy_fallback(
@@ -1119,7 +1337,19 @@ def suggest_text(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_C
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=["Модель вернула некорректный формат ответа. Попробуйте еще раз."],
         )
-    return cleaned
+    guard_result = guard_suggest_answer(text=cleaned)
+    return SuggestTextResult(
+        text=cleaned,
+        generation_id=generation_id,
+        guard_status=guard_result.status,
+        contract_version=LEGAL_PIPELINE_CONTRACT_VERSION,
+        warnings=list(guard_result.warning_codes),
+        shadow=_shadow_to_dict(shadow),
+    )
+
+
+def suggest_text(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> str:
+    return suggest_text_details(payload, server_code=server_code).text
 
 
 def extract_principal_scan(payload: PrincipalScanPayload) -> PrincipalScanResult:

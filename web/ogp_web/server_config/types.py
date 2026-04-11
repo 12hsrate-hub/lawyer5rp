@@ -39,6 +39,9 @@ class ServerConfig:
     feature_flags: frozenset[str] = field(default_factory=frozenset)
     law_qa_sources: tuple[str, ...] = ()
     law_qa_bundle_path: str = ""
+    law_qa_bundle_max_age_hours: int = 168
+    shadow_law_qa_profile: str = ""
+    shadow_suggest_profile: str = ""
     exam_sheet_url: str = ""
     complaint_forum_url: str = ""
     complaint_test_preset: dict[str, object] = field(default_factory=dict)

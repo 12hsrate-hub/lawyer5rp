@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass
@@ -43,6 +44,15 @@ class LawBundleSource:
     post_count: int
     included_post_count: int
     chunk_count: int
+
+
+@dataclass(frozen=True)
+class LawBundleMeta:
+    server_code: str
+    generated_at_utc: str
+    source_count: int
+    chunk_count: int
+    fingerprint: str
 
 
 class _ThreadTitleParser(HTMLParser):
@@ -322,18 +332,57 @@ def write_law_bundle(bundle: dict[str, object], destination: Path) -> Path:
     return destination
 
 
+def load_law_bundle_meta(server_code: str, bundle_path: str = "") -> LawBundleMeta | None:
+    path = resolve_law_bundle_path(server_code, bundle_path)
+    if not path.exists():
+        return None
+    payload = _load_law_bundle_payload_cached(str(path), path.stat().st_mtime_ns)
+    return _payload_to_bundle_meta(server_code, payload)
+
+
 def load_law_bundle_chunks(server_code: str, bundle_path: str = "") -> tuple[LawChunk, ...]:
     path = resolve_law_bundle_path(server_code, bundle_path)
     if not path.exists():
         return ()
-    return _load_law_bundle_chunks_cached(str(path), path.stat().st_mtime_ns)
+    payload = _load_law_bundle_payload_cached(str(path), path.stat().st_mtime_ns)
+    return _payload_to_law_chunks(payload)
 
 
 @lru_cache(maxsize=16)
-def _load_law_bundle_chunks_cached(bundle_path: str, bundle_mtime_ns: int) -> tuple[LawChunk, ...]:
+def _load_law_bundle_payload_cached(bundle_path: str, bundle_mtime_ns: int) -> dict[str, object]:
     _ = bundle_mtime_ns
     path = Path(bundle_path)
     payload = json.loads(path.read_text(encoding="utf-8"))
+    return payload if isinstance(payload, dict) else {}
+
+
+def _payload_to_bundle_meta(server_code: str, payload: dict[str, object]) -> LawBundleMeta:
+    articles = payload.get("articles", []) if isinstance(payload, dict) else []
+    sources = payload.get("sources", []) if isinstance(payload, dict) else []
+    fingerprint_source = json.dumps(
+        {
+            "server_code": payload.get("server_code") if isinstance(payload, dict) else server_code,
+            "generated_at_utc": payload.get("generated_at_utc") if isinstance(payload, dict) else "",
+            "source_urls": [
+                str(item.get("url") or "").strip()
+                for item in sources
+                if isinstance(item, dict) and str(item.get("url") or "").strip()
+            ],
+            "chunk_count": len(articles) if isinstance(articles, list) else 0,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return LawBundleMeta(
+        server_code=str(payload.get("server_code") or server_code).strip() or server_code,
+        generated_at_utc=str(payload.get("generated_at_utc") or "").strip(),
+        source_count=len(sources) if isinstance(sources, list) else 0,
+        chunk_count=len(articles) if isinstance(articles, list) else 0,
+        fingerprint=hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()[:16],
+    )
+
+
+def _payload_to_law_chunks(payload: dict[str, object]) -> tuple[LawChunk, ...]:
     items: list[LawChunk] = []
     for raw_item in payload.get("articles", []) if isinstance(payload, dict) else []:
         if not isinstance(raw_item, dict):

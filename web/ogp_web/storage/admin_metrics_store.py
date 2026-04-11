@@ -384,6 +384,59 @@ class AdminMetricsStore:
             return False
         return True
 
+    def log_ai_generation(
+        self,
+        *,
+        username: str,
+        server_code: str,
+        flow: str,
+        generation_id: str,
+        path: str,
+        meta: dict[str, Any] | None = None,
+    ) -> bool:
+        payload = {"flow": str(flow or "").strip().lower(), "generation_id": str(generation_id or "").strip()}
+        payload.update(meta or {})
+        return self.log_event(
+            event_type="ai_generation",
+            username=username,
+            server_code=server_code,
+            path=path,
+            method="POST",
+            status_code=200,
+            meta=payload,
+            resource_units=int(payload.get("output_chars") or 0),
+        )
+
+    def log_ai_feedback(
+        self,
+        *,
+        username: str,
+        server_code: str,
+        generation_id: str,
+        flow: str,
+        normalized_issues: list[str] | tuple[str, ...],
+        note: str = "",
+        expected_reference: str = "",
+        helpful: bool | None = None,
+    ) -> bool:
+        payload = {
+            "flow": str(flow or "").strip().lower(),
+            "generation_id": str(generation_id or "").strip(),
+            "issues": list(normalized_issues or ()),
+            "note": str(note or "").strip(),
+            "expected_reference": str(expected_reference or "").strip(),
+            "helpful": helpful,
+        }
+        return self.log_event(
+            event_type="ai_feedback",
+            username=username,
+            server_code=server_code,
+            path="/api/ai/feedback",
+            method="POST",
+            status_code=200,
+            meta=payload,
+        )
+
     def _build_event_filters(
         self,
         *,
@@ -639,6 +692,42 @@ class AdminMetricsStore:
         if unverified_only:
             filtered = [item for item in filtered if not item.get("email_verified")]
         return filtered
+
+    def _load_recent_ai_events(
+        self,
+        *,
+        event_type: str,
+        flow: str = "",
+        issue_type: str = "",
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        with closing(self._connect()) as conn:
+            events = self._load_recent_events(conn, event_type=event_type, limit=max(1, int(limit or 50)))
+        normalized_flow = str(flow or "").strip().lower()
+        normalized_issue_type = str(issue_type or "").strip().lower()
+        filtered: list[dict[str, Any]] = []
+        for item in events:
+            meta = item.get("meta") or {}
+            meta_flow = str(meta.get("flow") or "").strip().lower()
+            if normalized_flow and meta_flow != normalized_flow:
+                continue
+            if normalized_issue_type:
+                issues = [str(value or "").strip().lower() for value in meta.get("issues") or []]
+                if normalized_issue_type not in issues:
+                    continue
+            filtered.append(item)
+        return filtered
+
+    def list_ai_generation_logs(self, *, flow: str = "", limit: int = 50) -> list[dict[str, Any]]:
+        return self._load_recent_ai_events(event_type="ai_generation", flow=flow, limit=limit)
+
+    def list_ai_feedback(self, *, flow: str = "", issue_type: str = "", limit: int = 50) -> list[dict[str, Any]]:
+        return self._load_recent_ai_events(
+            event_type="ai_feedback",
+            flow=flow,
+            issue_type=issue_type,
+            limit=limit,
+        )
 
     def _sort_users(self, users_with_metrics: list[dict[str, Any]], *, user_sort: str = "complaints") -> None:
         normalized_sort = str(user_sort or "complaints").strip().lower()
