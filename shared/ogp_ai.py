@@ -154,6 +154,22 @@ def extract_response_text(response: object) -> str:
                 cleaned = _sanitize_response_text(fallback_text)
                 if cleaned:
                     message_chunks.append(cleaned)
+                continue
+            refusal_text = _response_part_value(content_item, "refusal", None)
+            if isinstance(refusal_text, str):
+                cleaned = _sanitize_response_text(refusal_text)
+                if cleaned:
+                    message_chunks.append(cleaned)
+                continue
+            if isinstance(text, list):
+                for nested_item in text:
+                    nested_value = _response_part_value(nested_item, "text", None) or _response_part_value(
+                        nested_item, "value", None
+                    )
+                    if isinstance(nested_value, str):
+                        cleaned = _sanitize_response_text(nested_value)
+                        if cleaned:
+                            message_chunks.append(cleaned)
 
     return "\n".join(chunk for chunk in message_chunks if chunk).strip()
 

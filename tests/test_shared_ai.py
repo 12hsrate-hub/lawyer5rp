@@ -205,6 +205,39 @@ class SharedAiTests(unittest.TestCase):
 
         self.assertEqual(ogp_ai.extract_response_text(response), "Нормальный ответ")
 
+    def test_extract_response_text_reads_nested_text_list_items(self):
+        response = type(
+            "Response",
+            (),
+            {
+                "output_text": "",
+                "output": [
+                    type(
+                        "OutputItem",
+                        (),
+                        {
+                            "type": "message",
+                            "content": [
+                                type(
+                                    "ContentItem",
+                                    (),
+                                    {
+                                        "type": "output_text",
+                                        "text": [
+                                            type("TextItem", (), {"value": "Первый фрагмент"})(),
+                                            type("TextItem", (), {"text": "Второй фрагмент"})(),
+                                        ],
+                                    },
+                                )()
+                            ],
+                        },
+                    )()
+                ],
+            },
+        )()
+
+        self.assertEqual(ogp_ai.extract_response_text(response), "Первый фрагмент\nВторой фрагмент")
+
     def test_suggest_description_uses_cache_when_enabled(self):
         tmpdir = make_temporary_directory()
         previous_enabled = os.environ.get("OGP_AI_CACHE_ENABLED")

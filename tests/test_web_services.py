@@ -492,6 +492,77 @@ class WebServiceTests(unittest.TestCase):
         self.assertIn("Не добавляй никакие реальные законы", captured["input"])
         self.assertIn("Право на защиту", captured["input"])
 
+    def test_law_qa_retries_when_model_returns_empty_text_once(self):
+        original_get_server_config = ai_service.get_server_config
+        original_build_index = ai_service._build_law_chunk_index_cached
+        original_create_client = ai_service.create_openai_client
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ("https://laws.example/base",)
+
+        class DummyResponses:
+            def __init__(self):
+                self.calls = 0
+
+            def create(self, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    return type(
+                        "EmptyResponse",
+                        (),
+                        {
+                            "output_text": "",
+                            "status": "completed",
+                            "output": [
+                                type(
+                                    "OutputItem",
+                                    (),
+                                    {
+                                        "type": "message",
+                                        "content": [type("ContentItem", (), {"type": "reasoning", "text": ""})()],
+                                    },
+                                )()
+                            ],
+                        },
+                    )()
+                return type("GoodResponse", (), {"output_text": "Найденный ответ"})()
+
+        class DummyClient:
+            def __init__(self):
+                self.responses = DummyResponses()
+
+        dummy_client = DummyClient()
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service._build_law_chunk_index_cached = lambda source_urls: (
+            ai_service._LawChunk(
+                url="https://laws.example/base",
+                document_title="Процессуальный кодекс",
+                article_label="Статья 20. Основания освобождения",
+                text="Статья 20. Основания освобождения задержанного.",
+            ),
+        )
+        ai_service.create_openai_client = lambda **kwargs: dummy_client
+        try:
+            text, sources, count = ai_service.answer_law_question(
+                LawQaPayload(
+                    server_code="blackberry",
+                    model="gpt-5-mini",
+                    question="Когда задержанного обязаны отпустить?",
+                    max_answer_chars=2000,
+                )
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service._build_law_chunk_index_cached = original_build_index
+            ai_service.create_openai_client = original_create_client
+
+        self.assertEqual(text, "Найденный ответ")
+        self.assertEqual(sources, ["https://laws.example/base"])
+        self.assertEqual(count, 1)
+        self.assertEqual(dummy_client.responses.calls, 2)
+
     def test_split_law_document_into_chunks_extracts_articles(self):
         chunks = ai_service._split_law_document_into_chunks(
             {

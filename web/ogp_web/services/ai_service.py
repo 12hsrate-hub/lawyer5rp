@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import logging
 import os
 import re
 import socket
@@ -20,6 +21,8 @@ from shared.ogp_ai import (
     extract_principal_fields_with_proxy_fallback,
     suggest_description_with_proxy_fallback,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -365,6 +368,58 @@ def _extract_relevant_law_excerpt(text: str, question: str, *, max_chars: int = 
     return snippet
 
 
+def _response_diagnostics(response: object) -> str:
+    output_items = []
+    for output_item in getattr(response, "output", None) or []:
+        item_type = str(getattr(output_item, "type", "") or "")
+        content_types = []
+        for content_item in getattr(output_item, "content", None) or []:
+            content_types.append(str(getattr(content_item, "type", "") or "unknown"))
+        output_items.append(f"{item_type}({','.join(content_types)})" if content_types else item_type or "unknown")
+    status_value = str(getattr(response, "status", "") or "")
+    output_text = str(getattr(response, "output_text", "") or "")
+    return (
+        f"status={status_value or 'n/a'}; "
+        f"output_text_len={len(output_text.strip())}; "
+        f"items={output_items or ['none']}"
+    )
+
+
+def _request_law_qa_text(*, client, model_name: str, prompt: str, max_output_tokens: int) -> str:
+    attempts = (
+        prompt,
+        prompt
+        + "\n\nТехническое требование: верни непустой финальный текст ответа обычным текстом, без служебных блоков reasoning.",
+    )
+    diagnostics: list[str] = []
+
+    for attempt_index, current_prompt in enumerate(attempts, start=1):
+        response = client.responses.create(
+            model=model_name,
+            input=current_prompt,
+            max_output_tokens=max_output_tokens,
+        )
+        text = extract_response_text(response)
+        if text:
+            return text
+        diagnostic = _response_diagnostics(response)
+        diagnostics.append(diagnostic)
+        LOGGER.warning(
+            "Law QA model returned empty text on attempt %s for model %s. %s",
+            attempt_index,
+            model_name,
+            diagnostic,
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail=[
+            f"Модель {model_name} вернула пустой ответ даже после повторной попытки.",
+            "Попробуйте отправить вопрос еще раз или выберите другую модель.",
+        ],
+    )
+
+
 def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     question = payload.question.strip()
     if not question:
@@ -417,17 +472,17 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
     try:
         client = create_openai_client(api_key=api_key, proxy_url=proxy_url)
-        response = client.responses.create(
-            model=model_name,
-            input=prompt,
+        text = _request_law_qa_text(
+            client=client,
+            model_name=model_name,
+            prompt=prompt,
             max_output_tokens=800,
         )
     except Exception as exc:
+        if isinstance(exc, HTTPException):
+            raise
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
 
-    text = extract_response_text(response)
-    if not text:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=["Модель вернула пустой ответ."])
     limited = text[: payload.max_answer_chars].strip()
     unique_sources = list(dict.fromkeys(item.url for item in selected))
     return limited, unique_sources, len(chunks)
