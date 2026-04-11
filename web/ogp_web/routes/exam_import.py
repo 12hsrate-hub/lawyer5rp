@@ -202,7 +202,7 @@ async def sync_exam_import(
         total_rows=stats["total_rows"],
         imported_count=len(rows),
         inserted_count=stats["inserted_count"],
-        updated_count=0,
+        updated_count=stats["updated_count"],
         skipped_count=int(stats.get("skipped_count", 0)),
         scored_count=0,
         latest_entries=_build_entries_response(store),

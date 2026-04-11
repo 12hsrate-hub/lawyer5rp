@@ -42,6 +42,26 @@ class ExamAnswersStore:
             ]
         )
 
+    @staticmethod
+    def _build_score_signature(*, payload: dict[str, object], exam_format: str) -> str:
+        ordered_items = list((payload or {}).items())
+        scoring_items: list[list[str]] = []
+        for index, (header, value) in enumerate(ordered_items):
+            if index < 5:
+                continue
+            header_text = str(header or "").strip()
+            if not header_text:
+                continue
+            scoring_items.append([header_text, str(value or "").strip()])
+        return json.dumps(
+            {
+                "exam_format": str(exam_format or "").strip(),
+                "answers": scoring_items,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
     def __init__(self, db_path: Path, backend: DatabaseBackend | None = None):
         self.db_path = db_path
         self.backend = backend or get_database_backend()
@@ -274,6 +294,9 @@ class ExamAnswersStore:
             discord_tag = str(row.get("discord_tag", "") or "")
             passport = str(row.get("passport", "") or "")
             exam_format = str(row.get("exam_format", "") or "")
+            payload = row.get("payload") or {}
+            if not isinstance(payload, dict):
+                payload = {}
             normalized_rows.append(
                 {
                     **row,
@@ -282,6 +305,7 @@ class ExamAnswersStore:
                     "discord_tag": discord_tag,
                     "passport": passport,
                     "exam_format": exam_format,
+                    "payload": payload,
                     "import_key": self.build_import_key(
                         submitted_at=submitted_at,
                         full_name=full_name,
@@ -289,6 +313,7 @@ class ExamAnswersStore:
                         passport=passport,
                         exam_format=exam_format,
                     ),
+                    "score_signature": self._build_score_signature(payload=payload, exam_format=exam_format),
                 }
             )
 
@@ -348,6 +373,52 @@ class ExamAnswersStore:
                 ).fetchone()
 
                 if existing is None:
+                    candidates = conn.execute(
+                        f"""
+                        SELECT
+                            id,
+                            source_row,
+                            submitted_at,
+                            full_name,
+                            discord_tag,
+                            passport,
+                            exam_format,
+                            payload_json,
+                            answer_count,
+                            import_key
+                        FROM exam_answers
+                        WHERE submitted_at = {placeholder}
+                        """,
+                        (submitted_at,),
+                    ).fetchall()
+                    matching_candidates: list[sqlite3.Row] = []
+                    for candidate in candidates:
+                        candidate_payload = self._decode_json_value(candidate["payload_json"], {})
+                        if not isinstance(candidate_payload, dict):
+                            candidate_payload = {}
+                        candidate_signature = self._build_score_signature(
+                            payload=candidate_payload,
+                            exam_format=str(candidate["exam_format"] or ""),
+                        )
+                        if candidate_signature == str(row["score_signature"]):
+                            matching_candidates.append(candidate)
+                    if matching_candidates:
+                        matching_candidates.sort(
+                            key=lambda item: (
+                                1 if int(item["source_row"] or 0) > 0 else 0,
+                                -abs(int(item["source_row"] or 0) - source_row),
+                                -(int(item["id"] or 0)),
+                            ),
+                            reverse=True,
+                        )
+                        existing = matching_candidates[0]
+                        if str(existing["import_key"] or "") != import_key:
+                            conn.execute(
+                                f"UPDATE exam_answers SET import_key = {placeholder} WHERE id = {placeholder}",
+                                (import_key, existing["id"]),
+                            )
+
+                if existing is None:
                     conn.execute(
                         f"""
                         INSERT INTO exam_answers (
@@ -393,42 +464,77 @@ class ExamAnswersStore:
                         ]
                     )
                     if has_changes:
-                        conn.execute(
-                            f"""
-                            UPDATE exam_answers
-                            SET source_row = {placeholder},
-                                submitted_at = {placeholder},
-                                full_name = {placeholder},
-                                discord_tag = {placeholder},
-                                passport = {placeholder},
-                                exam_format = {placeholder},
-                                payload_json = {payload_placeholder},
-                                answer_count = {placeholder},
-                                question_g_score = NULL,
-                                question_g_rationale = NULL,
-                                question_g_scored_at = NULL,
-                                exam_scores_json = NULL,
-                                exam_scores_scored_at = NULL,
-                                average_score = NULL,
-                                average_score_answer_count = NULL,
-                                average_score_scored_at = NULL,
-                                needs_rescore = {placeholder},
-                                updated_at = {current_timestamp}
-                            WHERE id = {placeholder}
-                            """,
-                            (
-                                source_row,
-                                submitted_at,
-                                full_name,
-                                discord_tag,
-                                passport,
-                                exam_format,
-                                payload_json,
-                                answer_count,
-                                needs_rescore_value,
-                                existing["id"],
-                            ),
+                        existing_payload = self._decode_json_value(existing["payload_json"], {})
+                        if not isinstance(existing_payload, dict):
+                            existing_payload = {}
+                        existing_score_signature = self._build_score_signature(
+                            payload=existing_payload,
+                            exam_format=str(existing["exam_format"] or ""),
                         )
+                        if existing_score_signature == str(row["score_signature"]):
+                            conn.execute(
+                                f"""
+                                UPDATE exam_answers
+                                SET source_row = {placeholder},
+                                    submitted_at = {placeholder},
+                                    full_name = {placeholder},
+                                    discord_tag = {placeholder},
+                                    passport = {placeholder},
+                                    exam_format = {placeholder},
+                                    payload_json = {payload_placeholder},
+                                    answer_count = {placeholder},
+                                    updated_at = {current_timestamp}
+                                WHERE id = {placeholder}
+                                """,
+                                (
+                                    source_row,
+                                    submitted_at,
+                                    full_name,
+                                    discord_tag,
+                                    passport,
+                                    exam_format,
+                                    payload_json,
+                                    answer_count,
+                                    existing["id"],
+                                ),
+                            )
+                        else:
+                            conn.execute(
+                                f"""
+                                UPDATE exam_answers
+                                SET source_row = {placeholder},
+                                    submitted_at = {placeholder},
+                                    full_name = {placeholder},
+                                    discord_tag = {placeholder},
+                                    passport = {placeholder},
+                                    exam_format = {placeholder},
+                                    payload_json = {payload_placeholder},
+                                    answer_count = {placeholder},
+                                    question_g_score = NULL,
+                                    question_g_rationale = NULL,
+                                    question_g_scored_at = NULL,
+                                    exam_scores_json = NULL,
+                                    exam_scores_scored_at = NULL,
+                                    average_score = NULL,
+                                    average_score_answer_count = NULL,
+                                    average_score_scored_at = NULL,
+                                    needs_rescore = {placeholder},
+                                    updated_at = {current_timestamp}
+                                WHERE id = {placeholder}
+                                """,
+                                (
+                                    source_row,
+                                    submitted_at,
+                                    full_name,
+                                    discord_tag,
+                                    passport,
+                                    exam_format,
+                                    payload_json,
+                                    answer_count,
+                                    needs_rescore_value,
+                                    existing["id"],
+                                ),
+                            )
                         updated_count += 1
                         changed_rows.append(source_row)
                     else:
