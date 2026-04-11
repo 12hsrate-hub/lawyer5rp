@@ -97,6 +97,92 @@ class SharedAiTests(unittest.TestCase):
         self.assertEqual(payload["principal_name"], "John Doe")
         self.assertEqual(calls, ["direct", "http://proxy:1"])
 
+    def test_proxy_only_skips_direct_for_suggest(self):
+        calls: list[tuple[str, float | None]] = []
+        original_create = ogp_ai.create_openai_client
+        original_suggest = ogp_ai.suggest_description
+
+        class FakeClient:
+            def __init__(self, proxy_url: str):
+                self.proxy_url = proxy_url
+
+        def fake_create(api_key: str, proxy_url: str = "", connect_timeout_seconds: float | None = None):
+            _ = api_key
+            calls.append((proxy_url or "direct", connect_timeout_seconds))
+            return FakeClient(proxy_url)
+
+        def fake_suggest(client, **kwargs):
+            _ = kwargs
+            return f"ok via {client.proxy_url or 'direct'}"
+
+        ogp_ai.create_openai_client = fake_create
+        ogp_ai.suggest_description = fake_suggest
+        try:
+            text = ogp_ai.suggest_description_with_proxy_fallback(
+                api_key="key",
+                proxy_url="http://proxy:1",
+                victim_name="Victim",
+                org="Org",
+                subject="Subject",
+                event_dt="08.04.2026 14:30",
+                raw_desc="Draft",
+                route_policy="proxy_only",
+            )
+        finally:
+            ogp_ai.create_openai_client = original_create
+            ogp_ai.suggest_description = original_suggest
+
+        self.assertEqual(text, "ok via http://proxy:1")
+        self.assertEqual(calls, [("http://proxy:1", None)])
+
+    def test_proxy_first_falls_back_to_direct_and_exposes_attempt_meta(self):
+        calls: list[tuple[str, float | None]] = []
+        original_create = ogp_ai.create_openai_client
+        original_suggest = ogp_ai.suggest_description_result
+
+        class FakeClient:
+            def __init__(self, proxy_url: str):
+                self.proxy_url = proxy_url
+
+        def fake_create(api_key: str, proxy_url: str = "", connect_timeout_seconds: float | None = None):
+            _ = api_key
+            calls.append((proxy_url or "direct", connect_timeout_seconds))
+            if proxy_url:
+                raise RuntimeError("proxy failed")
+            return FakeClient(proxy_url)
+
+        def fake_suggest(client, **kwargs):
+            _ = kwargs
+            return ogp_ai.TextGenerationResult(
+                text=f"ok via {client.proxy_url or 'direct'}",
+                usage=ogp_ai.AiUsageSummary(input_tokens=10, output_tokens=4, total_tokens=14),
+            )
+
+        ogp_ai.create_openai_client = fake_create
+        ogp_ai.suggest_description_result = fake_suggest
+        try:
+            result = ogp_ai.suggest_description_with_proxy_fallback_result(
+                api_key="key",
+                proxy_url="http://proxy:1",
+                victim_name="Victim",
+                org="Org",
+                subject="Subject",
+                event_dt="08.04.2026 14:30",
+                raw_desc="Draft",
+                route_policy="proxy_first",
+            )
+        finally:
+            ogp_ai.create_openai_client = original_create
+            ogp_ai.suggest_description_result = original_suggest
+
+        self.assertEqual(result.text, "ok via direct")
+        self.assertEqual(result.attempt_path, "direct_after_proxy")
+        self.assertEqual(result.route_policy, "proxy_first")
+        self.assertGreaterEqual(result.attempt_duration_ms, 0)
+        self.assertEqual(calls[0][0], "http://proxy:1")
+        self.assertEqual(calls[1][0], "direct")
+        self.assertEqual(calls[0][1], min(ogp_ai.OPENAI_CONNECT_TIMEOUT_SECONDS, ogp_ai.OPENAI_FAILFAST_CONNECT_TIMEOUT_SECONDS))
+
     def test_exam_scoring_returns_100_for_exact_match_without_model_call(self):
         class DummyClient:
             def __init__(self):

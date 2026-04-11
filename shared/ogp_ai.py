@@ -4,7 +4,8 @@ import json
 import re
 import threading
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from time import monotonic
 from typing import Callable
 
 from shared.ogp_ai_cache import get_ai_cache
@@ -28,6 +29,7 @@ OPENAI_OCR_MODEL = _OPENAI_CONFIG.ocr_model
 OPENAI_EXAM_SCORING_MODEL = _OPENAI_CONFIG.exam_scoring_model
 OPENAI_TIMEOUT_SECONDS = _OPENAI_CONFIG.timeout_seconds
 OPENAI_CONNECT_TIMEOUT_SECONDS = _OPENAI_CONFIG.connect_timeout_seconds
+OPENAI_FAILFAST_CONNECT_TIMEOUT_SECONDS = _OPENAI_CONFIG.failfast_connect_timeout_seconds
 DEFAULT_EXAM_RATIONALE = "Оценка получена без пояснения."
 DEFAULT_INVALID_BATCH_RATIONALE = "Модель не вернула корректную оценку по этому пункту."
 _JSON_DECODER = json.JSONDecoder()
@@ -36,6 +38,7 @@ _HIGH_JACCARD_THRESHOLD = 0.8
 _VERY_HIGH_JACCARD_THRESHOLD = 0.94
 _BATCH_SCORING_CHUNK_SIZE = 12
 OPENAI_PROXY_ONLY = _OPENAI_CONFIG.proxy_only
+OPENAI_ROUTE_POLICY = _OPENAI_CONFIG.route_policy
 _OPENAI_CONCURRENCY_LIMITS = {
     "text": max(1, _OPENAI_CONFIG.text_max_concurrency),
     "ocr": max(1, _OPENAI_CONFIG.ocr_max_concurrency),
@@ -60,6 +63,9 @@ class TextGenerationResult:
     text: str
     usage: AiUsageSummary
     cache_hit: bool = False
+    attempt_path: str = ""
+    attempt_duration_ms: int = 0
+    route_policy: str = ""
 
 
 @contextmanager
@@ -74,7 +80,7 @@ def _openai_operation_slot(operation_kind: str):
         semaphore.release()
 
 
-def create_openai_client(api_key: str, proxy_url: str = ""):
+def create_openai_client(api_key: str, proxy_url: str = "", *, connect_timeout_seconds: float | None = None):
     try:
         import httpx  # type: ignore
         from openai import DefaultHttpxClient, OpenAI  # type: ignore
@@ -88,14 +94,67 @@ def create_openai_client(api_key: str, proxy_url: str = ""):
     if proxy_url and not is_valid_http_url(proxy_url):
         raise RuntimeError("Прокси должен быть указан в формате http://... или https://...")
 
+    selected_connect_timeout = float(
+        connect_timeout_seconds if connect_timeout_seconds is not None else OPENAI_CONNECT_TIMEOUT_SECONDS
+    )
     timeout = httpx.Timeout(
         OPENAI_TIMEOUT_SECONDS,
-        connect=OPENAI_CONNECT_TIMEOUT_SECONDS,
+        connect=selected_connect_timeout,
         read=OPENAI_TIMEOUT_SECONDS,
         write=OPENAI_CONNECT_TIMEOUT_SECONDS,
     )
     http_client = DefaultHttpxClient(proxy=proxy_url or None, timeout=timeout, trust_env=False)
     return OpenAI(api_key=api_key, max_retries=0, http_client=http_client)
+
+
+def _create_openai_client_compat(*, api_key: str, proxy_url: str = "", connect_timeout_seconds: float | None = None):
+    try:
+        return create_openai_client(
+            api_key=api_key,
+            proxy_url=proxy_url,
+            connect_timeout_seconds=connect_timeout_seconds,
+        )
+    except TypeError as exc:
+        if "connect_timeout_seconds" not in str(exc):
+            raise
+        return create_openai_client(api_key=api_key, proxy_url=proxy_url)
+
+
+def _normalize_route_policy(route_policy: str | None) -> str:
+    normalized = str(route_policy or "").strip().lower()
+    if normalized in {"proxy_only", "proxy_first", "direct_first"}:
+        return normalized
+    if OPENAI_PROXY_ONLY:
+        return "proxy_only"
+    return OPENAI_ROUTE_POLICY if OPENAI_ROUTE_POLICY in {"proxy_only", "proxy_first", "direct_first"} else "direct_first"
+
+
+def _build_route_attempts(*, proxy_url: str, route_policy: str) -> list[tuple[str, str]]:
+    normalized_proxy = str(proxy_url or "").strip()
+    has_proxy = bool(normalized_proxy)
+    if route_policy == "proxy_only":
+        if not has_proxy:
+            raise RuntimeError("OpenAI proxy_only route requires OPENAI_PROXY_URL to be configured.")
+        return [("proxy", normalized_proxy)]
+    if route_policy == "proxy_first":
+        if has_proxy:
+            return [("proxy", normalized_proxy), ("direct", "")]
+        return [("direct", "")]
+    if has_proxy:
+        return [("direct", ""), ("proxy", normalized_proxy)]
+    return [("direct", "")]
+
+
+def _final_attempt_path(*, first_path: str, current_path: str, used_fallback: bool) -> str:
+    if not used_fallback:
+        return current_path
+    return f"{current_path}_after_{first_path}"
+
+
+def _first_attempt_connect_timeout(attempt_count: int) -> float | None:
+    if attempt_count <= 1:
+        return None
+    return max(0.5, min(OPENAI_CONNECT_TIMEOUT_SECONDS, OPENAI_FAILFAST_CONNECT_TIMEOUT_SECONDS))
 
 
 def _extract_json_object(raw_text: str) -> dict[str, object]:
@@ -276,38 +335,60 @@ def _run_with_proxy_fallback(
     operation_name: str,
     operation_kind: str,
     operation: Callable[[object], object],
+    route_policy: str | None = None,
     status_callback: Callable[[str], None] | None = None,
     direct_status: str | None = None,
     proxy_status: str | None = None,
+    attempt_meta_callback: Callable[[dict[str, object]], None] | None = None,
 ) -> object:
     with _openai_operation_slot(operation_kind):
-        first_error: Exception | None = None
+        normalized_policy = _normalize_route_policy(route_policy)
+        attempts = _build_route_attempts(proxy_url=proxy_url, route_policy=normalized_policy)
+        first_path = attempts[0][0]
+        previous_error: Exception | None = None
 
-        if not OPENAI_PROXY_ONLY:
-            if status_callback and direct_status:
-                status_callback(direct_status)
+        for index, (current_path, current_proxy_url) in enumerate(attempts):
+            status_text = direct_status if current_path == "direct" else proxy_status
+            if status_callback and status_text:
+                status_callback(status_text)
+            connect_timeout_seconds = (
+                _first_attempt_connect_timeout(len(attempts)) if index == 0 else OPENAI_CONNECT_TIMEOUT_SECONDS
+            )
+            started_at = monotonic()
             try:
-                client = create_openai_client(api_key=api_key, proxy_url="")
-                return operation(client)
+                client = _create_openai_client_compat(
+                    api_key=api_key,
+                    proxy_url=current_proxy_url,
+                    connect_timeout_seconds=connect_timeout_seconds,
+                )
+                result = operation(client)
+                cache_hit = bool(getattr(result, "cache_hit", False))
+                attempt_path = "cache" if cache_hit else _final_attempt_path(
+                    first_path=first_path,
+                    current_path=current_path,
+                    used_fallback=index > 0,
+                )
+                attempt_duration_ms = 0 if cache_hit else int((monotonic() - started_at) * 1000)
+                if attempt_meta_callback:
+                    attempt_meta_callback(
+                        {
+                            "attempt_path": attempt_path,
+                            "attempt_duration_ms": attempt_duration_ms,
+                            "route_policy": normalized_policy,
+                        }
+                    )
+                return result
             except Exception as exc:
-                first_error = exc
-                if not proxy_url:
-                    raise
-
-        if status_callback and proxy_status:
-            status_callback(proxy_status)
-
-        try:
-            client = create_openai_client(api_key=api_key, proxy_url=proxy_url)
-            return operation(client)
-        except Exception as proxy_exc:
-            if first_error is None:
-                raise
-            raise RuntimeError(
-                f"OpenAI failed during {operation_name} both directly and via proxy.\n"
-                f"Direct error: {first_error}\n"
-                f"Proxy error: {proxy_exc}"
-            ) from proxy_exc
+                if index == len(attempts) - 1:
+                    if previous_error is None:
+                        raise
+                    raise RuntimeError(
+                        f"OpenAI failed during {operation_name} using route policy {normalized_policy!r}.\n"
+                        f"First ({first_path}) error: {previous_error}\n"
+                        f"Fallback ({current_path}) error: {exc}"
+                    ) from exc
+                previous_error = exc
+        raise RuntimeError(f"OpenAI failed during {operation_name}: no available route attempts.")
 
 
 def _build_suggest_prompt(
@@ -404,6 +485,7 @@ def suggest_description_result(
                 total_tokens=_coerce_usage_int(cached_usage.get("total_tokens")),
             ),
             cache_hit=True,
+            attempt_path="cache",
         )
 
     response = client.responses.create(model=OPENAI_TEXT_MODEL, input=prompt)
@@ -639,6 +721,7 @@ def extract_principal_fields_with_proxy_fallback(
     api_key: str,
     proxy_url: str,
     image_data_url: str,
+    route_policy: str | None = None,
     status_callback: Callable[[str], None] | None = None,
 ) -> dict[str, object]:
     return _run_with_proxy_fallback(
@@ -647,6 +730,7 @@ def extract_principal_fields_with_proxy_fallback(
         operation_name="principal field extraction",
         operation_kind="ocr",
         operation=lambda client: extract_principal_fields(client=client, image_data_url=image_data_url),
+        route_policy=route_policy,
         status_callback=status_callback,
         direct_status="Подключение к OpenAI без прокси...",
         proxy_status="Прямой запрос не прошел, пробую через прокси...",
@@ -665,6 +749,7 @@ def suggest_description_with_proxy_fallback(
     main_focus: str = "",
     law_context: str = "",
     *,
+    route_policy: str | None = None,
     status_callback: Callable[[str], None] | None = None,
 ) -> str:
     return _run_with_proxy_fallback(
@@ -683,6 +768,7 @@ def suggest_description_with_proxy_fallback(
             main_focus=main_focus,
             law_context=law_context,
         ),
+        route_policy=route_policy,
         status_callback=status_callback,
         direct_status="РџРѕРґРєР»СЋС‡РµРЅРёРµ Рє OpenAI Р±РµР· РїСЂРѕРєСЃРё...",
         proxy_status="РџСЂСЏРјРѕР№ Р·Р°РїСЂРѕСЃ РЅРµ РїСЂРѕС€РµР», РїСЂРѕР±СѓСЋ С‡РµСЂРµР· РїСЂРѕРєСЃРё...",
@@ -701,9 +787,11 @@ def suggest_description_with_proxy_fallback_result(
     main_focus: str = "",
     law_context: str = "",
     *,
+    route_policy: str | None = None,
     status_callback: Callable[[str], None] | None = None,
 ) -> TextGenerationResult:
-    return _run_with_proxy_fallback(
+    attempt_meta: dict[str, object] = {}
+    result = _run_with_proxy_fallback(
         api_key=api_key,
         proxy_url=proxy_url,
         operation_name="description suggestion",
@@ -719,9 +807,19 @@ def suggest_description_with_proxy_fallback_result(
             main_focus=main_focus,
             law_context=law_context,
         ),
+        route_policy=route_policy,
         status_callback=status_callback,
         direct_status="Подключение к OpenAI без прокси...",
         proxy_status="Прямой запрос не прошел, пробую через прокси...",
+        attempt_meta_callback=attempt_meta.update,
+    )
+    if not isinstance(result, TextGenerationResult):
+        raise RuntimeError("OpenAI suggest fallback returned unexpected result type.")
+    return replace(
+        result,
+        attempt_path=str(attempt_meta.get("attempt_path") or result.attempt_path or ""),
+        attempt_duration_ms=int(attempt_meta.get("attempt_duration_ms") or result.attempt_duration_ms or 0),
+        route_policy=str(attempt_meta.get("route_policy") or route_policy or OPENAI_ROUTE_POLICY),
     )
 
 

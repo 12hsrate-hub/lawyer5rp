@@ -39,11 +39,11 @@ from ogp_web.services.law_retrieval_service import retrieve_law_context, unique_
 from shared.ogp_ai import (
     AiUsageSummary,
     OPENAI_TEXT_MODEL,
+    TextGenerationResult,
     create_openai_client,
     extract_response_text,
     extract_response_usage,
     extract_principal_fields_with_proxy_fallback,
-    suggest_description_with_proxy_fallback,
     suggest_description_with_proxy_fallback_result,
 )
 from shared.ogp_ai_prompts import SUGGEST_PROMPT_VERSION, build_suggest_prompt
@@ -1470,8 +1470,8 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
         law_context=law_context,
     )
     try:
-        openai_started_at = monotonic()
-        text = suggest_description_with_proxy_fallback(
+        request_started_at = monotonic()
+        generation_result = suggest_description_with_proxy_fallback_result(
             api_key=api_key,
             proxy_url=proxy_url,
             victim_name=payload.victim_name.strip(),
@@ -1485,8 +1485,9 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
         )
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
-    openai_ms = int((monotonic() - openai_started_at) * 1000)
+    openai_ms = int((monotonic() - request_started_at) * 1000)
 
+    text = generation_result.text
     if not text:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -1503,12 +1504,20 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
         model_name=OPENAI_TEXT_MODEL,
         prompt_text=prompt_text,
         output_text=cleaned,
-        usage=AiUsageSummary(),
+        usage=generation_result.usage,
         latency_ms=openai_ms,
-        cache_hit=False,
+        cache_hit=generation_result.cache_hit,
     )
     budget_assessment = evaluate_budget(flow="suggest", telemetry=telemetry)
     guard_result = guard_suggest_answer(text=cleaned)
+    telemetry_meta = telemetry_to_meta(telemetry)
+    telemetry_meta.update(
+        {
+            "attempt_path": generation_result.attempt_path,
+            "attempt_duration_ms": generation_result.attempt_duration_ms,
+            "route_policy": generation_result.route_policy,
+        }
+    )
     return SuggestTextResult(
         text=cleaned,
         generation_id=generation_id,
@@ -1516,7 +1525,7 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
         contract_version=LEGAL_PIPELINE_CONTRACT_VERSION,
         warnings=list(dict.fromkeys(guard_result.warning_codes + budget_assessment.warnings)),
         shadow=_shadow_to_dict(shadow),
-        telemetry=telemetry_to_meta(telemetry),
+        telemetry=telemetry_meta,
         budget_status=budget_assessment.status,
         budget_warnings=list(budget_assessment.warnings),
         budget_policy=policy_to_meta(budget_assessment.policy),
