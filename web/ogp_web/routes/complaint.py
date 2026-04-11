@@ -226,6 +226,8 @@ async def law_qa_test(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> LawQaResponse:
     _ensure_law_qa_permission(store, user)
+    effective_server_code = payload.server_code or user.server_code or store.get_server_code(user.username)
+    payload = payload.model_copy(update={"server_code": effective_server_code})
     text, used_sources, indexed_documents = await run_in_threadpool(answer_law_question, payload)
     metrics_store.log_event(
         event_type="ai_law_qa_test",
@@ -235,8 +237,7 @@ async def law_qa_test(
         status_code=200,
         resource_units=len(payload.question or "") + len(text),
         meta={
-            "server_code": user.server_code,
-            "laws_root_url": payload.laws_root_url,
+            "server_code": effective_server_code,
             "indexed_documents": indexed_documents,
             "used_sources_count": len(used_sources),
             "max_answer_chars": payload.max_answer_chars,

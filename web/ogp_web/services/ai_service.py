@@ -3,15 +3,15 @@ from __future__ import annotations
 import os
 import re
 import socket
-from ipaddress import ip_address
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlparse
+from ipaddress import ip_address
+from urllib.parse import urlparse
 
 import httpx
-
 from fastapi import HTTPException, status
 
 from ogp_web.schemas import LawQaPayload, PrincipalScanPayload, PrincipalScanResult, SuggestPayload
+from ogp_web.server_config import DEFAULT_SERVER_CODE, get_server_config
 from shared.ogp_ai import (
     create_openai_client,
     extract_principal_fields_with_proxy_fallback,
@@ -48,28 +48,15 @@ class _LawHtmlParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self._chunks: list[str] = []
-        self._links: list[str] = []
 
     @property
     def text(self) -> str:
         merged = " ".join(chunk.strip() for chunk in self._chunks if chunk and chunk.strip())
         return re.sub(r"\s+", " ", merged).strip()
 
-    @property
-    def links(self) -> list[str]:
-        return self._links
-
     def handle_data(self, data: str) -> None:
         if data:
             self._chunks.append(data)
-
-    def handle_starttag(self, tag: str, attrs) -> None:
-        if tag.lower() != "a":
-            return
-        for key, value in attrs:
-            if key.lower() == "href" and value:
-                self._links.append(str(value))
-                break
 
 
 def _extract_keywords(question: str) -> set[str]:
@@ -110,27 +97,23 @@ def _is_blocked_law_host(host: str) -> bool:
     return False
 
 
-def _fetch_law_documents(root_url: str, *, max_documents: int = 8, max_doc_chars: int = 9000) -> list[dict[str, str]]:
-    parsed_root = urlparse(root_url)
-    if parsed_root.scheme not in {"http", "https"} or not parsed_root.netloc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Укажите корректный URL законодательной базы (http/https)."])
-    if _is_blocked_law_host(parsed_root.hostname or ""):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=["Указанный хост недоступен для law Q&A. Используйте публичный домен с законодательной базой."],
-        )
-
-    allowed_host = parsed_root.netloc.lower()
-    queue = [root_url]
-    seen: set[str] = set()
+def _fetch_law_documents(source_urls: list[str], *, max_documents: int = 8, max_doc_chars: int = 9000) -> list[dict[str, str]]:
     documents: list[dict[str, str]] = []
+    normalized_sources: list[str] = []
+
+    for source_url in source_urls:
+        parsed_source = urlparse(source_url)
+        if parsed_source.scheme not in {"http", "https"} or not parsed_source.netloc:
+            continue
+        if _is_blocked_law_host(parsed_source.hostname or ""):
+            continue
+        normalized_sources.append(source_url)
+
+    if not normalized_sources:
+        return documents
 
     with httpx.Client(timeout=8.0, follow_redirects=True) as client:
-        while queue and len(documents) < max_documents:
-            current = queue.pop(0)
-            if current in seen:
-                continue
-            seen.add(current)
+        for current in normalized_sources[:max_documents]:
             try:
                 response = client.get(current)
                 response.raise_for_status()
@@ -144,31 +127,28 @@ def _fetch_law_documents(root_url: str, *, max_documents: int = 8, max_doc_chars
             text = parser.text[:max_doc_chars].strip()
             if text:
                 documents.append({"url": current, "text": text})
-            for raw_href in parser.links:
-                candidate = urljoin(current, raw_href).strip()
-                if not candidate.startswith(("http://", "https://")):
-                    continue
-                parsed = urlparse(candidate)
-                if parsed.netloc.lower() != allowed_host:
-                    continue
-                if candidate not in seen and candidate not in queue and len(queue) < 40:
-                    queue.append(candidate)
     return documents
 
 
 def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
-    laws_root_url = payload.laws_root_url.strip()
     question = payload.question.strip()
-    if not laws_root_url:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Добавьте ссылку на законодательную базу сервера."])
     if not question:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Введите вопрос для анализа."])
 
-    documents = _fetch_law_documents(laws_root_url)
+    server_code = payload.server_code or DEFAULT_SERVER_CODE
+    server_config = get_server_config(server_code)
+    law_sources = [str(item or "").strip() for item in server_config.law_qa_sources if str(item or "").strip()]
+    if not law_sources:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=["Для выбранного сервера не настроены источники законов."],
+        )
+
+    documents = _fetch_law_documents(law_sources)
     if not documents:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=["Не удалось загрузить законы по ссылке. Проверьте доступность страниц и дайте дополнительные ссылки на разделы."],
+            detail=["Не удалось загрузить законы для выбранного сервера. Проверьте настройку law base."],
         )
 
     keywords = _extract_keywords(question)
@@ -182,9 +162,10 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     context_blocks = [f"[Источник: {item['url']}]\n{item['text'][:2500]}" for item in selected]
     prompt = (
         "Ты юридический ассистент игрового сервера. Отвечай только на основе переданной законодательной базы.\n"
-        "Если данных недостаточно, прямо так и скажи и попроси дополнительные ссылки.\n"
-        "Обязательно укажи ссылки на нормы (URL источников) в конце каждого смыслового абзаца.\n"
-        "Ответ должен быть полным по существу, но без воды.\n\n"
+        "Если данных недостаточно, прямо так и скажи.\n"
+        "Обязательно укажи ссылки на источники в конце каждого смыслового абзаца.\n"
+        "Ответ должен быть точным, прикладным и без воды.\n\n"
+        f"Сервер: {server_config.name} ({server_config.code})\n\n"
         f"Вопрос:\n{question}\n\n"
         f"Ограничение длины ответа: не более {payload.max_answer_chars} символов.\n\n"
         "Законодательная база:\n"

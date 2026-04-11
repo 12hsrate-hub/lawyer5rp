@@ -388,26 +388,37 @@ class WebServiceTests(unittest.TestCase):
             ai_service.extract_principal_fields_with_proxy_fallback = original
         self.assertEqual(ctx.exception.status_code, 502)
 
-    def test_ai_service_law_qa_rejects_private_or_local_hosts(self):
-        with self.assertRaises(HTTPException) as ctx:
+    def test_ai_service_law_qa_rejects_unknown_server(self):
+        with self.assertRaises(Exception):
             ai_service.answer_law_question(
                 LawQaPayload(
-                    laws_root_url="http://127.0.0.1/laws",
+                    server_code="missing-server",
                     question="test question",
                     max_answer_chars=2000,
                 )
             )
-        self.assertEqual(ctx.exception.status_code, 400)
 
-    def test_ai_service_law_qa_rejects_localhost_name(self):
-        with self.assertRaises(HTTPException) as ctx:
-            ai_service.answer_law_question(
-                LawQaPayload(
-                    laws_root_url="http://localhost/laws",
-                    question="test question",
-                    max_answer_chars=2000,
+    def test_ai_service_law_qa_requires_configured_sources(self):
+        original = ai_service.get_server_config
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ()
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        try:
+            with self.assertRaises(HTTPException) as ctx:
+                ai_service.answer_law_question(
+                    LawQaPayload(
+                        server_code="blackberry",
+                        question="test question",
+                        max_answer_chars=2000,
+                    )
                 )
-            )
+        finally:
+            ai_service.get_server_config = original
+
         self.assertEqual(ctx.exception.status_code, 400)
 
 

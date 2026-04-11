@@ -128,9 +128,14 @@ class SuggestResponse(BaseModel):
 
 
 class LawQaPayload(BaseModel):
-    laws_root_url: str = ""
+    server_code: str = ""
     question: str = ""
     max_answer_chars: int = 2200
+
+    @field_validator("server_code")
+    @classmethod
+    def validate_server_code(cls, value: str) -> str:
+        return str(value or "").strip().lower()
 
     @field_validator("max_answer_chars")
     @classmethod

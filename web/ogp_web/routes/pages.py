@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ogp_web.dependencies import get_exam_answers_store, get_user_store
-from ogp_web.server_config import PermissionSet, ServerConfig, build_permission_set, get_server_config
+from ogp_web.server_config import PermissionSet, ServerConfig, build_permission_set, get_server_config, list_server_configs
 from ogp_web.services.auth_service import AuthError, AuthUser, get_current_user, require_user
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
@@ -244,6 +244,12 @@ async def law_qa_test_page(
             server_config=server_config,
             permissions=permissions,
             nav_active="law_qa_test",
+            law_qa_servers=[
+                {"code": item.code, "name": item.name}
+                for item in list_server_configs()
+                if item.law_qa_sources
+            ],
+            law_qa_sources=list(server_config.law_qa_sources),
         ),
     )
 

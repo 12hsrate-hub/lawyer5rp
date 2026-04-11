@@ -149,6 +149,16 @@ BLACKBERRY_SERVER_CONFIG = ServerConfig(
             "admin_panel",
         }
     ),
+    law_qa_sources=(
+        "https://forum.gta5rp.com/threads/processualnyi-kodeks-shtata-san-andreas-redakcija-ot-29-marta-2026-goda.826899/",
+        "https://forum.gta5rp.com/threads/sudebnye-precedenty.1291064/",
+        "https://forum.gta5rp.com/threads/dorozhnyi-kodeks-shtata-san-andreas-redakcija-ot-29-marta-2025-goda.826974/",
+        "https://forum.gta5rp.com/threads/administrativnyi-kodeks-shtata-san-andreas-redakcija-ot-29-marta-2025-goda.827016/",
+        "https://forum.gta5rp.com/threads/ugolovnyi-kodeks-shtata-san-andreas-redakcija-ot-29-marta-2026-goda.826988/",
+        "https://forum.gta5rp.com/threads/ehticheskii-kodeks-shtata-san-andreas-redakcija-ot-19-oktjabrja-2024-goda.826971/",
+        "https://forum.gta5rp.com/threads/konstitucija-shtata-san-andreas-redakcija-ot-29-marta-2026-goda.826866/",
+        "https://forum.gta5rp.com/threads/zakon-ob-advokature-i-advokatskoi-dejatelnosti-v-shtate-san-andreas-redakcija-ot-05-marta-2026-goda.827351/",
+    ),
     exam_sheet_url=EXAM_SHEET_URL,
     complaint_forum_url="https://forum.gta5rp.com/forums/zhaloby-v-prokuraturu.748/",
     complaint_test_preset=BLACKBERRY_TEST_COMPLAINT_PRESET,

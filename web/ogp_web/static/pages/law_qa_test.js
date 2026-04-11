@@ -31,7 +31,7 @@ form?.addEventListener("submit", async (event) => {
   submitButton?.setAttribute("disabled", "disabled");
   try {
     const payload = {
-      laws_root_url: document.getElementById("laws-root-url")?.value?.trim() || "",
+      server_code: document.getElementById("law-server-code")?.value?.trim() || "",
       question: document.getElementById("law-question")?.value?.trim() || "",
       max_answer_chars: Number(document.getElementById("max-answer-chars")?.value || 2200),
     };
