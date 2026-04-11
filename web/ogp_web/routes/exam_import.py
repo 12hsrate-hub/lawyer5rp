@@ -282,7 +282,7 @@ async def create_exam_import_failed_rescore_task(
     task_registry: ExamImportTaskRegistry = Depends(get_exam_import_task_registry),
 ) -> ExamImportTaskStatus:
     if not is_test_user(user.username):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["РўРµСЃС‚РѕРІР°СЏ СЃС‚СЂР°РЅРёС†Р° РЅРµРґРѕСЃС‚СѓРїРЅР°."])
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
     try:
         record = task_registry.create_task(

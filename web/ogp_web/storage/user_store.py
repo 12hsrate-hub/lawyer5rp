@@ -429,9 +429,9 @@ class UserStore:
                 pass
             mapped = self.backend.map_exception(exc)
             if isinstance(mapped, IntegrityConflictError):
-                message = "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃ С‚Р°РєРёРј Р»РѕРіРёРЅРѕРј СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚."
+                message = "Пользователь с таким логином уже существует."
                 if "email" in str(exc).lower():
-                    message = "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃ С‚Р°РєРёРј email СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚."
+                    message = "Пользователь с таким email уже существует."
                 raise AuthError(message) from exc
             raise mapped from exc
         return AuthUser(username=normalized, email=normalized_email, server_code=DEFAULT_SERVER_CODE), verification_token
@@ -450,23 +450,23 @@ class UserStore:
                 "username, email, server_code, salt, password_hash, email_verified_at, access_blocked_at",
             )
         if row is None:
-            raise AuthError("РќРµРІРµСЂРЅС‹Р№ Р»РѕРіРёРЅ/email РёР»Рё РїР°СЂРѕР»СЊ.")
+            raise AuthError("Неверный логин/email или пароль.")
         if not verify_password(valid_password, str(row["salt"]), str(row["password_hash"])):
-            raise AuthError("РќРµРІРµСЂРЅС‹Р№ Р»РѕРіРёРЅ/email РёР»Рё РїР°СЂРѕР»СЊ.")
+            raise AuthError("Неверный логин/email или пароль.")
         if str(row["access_blocked_at"] or "").strip():
-            raise AuthError("Р”РѕСЃС‚СѓРї Рє Р°РєРєР°СѓРЅС‚Сѓ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј.")
+            raise AuthError("Доступ к аккаунту заблокирован администратором.")
         if not str(row["email_verified_at"] or "").strip():
-            raise AuthError("РЎРЅР°С‡Р°Р»Р° РїРѕРґС‚РІРµСЂРґРёС‚Рµ email РїРѕ СЃСЃС‹Р»РєРµ РёР· РїРёСЃСЊРјР°.")
+            raise AuthError("Сначала подтвердите email по ссылке из письма.")
         return self._auth_user_from_row(row)
 
     def _pg_confirm_email(self, token: str) -> AuthUser:
         raw_token = (token or "").strip()
         if not raw_token:
-            raise AuthError("РЎСЃС‹Р»РєР° РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ РЅРµРїРѕР»РЅР°СЏ.")
+            raise AuthError("Ссылка подтверждения неполная.")
         token_hash = _hash_email_token(raw_token)
         row = self._pg_fetch_user("u.email_verification_token_hash = %s", (token_hash,), columns="username, email, server_code")
         if row is None:
-            raise AuthError("РЎСЃС‹Р»РєР° РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ РЅРµРґРµР№СЃС‚РІРёС‚РµР»СЊРЅР° РёР»Рё СѓР¶Рµ РёСЃРїРѕР»СЊР·РѕРІР°РЅР°.")
+            raise AuthError("Ссылка подтверждения недействительна или уже использована.")
         self._pg_execute(
             """
             UPDATE users
@@ -483,9 +483,9 @@ class UserStore:
         verification_token = create_email_verification_token()
         row = self._fetch_user_by_email(normalized_email, "username, email, server_code, email_verified_at")
         if row is None:
-            raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃ С‚Р°РєРёРј email РЅРµ РЅР°Р№РґРµРЅ.")
+            raise AuthError("Пользователь с таким email не найден.")
         if str(row["email_verified_at"] or "").strip():
-            raise AuthError("Р­С‚РѕС‚ email СѓР¶Рµ РїРѕРґС‚РІРµСЂР¶РґРµРЅ.")
+            raise AuthError("Этот email уже подтвержден.")
         self._pg_execute(
             """
             UPDATE users
@@ -502,9 +502,9 @@ class UserStore:
         reset_token = create_email_verification_token()
         row = self._fetch_user_by_email(normalized_email, "username, email, server_code, email_verified_at")
         if row is None:
-            raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃ С‚Р°РєРёРј email РЅРµ РЅР°Р№РґРµРЅ.")
+            raise AuthError("Пользователь с таким email не найден.")
         if not str(row["email_verified_at"] or "").strip():
-            raise AuthError("РЎРЅР°С‡Р°Р»Р° РїРѕРґС‚РІРµСЂРґРёС‚Рµ email, Р° Р·Р°С‚РµРј СЃР±СЂР°СЃС‹РІР°Р№С‚Рµ РїР°СЂРѕР»СЊ.")
+            raise AuthError("Сначала подтвердите email, а затем сбрасывайте пароль.")
         self._pg_execute(
             """
             UPDATE users
@@ -519,12 +519,12 @@ class UserStore:
     def _pg_reset_password(self, token: str, new_password: str) -> AuthUser:
         raw_token = (token or "").strip()
         if not raw_token:
-            raise AuthError("РЎСЃС‹Р»РєР° СЃР±СЂРѕСЃР° РЅРµРїРѕР»РЅР°СЏ.")
+            raise AuthError("Ссылка сброса неполная.")
         valid_password = _validate_password(new_password)
         token_hash = _hash_email_token(raw_token)
         row = self._pg_fetch_user("u.password_reset_token_hash = %s", (token_hash,), columns="username, email, server_code")
         if row is None:
-            raise AuthError("РЎСЃС‹Р»РєР° СЃР±СЂРѕСЃР° РЅРµРґРµР№СЃС‚РІРёС‚РµР»СЊРЅР° РёР»Рё СѓР¶Рµ РёСЃРїРѕР»СЊР·РѕРІР°РЅР°.")
+            raise AuthError("Ссылка сброса недействительна или уже использована.")
         record = _build_user_record(valid_password, str(row["email"] or ""), create_email_verification_token())
         self._pg_execute(
             """
@@ -549,11 +549,11 @@ class UserStore:
         valid_new_password = _validate_password(new_password)
         row = self._fetch_user_by_username(normalized, "username, email, server_code, salt, password_hash")
         if row is None:
-            raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+            raise AuthError("Пользователь не найден.")
         if not verify_password(valid_current_password, str(row["salt"]), str(row["password_hash"])):
-            raise AuthError("РўРµРєСѓС‰РёР№ РїР°СЂРѕР»СЊ РІРІРµРґРµРЅ РЅРµРІРµСЂРЅРѕ.")
+            raise AuthError("Текущий пароль введен неверно.")
         if valid_current_password == valid_new_password:
-            raise AuthError("РќРѕРІС‹Р№ РїР°СЂРѕР»СЊ РґРѕР»Р¶РµРЅ РѕС‚Р»РёС‡Р°С‚СЊСЃСЏ РѕС‚ С‚РµРєСѓС‰РµРіРѕ.")
+            raise AuthError("Новый пароль должен отличаться от текущего.")
         record = _build_user_record(valid_new_password, str(row["email"] or ""), create_email_verification_token())
         self._pg_execute(
             """
@@ -578,7 +578,7 @@ class UserStore:
             raise ValueError(f"Unsupported role flag: {flag_column!r}")
         user_row = self._pg_fetchone("SELECT id FROM users WHERE username = %s", (normalized,))
         if user_row is None:
-            raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+            raise AuthError("Пользователь не найден.")
         current = self._fetch_user_by_username(normalized, "is_tester, is_gka")
         current_tester = bool(current["is_tester"]) if current else False
         current_gka = bool(current["is_gka"]) if current else False
@@ -649,7 +649,7 @@ class UserStore:
     def get_representative_profile(self, username: str) -> dict[str, str]:
         row = self._fetch_user_by_username(username, "representative_profile")
         if row is None:
-            raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+            raise AuthError("Пользователь не найден.")
         return load_profile_json(str(row["representative_profile"] or ""), REPRESENTATIVE_PROFILE_DEFAULTS)
 
     def save_representative_profile(self, username: str, profile: dict[str, Any]) -> dict[str, str]:
@@ -670,7 +670,7 @@ class UserStore:
                 (profile_json, normalized),
             )
         if rowcount <= 0:
-            raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+            raise AuthError("Пользователь не найден.")
         return sanitized
 
     def change_password(self, username: str, current_password: str, new_password: str) -> AuthUser:
@@ -686,7 +686,7 @@ class UserStore:
             "complaint_draft_json, complaint_draft_updated_at",
         )
         if row is None:
-            raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+            raise AuthError("Пользователь не найден.")
         raw_draft = row["complaint_draft_json"]
         if not raw_draft:
             return {"draft": {}, "updated_at": ""}
@@ -704,7 +704,7 @@ class UserStore:
     def save_complaint_draft(self, username: str, draft: dict[str, Any]) -> dict[str, Any]:
         normalized = _normalize_username(username)
         if not isinstance(draft, dict):
-            raise AuthError("Р§РµСЂРЅРѕРІРёРє Р¶Р°Р»РѕР±С‹ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РѕР±СЉРµРєС‚РѕРј.")
+            raise AuthError("Черновик жалобы должен быть объектом.")
         if self.is_postgres_backend:
             rowcount = self._pg_execute(
                 """
@@ -728,7 +728,7 @@ class UserStore:
                 (json.dumps(draft, ensure_ascii=False), normalized),
             )
         if rowcount <= 0:
-            raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+            raise AuthError("Пользователь не найден.")
         return self.get_complaint_draft(normalized)
 
     def clear_complaint_draft(self, username: str) -> None:
@@ -757,7 +757,7 @@ class UserStore:
             (normalized,),
         )
         if rowcount <= 0:
-            raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+            raise AuthError("Пользователь не найден.")
 
     def list_users(self, *, limit: int | None = None) -> list[dict[str, Any]]:
         safe_limit = None
@@ -808,7 +808,7 @@ class UserStore:
         if self.is_postgres_backend:
             row = self._fetch_user_by_username(username, "access_blocked_at")
             if row is None:
-                raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+                raise AuthError("Пользователь не найден.")
             return bool(str(row["access_blocked_at"] or "").strip())
         from ogp_web.services.user_admin_store_service import is_access_blocked
 
@@ -841,7 +841,7 @@ class UserStore:
     def get_server_code(self, username: str) -> str:
         row = self._fetch_user_by_username(username, "server_code")
         if row is None:
-            raise AuthError("Р ?Р ?Р >РЎ?Р В·Р ?Р ?Р В°РЎ'Р С‡Р >РЎ? Р ?Р С‡ Р ?Р В°Р в„–Р ?Р С‡Р ?.")
+            raise AuthError("Пользователь не найден.")
         code = str(row["server_code"] or DEFAULT_SERVER_CODE).strip().lower() or DEFAULT_SERVER_CODE
         from ogp_web.server_config.registry import get_server_config
 
@@ -851,7 +851,7 @@ class UserStore:
     def get_auth_user(self, username: str) -> AuthUser:
         row = self._fetch_user_by_username(username, "username, email, server_code")
         if row is None:
-            raise AuthError("Р ?Р ?Р >РЎ?Р В·Р ?Р ?Р В°РЎ'Р С‡Р >РЎ? Р ?Р С‡ Р ?Р В°Р в„–Р ?Р С‡Р ?.")
+            raise AuthError("Пользователь не найден.")
         return self._auth_user_from_row(row)
 
     def admin_mark_email_verified(self, username: str) -> dict[str, Any]:
@@ -867,7 +867,7 @@ class UserStore:
                 (normalized,),
             )
             if rowcount <= 0:
-                raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+                raise AuthError("Пользователь не найден.")
             row = self._fetch_user_by_username(
                 normalized,
                 "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka",
@@ -890,7 +890,7 @@ class UserStore:
                 (str(reason or "").strip(), normalized),
             )
             if rowcount <= 0:
-                raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+                raise AuthError("Пользователь не найден.")
             row = self._fetch_user_by_username(
                 normalized,
                 "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka",
@@ -913,7 +913,7 @@ class UserStore:
                 (normalized,),
             )
             if rowcount <= 0:
-                raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+                raise AuthError("Пользователь не найден.")
             row = self._fetch_user_by_username(
                 normalized,
                 "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka",
@@ -953,9 +953,9 @@ class UserStore:
                     (normalized_email, normalized),
                 )
             except IntegrityConflictError as exc:
-                raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃ С‚Р°РєРёРј email СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚.") from exc
+                raise AuthError("Пользователь с таким email уже существует.") from exc
             if rowcount <= 0:
-                raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+                raise AuthError("Пользователь не найден.")
             row = self._fetch_user_by_username(
                 normalized,
                 "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka",
@@ -971,7 +971,7 @@ class UserStore:
             valid_password = _validate_password(new_password)
             row = self._fetch_user_by_username(normalized, "username, email")
             if row is None:
-                raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+                raise AuthError("Пользователь не найден.")
             record = _build_user_record(valid_password, str(row["email"] or ""), create_email_verification_token())
             self._pg_execute(
                 """

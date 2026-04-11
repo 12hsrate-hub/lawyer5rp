@@ -65,13 +65,13 @@ def create_openai_client(api_key: str, proxy_url: str = ""):
         from openai import DefaultHttpxClient, OpenAI  # type: ignore
     except Exception as exc:
         raise RuntimeError(
-            "РќРµ РЅР°Р№РґРµРЅС‹ РїР°РєРµС‚С‹ 'openai' Рё/РёР»Рё 'httpx'. РЈСЃС‚Р°РЅРѕРІРёС‚Рµ: python -m pip install openai httpx"
+            "Не найдены пакеты 'openai' и/или 'httpx'. Установите: python -m pip install openai httpx"
         ) from exc
 
     if not api_key:
-        raise RuntimeError("OpenAI API key РЅРµ Р·Р°РґР°РЅ.")
+        raise RuntimeError("OpenAI API key не задан.")
     if proxy_url and not is_valid_http_url(proxy_url):
-        raise RuntimeError("РџСЂРѕРєСЃРё РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ СѓРєР°Р·Р°РЅ РІ С„РѕСЂРјР°С‚Рµ http://... РёР»Рё https://...")
+        raise RuntimeError("Прокси должен быть указан в формате http://... или https://...")
 
     timeout = httpx.Timeout(
         OPENAI_TIMEOUT_SECONDS,
@@ -93,7 +93,7 @@ def _extract_json_object(raw_text: str) -> dict[str, object]:
         text = fenced_match.group(1).strip()
         payload = json.loads(text)
         if not isinstance(payload, dict):
-            raise RuntimeError("РњРѕРґРµР»СЊ РІРµСЂРЅСѓР»Р° JSON РЅРµ РІ С„РѕСЂРјР°С‚Рµ РѕР±СЉРµРєС‚Р°.")
+            raise RuntimeError("Модель вернула JSON не в формате объекта.")
         return payload
 
     for match in re.finditer(r"\{", text):
@@ -104,7 +104,7 @@ def _extract_json_object(raw_text: str) -> dict[str, object]:
         if isinstance(payload, dict):
             return payload
 
-    raise RuntimeError("РњРѕРґРµР»СЊ РЅРµ РІРµСЂРЅСѓР»Р° РєРѕСЂСЂРµРєС‚РЅС‹Р№ JSON-РѕР±СЉРµРєС‚.")
+    raise RuntimeError("Модель не вернула корректный JSON-объект.")
 
 
 def _coerce_exam_score(raw_score: object, *, fallback: int = 1) -> int:
@@ -494,8 +494,8 @@ def extract_principal_fields_with_proxy_fallback(
         operation_kind="ocr",
         operation=lambda client: extract_principal_fields(client=client, image_data_url=image_data_url),
         status_callback=status_callback,
-        direct_status="РџРѕРґРєР»СЋС‡РµРЅРёРµ Рє OpenAI Р±РµР· РїСЂРѕРєСЃРё...",
-        proxy_status="РџСЂСЏРјРѕР№ Р·Р°РїСЂРѕСЃ РЅРµ РїСЂРѕС€РµР», РїСЂРѕР±СѓСЋ С‡РµСЂРµР· РїСЂРѕРєСЃРё...",
+        direct_status="Подключение к OpenAI без прокси...",
+        proxy_status="Прямой запрос не прошел, пробую через прокси...",
     )
 
 
@@ -528,8 +528,8 @@ def suggest_description_with_proxy_fallback(
             main_focus=main_focus,
         ),
         status_callback=status_callback,
-        direct_status="РџРѕРґРєР»СЋС‡РµРЅРёРµ Рє OpenAI Р±РµР· РїСЂРѕРєСЃРё...",
-        proxy_status="РџСЂСЏРјРѕР№ Р·Р°РїСЂРѕСЃ РЅРµ РїСЂРѕС€РµР», РїСЂРѕР±СѓСЋ С‡РµСЂРµР· РїСЂРѕРєСЃРё...",
+        direct_status="Подключение к OpenAI без прокси...",
+        proxy_status="Прямой запрос не прошел, пробую через прокси...",
     )
 
 
