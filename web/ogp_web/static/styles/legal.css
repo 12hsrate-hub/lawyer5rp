@@ -229,9 +229,12 @@
   position: sticky;
   top: 12px;
   z-index: 14;
+  background: rgba(252, 250, 247, 0.96);
+  backdrop-filter: blur(10px);
 }
 
-.segmented-tabs__item {
+.segmented-tabs__item,
+.segmented-tabs__link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -243,12 +246,14 @@
   transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
 }
 
-.segmented-tabs__item:hover {
+.segmented-tabs__item:hover,
+.segmented-tabs__link:hover {
   background: rgba(231, 216, 198, 0.7);
   transform: translateY(-1px);
 }
 
-.segmented-tabs__item.is-active {
+.segmented-tabs__item.is-active,
+.segmented-tabs__link.is-active {
   background: var(--brand);
   color: var(--surface);
 }
@@ -1193,7 +1198,8 @@
     scrollbar-width: thin;
   }
 
-  .segmented-tabs__item {
+  .segmented-tabs__item,
+  .segmented-tabs__link {
     flex: 0 0 auto;
     white-space: nowrap;
   }

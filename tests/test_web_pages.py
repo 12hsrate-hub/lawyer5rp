@@ -108,6 +108,22 @@ class WebPagesSmokeTests(unittest.TestCase):
         response = self.client.get("/admin")
         self.assertEqual(response.status_code, 403)
 
+    def test_admin_dashboard_uses_segmented_item_tabs(self):
+        self.client.post("/api/auth/logout")
+        response = self.client.post(
+            "/api/auth/register",
+            json={"username": "12345", "email": "admin@example.com", "password": "Password123!"},
+        )
+        verify_url = response.json()["verification_url"]
+        split = urlsplit(verify_url)
+        self.client.get(f"{split.path}?{split.query}")
+        self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
+
+        response = self.client.get("/admin/dashboard")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('class="segmented-tabs__item is-active"', response.text)
+        self.assertIn('href="/admin/users"', response.text)
+
     def test_granted_tester_redirected_from_test_pages(self):
         response = self.client.post(
             "/api/auth/register",
