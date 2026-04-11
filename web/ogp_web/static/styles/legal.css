@@ -225,6 +225,12 @@
   max-width: 100%;
 }
 
+.segmented-tabs--page {
+  position: sticky;
+  top: 12px;
+  z-index: 14;
+}
+
 .segmented-tabs__item {
   display: inline-flex;
   align-items: center;
@@ -960,6 +966,56 @@
   margin-top: 14px;
 }
 
+.admin-loading {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(124, 151, 181, 0.3);
+  background: rgba(244, 248, 253, 0.75);
+}
+
+.admin-loading-row {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-loading-row--compact {
+  gap: 6px;
+}
+
+.admin-skeleton {
+  position: relative;
+  display: block;
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(138, 164, 191, 0.28);
+}
+
+.admin-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.66), transparent);
+  animation: admin-skeleton-shimmer 1.25s ease-in-out infinite;
+}
+
+.admin-skeleton--title {
+  width: min(46%, 280px);
+}
+
+.admin-skeleton--text {
+  width: 100%;
+}
+
+@keyframes admin-skeleton-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
 @media (max-width: 1100px) {
   .legal-workspace {
     grid-template-columns: 1fr;
@@ -1016,5 +1072,82 @@
 
   .admin-table__path {
     max-width: 220px;
+  }
+}
+
+@media (max-width: 430px) {
+  .legal-page {
+    gap: 14px;
+  }
+
+  .legal-card,
+  .legal-subcard,
+  .legal-header__main,
+  .legal-user-card {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .legal-header__title {
+    font-size: clamp(27px, 8.2vw, 36px);
+  }
+
+  .legal-section__title {
+    font-size: 24px;
+  }
+
+  .legal-status-card__value {
+    font-size: 22px;
+  }
+
+  .legal-form-progress-card {
+    padding: 14px;
+  }
+
+  .legal-section-jump--sticky {
+    top: 8px;
+    padding: 8px;
+  }
+
+  .segmented-tabs--page {
+    top: 8px;
+  }
+
+  .legal-section-jump__link {
+    width: 100%;
+    justify-content: center;
+    min-height: 34px;
+  }
+
+  .legal-page input,
+  .legal-page textarea,
+  .legal-page select {
+    min-height: 48px;
+    padding: 12px;
+  }
+
+  .primary-button,
+  .secondary-button,
+  .ghost-button {
+    min-height: 44px;
+    width: 100%;
+  }
+
+  .legal-table-shell {
+    overflow-x: auto;
+  }
+
+  .legal-table {
+    min-width: 620px;
+    font-size: 13px;
+  }
+
+  .legal-table th,
+  .legal-table td {
+    padding: 10px 12px;
+  }
+
+  .admin-user-open-btn {
+    width: 100%;
   }
 }

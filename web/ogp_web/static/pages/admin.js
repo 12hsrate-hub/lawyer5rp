@@ -192,6 +192,40 @@ function renderFilterChip(label, key) {
   `;
 }
 
+function renderLoadingState(host, options = {}) {
+  if (!host) {
+    return;
+  }
+  const count = Number(options.count || 3);
+  const compact = Boolean(options.compact);
+  const lines = Array.from({ length: count })
+    .map(
+      () => `
+        <div class="admin-loading-row${compact ? " admin-loading-row--compact" : ""}">
+          <span class="admin-skeleton admin-skeleton--title"></span>
+          <span class="admin-skeleton admin-skeleton--text"></span>
+        </div>
+      `,
+    )
+    .join("");
+
+  host.innerHTML = `
+    <div class="admin-loading" aria-live="polite" aria-busy="true">
+      <p class="legal-section__description">Загружаем данные...</p>
+      ${lines}
+    </div>
+  `;
+}
+
+function showOverviewLoading() {
+  renderLoadingState(totalsHost, { count: 6 });
+  renderLoadingState(examImportHost, { count: 3 });
+  renderLoadingState(endpointsHost, { count: 3, compact: true });
+  renderLoadingState(usersHost, { count: 4, compact: true });
+  renderLoadingState(adminEventsHost, { count: 3, compact: true });
+  renderLoadingState(eventsHost, { count: 3, compact: true });
+}
+
 function renderTotals(totals) {
   const items = [
     ["Пользователи", totals.users_total, "Всего аккаунтов в системе"],
@@ -711,6 +745,7 @@ function openUserModal(username) {
 async function loadAdminOverview() {
   clearText(errorsHost);
   clearMessage();
+  showOverviewLoading();
   try {
     const response = await apiFetch(buildOverviewUrl());
     if (!response.ok) {

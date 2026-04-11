@@ -12,7 +12,9 @@
   --brand: #234e52;
   --brand-strong: #1d4044;
   --error: #a61b1b;
+  --error-strong: #8f1313;
   --error-soft: rgba(166, 27, 27, 0.08);
+  --success: #1f5f44;
   --success-soft: rgba(38, 70, 83, 0.1);
   --radius-sm: 14px;
   --radius-md: 18px;
@@ -227,6 +229,7 @@ select {
   padding: 12px 14px;
   background: rgba(255, 255, 255, 0.82);
   color: var(--ink);
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease, color 140ms ease;
 }
 
 textarea {
@@ -252,6 +255,26 @@ a.button-link {
 button:disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+button.is-loading,
+a.button-link.is-loading {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+button.is-loading::before,
+a.button-link.is-loading::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-top-color: currentColor;
+  animation: spin 0.8s linear infinite;
+  flex: 0 0 auto;
 }
 
 a:focus-visible,
@@ -331,6 +354,31 @@ a.button-link:hover {
   border-radius: var(--radius-sm);
   padding: 12px 14px;
   white-space: pre-line;
+}
+
+input.is-invalid,
+textarea.is-invalid,
+select.is-invalid {
+  border-color: var(--error);
+  box-shadow: 0 0 0 4px rgba(166, 27, 27, 0.12);
+  background: color-mix(in srgb, #fff 92%, var(--error-soft));
+}
+
+input.is-valid,
+textarea.is-valid,
+select.is-valid {
+  border-color: color-mix(in srgb, var(--success) 62%, #6a8f7b);
+  box-shadow: 0 0 0 3px rgba(31, 95, 68, 0.08);
+}
+
+.has-invalid .legal-field__label,
+.has-invalid > span {
+  color: var(--error-strong);
+}
+
+.has-valid .legal-field__label,
+.has-valid > span {
+  color: color-mix(in srgb, var(--success) 82%, #2f6f54);
 }
 
 .modal-backdrop {
@@ -444,6 +492,48 @@ a.button-link:hover {
 
   .story-card-head {
     flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 430px) {
+  .page {
+    width: min(1180px, calc(100vw - 20px));
+    padding: 18px 0 28px;
+  }
+
+  .panel {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .panel h2 {
+    font-size: 23px;
+    margin-bottom: 12px;
+  }
+
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .modal-card {
+    padding: 18px;
+  }
+
+  .actions,
+  .section-actions,
+  .page-nav {
+    gap: 8px;
+  }
+
+  button,
+  a.button-link,
+  .nav-link {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .dynamic-header {
     align-items: flex-start;
   }
 }

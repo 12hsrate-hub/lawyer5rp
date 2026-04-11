@@ -108,4 +108,105 @@ window.OGPForm = {
       return null;
     }
   },
+
+  updateFieldValidationState(field) {
+    if (
+      !field ||
+      !(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement)
+    ) {
+      return;
+    }
+    const touched = field.dataset.ogpTouched === "true";
+    const value = String(field.value || "").trim();
+    const hasValue = value !== "";
+    const isRequired = field.required;
+    const isValid = field.checkValidity();
+    const shouldShowInvalid = touched && !isValid;
+
+    field.classList.toggle("is-dirty", touched || hasValue);
+    field.classList.toggle("is-valid", (touched || hasValue) && isValid);
+    field.classList.toggle("is-invalid", shouldShowInvalid);
+    field.setAttribute("aria-invalid", shouldShowInvalid ? "true" : "false");
+
+    const host = field.closest(".legal-field, label, .inline-field");
+    if (host instanceof HTMLElement) {
+      host.classList.toggle("has-invalid", shouldShowInvalid);
+      host.classList.toggle("has-valid", (touched || hasValue) && isValid);
+    }
+  },
+
+  bindValidationState(form) {
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
+
+    const fields = [...form.querySelectorAll("input, textarea, select")];
+    fields.forEach((field) => {
+      if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement) {
+        if (field.disabled || field.type === "hidden") {
+          return;
+        }
+        window.OGPForm.updateFieldValidationState(field);
+      }
+    });
+
+    form.addEventListener("focusout", (event) => {
+      const field = event.target;
+      if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement)) {
+        return;
+      }
+      if (field.disabled || field.type === "hidden") {
+        return;
+      }
+      field.dataset.ogpTouched = "true";
+      window.OGPForm.updateFieldValidationState(field);
+    });
+
+    form.addEventListener("input", (event) => {
+      const field = event.target;
+      if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement)) {
+        return;
+      }
+      if (field.disabled || field.type === "hidden") {
+        return;
+      }
+      window.OGPForm.updateFieldValidationState(field);
+    });
+
+    form.addEventListener("change", (event) => {
+      const field = event.target;
+      if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement)) {
+        return;
+      }
+      if (field.disabled || field.type === "hidden") {
+        return;
+      }
+      field.dataset.ogpTouched = "true";
+      window.OGPForm.updateFieldValidationState(field);
+    });
+  },
+
+  setButtonBusy(button, busy, options = {}) {
+    if (!(button instanceof HTMLButtonElement || button instanceof HTMLAnchorElement)) {
+      return;
+    }
+    const busyLabel = options.busyLabel || "Подождите...";
+    const defaultLabel = options.defaultLabel || button.dataset.ogpDefaultLabel || button.textContent || "";
+
+    if (!button.dataset.ogpDefaultLabel) {
+      button.dataset.ogpDefaultLabel = String(defaultLabel).trim();
+    }
+
+    const shouldDisable = button instanceof HTMLButtonElement;
+    button.classList.toggle("is-loading", Boolean(busy));
+    button.setAttribute("aria-busy", busy ? "true" : "false");
+    if (shouldDisable) {
+      button.disabled = Boolean(busy);
+    }
+    button.textContent = busy ? String(busyLabel) : button.dataset.ogpDefaultLabel;
+  },
 };
+
+document.querySelectorAll("form").forEach((form) => {
+  window.OGPForm.bindValidationState(form);
+});

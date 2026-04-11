@@ -19,7 +19,9 @@ const errorModalOk = document.getElementById("error-modal-ok");
 const activeSessionCard = document.getElementById("active-session-card");
 const activeSessionUsername = document.getElementById("active-session-username");
 const activeSessionLogout = document.getElementById("active-session-logout");
+
 const { apiFetch, parsePayload, showText, clearText, setBodyScrollLock } = window.OGPWeb;
+const setButtonBusy = window.OGPForm?.setButtonBusy || (() => {});
 
 function showAuthErrors(lines) {
   if (!errorModal || !errorModalText) {
@@ -128,88 +130,106 @@ function openForgotPasswordForm() {
 async function handleAuthSubmit(event, endpoint) {
   event.preventDefault();
   clearAuthErrors();
+  const submitButton = event.currentTarget?.querySelector("button[type='submit']");
+  setButtonBusy(submitButton, true, { busyLabel: "Подождите..." });
 
-  const data = new FormData(event.currentTarget);
-  const body = {
-    username: data.get("username")?.toString().trim() || "",
-    email: data.get("email")?.toString().trim() || "",
-    password: data.get("password")?.toString() || "",
-  };
+  try {
+    const data = new FormData(event.currentTarget);
+    const body = {
+      username: data.get("username")?.toString().trim() || "",
+      email: data.get("email")?.toString().trim() || "",
+      password: data.get("password")?.toString() || "",
+    };
 
-  const response = await apiFetch(endpoint, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+    const response = await apiFetch(endpoint, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
 
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    if (endpoint.endsWith("/login")) {
-      showAuthErrors(payload.detail || "Вход не выполнен. Проверьте логин или пароль.");
-    } else if (endpoint.endsWith("/forgot-password")) {
-      showAuthErrors(payload.detail || "Не удалось отправить ссылку для сброса пароля.");
-    } else {
-      showAuthErrors(payload.detail || "Не удалось зарегистрировать пользователя.");
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      if (endpoint.endsWith("/login")) {
+        showAuthErrors(payload.detail || "Вход не выполнен. Проверьте логин или пароль.");
+      } else if (endpoint.endsWith("/forgot-password")) {
+        showAuthErrors(payload.detail || "Не удалось отправить ссылку для сброса пароля.");
+      } else {
+        showAuthErrors(payload.detail || "Не удалось зарегистрировать пользователя.");
+      }
+      return;
     }
-    return;
-  }
 
-  if (endpoint.endsWith("/login")) {
-    sessionStorage.setItem("ogp_app_message", payload.message || "");
-    location.href = "/complaint";
-    return;
-  }
+    if (endpoint.endsWith("/login")) {
+      sessionStorage.setItem("ogp_app_message", payload.message || "");
+      location.href = "/complaint";
+      return;
+    }
 
-  showAuthSuccess(buildSuccessLines(payload, "Проверьте email для завершения действия."));
-  event.currentTarget.reset();
+    showAuthSuccess(buildSuccessLines(payload, "Проверьте email для завершения действия."));
+    event.currentTarget.reset();
+  } finally {
+    setButtonBusy(submitButton, false);
+  }
 }
 
 async function handleResendSubmit(event) {
   event.preventDefault();
   clearAuthErrors();
+  const submitButton = event.currentTarget?.querySelector("button[type='submit']");
+  setButtonBusy(submitButton, true, { busyLabel: "Отправляю..." });
 
-  const data = new FormData(event.currentTarget);
-  const response = await apiFetch("/api/auth/resend-verification", {
-    method: "POST",
-    body: JSON.stringify({
-      email: data.get("email")?.toString().trim() || "",
-    }),
-  });
+  try {
+    const data = new FormData(event.currentTarget);
+    const response = await apiFetch("/api/auth/resend-verification", {
+      method: "POST",
+      body: JSON.stringify({
+        email: data.get("email")?.toString().trim() || "",
+      }),
+    });
 
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    showAuthErrors(payload.detail || "Не удалось отправить письмо повторно.");
-    return;
-  }
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      showAuthErrors(payload.detail || "Не удалось отправить письмо повторно.");
+      return;
+    }
 
-  showAuthSuccess(buildSuccessLines(payload, "Письмо с подтверждением отправлено."));
-  event.currentTarget.reset();
-  if (resendForm) {
-    resendForm.hidden = true;
+    showAuthSuccess(buildSuccessLines(payload, "Письмо с подтверждением отправлено."));
+    event.currentTarget.reset();
+    if (resendForm) {
+      resendForm.hidden = true;
+    }
+  } finally {
+    setButtonBusy(submitButton, false);
   }
 }
 
 async function handleForgotPasswordSubmit(event) {
   event.preventDefault();
   clearAuthErrors();
+  const submitButton = event.currentTarget?.querySelector("button[type='submit']");
+  setButtonBusy(submitButton, true, { busyLabel: "Отправляю..." });
 
-  const data = new FormData(event.currentTarget);
-  const response = await apiFetch("/api/auth/forgot-password", {
-    method: "POST",
-    body: JSON.stringify({
-      email: data.get("email")?.toString().trim() || "",
-    }),
-  });
+  try {
+    const data = new FormData(event.currentTarget);
+    const response = await apiFetch("/api/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({
+        email: data.get("email")?.toString().trim() || "",
+      }),
+    });
 
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    showAuthErrors(payload.detail || "Не удалось отправить ссылку для сброса пароля.");
-    return;
-  }
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      showAuthErrors(payload.detail || "Не удалось отправить ссылку для сброса пароля.");
+      return;
+    }
 
-  showAuthSuccess(buildSuccessLines(payload, "Инструкция по сбросу пароля отправлена."));
-  event.currentTarget.reset();
-  if (forgotPasswordForm) {
-    forgotPasswordForm.hidden = true;
+    showAuthSuccess(buildSuccessLines(payload, "Инструкция по сбросу пароля отправлена."));
+    event.currentTarget.reset();
+    if (forgotPasswordForm) {
+      forgotPasswordForm.hidden = true;
+    }
+  } finally {
+    setButtonBusy(submitButton, false);
   }
 }
 
@@ -238,13 +258,18 @@ resendForm?.addEventListener("submit", handleResendSubmit);
 forgotPasswordForm?.addEventListener("submit", handleForgotPasswordSubmit);
 
 activeSessionLogout?.addEventListener("click", async () => {
-  const response = await apiFetch("/api/auth/logout", { method: "POST" });
-  if (!response.ok) {
-    const payload = await parsePayload(response);
-    showAuthErrors(payload.detail || "Не удалось завершить текущую сессию.");
-    return;
+  setButtonBusy(activeSessionLogout, true, { busyLabel: "Выхожу..." });
+  try {
+    const response = await apiFetch("/api/auth/logout", { method: "POST" });
+    if (!response.ok) {
+      const payload = await parsePayload(response);
+      showAuthErrors(payload.detail || "Не удалось завершить текущую сессию.");
+      return;
+    }
+    hideActiveSession();
+  } finally {
+    setButtonBusy(activeSessionLogout, false);
   }
-  hideActiveSession();
 });
 
 forgotPasswordToggle?.addEventListener("click", openForgotPasswordForm);

@@ -79,3 +79,36 @@
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 430px) {
+  .legal-page--auth {
+    gap: 16px;
+  }
+
+  .legal-auth-shell,
+  .legal-auth-shell__main,
+  .legal-auth-shell__side {
+    gap: 14px;
+  }
+
+  .legal-section--auth .legal-section__title,
+  .legal-section--auth-side .legal-section__title,
+  .legal-section--auth-note .legal-section__title {
+    font-size: 23px;
+  }
+
+  .legal-auth-form {
+    gap: 12px;
+  }
+
+  .legal-auth-note__item {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .legal-auth-note__item strong {
+    min-width: 32px;
+    min-height: 32px;
+  }
+}

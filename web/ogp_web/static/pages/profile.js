@@ -9,10 +9,13 @@ const logoutBtn = document.getElementById("logout-btn");
 const profileProgressText = document.getElementById("profile-progress-text");
 const profileProgressBar = document.getElementById("profile-progress-bar");
 const profileProgressHost = document.getElementById("profile-progress-host");
+const profileSubmitButton = profileForm?.querySelector("button[type='submit']");
+const passwordSubmitButton = passwordForm?.querySelector("button[type='submit']");
 
 const { apiFetch, parsePayload, showText, clearText, redirectIfUnauthorized } = window.OGPWeb;
 const { showOptionalText, bindLogout } = window.OGPPage;
 const bindDigitsOnly = window.OGPForm?.bindDigitsOnly || (() => {});
+const setButtonBusy = window.OGPForm?.setButtonBusy || (() => {});
 
 function showProfileErrors(lines) {
   showText(profileErrors, lines);
@@ -102,22 +105,27 @@ async function loadProfile() {
 profileForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   clearProfileErrors();
+  setButtonBusy(profileSubmitButton, true, { busyLabel: "Сохраняю..." });
 
-  const response = await apiFetch("/api/profile", {
-    method: "PUT",
-    body: JSON.stringify(collectProfilePayload()),
-  });
+  try {
+    const response = await apiFetch("/api/profile", {
+      method: "PUT",
+      body: JSON.stringify(collectProfilePayload()),
+    });
 
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    showProfileErrors(payload.detail || "Не удалось сохранить профиль.");
-    redirectIfUnauthorized(response.status);
-    return;
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      showProfileErrors(payload.detail || "Не удалось сохранить профиль.");
+      redirectIfUnauthorized(response.status);
+      return;
+    }
+
+    fillProfileForm(payload.representative);
+    showProfileMessage(payload.message || "Профиль сохранен.");
+    showAppMessage("Данные представителя обновлены и сразу используются в рабочих формах.");
+  } finally {
+    setButtonBusy(profileSubmitButton, false);
   }
-
-  fillProfileForm(payload.representative);
-  showProfileMessage(payload.message || "Профиль сохранен.");
-  showAppMessage("Данные представителя обновлены и сразу используются в рабочих формах.");
 });
 
 profileForm.addEventListener("input", updateProfileProgress);
@@ -127,34 +135,39 @@ passwordForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   clearPasswordErrors();
   showPasswordMessage("");
+  setButtonBusy(passwordSubmitButton, true, { busyLabel: "Сохраняю..." });
 
-  const data = new FormData(passwordForm);
-  const currentPassword = data.get("current_password")?.toString() || "";
-  const newPassword = data.get("new_password")?.toString() || "";
-  const confirmPassword = data.get("confirm_password")?.toString() || "";
+  try {
+    const data = new FormData(passwordForm);
+    const currentPassword = data.get("current_password")?.toString() || "";
+    const newPassword = data.get("new_password")?.toString() || "";
+    const confirmPassword = data.get("confirm_password")?.toString() || "";
 
-  if (newPassword !== confirmPassword) {
-    showPasswordErrors("Новый пароль и повтор не совпадают.");
-    return;
+    if (newPassword !== confirmPassword) {
+      showPasswordErrors("Новый пароль и повтор не совпадают.");
+      return;
+    }
+
+    const response = await apiFetch("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword,
+      }),
+    });
+
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      showPasswordErrors(payload.detail || "Не удалось сменить пароль.");
+      redirectIfUnauthorized(response.status);
+      return;
+    }
+
+    passwordForm.reset();
+    showPasswordMessage(payload.message || "Пароль обновлен.");
+  } finally {
+    setButtonBusy(passwordSubmitButton, false);
   }
-
-  const response = await apiFetch("/api/auth/change-password", {
-    method: "POST",
-    body: JSON.stringify({
-      current_password: currentPassword,
-      new_password: newPassword,
-    }),
-  });
-
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    showPasswordErrors(payload.detail || "Не удалось сменить пароль.");
-    redirectIfUnauthorized(response.status);
-    return;
-  }
-
-  passwordForm.reset();
-  showPasswordMessage(payload.message || "Пароль обновлен.");
 });
 
 bindLogout(logoutBtn);
