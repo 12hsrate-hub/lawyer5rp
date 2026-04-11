@@ -71,14 +71,6 @@ body.modal-open {
     linear-gradient(120deg, rgba(255, 255, 255, 0.35), transparent 45%);
 }
 
-.hero {
-  display: grid;
-  grid-template-columns: 1.6fr 0.8fr;
-  gap: 20px;
-  align-items: stretch;
-  margin-bottom: 24px;
-}
-
 .eyebrow {
   margin: 0 0 8px;
   text-transform: uppercase;
@@ -87,48 +79,17 @@ body.modal-open {
   font-size: 12px;
 }
 
-.hero h1,
 .panel h2,
 .dynamic-header h3 {
   font-family: var(--font-display);
 }
 
-.hero h1 {
-  margin: 0 0 12px;
-  font-size: clamp(34px, 5vw, 56px);
-  line-height: 1;
-}
-
-.lede {
-  max-width: 68ch;
-  color: var(--muted);
-}
-
-.hero-card,
 .panel {
   background: var(--surface-soft);
   border: 1px solid color-mix(in srgb, var(--line) 86%, white);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   backdrop-filter: blur(10px);
-}
-
-.hero-card {
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.hero-card strong {
-  font-size: 28px;
-}
-
-.hero-card-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 10px;
-  flex-wrap: wrap;
 }
 
 .page-nav {
@@ -153,7 +114,7 @@ body.modal-open {
 }
 
 .nav-link.active {
-  background: linear-gradient(135deg, var(--accent-2), #3b6e7f);
+  background: linear-gradient(135deg, var(--accent), var(--brand));
   color: #fff;
 }
 
@@ -455,15 +416,6 @@ a.button-link:hover {
 }
 
 @media (max-width: 900px) {
-  .hero {
-    grid-template-columns: 1fr;
-  }
-
-  .hero-card-actions {
-    width: 100%;
-    flex-direction: column;
-  }
-
   .grid.two {
     grid-template-columns: 1fr;
   }
