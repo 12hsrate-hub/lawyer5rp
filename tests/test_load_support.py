@@ -6,16 +6,23 @@ import unittest
 from pathlib import Path
 
 from load.suggest_load_support import (
+    DEFAULT_COLLATERAL_P95_GROWTH_LIMIT,
+    DEFAULT_COLLATERAL_P99_GROWTH_LIMIT,
     build_parallel_report_markdown,
     build_parallel_summary,
     build_artifact_dir,
     build_k6_env,
+    build_mixed_k6_env,
+    build_mixed_report_markdown,
+    build_mixed_summary,
     build_report_markdown,
     default_profile_vus_map,
     evaluate_sla,
+    evaluate_mixed_impact,
     normalize_profile_name,
     normalize_vus,
     summarize_server_metrics_csv,
+    summarize_mixed_phase_run,
     summarize_profile_run,
 )
 
@@ -186,6 +193,24 @@ class LoadSupportTests(unittest.TestCase):
         self.assertIn("App / Server Correlation", report)
         self.assertIn("`85.0`", report)
 
+    def test_build_mixed_k6_env_sets_group_a_and_group_b(self):
+        env = build_mixed_k6_env(
+            base_url="https://lawyer5rp.online/",
+            session_cookie="cookie-value",
+            group_a_profile="long",
+            group_a_vus=30,
+            group_b_vus=10,
+            duration="90s",
+            artifact_dir=Path("artifacts/load/run123/mixed/baseline_group_b"),
+        )
+
+        self.assertEqual(env["BASE_URL"], "https://lawyer5rp.online")
+        self.assertEqual(env["GROUP_A_PROFILE"], "long")
+        self.assertEqual(env["GROUP_A_VUS"], "30")
+        self.assertEqual(env["GROUP_B_VUS"], "10")
+        self.assertEqual(env["DURATION"], "90s")
+        self.assertEqual(Path(env["SUMMARY_PATH"]), Path("artifacts/load/run123/mixed/baseline_group_b/summary.json"))
+
     def test_default_profile_vus_map_uses_recommended_tiers(self):
         mapping = default_profile_vus_map(["short", "mid", "long"])
 
@@ -246,6 +271,95 @@ class LoadSupportTests(unittest.TestCase):
         self.assertIn("Server Telemetry", report)
         self.assertIn("short (5 VUs)", report)
         self.assertIn("SLA pass", report)
+
+    def test_evaluate_mixed_impact_reports_growth_breach(self):
+        baseline = {
+            "exit_code": 0,
+            "group_b_p95_ms": 200.0,
+            "group_b_p99_ms": 300.0,
+        }
+        mixed = {
+            "exit_code": 0,
+            "group_b_p95_ms": 280.0,
+            "group_b_p99_ms": 420.0,
+        }
+
+        impact = evaluate_mixed_impact(
+            baseline,
+            mixed,
+            p95_growth_limit=DEFAULT_COLLATERAL_P95_GROWTH_LIMIT,
+            p99_growth_limit=DEFAULT_COLLATERAL_P99_GROWTH_LIMIT,
+        )
+
+        self.assertFalse(impact["pass"])
+        self.assertIn("group_b_p95_growth_exceeded", impact["breaches"])
+        self.assertIn("group_b_p99_growth_exceeded", impact["breaches"])
+        self.assertEqual(impact["p95_growth_ratio"], 0.4)
+
+    def test_build_mixed_summary_and_report_include_delta(self):
+        baseline_phase = summarize_mixed_phase_run(
+            {
+                "metrics": {
+                    "group_b_req_duration": {"values": {"avg": 90.0, "p(95)": 180.0, "p(99)": 240.0}},
+                    "group_b_req_failed": {"values": {"rate": 0.01}},
+                    "group_b_ok": {"values": {"count": 120}},
+                    "group_b_error": {"values": {"count": 2}},
+                }
+            },
+            phase="baseline_group_b",
+            group_a_profile="long",
+            group_a_vus=0,
+            group_b_vus=10,
+            duration="1m",
+            base_url="https://lawyer5rp.online",
+            artifact_dir="artifacts/load/run123/mixed/baseline_group_b",
+            exit_code=0,
+            server_metrics_summary={"sample_count": 2, "cpu_peak": 44.0, "memory_percent_peak": 55.0},
+        )
+        mixed_phase = summarize_mixed_phase_run(
+            {
+                "metrics": {
+                    "group_a_req_duration": {"values": {"avg": 400.0, "p(95)": 900.0, "p(99)": 1100.0}},
+                    "group_a_ok": {"values": {"count": 40}},
+                    "group_a_overload": {"values": {"count": 3}},
+                    "group_a_error": {"values": {"count": 1}},
+                    "group_b_req_duration": {"values": {"avg": 120.0, "p(95)": 210.0, "p(99)": 260.0}},
+                    "group_b_req_failed": {"values": {"rate": 0.02}},
+                    "group_b_ok": {"values": {"count": 100}},
+                    "group_b_error": {"values": {"count": 4}},
+                }
+            },
+            phase="mixed_group_ab",
+            group_a_profile="long",
+            group_a_vus=30,
+            group_b_vus=10,
+            duration="1m",
+            base_url="https://lawyer5rp.online",
+            artifact_dir="artifacts/load/run123/mixed/mixed_group_ab",
+            exit_code=0,
+            server_metrics_summary={"sample_count": 3, "cpu_peak": 88.0, "memory_percent_peak": 77.0},
+        )
+        impact = evaluate_mixed_impact(baseline_phase, mixed_phase, p95_growth_limit=0.25, p99_growth_limit=0.25)
+        summary = build_mixed_summary(
+            run_id="run123",
+            base_url="https://lawyer5rp.online",
+            duration="1m",
+            artifacts_root="artifacts/load",
+            group_a_profile="long",
+            group_a_vus=30,
+            group_b_vus=10,
+            baseline_phase=baseline_phase,
+            mixed_phase=mixed_phase,
+            impact_sla=impact,
+        )
+        report = build_mixed_report_markdown(summary)
+
+        self.assertEqual(summary["group_a_profile"], "long")
+        self.assertEqual(summary["mixed_phase"]["group_a_overload"], 3)
+        self.assertAlmostEqual(summary["impact_sla"]["p95_growth_ratio"], (210.0 - 180.0) / 180.0)
+        self.assertIn("Mixed Load Impact Report", report)
+        self.assertIn("Collateral Impact", report)
+        self.assertIn("Server Telemetry", report)
 
 
 if __name__ == "__main__":
