@@ -44,6 +44,36 @@ def _ai_exception_details(exc: Exception) -> list[str]:
     return details
 
 
+def get_law_qa_model_choices() -> tuple[str, ...]:
+    raw = os.getenv("OPENAI_LAW_QA_MODELS", "").strip()
+    if raw:
+        values = tuple(dict.fromkeys(part.strip() for part in raw.split(",") if part.strip()))
+        if values:
+            return values
+    return ("gpt-5.4", "gpt-5-mini", "gpt-4.1-mini")
+
+
+def get_default_law_qa_model() -> str:
+    configured = os.getenv("OPENAI_TEXT_MODEL", "gpt-5.4").strip() or "gpt-5.4"
+    choices = get_law_qa_model_choices()
+    if configured in choices:
+        return configured
+    return choices[0]
+
+
+def resolve_law_qa_model(requested_model: str) -> str:
+    normalized = str(requested_model or "").strip()
+    if not normalized:
+        return get_default_law_qa_model()
+    allowed = set(get_law_qa_model_choices())
+    if normalized not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=["Выбрана неподдерживаемая модель для поиска по законодательной базе."],
+        )
+    return normalized
+
+
 class _LawHtmlParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -73,7 +103,6 @@ class _LawHtmlParser(HTMLParser):
 
 def _clean_law_document_text(text: str) -> str:
     normalized = str(text or "")
-    # XenForo/forum bootstrap noise that should never reach the model.
     garbage_patterns = (
         r"XF\.ready\s*\(\s*\(\)\s*=>.*?(?=Статья|\bГлава\b|\bРаздел\b|\bВажно\b|$)",
         r"XF\.extendObject\s*\(.*?(?=Статья|\bГлава\b|\bРаздел\b|\bВажно\b|$)",
@@ -84,7 +113,12 @@ def _clean_law_document_text(text: str) -> str:
     )
     for pattern in garbage_patterns:
         normalized = re.sub(pattern, " ", normalized, flags=re.IGNORECASE | re.DOTALL)
-    normalized = re.sub(r"\b(?:XF|css\.php|keep-alive|pushAppServerKey|publicPushBadgeUrl)\b.*", " ", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(
+        r"\b(?:XF|css\.php|keep-alive|pushAppServerKey|publicPushBadgeUrl)\b.*",
+        " ",
+        normalized,
+        flags=re.IGNORECASE,
+    )
     normalized = re.sub(r"\s+", " ", normalized)
     return normalized.strip()
 
@@ -165,6 +199,7 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     if not question:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Введите вопрос для анализа."])
 
+    model_name = resolve_law_qa_model(payload.model)
     server_code = payload.server_code or DEFAULT_SERVER_CODE
     server_config = get_server_config(server_code)
     law_sources = [str(item or "").strip() for item in server_config.law_qa_sources if str(item or "").strip()]
@@ -191,11 +226,14 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     selected = ranked[:4]
     context_blocks = [f"[Источник: {item['url']}]\n{item['text'][:2500]}" for item in selected]
     prompt = (
-        "Ты юридический ассистент игрового сервера. Отвечай только на основе переданной законодательной базы.\n"
+        "Ты юридический ассистент игрового сервера. Отвечай только на основе переданной внутриигровой законодательной базы.\n"
         "Если данных недостаточно, прямо так и скажи.\n"
+        "Не добавляй никакие реальные законы, нормы, судебную практику или фоновые знания из внешнего мира.\n"
+        "Если во внутриигровой законодательной базе нет оснований для ответа, так и напиши.\n"
         "Обязательно укажи ссылки на источники в конце каждого смыслового абзаца.\n"
         "Ответ должен быть точным, прикладным и без воды.\n\n"
-        f"Сервер: {server_config.name} ({server_config.code})\n\n"
+        f"Сервер: {server_config.name} ({server_config.code})\n"
+        f"Модель: {model_name}\n\n"
         f"Вопрос:\n{question}\n\n"
         f"Ограничение длины ответа: не более {payload.max_answer_chars} символов.\n\n"
         "Законодательная база:\n"
@@ -207,7 +245,7 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     try:
         client = create_openai_client(api_key=api_key, proxy_url=proxy_url)
         response = client.responses.create(
-            model=os.getenv("OPENAI_TEXT_MODEL", "gpt-4.1-mini"),
+            model=model_name,
             input=prompt,
             max_output_tokens=800,
         )

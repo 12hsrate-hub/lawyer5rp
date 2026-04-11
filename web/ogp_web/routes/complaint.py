@@ -238,6 +238,7 @@ async def law_qa_test(
         resource_units=len(payload.question or "") + len(text),
         meta={
             "server_code": effective_server_code,
+            "model": payload.model,
             "indexed_documents": indexed_documents,
             "used_sources_count": len(used_sources),
             "max_answer_chars": payload.max_answer_chars,

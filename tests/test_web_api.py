@@ -669,6 +669,7 @@ class WebApiTests(unittest.TestCase):
                 "/api/ai/law-qa-test",
                 json={
                     "server_code": "blackberry",
+                    "model": "gpt-5.4",
                     "question": "Какая норма регулирует доступ адвоката?",
                     "max_answer_chars": 2000,
                 },
@@ -687,6 +688,7 @@ class WebApiTests(unittest.TestCase):
         response = self.client.get("/law-qa-test")
         self.assertEqual(response.status_code, 200)
         self.assertIn("law-server-code", response.text)
+        self.assertIn("law-model", response.text)
         self.assertNotIn("laws-root-url", response.text)
 
     def test_law_qa_test_endpoint_forbidden_for_user_without_tester_access(self):
@@ -696,6 +698,7 @@ class WebApiTests(unittest.TestCase):
             "/api/ai/law-qa-test",
             json={
                 "server_code": "blackberry",
+                "model": "gpt-5.4",
                 "question": "test question",
                 "max_answer_chars": 2000,
             },

@@ -436,6 +436,54 @@ class WebServiceTests(unittest.TestCase):
         self.assertNotIn("XF.ready", cleaned)
         self.assertNotIn("short_date_x_minutes", cleaned)
 
+    def test_law_qa_rejects_unsupported_model(self):
+        with self.assertRaises(HTTPException) as ctx:
+            ai_service.resolve_law_qa_model("unsupported-model")
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_law_qa_uses_selected_model(self):
+        original_get_server_config = ai_service.get_server_config
+        original_fetch_documents = ai_service._fetch_law_documents
+        original_create_client = ai_service.create_openai_client
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ("https://laws.example/base",)
+
+        captured = {}
+
+        class DummyResponses:
+            def create(self, **kwargs):
+                captured.update(kwargs)
+                return type("DummyResponse", (), {"output_text": "Ответ по закону."})()
+
+        class DummyClient:
+            responses = DummyResponses()
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service._fetch_law_documents = lambda source_urls: [{"url": "https://laws.example/base", "text": "Статья 1. Право на защиту."}]
+        ai_service.create_openai_client = lambda **kwargs: DummyClient()
+        try:
+            text, sources, count = ai_service.answer_law_question(
+                LawQaPayload(
+                    server_code="blackberry",
+                    model="gpt-5.4",
+                    question="Какая статья дает право на защиту?",
+                    max_answer_chars=2000,
+                )
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service._fetch_law_documents = original_fetch_documents
+            ai_service.create_openai_client = original_create_client
+
+        self.assertEqual(text, "Ответ по закону.")
+        self.assertEqual(sources, ["https://laws.example/base"])
+        self.assertEqual(count, 1)
+        self.assertEqual(captured["model"], "gpt-5.4")
+        self.assertIn("Не добавляй никакие реальные законы", captured["input"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -34,6 +34,14 @@
               {% endfor %}
             </select>
           </label>
+          <label class="legal-field">
+            <span class="legal-field__label">Модель</span>
+            <select id="law-model">
+              {% for item in law_qa_models %}
+              <option value="{{ item }}"{% if item == law_qa_default_model %} selected{% endif %}>{{ item }}</option>
+              {% endfor %}
+            </select>
+          </label>
           {{ ui.field_text("max-answer-chars", "Лимит символов ответа", "2200", "2200", "", "number", "min='600' max='5000' step='100'") }}
           <label class="legal-field legal-field--full">
             <span class="legal-field__label">Вопрос</span>
