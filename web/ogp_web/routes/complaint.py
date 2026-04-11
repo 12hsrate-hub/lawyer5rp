@@ -175,7 +175,7 @@ async def suggest(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> SuggestResponse:
     _validate_server_payload(store, user, org=payload.org, complaint_basis=payload.complaint_basis)
-    text = suggest_text(payload)
+    text = suggest_text(payload, server_code=user.server_code)
     metrics_store.log_event(
         event_type="ai_suggest",
         username=user.username,

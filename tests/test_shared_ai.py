@@ -303,6 +303,7 @@ class SharedAiTests(unittest.TestCase):
             raw_desc="Draft",
             complaint_basis="wrongful_article",
             main_focus="Спорная квалификация",
+            law_context="Источник: https://laws.example/processual\nНорма: Статья 20",
         )
         self.assertIn("[priority]", prompt)
         self.assertIn("[quality_check]", prompt)
@@ -334,6 +335,8 @@ class SharedAiTests(unittest.TestCase):
         self.assertIn("zakon-ob-advokature-i-advokatskoi-dejatelnosti", prompt)
         self.assertNotIn("sudebnye-precedenty.1291064/post-8971554", prompt)
         self.assertNotIn("zakonodatelnaja-baza.262", prompt)
+        self.assertIn("[retrieved_law_context]", prompt)
+        self.assertIn("Источник: https://laws.example/processual", prompt)
 
     def test_suggest_prompt_contains_basis_specific_materials_strategy(self):
         prompt = build_suggest_prompt(

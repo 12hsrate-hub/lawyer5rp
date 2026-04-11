@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-SUGGEST_PROMPT_VERSION = "suggest.v25"
+SUGGEST_PROMPT_VERSION = "suggest.v26"
 PRINCIPAL_SCAN_PROMPT_VERSION = "principal_scan.v2"
 EXAM_SCORING_PROMPT_VERSION = "exam_scoring.v7"
 EXAM_BATCH_SCORING_PROMPT_VERSION = "exam_batch_scoring.v7"
@@ -253,6 +253,7 @@ def build_suggest_prompt_spec(
     raw_desc: str,
     complaint_basis: str = "",
     main_focus: str = "",
+    law_context: str = "",
 ) -> PromptSpec:
     article_anchors, basis_strategy = _build_selected_basis_sections(complaint_basis=complaint_basis)
     return PromptSpec(
@@ -313,6 +314,7 @@ def build_suggest_prompt_spec(
 """,
             ),
             ("focus_input", _build_focus_input_section(complaint_basis=complaint_basis, main_focus=main_focus)),
+            ("retrieved_law_context", law_context),
             ("article_anchors", article_anchors),
             ("basis_strategy", basis_strategy),
             (
@@ -382,6 +384,7 @@ def build_suggest_prompt(
     raw_desc: str,
     complaint_basis: str = "",
     main_focus: str = "",
+    law_context: str = "",
 ) -> str:
     return build_suggest_prompt_spec(
         victim_name=victim_name,
@@ -391,6 +394,7 @@ def build_suggest_prompt(
         raw_desc=raw_desc,
         complaint_basis=complaint_basis,
         main_focus=main_focus,
+        law_context=law_context,
     ).text
 
 
