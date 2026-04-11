@@ -3,6 +3,7 @@
 {% block title %}Админ-панель | {{ app_title }}{% endblock %}
 
 {% block page_scripts %}
+  <script src="{{ url_for('static', path='shared/exam_import_view.js') }}?v={{ static_asset_version }}" defer></script>
   <script src="{{ url_for('static', path='pages/admin.js') }}?v={{ static_asset_version }}" defer></script>
 {% endblock %}
 

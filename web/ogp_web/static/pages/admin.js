@@ -24,6 +24,7 @@ const liveRefreshField = document.getElementById("admin-live-refresh");
 const liveIntervalField = document.getElementById("admin-live-interval");
 const liveStatusHost = document.getElementById("admin-live-status");
 const refreshNowButton = document.getElementById("admin-refresh-now");
+const userModalTitle = document.getElementById("admin-user-modal-title");
 const userModalBody = document.getElementById("admin-user-modal-body");
 const actionModalTitle = document.getElementById("admin-action-modal-title");
 const actionModalDescription = document.getElementById("admin-action-modal-description");
@@ -48,7 +49,9 @@ const {
   escapeHtml,
   createModalController,
 } = window.OGPWeb;
+const ExamView = window.OGPExamImportView;
 const ADMIN_COLLAPSE_STORAGE_KEY = "ogp_admin_collapsible_sections";
+const DEFAULT_USER_MODAL_TITLE = userModalTitle?.textContent || "Карточка пользователя";
 
 let adminSearchTimer = null;
 let adminLiveTimer = null;
@@ -455,6 +458,8 @@ function renderExamImport(summary) {
   const lastSync = summary.last_sync || {};
   const lastScore = summary.last_score || {};
   const recentFailures = [...(summary.recent_failures || []), ...(summary.recent_row_failures || [])];
+  const recentEntries = Array.isArray(summary.recent_entries) ? summary.recent_entries : [];
+  const failedEntries = Array.isArray(summary.failed_entries) ? summary.failed_entries : [];
 
   examImportHost.innerHTML = `
     <div class="admin-exam-grid">
@@ -481,6 +486,19 @@ function renderExamImport(summary) {
         <span class="admin-user-cell__secondary">${escapeHtml(lastScore.status_code ? `Статус ${lastScore.status_code}` : "Проверок пока не было")}</span>
       </div>
     </div>
+    ${renderAdminExamEntriesSection({
+      title: "Последние ответы и оценки",
+      description: "Последние импортированные строки с текущим баллом, статусом и быстрым переходом к детальному разбору.",
+      entries: recentEntries,
+      emptyText: "Пока нет строк, которые можно показать в админке.",
+    })}
+    ${renderAdminExamEntriesSection({
+      title: "Нуждаются в перепроверке",
+      description: "Строки, где у ответов остались некорректные или неполные результаты проверки.",
+      entries: failedEntries,
+      emptyText: "Строк, требующих перепроверки, сейчас нет.",
+      emphasizeFailed: true,
+    })}
     ${
       recentFailures.length
         ? `
@@ -508,6 +526,113 @@ function renderExamImport(summary) {
         `
         : '<p class="legal-section__description">Последних ошибок импорта экзаменов и AI-оценивания не найдено.</p>'
     }
+  `;
+}
+
+function getExamEntryStatus(entry) {
+  if (ExamView?.getEntryStatus) {
+    return ExamView.getEntryStatus(entry);
+  }
+  const average = Number(entry?.average_score);
+  if (entry?.average_score == null || Number.isNaN(average)) {
+    return { key: "pending", label: "Ожидает оценки", tone: "pending" };
+  }
+  if (average >= 73) {
+    return { key: "good", label: "Сдан хорошо", tone: "ok" };
+  }
+  if (average > 55) {
+    return { key: "medium", label: "Сдан на среднем уровне", tone: "warn" };
+  }
+  return { key: "poor", label: "Сдан слабо", tone: "problem" };
+}
+
+function formatExamAverage(entry) {
+  if (ExamView?.formatAverage) {
+    return ExamView.formatAverage(entry);
+  }
+  return entry?.average_score != null ? `${entry.average_score} / 100` : "—";
+}
+
+function renderAdminExamEntriesSection({ title, description, entries, emptyText, emphasizeFailed = false }) {
+  if (!Array.isArray(entries) || !entries.length) {
+    return `
+      <div class="legal-subcard admin-user-detail-card">
+        <div class="legal-subcard__header">
+          <div>
+            <span class="legal-field__label">${escapeHtml(title)}</span>
+            <p class="legal-section__description">${escapeHtml(description)}</p>
+          </div>
+        </div>
+        <p class="legal-section__description">${escapeHtml(emptyText)}</p>
+      </div>
+    `;
+  }
+
+  return `
+    <section class="legal-subcard admin-user-detail-card">
+      <div class="legal-subcard__header">
+        <div>
+          <span class="legal-field__label">${escapeHtml(title)}</span>
+          <p class="legal-section__description">${escapeHtml(description)}</p>
+        </div>
+      </div>
+      <div class="legal-table-shell">
+        <table class="legal-table admin-table admin-table--compact">
+          <thead>
+            <tr>
+              <th>Строка</th>
+              <th>Кандидат</th>
+              <th>Формат</th>
+              <th>Балл</th>
+              <th>Статус</th>
+              <th>Ответов</th>
+              <th>Импорт</th>
+              <th>Действие</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${entries
+              .map((entry) => {
+                const status = getExamEntryStatus(entry);
+                const reviewBadge = emphasizeFailed || entry?.needs_rescore
+                  ? renderBadge("Нужна перепроверка", "danger")
+                  : "";
+                return `
+                  <tr>
+                    <td>${escapeHtml(entry.source_row ?? "—")}</td>
+                    <td>
+                      <div class="admin-user-cell">
+                        <strong class="admin-user-cell__name">${escapeHtml(entry.full_name || "—")}</strong>
+                        <span class="admin-user-cell__secondary">${escapeHtml(entry.discord_tag || "—")}</span>
+                      </div>
+                    </td>
+                    <td>${escapeHtml(entry.exam_format || "—")}</td>
+                    <td>${escapeHtml(formatExamAverage(entry))}</td>
+                    <td>
+                      <div class="admin-badge-row">
+                        <span class="exam-status-badge exam-status-badge--${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span>
+                        ${reviewBadge}
+                      </div>
+                    </td>
+                    <td>${escapeHtml(String(entry.answer_count ?? 0))}</td>
+                    <td>${escapeHtml(entry.imported_at || "—")}</td>
+                    <td>
+                      <button
+                        type="button"
+                        class="ghost-button admin-exam-detail-btn"
+                        data-exam-source-row="${escapeHtml(entry.source_row ?? "")}"
+                      >
+                        Разбор
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    </section>
   `;
 }
 
@@ -839,6 +964,9 @@ function renderUserModal(user) {
   if (!userModalBody || !user) {
     return;
   }
+  if (userModalTitle) {
+    userModalTitle.textContent = DEFAULT_USER_MODAL_TITLE;
+  }
 
   userModalBody.innerHTML = `
     <div class="legal-status-row legal-status-row--three">
@@ -921,6 +1049,104 @@ function renderUserModal(user) {
       </div>
     </div>
   `;
+}
+
+function renderExamEntryDetailModal(entry) {
+  if (!userModalBody || !entry) {
+    return;
+  }
+  if (userModalTitle) {
+    userModalTitle.textContent = `Разбор ответа · строка ${entry.source_row || "—"}`;
+  }
+
+  userModalBody.innerHTML = `
+    <div class="legal-status-row legal-status-row--three">
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Строка</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(entry.source_row || "—"))}</strong>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Кандидат</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.full_name || "—")}</strong>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Средний балл</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatExamAverage(entry))}</strong>
+      </article>
+    </div>
+
+    <div class="legal-status-row legal-status-row--three">
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Формат</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.exam_format || "—")}</strong>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Ответов</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(entry.answer_count || 0))}</strong>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Обновлено</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.updated_at || entry.imported_at || "—")}</strong>
+      </article>
+    </div>
+
+    <div id="admin-exam-detail-score" class="legal-subcard" hidden></div>
+
+    <section class="legal-subcard admin-user-detail-card">
+      <div class="legal-subcard__header">
+        <div>
+          <span class="legal-field__label">Исходные поля строки</span>
+          <p class="legal-section__description">Ниже видно, какие данные пришли из таблицы и с чем сравнивалась проверка.</p>
+        </div>
+      </div>
+      <div class="legal-table-shell exam-detail-shell">
+        <table class="legal-table admin-table admin-table--compact">
+          <thead>
+            <tr>
+              <th>Столбец / Поле</th>
+              <th>Значение</th>
+            </tr>
+          </thead>
+          <tbody id="admin-exam-detail-body">
+            <tr>
+              <td colspan="2" class="legal-table__empty">Данные строки загружены.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+
+  const scoreHost = document.getElementById("admin-exam-detail-score");
+  const payloadHost = document.getElementById("admin-exam-detail-body");
+  if (ExamView?.renderScoreTable) {
+    ExamView.renderScoreTable(scoreHost, entry.exam_scores || [], formatExamAverage(entry), escapeHtml);
+  }
+  if (ExamView?.renderPayloadTable) {
+    ExamView.renderPayloadTable(payloadHost, entry.payload || {}, escapeHtml);
+  }
+}
+
+async function openExamEntryDetail(sourceRow) {
+  const normalizedSourceRow = Number(sourceRow);
+  if (!Number.isFinite(normalizedSourceRow) || normalizedSourceRow <= 0) {
+    setStateError(errorsHost, "Не удалось определить строку экзамена для разбора.");
+    return;
+  }
+
+  try {
+    const response = await apiFetch(`/api/exam-import/rows/${encodeURIComponent(normalizedSourceRow)}`);
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      setStateError(errorsHost, payload.detail || "Не удалось загрузить разбор ответа.");
+      return;
+    }
+    selectedUser = null;
+    renderExamEntryDetailModal(payload);
+    userModal.open();
+  } catch (error) {
+    setStateError(errorsHost, error?.message || "Не удалось загрузить разбор ответа.");
+  }
 }
 
 function openUserModal(username) {
@@ -1365,6 +1591,18 @@ usersHost?.addEventListener("click", async (event) => {
     const statusHost = document.getElementById("admin-bulk-status");
     if (statusHost) statusHost.textContent = `Выбрано: ${selectedBulkUsers.size}`;
   }
+});
+
+examImportHost?.addEventListener("click", async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  const detailButton = target.closest("[data-exam-source-row]");
+  if (!(detailButton instanceof HTMLElement)) {
+    return;
+  }
+  await openExamEntryDetail(detailButton.getAttribute("data-exam-source-row") || "");
 });
 
 usersHost?.addEventListener("change", (event) => {

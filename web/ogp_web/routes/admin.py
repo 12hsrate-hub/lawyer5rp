@@ -567,9 +567,12 @@ async def admin_overview(
         failed_events_only=failed_events_only,
         user_sort=user_sort,
     )
-    payload["exam_import"] = metrics_store.get_exam_import_summary(
+    exam_import = metrics_store.get_exam_import_summary(
         pending_scores=exam_store.count_entries_needing_scores()
     )
+    exam_import["recent_entries"] = exam_store.list_entries(limit=8)
+    exam_import["failed_entries"] = exam_store.list_entries_with_failed_scores(limit=5)
+    payload["exam_import"] = exam_import
     return payload
 
 

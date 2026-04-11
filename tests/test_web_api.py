@@ -195,6 +195,10 @@ class WebApiTests(unittest.TestCase):
         self.assertTrue(any(item["username"] == "12345" for item in payload["users"]))
         self.assertIn("exam_import", payload)
         self.assertIn("pending_scores", payload["exam_import"])
+        self.assertIn("recent_entries", payload["exam_import"])
+        self.assertIn("failed_entries", payload["exam_import"])
+        self.assertIsInstance(payload["exam_import"]["recent_entries"], list)
+        self.assertIsInstance(payload["exam_import"]["failed_entries"], list)
 
     def test_admin_overview_supports_user_sort_and_csv_exports(self):
         self._register_verify_and_login("alpha", "alpha@example.com")
