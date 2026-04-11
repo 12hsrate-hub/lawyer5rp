@@ -85,7 +85,7 @@ def admin_mark_email_verified(store: UserStore, username: str) -> dict[str, Any]
         raise AuthError("Пользователь не найден.")
     row = store._fetch_user_by_username(
         normalized,
-        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code",
+        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code",
     )
     return dict(row) if row else {}
 
@@ -105,7 +105,7 @@ def admin_set_access_blocked(store: UserStore, username: str, reason: str = "") 
         raise AuthError("Пользователь не найден.")
     row = store._fetch_user_by_username(
         normalized,
-        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code",
+        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code",
     )
     return dict(row) if row else {}
 
@@ -125,7 +125,7 @@ def admin_clear_access_blocked(store: UserStore, username: str) -> dict[str, Any
         raise AuthError("Пользователь не найден.")
     row = store._fetch_user_by_username(
         normalized,
-        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code",
+        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code",
     )
     return dict(row) if row else {}
 
@@ -140,7 +140,7 @@ def admin_set_tester_status(store: UserStore, username: str, is_tester: bool) ->
         raise AuthError("Пользователь не найден.")
     row = store._fetch_user_by_username(
         normalized,
-        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka",
+        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
     )
     return dict(row) if row else {}
 
@@ -155,7 +155,7 @@ def admin_set_gka_status(store: UserStore, username: str, is_gka: bool) -> dict[
         raise AuthError("Пользователь не найден.")
     row = store._fetch_user_by_username(
         normalized,
-        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka",
+        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
     )
     return dict(row) if row else {}
 
@@ -180,7 +180,7 @@ def admin_update_email(store: UserStore, username: str, email: str) -> dict[str,
         raise AuthError("Пользователь не найден.")
     row = store._fetch_user_by_username(
         normalized,
-        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, server_code, is_tester, is_gka",
+        "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
     )
     return dict(row) if row else {}
 
@@ -242,7 +242,9 @@ def admin_reactivate_user(store: UserStore, username: str) -> dict[str, Any]:
         """
         UPDATE users
         SET deactivated_at = NULL,
-            deactivated_reason = NULL
+            deactivated_reason = NULL,
+            access_blocked_at = NULL,
+            access_blocked_reason = NULL
         WHERE username = ?
         """,
         (normalized,),

@@ -91,6 +91,31 @@ class AdminMetricsStore:
             return None
         return value_int if value_int >= 0 else None
 
+    def count_user_api_requests_last_24h(self, username: str) -> int:
+        normalized_username = str(username or "").strip().lower()
+        if not normalized_username:
+            return 0
+        placeholder = self._placeholder()
+        created_filter = (
+            "created_at >= NOW() - INTERVAL '1 day'"
+            if self.is_postgres_backend
+            else "created_at >= datetime('now', '-1 day')"
+        )
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                f"""
+                SELECT COUNT(*) AS total
+                FROM metric_events
+                WHERE event_type = 'api_request'
+                  AND username = {placeholder}
+                  AND {created_filter}
+                """,
+                (normalized_username,),
+            ).fetchone()
+        if row is None:
+            return 0
+        return int(row["total"] or 0)
+
     def get_performance_overview(
         self,
         *,

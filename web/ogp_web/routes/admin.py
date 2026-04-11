@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import threading
 import uuid
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 from time import monotonic
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -32,6 +34,7 @@ _PERFORMANCE_CACHE_TTL_SECONDS = 10
 _PERFORMANCE_CACHE_LOCK = threading.Lock()
 _ADMIN_TASKS: dict[str, dict[str, Any]] = {}
 _ADMIN_TASKS_LOCK = threading.Lock()
+_ADMIN_TASKS_PATH = Path(__file__).resolve().parents[3] / "web" / "data" / "admin_tasks.json"
 
 
 def _cache_key(*, window_minutes: int, top_endpoints: int) -> str:
@@ -57,9 +60,39 @@ def _store_performance_payload(cache_key: str, payload: dict[str, Any]) -> None:
         _PERFORMANCE_CACHE[cache_key] = (monotonic(), deepcopy(payload))
 
 
+def _save_admin_tasks_to_disk() -> None:
+    try:
+        _ADMIN_TASKS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _ADMIN_TASKS_PATH.write_text(
+            json.dumps(_ADMIN_TASKS, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def _load_admin_tasks_from_disk() -> None:
+    try:
+        raw = _ADMIN_TASKS_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return
+    except Exception:
+        return
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return
+    if isinstance(parsed, dict):
+        _ADMIN_TASKS.clear()
+        for key, value in parsed.items():
+            if isinstance(value, dict):
+                _ADMIN_TASKS[str(key)] = value
+
+
 def _put_admin_task(task: dict[str, Any]) -> None:
     with _ADMIN_TASKS_LOCK:
         _ADMIN_TASKS[str(task["task_id"])] = deepcopy(task)
+        _save_admin_tasks_to_disk()
 
 
 def _patch_admin_task(task_id: str, **changes: Any) -> None:
@@ -69,12 +102,18 @@ def _patch_admin_task(task_id: str, **changes: Any) -> None:
             return
         current.update(changes)
         _ADMIN_TASKS[task_id] = current
+        _save_admin_tasks_to_disk()
 
 
 def _load_admin_task(task_id: str) -> dict[str, Any] | None:
     with _ADMIN_TASKS_LOCK:
+        if task_id not in _ADMIN_TASKS:
+            _load_admin_tasks_from_disk()
         item = _ADMIN_TASKS.get(task_id)
         return deepcopy(item) if item else None
+
+
+_load_admin_tasks_from_disk()
 
 
 def _apply_bulk_action(
@@ -86,6 +125,8 @@ def _apply_bulk_action(
     task_id: str | None = None,
 ) -> dict[str, Any]:
     action = str(payload.action or "").strip().lower()
+    if action == "set_daily_quota" and payload.daily_limit is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Для set_daily_quota обязательно поле daily_limit."])
     usernames = [str(item or "").strip().lower() for item in payload.usernames if str(item or "").strip()]
     if not usernames:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Не переданы пользователи для массовой операции."])
@@ -140,9 +181,10 @@ def _apply_bulk_action(
                 meta = {"target_username": username, "bulk": True}
                 path = f"/api/admin/users/{username}/reactivate"
             elif action == "set_daily_quota":
-                user_store.admin_set_daily_quota(username, int(payload.daily_limit or 0))
+                safe_limit = int(payload.daily_limit or 0)
+                user_store.admin_set_daily_quota(username, safe_limit)
                 event_type = "admin_set_daily_quota"
-                meta = {"target_username": username, "daily_limit": int(payload.daily_limit or 0), "bulk": True}
+                meta = {"target_username": username, "daily_limit": safe_limit, "bulk": True}
                 path = f"/api/admin/users/{username}/daily-quota"
             else:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[f"Неизвестное bulk-действие: {action}."])

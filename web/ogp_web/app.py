@@ -265,13 +265,43 @@ def create_app(
     @app.middleware("http")
     async def capture_admin_metrics(request, call_next):
         started = time.perf_counter()
+        user = get_current_user(request) if request.url.path.startswith("/api/") else None
+        if request.url.path.startswith("/api/") and user and not request.url.path.startswith("/api/auth/"):
+            try:
+                quota_daily = app.state.user_store.get_api_quota_daily(user.username)
+            except Exception:
+                quota_daily = 0
+            if quota_daily > 0:
+                used_last_24h = app.state.admin_metrics_store.count_user_api_requests_last_24h(user.username)
+                if used_last_24h >= quota_daily:
+                    response = JSONResponse(
+                        status_code=429,
+                        content={
+                            "detail": [
+                                "Дневная квота API исчерпана. Обратитесь к администратору.",
+                            ]
+                        },
+                    )
+                    app.state.admin_metrics_store.log_event(
+                        event_type="api_request",
+                        username=user.username,
+                        server_code=user.server_code,
+                        path=request.url.path,
+                        method=request.method,
+                        status_code=429,
+                        duration_ms=0,
+                        request_bytes=int(request.headers.get("content-length") or 0),
+                        response_bytes=len(response.body or b""),
+                        meta={"quota_daily": quota_daily, "used_last_24h": used_last_24h},
+                    )
+                    return response
         try:
             response = await call_next(request)
         except Exception:
             logging.getLogger(__name__).exception("Unhandled request error: %s %s", request.method, request.url.path)
             raise
         if request.url.path.startswith("/api/"):
-            user = get_current_user(request)
+            user = user or get_current_user(request)
             request_bytes = int(request.headers.get("content-length") or 0)
             response_bytes = int(response.headers.get("content-length") or 0)
             duration_ms = int((time.perf_counter() - started) * 1000)

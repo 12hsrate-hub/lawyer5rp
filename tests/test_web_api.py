@@ -367,6 +367,36 @@ class WebApiTests(unittest.TestCase):
         login_response = self.client.post("/api/auth/login", json={"username": "blockeduser", "password": "Password123!"})
         self.assertEqual(login_response.status_code, 200)
 
+    def test_admin_deactivate_and_reactivate_restores_access(self):
+        self._register_verify_and_login("deactuser", "deactuser@example.com")
+        self.client.post("/api/auth/logout")
+        self._register_verify_and_login("12345", "admin@example.com")
+
+        response = self.client.post("/api/admin/users/deactuser/deactivate", json={"reason": "policy"})
+        self.assertEqual(response.status_code, 200)
+
+        self.client.post("/api/auth/logout")
+        login_response = self.client.post("/api/auth/login", json={"username": "deactuser", "password": "Password123!"})
+        self.assertEqual(login_response.status_code, 400)
+
+        self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
+        response = self.client.post("/api/admin/users/deactuser/reactivate")
+        self.assertEqual(response.status_code, 200)
+
+        self.client.post("/api/auth/logout")
+        login_response = self.client.post("/api/auth/login", json={"username": "deactuser", "password": "Password123!"})
+        self.assertEqual(login_response.status_code, 200)
+
+    def test_api_quota_daily_blocks_after_limit(self):
+        self._register_verify_and_login("quotauser", "quotauser@example.com")
+        self.store.admin_set_daily_quota("quotauser", 1)
+
+        first = self.client.get("/api/profile")
+        self.assertEqual(first.status_code, 200)
+
+        second = self.client.get("/api/profile")
+        self.assertEqual(second.status_code, 429)
+
     def test_blocked_user_cannot_use_existing_session(self):
         self._register_verify_and_login("sessionuser", "sessionuser@example.com")
         session_client = self.client
@@ -401,6 +431,17 @@ class WebApiTests(unittest.TestCase):
         payload = self.client.get("/api/admin/overview").json()
         target = next(item for item in payload["users"] if item["username"] == "plainuser")
         self.assertTrue(target["is_tester"])
+
+    def test_bulk_set_daily_quota_requires_daily_limit(self):
+        self._register_verify_and_login("plainbulk", "plainbulk@example.com")
+        self.client.post("/api/auth/logout")
+        self._register_verify_and_login("12345", "admin@example.com")
+
+        response = self.client.post(
+            "/api/admin/users/bulk-actions",
+            json={"usernames": ["plainbulk"], "action": "set_daily_quota", "run_async": False},
+        )
+        self.assertEqual(response.status_code, 400)
 
     def test_admin_can_change_email_and_reset_password(self):
         self._register_verify_and_login("emailuser", "emailold@example.com")

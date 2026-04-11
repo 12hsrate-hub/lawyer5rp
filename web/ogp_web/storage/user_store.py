@@ -31,7 +31,9 @@ _USERS_COLUMNS = frozenset({
     "username", "email", "salt", "password_hash", "created_at",
     "email_verified_at", "email_verification_token_hash", "email_verification_sent_at",
     "password_reset_token_hash", "password_reset_sent_at",
-    "access_blocked_at", "access_blocked_reason", "server_code", "is_tester", "is_gka",
+    "access_blocked_at", "access_blocked_reason",
+    "deactivated_at", "deactivated_reason", "api_quota_daily",
+    "server_code", "is_tester", "is_gka",
     "representative_profile", "complaint_draft_json", "complaint_draft_updated_at",
 })
 
@@ -823,6 +825,15 @@ class UserStore:
 
         return is_access_blocked(self, username)
 
+    def get_api_quota_daily(self, username: str) -> int:
+        row = self._fetch_user_by_username(username, "api_quota_daily")
+        if row is None:
+            raise AuthError("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ.")
+        try:
+            return max(0, int(row["api_quota_daily"] or 0))
+        except (TypeError, ValueError):
+            return 0
+
     def is_tester_user(self, username: str, *, server_code: str | None = None) -> bool:
         if self.is_postgres_backend:
             row = self._fetch_user_by_username(username, "is_tester, server_code")
@@ -1038,7 +1049,9 @@ class UserStore:
                 """
                 UPDATE users
                 SET deactivated_at = NULL,
-                    deactivated_reason = NULL
+                    deactivated_reason = NULL,
+                    access_blocked_at = NULL,
+                    access_blocked_reason = NULL
                 WHERE username = %s
                 """,
                 (normalized,),
