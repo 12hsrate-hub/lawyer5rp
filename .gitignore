@@ -43,3 +43,4 @@ REVIEW_NOTES.md
 *.zip
 *.bak
 *.tmp
+artifacts/
