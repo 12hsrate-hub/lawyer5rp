@@ -106,3 +106,8 @@ bash /srv/lawyer5rp.ru/scripts/smoke_web.sh
 ```
 
 `/api/admin/overview` returns `401 Unauthorized` without a logged-in session. That is expected.
+
+
+## PostgreSQL cutover checklist
+
+Use `docs/postgres_cutover_runbook.md` for freeze/final-migration/cutover verification steps.

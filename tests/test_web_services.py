@@ -13,19 +13,19 @@ for candidate in (ROOT_DIR, WEB_DIR):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-os.environ.setdefault("OGP_DB_BACKEND", "sqlite")
+os.environ.setdefault("OGP_DB_BACKEND", "postgres")
 os.environ.setdefault("OGP_WEB_SECRET", "test-secret")
 
 import httpx
 from fastapi import HTTPException
 
-from ogp_web.db.backends.sqlite import SQLiteBackend
 from ogp_web.schemas import ComplaintPayload, LawQaPayload, PrincipalScanPayload, RehabPayload, SuggestPayload, VictimPayload
 from ogp_web.services import ai_service, auth_service, complaint_service, email_service, exam_import_service, exam_sheet_service
 from ogp_web.services.auth_service import AuthUser
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.storage.user_store import UserStore
 from tests.temp_helpers import make_temp_dir
+from tests.test_web_storage import PostgresBackend
 
 
 class WebServiceTests(unittest.TestCase):
@@ -35,7 +35,7 @@ class WebServiceTests(unittest.TestCase):
         self.store = UserStore(
             root / "app.db",
             root / "users.json",
-            repository=UserRepository(SQLiteBackend(root / "app.db")),
+            repository=UserRepository(PostgresBackend()),
         )
         self.user, token = self.store.register("tester", "tester@example.com", "Password123!")
         self.store.confirm_email(token)
