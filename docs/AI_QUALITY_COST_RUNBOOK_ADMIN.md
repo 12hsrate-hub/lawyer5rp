@@ -19,9 +19,14 @@
 - `guard_fail_rate`
 - `guard_warn_rate`
 - `wrong_law_rate`
-- `wrong_fact_rate`
 - `hallucination_rate`
+- `wrong_fact_rate`
 - `unclear_answer_rate`
+- `new_fact_validation_rate`
+- `unsupported_article_rate`
+- `format_violation_rate`
+- `validation_retry_rate`
+- `safe_fallback_rate`
 
 ### Cost KPI
 - `avg_cost_per_req_law_qa`
@@ -44,7 +49,13 @@
 | guard_warn_rate (24h) | <8% | 8-15% | >15% |
 | wrong_law_rate (24h) | <2.0% | 2.0–4.0% | >4.0% |
 | hallucination_rate (24h) | <0.8% | 0.8–1.5% | >1.5% |
+| wrong_fact_rate (24h) | <2.0% | 2.0–4.0% | >4.0% |
 | unclear_answer_rate (24h) | <5% | 5–9% | >9% |
+| new_fact_validation_rate (24h) | <1.0% | 1.0–2.0% | >2.0% |
+| unsupported_article_rate (24h) | <1.0% | 1.0–3.0% | >3.0% |
+| format_violation_rate (24h) | <3.0% | 3.0–5.0% | >5.0% |
+| validation_retry_rate (24h) | <8.0% | 8.0–12.0% | >12.0% |
+| safe_fallback_rate (24h) | <8.0% | 8.0–12.0% | >12.0% |
 | p95 law_qa | <7s | 7–10s | >10s |
 | p95 suggest | <9s | 9–13s | >13s |
 | avg_cost_per_req_law_qa | target | +15% | +30% |
@@ -93,8 +104,8 @@
    - latency блок
 
 2. Проверить красные зоны:
-   - `wrong_law` / `hallucination` всплеск
-   - рост `guard_fail_rate`
+   - `wrong_law` / `hallucination` / `wrong_fact` всплеск
+   - рост `guard_fail_rate`, `validation_retry_rate`, `safe_fallback_rate`
    - аномальный рост стоимости на запрос
 
 3. Проверить top inaccurate generations:

@@ -238,6 +238,7 @@ def _build_ai_pipeline_quality_summary(
             "guard_fail_rate": _band_from_thresholds(guard_fail_rate, green_max=1.5, yellow_max=3.0),
             "guard_warn_rate": _band_from_thresholds(guard_warn_rate, green_max=8.0, yellow_max=15.0),
             "wrong_law_rate": _band_from_thresholds(wrong_law_rate, green_max=2.0, yellow_max=4.0),
+            "wrong_fact_rate": _band_from_thresholds(wrong_fact_rate, green_max=2.0, yellow_max=4.0),
             "hallucination_rate": _band_from_thresholds(hallucination_rate, green_max=0.8, yellow_max=1.5),
             "unclear_answer_rate": _band_from_thresholds(unclear_answer_rate, green_max=5.0, yellow_max=9.0),
             "unsupported_article_rate": _band_from_thresholds(

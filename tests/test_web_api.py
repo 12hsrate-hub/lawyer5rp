@@ -1000,6 +1000,7 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(payload["quality_summary"]["validation_retry_rate"], 100.0)
         self.assertEqual(payload["quality_summary"]["safe_fallback_rate"], 100.0)
         self.assertEqual(payload["quality_summary"]["bands"]["wrong_law_rate"], "red")
+        self.assertEqual(payload["quality_summary"]["bands"]["wrong_fact_rate"], "red")
         self.assertEqual(payload["quality_summary"]["bands"]["new_fact_validation_rate"], "red")
         self.assertEqual(payload["cost_tables"]["by_flow"][0]["flow"], "law_qa")
         self.assertEqual(payload["top_inaccurate_generations"][0]["generation_id"], "gen_admin_1")

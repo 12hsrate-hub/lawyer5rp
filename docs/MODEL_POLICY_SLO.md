@@ -8,7 +8,13 @@
 | `guard_warn_rate` (24h) | `< 8%` | `8-15%` | `> 15%` |
 | `wrong_law_rate` | `< 2.0%` | `2.0-4.0%` | `> 4.0%` |
 | `hallucination_rate` | `< 0.8%` | `0.8-1.5%` | `> 1.5%` |
+| `wrong_fact_rate` | `< 2.0%` | `2.0-4.0%` | `> 4.0%` |
 | `unclear_answer_rate` | `< 5%` | `5-9%` | `> 9%` |
+| `new_fact_validation_rate` | `< 1.0%` | `1.0-2.0%` | `> 2.0%` |
+| `unsupported_article_rate` | `< 1.0%` | `1.0-3.0%` | `> 3.0%` |
+| `format_violation_rate` | `< 3.0%` | `3.0-5.0%` | `> 5.0%` |
+| `validation_retry_rate` | `< 8.0%` | `8.0-12.0%` | `> 12.0%` |
+| `safe_fallback_rate` | `< 8.0%` | `8.0-12.0%` | `> 12.0%` |
 | `p95_latency_law_qa` | `< 7s` | `7-10s` | `> 10s` |
 | `p95_latency_suggest` | `< 9s` | `9-13s` | `> 13s` |
 | `avg_cost_per_req_law_qa` | target | `+15%` | `+30%` |
@@ -51,7 +57,7 @@ Immediate rollback if:
 
 ## Daily Admin Checklist
 
-- Quality: `guard_fail_rate`, `guard_warn_rate`, `wrong_law_rate`, `hallucination_rate`, `unclear_answer_rate`
+- Quality: `guard_fail_rate`, `guard_warn_rate`, `wrong_law_rate`, `hallucination_rate`, `wrong_fact_rate`, `unclear_answer_rate`, `new_fact_validation_rate`, `unsupported_article_rate`, `format_violation_rate`, `validation_retry_rate`, `safe_fallback_rate`
 - Cost: `avg_cost_per_req` by flow/model, `estimated_cost_total_usd` day-to-date
 - Stability: `p95 latency`, `p99 latency`, `fallback_rate`
 - Accuracy drill-down: top `generation_id` for `wrong_law` and `hallucination`, answer/source/guard/feedback comparison

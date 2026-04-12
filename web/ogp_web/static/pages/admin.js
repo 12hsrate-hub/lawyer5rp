@@ -727,6 +727,23 @@ function renderAiPipeline(payload) {
     </div>
     <div class="admin-performance-grid">
       <article class="legal-status-card">
+        <span class="legal-status-card__label">wrong_fact_rate</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.wrong_fact_rate, "feedback"))}</strong>
+        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.wrong_fact_rate)}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">unclear_answer_rate</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.unclear_answer_rate, "feedback"))}</strong>
+        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.unclear_answer_rate)}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">validation_retry_rate</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.validation_retry_rate, "generation"))}</strong>
+        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.validation_retry_rate)}</span>
+      </article>
+    </div>
+    <div class="admin-performance-grid">
+      <article class="legal-status-card">
         <span class="legal-status-card__label">new_fact_validation_rate</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.new_fact_validation_rate, "generation"))}</strong>
         <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.new_fact_validation_rate)}</span>
@@ -768,7 +785,6 @@ function renderAiPipeline(payload) {
         <ul class="legal-list">
           ${policyActions.map((item) => `<li>${renderBandBadge(item.severity)} <strong>${escapeHtml(String(item.title || "-"))}</strong>: ${escapeHtml(String(item.reason || "-"))}</li>`).join("")}
         </ul>
-        <p class="admin-user-cell__secondary">validation_retry_rate: ${escapeHtml(formatQualityRate(quality?.validation_retry_rate, "generation"))}</p>
       </article>
     </div>
     ${
