@@ -1,0 +1,57 @@
+[
+  {
+    "case_id": "case_1_mask_maze_bank_arena",
+    "title": "Mask detention at Maze Bank Arena",
+    "victim_name": "Test Principal 1",
+    "org": "LSPD",
+    "subject": "Test Officer 1",
+    "event_dt": "12.04.2026 18:10",
+    "raw_desc": "Человека задержали на территории Maze Bank Arena из-за ношения маски, потребовали снять её без внятного основания, а после отказа оформили задержание. По итогам подаётся жалоба в ОГП на незаконность самих процессуальных действий.",
+    "complaint_basis": "procedural_violation",
+    "main_focus": "Спорность оснований задержания и процессуальных действий"
+  },
+  {
+    "case_id": "case_2_search_bank_missing_recording",
+    "title": "Search near bank with missing attorney-request recording",
+    "victim_name": "Test Principal 2",
+    "org": "LSPD",
+    "subject": "Test Officer 2",
+    "event_dt": "12.04.2026 18:20",
+    "raw_desc": "Человека задержали возле банка, провели обыск и изъяли имущество, но по адвокатскому запросу запись процессуальных действий так и не была предоставлена. После этого на действия сотрудника подаётся жалоба в ОГП.",
+    "complaint_basis": "missing_materials",
+    "main_focus": "Отсутствие записи процессуальных действий по адвокатскому запросу"
+  },
+  {
+    "case_id": "case_3_personal_conflict_then_detention",
+    "title": "Personal conflict before later service detention",
+    "victim_name": "Test Principal 3",
+    "org": "LSPD",
+    "subject": "Test Officer 3",
+    "event_dt": "12.04.2026 18:30",
+    "raw_desc": "Между человеком и сотрудником сначала произошёл личный конфликт, а спустя короткое время тот же сотрудник уже в служебном статусе вернулся и оформил задержание. На фоне этих обстоятельств подаётся жалоба в ОГП.",
+    "complaint_basis": "abuse_of_authority",
+    "main_focus": "Сомнения в объективности и мотивированности последующих действий сотрудника"
+  },
+  {
+    "case_id": "case_4_mismatched_article_in_arrest_form",
+    "title": "Mismatched article between oral statement and arrest form",
+    "victim_name": "Test Principal 4",
+    "org": "LSPD",
+    "subject": "Test Officer 4",
+    "event_dt": "12.04.2026 18:40",
+    "raw_desc": "После задержания в материалах указали одну статью устно, а в бланке ареста — другую, причём формулировка оказалась некорректной. Из-за расхождений и оформления документов на сотрудника подаётся жалоба в ОГП.",
+    "complaint_basis": "wrongful_article",
+    "main_focus": "Расхождения в квалификации и оформлении процессуальных документов"
+  },
+  {
+    "case_id": "case_5_no_access_to_lawyer_and_handcuffs",
+    "title": "No lawyer access and prolonged handcuffing without processing",
+    "victim_name": "Test Principal 5",
+    "org": "LSPD",
+    "subject": "Test Officer 5",
+    "event_dt": "12.04.2026 18:50",
+    "raw_desc": "После фактического задержания человеку не дали связаться с адвокатом и длительное время держали в наручниках без оформления и активных процессуальных действий. На этом основании подаётся жалоба в ОГП.",
+    "complaint_basis": "procedural_violation",
+    "main_focus": "Соблюдение процессуальных гарантий задержанного"
+  }
+]

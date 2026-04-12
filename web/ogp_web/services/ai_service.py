@@ -1303,6 +1303,19 @@ def _normalize_suggest_inline(value: object) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip())
 
 
+_SUGGEST_MASK_TERMS = ("маск", "маскиров", "визор", "капюшон")
+_SUGGEST_ENTERTAINMENT_TERMS = (
+    "maze bank arena",
+    "арена",
+    "развлекатель",
+    "увеселит",
+    "казино",
+    "клуб",
+    "бар",
+)
+_SUGGEST_TICKET_SANCTION_TERMS = ("штраф", "тикет")
+
+
 def _suggest_document_priority_weight(document_title: str) -> int:
     thresholds = load_policy_thresholds()
     priority_config = thresholds.get("document_priority", {})
@@ -1338,13 +1351,42 @@ def _suggest_document_is_applicable(document_title: str, query: str) -> bool:
     )
 
 
+def _suggest_is_mask_exception_case(text: str) -> bool:
+    normalized_text = _normalize_suggest_inline(text).lower()
+    return any(term in normalized_text for term in _SUGGEST_MASK_TERMS) and any(
+        term in normalized_text for term in _SUGGEST_ENTERTAINMENT_TERMS
+    )
+
+
+def _suggest_norm_targets_mask_exception(document_title: str, article_label: str, excerpt: str) -> bool:
+    combined = _normalize_suggest_inline(" ".join((document_title, article_label, excerpt))).lower()
+    return (
+        "статья 18" in combined
+        and any(term in combined for term in _SUGGEST_MASK_TERMS)
+        and any(term in combined for term in _SUGGEST_ENTERTAINMENT_TERMS)
+    )
+
+
+def _suggest_norm_targets_ticket_sanction(document_title: str, article_label: str, excerpt: str) -> bool:
+    combined = _normalize_suggest_inline(" ".join((document_title, article_label, excerpt))).lower()
+    return any(term in combined for term in _SUGGEST_TICKET_SANCTION_TERMS)
+
+
 def _rerank_suggest_matches(matches, query: str):
     reranked = []
+    mask_exception_case = _suggest_is_mask_exception_case(query)
     for match in matches:
         title = str(getattr(getattr(match, "chunk", None), "document_title", "") or "")
+        article_label = str(getattr(getattr(match, "chunk", None), "article_label", "") or "")
+        excerpt = str(getattr(match, "excerpt", "") or getattr(getattr(match, "chunk", None), "text", "") or "")
         adjusted_score = int(getattr(match, "score", 0) or 0) + _suggest_document_priority_weight(title)
         if not _suggest_document_is_applicable(title, query):
             adjusted_score -= 80
+        if mask_exception_case:
+            if _suggest_norm_targets_mask_exception(title, article_label, excerpt):
+                adjusted_score += 45
+            elif _suggest_norm_targets_ticket_sanction(title, article_label, excerpt):
+                adjusted_score -= 45
         reranked.append((adjusted_score, match))
     reranked.sort(key=lambda item: item[0], reverse=True)
     return reranked
@@ -1457,18 +1499,69 @@ def _normalize_suggest_retrieval_fragment(value: str, *, max_chars: int | None =
     return truncated[:cutoff].rstrip(" ,;:-") + "…"
 
 
+def _build_suggest_retrieval_hints(payload: SuggestPayload) -> tuple[str, ...]:
+    raw_desc = _normalize_suggest_inline(payload.raw_desc).lower()
+    if _suggest_is_mask_exception_case(raw_desc):
+        return (
+            "статья 18 административный кодекс",
+            "допустимость ношения маски",
+            "развлекательное учреждение",
+            "Maze Bank Arena",
+        )
+    return ()
+
+
 def build_suggest_retrieval_query_light(payload: SuggestPayload, *, raw_desc_limit: int = 360) -> str:
     return " ".join(
         part
         for part in (
             _normalize_suggest_retrieval_fragment(payload.complaint_basis),
             _normalize_suggest_retrieval_fragment(payload.main_focus),
+            *(_normalize_suggest_retrieval_fragment(item) for item in _build_suggest_retrieval_hints(payload)),
             _normalize_suggest_retrieval_fragment(payload.org),
             _normalize_suggest_retrieval_fragment(payload.subject),
             _normalize_suggest_retrieval_fragment(payload.raw_desc, max_chars=raw_desc_limit),
         )
         if part
     )
+
+
+def _build_filtered_prompt_law_context(
+    *,
+    point3_context,
+    suggest_context: SuggestContextBuildResult,
+    fallback_law_context: str,
+) -> str:
+    valid_triggers = [item for item in point3_context.triggers if item.is_valid]
+    if valid_triggers:
+        parts: list[str] = []
+        seen: set[tuple[str, str, str]] = set()
+        for trigger in valid_triggers:
+            key = (
+                str(trigger.source_url or "").strip(),
+                str(trigger.document_title or "").strip(),
+                str(trigger.norm_ref or "").strip(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            parts.append(
+                "\n".join(
+                    (
+                        f"Источник: {trigger.source_url}",
+                        f"Документ: {trigger.document_title}",
+                        f"Норма: {trigger.norm_ref}",
+                        f"Фрагмент: {trigger.excerpt}",
+                    )
+                ).strip()
+            )
+        filtered = "\n\n".join(part for part in parts if part).strip()
+        if filtered:
+            return filtered
+
+    if suggest_context.selected_norms and point3_context.policy_decision.mode == MODE_FACTUAL_FALLBACK_EXPANDED:
+        return ""
+    return fallback_law_context
 
 
 def _clean_suggest_text(text: str) -> str:
@@ -1796,12 +1889,17 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
     )
     policy_mode = point3_context.policy_decision.mode
     pipeline_context_payload = point3_context.prompt_context_json()
+    prompt_law_context = _build_filtered_prompt_law_context(
+        point3_context=point3_context,
+        suggest_context=suggest_context,
+        fallback_law_context=law_context,
+    )
     suggest_attempts = (
-        (raw_desc, law_context),
-        (raw_desc, _truncate_suggest_value(law_context, max_chars=2600)),
-        (raw_desc, _truncate_suggest_value(law_context, max_chars=1500)),
-        (_truncate_suggest_value(raw_desc, max_chars=8000), _truncate_suggest_value(law_context, max_chars=1200)),
-        (_truncate_suggest_value(raw_desc, max_chars=5000), _truncate_suggest_value(law_context, max_chars=700)),
+        (raw_desc, prompt_law_context),
+        (raw_desc, _truncate_suggest_value(prompt_law_context, max_chars=2600)),
+        (raw_desc, _truncate_suggest_value(prompt_law_context, max_chars=1500)),
+        (_truncate_suggest_value(raw_desc, max_chars=8000), _truncate_suggest_value(prompt_law_context, max_chars=1200)),
+        (_truncate_suggest_value(raw_desc, max_chars=5000), _truncate_suggest_value(prompt_law_context, max_chars=700)),
     )
 
     prompt_text = ""

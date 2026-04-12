@@ -115,3 +115,43 @@ def test_policy_router_still_validates_advocate_law_for_attorney_request() -> No
 
     assert context.policy_decision.mode == MODE_LEGAL_GROUNDED
     assert context.policy_decision.valid_triggers_count == 1
+
+
+def test_policy_router_prioritizes_article_18_mask_exception_for_maze_bank_arena() -> None:
+    context = build_point3_pipeline_context(
+        complainant="Test Principal 1",
+        organization="LSPD",
+        target_person="Test Officer 1",
+        event_datetime="12.04.2026 18:10",
+        draft_text=(
+            "Человека задержали на территории Maze Bank Arena из-за ношения маски, "
+            "потребовали снять её без внятного основания, а после отказа оформили задержание."
+        ),
+        complaint_basis="procedural_violation",
+        main_focus="Спорность оснований задержания",
+        retrieval_status="normal_context",
+        retrieval_confidence="high",
+        retrieved_law_context="Источник: https://laws.example/admin\nНорма: Статья 18",
+        selected_norms=(
+            {
+                "source_url": "https://laws.example/admin",
+                "document_title": "Административный кодекс",
+                "article_label": "Статья 18",
+                "excerpt": "Использование маски допустимо на территории Maze Bank Arena и иных развлекательных учреждений.",
+                "score": 92,
+            },
+            {
+                "source_url": "https://laws.example/processual",
+                "document_title": "Процессуальный кодекс",
+                "article_label": "Статья 23.1 Порядок наложения штрафа (тикета)",
+                "excerpt": "Сотрудник обязан подготовить тикет и указать сумму штрафа.",
+                "score": 35,
+            },
+        ),
+    )
+
+    assert context.policy_decision.mode == MODE_LEGAL_GROUNDED
+    assert context.policy_decision.valid_triggers_count == 1
+    valid_refs = {item.norm_ref for item in context.triggers if item.is_valid}
+    assert "Статья 18" in valid_refs
+    assert all("23.1" not in item.norm_ref for item in context.triggers if item.is_valid)

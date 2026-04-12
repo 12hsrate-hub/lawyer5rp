@@ -475,6 +475,26 @@ class WebServiceTests(unittest.TestCase):
         self.assertNotIn("token20", query)
         self.assertTrue(query.endswith("…"))
 
+    def test_build_suggest_retrieval_query_light_expands_mask_exception_case(self):
+        payload = SuggestPayload(
+            victim_name="Victim",
+            org="LSPD",
+            subject="Officer",
+            event_dt="08.04.2026 14:30",
+            raw_desc=(
+                "Человека задержали на территории Maze Bank Arena из-за ношения маски, "
+                "после отказа снять её оформили задержание."
+            ),
+            complaint_basis="procedural_violation",
+            main_focus="Спорность оснований задержания",
+        )
+
+        query = ai_service.build_suggest_retrieval_query_light(payload)
+
+        self.assertIn("статья 18 административный кодекс", query.lower())
+        self.assertIn("допустимость ношения маски", query.lower())
+        self.assertIn("maze bank arena", query.lower())
+
     def test_ai_service_suggest_text_uses_lightweight_query_only_for_retrieval(self):
         captured: dict[str, str] = {}
         original = ai_service.suggest_description_with_proxy_fallback_result
@@ -521,6 +541,89 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(captured["provider_law_context"], "Источник: https://laws.example\nНорма: Статья 20")
         self.assertIn("wrongful_article procedural_violation LSPD Officer", captured["retrieval_query"])
         self.assertNotIn("fact100", captured["retrieval_query"])
+
+    def test_suggest_text_details_filters_prompt_law_context_to_valid_mask_exception_trigger(self):
+        captured: dict[str, str] = {}
+        original = ai_service.suggest_description_with_proxy_fallback_result
+        original_build_context = ai_service._build_suggest_law_context
+
+        def fake_suggest(**kwargs):
+            captured["provider_law_context"] = kwargs["law_context"]
+            return ai_service.TextGenerationResult(
+                text=(
+                    "Человека задержали на территории Maze Bank Arena из-за ношения маски. "
+                    "Эти обстоятельства требуют проверки. "
+                    "Действия сотрудника вызывают сомнения. "
+                    "Необходима правовая оценка по представленным материалам."
+                ),
+                usage=ai_service.AiUsageSummary(),
+                cache_hit=False,
+                attempt_path="proxy",
+                attempt_duration_ms=180,
+                route_policy="proxy_first",
+            )
+
+        ai_service.suggest_description_with_proxy_fallback_result = fake_suggest
+        ai_service._build_suggest_law_context = lambda **kwargs: ai_service.SuggestContextBuildResult(
+            context_text=(
+                "Источник: https://laws.example/admin\n"
+                "Документ: Административный кодекс\n"
+                "Норма: Статья 18\n"
+                "Фрагмент: Использование маски допустимо в Maze Bank Arena.\n\n"
+                "Источник: https://laws.example/processual\n"
+                "Документ: Процессуальный кодекс\n"
+                "Норма: Статья 23.1 Порядок наложения штрафа (тикета)\n"
+                "Фрагмент: Сотрудник обязан подготовить тикет и указать сумму штрафа."
+            ),
+            retrieval_confidence="high",
+            retrieval_context_mode="normal_context",
+            retrieval_profile="suggest",
+            bundle_status="ready",
+            bundle_generated_at="2026-04-12T00:00:00Z",
+            bundle_fingerprint="bundle-mask-test",
+            selected_norms_count=2,
+            selected_norms=(
+                {
+                    "source_url": "https://laws.example/admin",
+                    "document_title": "Административный кодекс",
+                    "article_label": "Статья 18",
+                    "excerpt": "Использование маски допускается на территории Maze Bank Arena.",
+                    "score": 92,
+                },
+                {
+                    "source_url": "https://laws.example/processual",
+                    "document_title": "Процессуальный кодекс",
+                    "article_label": "Статья 23.1 Порядок наложения штрафа (тикета)",
+                    "excerpt": "Сотрудник обязан подготовить тикет и указать сумму штрафа.",
+                    "score": 35,
+                },
+            ),
+        )
+        try:
+            result = ai_service.suggest_text_details(
+                SuggestPayload(
+                    victim_name="Victim",
+                    org="LSPD",
+                    subject="Officer",
+                    event_dt="08.04.2026 14:30",
+                    raw_desc=(
+                        "Человека задержали на территории Maze Bank Arena из-за ношения маски, "
+                        "потребовали снять её без внятного основания, а после отказа оформили задержание."
+                    ),
+                    complaint_basis="procedural_violation",
+                    main_focus="Спорность оснований задержания",
+                ),
+                server_code="blackberry",
+            )
+        finally:
+            ai_service.suggest_description_with_proxy_fallback_result = original
+            ai_service._build_suggest_law_context = original_build_context
+
+        self.assertEqual(result.policy_mode, "legal_grounded")
+        self.assertIn("Статья 18", captured["provider_law_context"])
+        self.assertNotIn("23.1", captured["provider_law_context"])
+        self.assertNotIn("тикет", captured["provider_law_context"].lower())
+        self.assertNotIn("штраф", captured["provider_law_context"].lower())
 
     def test_suggest_text_retries_with_compacted_context_on_context_window_error(self):
         captured_calls: list[dict[str, object]] = []

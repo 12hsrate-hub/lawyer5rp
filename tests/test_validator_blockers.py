@@ -34,3 +34,35 @@ def test_validator_blocks_articles_dates_and_strong_qualifications_without_valid
     assert "new_url" in result.blocker_codes
     assert "article_without_valid_trigger" in result.blocker_codes
     assert "strong_unconfirmed_qualification" in result.blocker_codes
+
+
+def test_validator_warns_when_mask_exception_anchor_is_lost() -> None:
+    context = build_point3_pipeline_context(
+        complainant="Test Principal 1",
+        organization="LSPD",
+        target_person="Test Officer 1",
+        event_datetime="12.04.2026 18:10",
+        draft_text=(
+            "Человека задержали на территории Maze Bank Arena из-за ношения маски, "
+            "после отказа снять её оформили задержание."
+        ),
+        retrieval_status="normal_context",
+        retrieval_confidence="high",
+        retrieved_law_context="Источник: https://laws.example/admin\nНорма: Статья 18",
+        selected_norms=(
+            {
+                "source_url": "https://laws.example/admin",
+                "document_title": "Административный кодекс",
+                "article_label": "Статья 18",
+                "excerpt": "Использование маски допускается в Maze Bank Arena.",
+                "score": 92,
+            },
+        ),
+    )
+
+    result = validate_generated_paragraph(
+        "На территории арены были совершены спорные действия, которые требуют проверки по представленным материалам.",
+        context,
+    )
+
+    assert "missing_mask_exception_anchor" in result.warning_codes

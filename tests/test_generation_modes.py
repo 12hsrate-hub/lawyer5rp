@@ -29,6 +29,7 @@ def test_data_driven_prompt_includes_legal_grounded_mode_section() -> None:
     assert "Mode: legal_grounded" in prompt
     assert "[pipeline_context]" in prompt
     assert "valid triggers" in prompt
+    assert "validated norm contains a direct exception" in prompt
 
 
 def test_data_driven_prompt_includes_fallback_mode_section() -> None:

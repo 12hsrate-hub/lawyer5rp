@@ -93,6 +93,16 @@ _INPUT_EVIDENCE_TERMS = (
     "рапорт",
     "протокол",
 )
+_MASK_TRIGGER_TERMS = ("маск", "маскиров", "визор", "капюшон")
+_ENTERTAINMENT_LOCATION_TERMS = (
+    "maze bank arena",
+    "арена",
+    "развлекатель",
+    "увеселит",
+    "казино",
+    "клуб",
+    "бар",
+)
 _VIDEO_TERMS = ("видео", "видеозап", "видеофиксац", "запись", "bodycam", "бодикам")
 _VIDEO_ABSENCE_MARKERS = ("отсутств", "не предостав", "не поступ", "нет", "не было")
 _VIDEO_PRESENCE_MARKERS = ("предостав", "прилож", "имеется", "есть", "ссылка", "bodycam", "бодикам")
@@ -782,6 +792,19 @@ def validate_generated_paragraph(text: str, context: Point3PipelineContext) -> S
             )
             break
 
+    if _is_mask_exception_case(context.normalized_input.draft_text):
+        if not (
+            _contains_any_substring(normalized_text, _MASK_TRIGGER_TERMS)
+            and _contains_any_substring(normalized_text, _ENTERTAINMENT_LOCATION_TERMS)
+        ):
+            warnings.append(
+                ValidationIssue(
+                    code="missing_mask_exception_anchor",
+                    severity="warning",
+                    message="The output lost the key mask exception anchor from the draft facts.",
+                )
+            )
+
     if context.normalized_input.retrieval_status == "low_confidence_context":
         infos.append(
             ValidationIssue(
@@ -970,6 +993,9 @@ def _has_direct_fact_trigger(
     norm: SelectedNorm,
     overlap: int,
 ) -> bool:
+    if _is_mask_exception_trigger(normalized_input=normalized_input, fact_text=fact_text, norm=norm):
+        return True
+
     thresholds = load_policy_thresholds()
     min_root_overlap = int(thresholds["thresholds"].get("min_root_overlap_for_trigger", 1) or 1)
     if overlap < min_root_overlap:
@@ -994,6 +1020,29 @@ def _has_direct_fact_trigger(
         )
 
     return True
+
+
+def _is_mask_exception_trigger(
+    *,
+    normalized_input: NormalizedSuggestInput,
+    fact_text: str,
+    norm: SelectedNorm,
+) -> bool:
+    group_key = _document_group_key(norm.document_title)
+    if group_key != "administrative_code":
+        return False
+
+    case_text = " ".join((normalized_input.draft_text, fact_text, normalized_input.applicability_notes))
+    if not _contains_any_substring(case_text, _MASK_TRIGGER_TERMS):
+        return False
+    if not _contains_any_substring(case_text, _ENTERTAINMENT_LOCATION_TERMS):
+        return False
+
+    norm_text = " ".join((norm.document_title, norm.article_label, norm.excerpt))
+    normalized_norm_text = _normalize_inline(norm_text).lower()
+    if "статья 18" not in normalized_norm_text:
+        return False
+    return _contains_any_substring(norm_text, _MASK_TRIGGER_TERMS)
 
 
 def _document_priority_weight(document_title: str) -> int:
@@ -1076,6 +1125,13 @@ def _dedupe_input_issues(issues: Sequence[InputAuditIssue]) -> list[InputAuditIs
         seen.add(issue.code)
         deduped.append(issue)
     return deduped
+
+
+def _is_mask_exception_case(text: str) -> bool:
+    return _contains_any_substring(text, _MASK_TRIGGER_TERMS) and _contains_any_substring(
+        text,
+        _ENTERTAINMENT_LOCATION_TERMS,
+    )
 
 
 def _extract_allowed_numbers(context: Point3PipelineContext) -> set[str]:
