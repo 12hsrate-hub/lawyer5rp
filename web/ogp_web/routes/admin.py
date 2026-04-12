@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import uuid
 from copy import deepcopy
@@ -31,6 +32,7 @@ from ogp_web.web import page_context, templates
 
 
 router = APIRouter(tags=["admin"])
+logger = logging.getLogger(__name__)
 _PERFORMANCE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _PERFORMANCE_CACHE_TTL_SECONDS = 10
 _PERFORMANCE_CACHE_LOCK = threading.Lock()
@@ -121,6 +123,19 @@ def _round_rate(numerator: int, denominator: int) -> float | None:
     if denominator <= 0:
         return None
     return round((numerator / denominator) * 100.0, 2)
+
+
+def _safe_float(value: Any, default: float = 0.0, *, generation_id: str = "", field: str = "value") -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        logger.warning(
+            "admin_ai_pipeline_invalid_float generation_id=%s field=%s raw_value=%r",
+            generation_id or "unknown",
+            field,
+            value,
+        )
+        return default
 
 
 def _band_from_thresholds(value: float | None, *, green_max: float, yellow_max: float) -> str:
@@ -259,9 +274,14 @@ def _build_ai_pipeline_cost_tables(generations: list[dict[str, Any]]) -> dict[st
     by_flow: dict[str, dict[str, Any]] = {}
     for row in generations:
         meta = row.get("meta") or {}
+        generation_id = str(meta.get("generation_id") or "").strip()
         model = str(meta.get("model") or "unknown").strip() or "unknown"
         flow = str(meta.get("flow") or "unknown").strip() or "unknown"
-        cost_value = float(meta.get("estimated_cost_usd") or 0.0)
+        cost_value = _safe_float(
+            meta.get("estimated_cost_usd"),
+            generation_id=generation_id,
+            field="estimated_cost_usd",
+        )
         token_value = int(meta.get("total_tokens") or 0)
 
         model_item = by_model.setdefault(model, {"model": model, "requests": 0, "estimated_cost_total_usd": 0.0, "total_tokens": 0})
@@ -312,6 +332,11 @@ def _build_top_inaccurate_generations(
         generation_id = str(meta.get("generation_id") or "").strip()
         generation = by_generation_id.get(generation_id, {})
         generation_meta = generation.get("meta") or {}
+        generation_cost = _safe_float(
+            generation_meta.get("estimated_cost_usd"),
+            generation_id=generation_id,
+            field="estimated_cost_usd",
+        )
         items.append(
             {
                 "created_at": row.get("created_at"),
@@ -323,7 +348,7 @@ def _build_top_inaccurate_generations(
                 "guard_status": str(generation_meta.get("guard_status") or "").strip(),
                 "guard_warnings": list(generation_meta.get("guard_warnings") or []),
                 "model": str(generation_meta.get("model") or "").strip(),
-                "estimated_cost_usd": float(generation_meta.get("estimated_cost_usd") or 0.0),
+                "estimated_cost_usd": generation_cost,
             }
         )
     return items[: max(1, int(limit or 10))]
