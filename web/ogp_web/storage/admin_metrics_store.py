@@ -243,47 +243,28 @@ class AdminMetricsStore:
         return self.backend.healthcheck()
 
     def _ensure_schema(self) -> None:
+        if self.is_postgres_backend:
+            return
         with closing(self._connect()) as conn:
-            if self.is_postgres_backend:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS metric_events (
-                        id BIGSERIAL PRIMARY KEY,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        username TEXT,
-                        server_code TEXT,
-                        event_type TEXT NOT NULL,
-                        path TEXT,
-                        method TEXT,
-                        status_code INTEGER,
-                        duration_ms INTEGER,
-                        request_bytes INTEGER,
-                        response_bytes INTEGER,
-                        resource_units INTEGER,
-                        meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
-                    )
-                    """
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS metric_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    username TEXT,
+                    server_code TEXT,
+                    event_type TEXT NOT NULL,
+                    path TEXT,
+                    method TEXT,
+                    status_code INTEGER,
+                    duration_ms INTEGER,
+                    request_bytes INTEGER,
+                    response_bytes INTEGER,
+                    resource_units INTEGER,
+                    meta_json TEXT NOT NULL DEFAULT '{}'
                 )
-            else:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS metric_events (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        username TEXT,
-                        server_code TEXT,
-                        event_type TEXT NOT NULL,
-                        path TEXT,
-                        method TEXT,
-                        status_code INTEGER,
-                        duration_ms INTEGER,
-                        request_bytes INTEGER,
-                        response_bytes INTEGER,
-                        resource_units INTEGER,
-                        meta_json TEXT NOT NULL DEFAULT '{}'
-                    )
-                    """
-                )
+                """
+            )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_created_at ON metric_events(created_at DESC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_username ON metric_events(username)")
             conn.execute(
@@ -298,13 +279,12 @@ class AdminMetricsStore:
                 "CREATE INDEX IF NOT EXISTS idx_metric_events_username_created_at "
                 "ON metric_events(username, created_at DESC)"
             )
-            if not self.is_postgres_backend:
-                existing_columns = {
-                    str(row["name"])
-                    for row in conn.execute("PRAGMA table_info(metric_events)").fetchall()
-                }
-                if "server_code" not in existing_columns:
-                    conn.execute("ALTER TABLE metric_events ADD COLUMN server_code TEXT")
+            existing_columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(metric_events)").fetchall()
+            }
+            if "server_code" not in existing_columns:
+                conn.execute("ALTER TABLE metric_events ADD COLUMN server_code TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_server_code ON metric_events(server_code)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_event_type ON metric_events(event_type)")
             conn.commit()

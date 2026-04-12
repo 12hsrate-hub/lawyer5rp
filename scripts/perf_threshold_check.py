@@ -13,7 +13,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 if str(ROOT_DIR / "web") not in sys.path:
     sys.path.insert(0, str(ROOT_DIR / "web"))
-os.environ.setdefault("OGP_DB_BACKEND", "sqlite")
+os.environ.setdefault("OGP_DB_BACKEND", "postgres")
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 
 
@@ -66,6 +66,8 @@ def load_windows(snapshot: dict[str, Any]) -> dict[int, PerfWindow]:
 
 
 def run_local_snapshot(top_endpoints: int = 10, windows: tuple[int, ...] = (15, 60, 1440), db_path: Path | None = None) -> dict[str, Any]:
+    if not os.getenv("DATABASE_URL", "").strip():
+        raise RuntimeError("DATABASE_URL is required for local performance snapshot.")
     if db_path is None:
         db_path = ROOT_DIR / "web" / "data" / "admin_metrics.db"
     store = AdminMetricsStore(db_path, backend=None)

@@ -125,47 +125,31 @@ class ExamImportTaskRegistry:
         return self.backend.healthcheck()
 
     def _ensure_schema(self) -> None:
+        if self.is_postgres_backend:
+            return
         with closing(self._connect()) as conn:
-            if self.is_postgres_backend:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS exam_import_tasks (
-                        id TEXT PRIMARY KEY,
-                        task_type TEXT NOT NULL,
-                        source_row INTEGER,
-                        status TEXT NOT NULL,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        started_at TIMESTAMPTZ,
-                        finished_at TIMESTAMPTZ,
-                        error TEXT NOT NULL DEFAULT '',
-                        progress_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-                        result_json JSONB NOT NULL DEFAULT '{}'::jsonb
-                    )
-                    """
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS exam_import_tasks (
+                    id TEXT PRIMARY KEY,
+                    task_type TEXT NOT NULL,
+                    source_row INTEGER,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    started_at TEXT NOT NULL DEFAULT '',
+                    finished_at TEXT NOT NULL DEFAULT '',
+                    error TEXT NOT NULL DEFAULT '',
+                    progress_json TEXT NOT NULL DEFAULT '',
+                    result_json TEXT NOT NULL DEFAULT ''
                 )
-            else:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS exam_import_tasks (
-                        id TEXT PRIMARY KEY,
-                        task_type TEXT NOT NULL,
-                        source_row INTEGER,
-                        status TEXT NOT NULL,
-                        created_at TEXT NOT NULL,
-                        started_at TEXT NOT NULL DEFAULT '',
-                        finished_at TEXT NOT NULL DEFAULT '',
-                        error TEXT NOT NULL DEFAULT '',
-                        progress_json TEXT NOT NULL DEFAULT '',
-                        result_json TEXT NOT NULL DEFAULT ''
-                    )
-                    """
-                )
-                columns = {
-                    str(row["name"])
-                    for row in conn.execute("PRAGMA table_info(exam_import_tasks)").fetchall()
-                }
-                if "progress_json" not in columns:
-                    conn.execute("ALTER TABLE exam_import_tasks ADD COLUMN progress_json TEXT NOT NULL DEFAULT ''")
+                """
+            )
+            columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(exam_import_tasks)").fetchall()
+            }
+            if "progress_json" not in columns:
+                conn.execute("ALTER TABLE exam_import_tasks ADD COLUMN progress_json TEXT NOT NULL DEFAULT ''")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_exam_import_tasks_created_at ON exam_import_tasks(created_at DESC)"
             )
