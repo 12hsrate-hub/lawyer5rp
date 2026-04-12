@@ -373,6 +373,12 @@ class ExamAnswersStore:
                 matched_rows.append(match)
 
             archived_source_row = self._next_archived_source_row(conn)
+            if reference_existing is not None and int(reference_existing.get("source_row") or 0) > 0:
+                conn.execute(
+                    f"UPDATE exam_answers SET source_row = {placeholder} WHERE id = {placeholder}",
+                    (REFERENCE_SOURCE_ROW, reference_existing["id"]),
+                )
+                reference_existing["source_row"] = REFERENCE_SOURCE_ROW
             for existing in reference_snapshots:
                 if reference_existing is not None and int(existing["id"]) == int(reference_existing["id"]):
                     continue

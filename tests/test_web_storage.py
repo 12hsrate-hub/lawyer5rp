@@ -1432,6 +1432,81 @@ class WebStorageTests(unittest.TestCase):
             gc.collect()
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_exam_answers_store_frees_legacy_reference_row_before_inserting_new_candidate(self):
+        tmpdir = make_temp_dir()
+        try:
+            root = Path(tmpdir)
+            backend = FakeExamAnswersPostgresBackend()
+            store = ExamAnswersStore(root / "exam_answers.db", backend=backend)
+            legacy_conn = FakeExamAnswersConnection(backend._state)
+            legacy_payload = {
+                "submitted_at": "",
+                "full_name": "эталонные ответы",
+                "discord_tag": "эталонные ответы",
+                "passport": "",
+                "format": "эталонные ответы",
+                "Question F": "Reference F",
+            }
+            legacy_conn._insert_row(
+                (
+                    9,
+                    "",
+                    "эталонные ответы",
+                    "эталонные ответы",
+                    "",
+                    "эталонные ответы",
+                    json.dumps(legacy_payload, ensure_ascii=False),
+                    1,
+                    True,
+                    "legacy-reference",
+                )
+            )
+
+            result = store.import_rows(
+                [
+                    {
+                        "source_row": 9,
+                        "submitted_at": "2026-04-10 10:00:00",
+                        "full_name": "New Candidate",
+                        "discord_tag": "candidate",
+                        "passport": "700012",
+                        "exam_format": "remote",
+                        "payload": {
+                            "submitted_at": "2026-04-10 10:00:00",
+                            "full_name": "New Candidate",
+                            "discord_tag": "candidate",
+                            "passport": "700012",
+                            "format": "remote",
+                            "Question F": "Candidate F",
+                        },
+                        "answer_count": 1,
+                    },
+                    {
+                        "source_row": 10,
+                        "submitted_at": "",
+                        "full_name": "эталонные ответы",
+                        "discord_tag": "эталонные ответы",
+                        "passport": "",
+                        "exam_format": "эталонные ответы",
+                        "payload": legacy_payload,
+                        "answer_count": 1,
+                    },
+                ]
+            )
+
+            self.assertEqual(result["inserted_count"], 1)
+            self.assertEqual(result["total_rows"], 1)
+            self.assertEqual(store.get_entry(9)["full_name"], "New Candidate")
+            self.assertIsNone(store.get_entry(10))
+            reference_entry = store.get_reference_entry()
+            self.assertIsNotNone(reference_entry)
+            self.assertEqual(reference_entry["source_row"], 0)
+            self.assertEqual(reference_entry["full_name"], "эталонные ответы")
+        finally:
+            del store
+            gc.collect()
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_exam_answers_store_preserves_scores_when_identity_fields_change_but_answers_match(self):
         tmpdir = make_temp_dir()
         try:
