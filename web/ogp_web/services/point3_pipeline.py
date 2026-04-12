@@ -1449,7 +1449,7 @@ def _apply_mask_exception_rule(text: str, context: Point3PipelineContext) -> str
     document_title = _clean_document_title_for_reference(article_18_trigger.document_title)
     location_phrase = _mask_case_location_phrase(context.normalized_input.draft_text)
     sentence = (
-        f"При этом статья 18 {document_title} предусматривает исключение, при котором ношение маски "
+        f"При этом статья 18 ({document_title}) предусматривает исключение, при котором ношение маски "
         f"{location_phrase} допускается и требует отдельной проверки достаточности основания задержания."
     ).strip()
     if sentence.lower() in text.lower():
