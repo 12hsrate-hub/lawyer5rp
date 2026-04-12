@@ -19,7 +19,7 @@ _CONFIG_DIR = _ROOT_DIR / "config"
 _DATE_PATTERN = re.compile(r"\b\d{1,2}\.\d{1,2}\.\d{2,4}(?:\s+\d{1,2}:\d{2})?\b")
 _NUMBER_PATTERN = re.compile(r"\b\d{1,4}(?:\.\d+)?\b")
 _ARTICLE_REF_PATTERN = re.compile(
-    r"\b(?:ст\.?|статья)\s*\d+(?:\.\d+)?(?:\s*(?:ч\.?|част[ьи])\s*\d+)?(?:\s*(?:п\.?|пункт)\s*[\"«]?[a-zа-яё0-9-]+[\"»]?)?",
+    r"\b(?:ст\.?|стат(?:ья|ье|ьи|ью))\s*\d+(?:\.\d+)?(?:\s*(?:ч\.?|част[ьи])\s*\d+)?(?:\s*(?:п\.?|пункт)\s*[\"«]?[a-zа-яё0-9-]+[\"»]?)?",
     flags=re.IGNORECASE,
 )
 _MULTIWORD_ENTITY_PATTERN = re.compile(r"\b[А-ЯЁA-Z][а-яёa-z]+(?:\s+[А-ЯЁA-Z][а-яёa-z]+)+\b")
@@ -107,6 +107,21 @@ _VIDEO_TERMS = ("видео", "видеозап", "видеофиксац", "з�
 _VIDEO_ABSENCE_MARKERS = ("отсутств", "не предостав", "не поступ", "нет", "не было")
 _VIDEO_PRESENCE_MARKERS = ("предостав", "прилож", "имеется", "есть", "ссылка", "bodycam", "бодикам")
 _GENERIC_ACTOR_MARKERS = ("человек", "лицо", "гражданин", "он", "она", "они")
+_STATE_SERVICE_TERMS = (
+    "государственной службы",
+    "государственный служащий",
+    "госслужащ",
+    "госслужб",
+    "прокурор",
+    "офиса генерального прокурора",
+    "начальств",
+    "руководств",
+    "бейдж",
+    "удостоверен",
+)
+_SEARCH_ACTION_TERMS = ("обыск", "досмотр", "личный обыск", "изъят", "изъятие", "изъяли")
+_PERSONAL_CONFLICT_TERMS = ("личный конфликт", "личная неприязнь", "конфликт", "неприязн")
+_CODE_OR_LAW_MARKERS = ("кодекс", "закон")
 _PROTECTED_TERM_GROUPS: dict[str, tuple[str, ...]] = {
     "detention": ("задержан", "задержание", "задержали"),
     "arrest": ("арест", "арестован", "арестовали"),
@@ -680,15 +695,26 @@ def route_policy(
         normalized_input.retrieval_status == "low_confidence_context"
         and any(borderline_min <= value < borderline_max for value in trigger_confidences)
     )
+    personal_conflict_fallback = _should_force_factual_fallback_for_personal_conflict(
+        normalized_input=normalized_input,
+        valid_triggers=valid_triggers,
+    )
 
-    if valid_triggers and min(item.trigger_confidence for item in valid_triggers) >= min_valid and not borderline_low_confidence:
+    if (
+        valid_triggers
+        and min(item.trigger_confidence for item in valid_triggers) >= min_valid
+        and not borderline_low_confidence
+        and not personal_conflict_fallback
+    ):
         return PolicyDecision(
             mode=MODE_LEGAL_GROUNDED,
             reason="valid_trigger_confirmed",
             valid_triggers_count=len(valid_triggers),
             avg_confidence=avg_confidence,
         )
-    if borderline_low_confidence:
+    if personal_conflict_fallback:
+        reason = "personal_conflict_requires_factual_fallback"
+    elif borderline_low_confidence:
         reason = "low_confidence_context_borderline_triggers"
     else:
         reason = "no_valid_triggers_or_low_confidence"
@@ -742,14 +768,38 @@ def validate_generated_paragraph(text: str, context: Point3PipelineContext) -> S
         for item in valid_triggers
         if _normalize_inline(item.norm_ref)
     }
+    allowed_article_numbers = {
+        _primary_article_number(item.norm_ref)
+        for item in valid_triggers
+        if _primary_article_number(item.norm_ref)
+    }
     for match in _ARTICLE_REF_PATTERN.finditer(normalized_text):
         ref_text = _normalize_inline(match.group(0)).lower()
-        if policy_mode != MODE_LEGAL_GROUNDED or ref_text not in allowed_article_refs:
+        ref_number = _primary_article_number(ref_text)
+        if (
+            policy_mode != MODE_LEGAL_GROUNDED
+            or (ref_text not in allowed_article_refs and ref_number not in allowed_article_numbers)
+        ):
             blockers.append(
                 ValidationIssue(
                     code="article_without_valid_trigger",
                     severity="blocker",
                     message="Article references are allowed only in legal_grounded with valid triggers.",
+                    start=match.start(),
+                    end=match.end(),
+                    span_text=match.group(0),
+                )
+            )
+        elif not _article_reference_has_document_title(
+            normalized_text,
+            match_start=match.start(),
+            match_end=match.end(),
+        ):
+            warnings.append(
+                ValidationIssue(
+                    code="article_missing_document_title",
+                    severity="warning",
+                    message="Article references should include the code or law name in the same sentence.",
                     start=match.start(),
                     end=match.end(),
                     span_text=match.group(0),
@@ -865,6 +915,14 @@ def validate_generated_paragraph(text: str, context: Point3PipelineContext) -> S
                     message="The output lost the key mask exception anchor from the draft facts.",
                 )
             )
+        if not _contains_any_substring(normalized_text, ("допуска", "разреш", "исключени")):
+            warnings.append(
+                ValidationIssue(
+                    code="missing_mask_exception_rule",
+                    severity="warning",
+                    message="The output should state the decisive exception rule for the mask case.",
+                )
+            )
 
     if context.normalized_input.retrieval_status == "low_confidence_context":
         infos.append(
@@ -899,18 +957,26 @@ def validate_generated_paragraph(text: str, context: Point3PipelineContext) -> S
 def apply_validation_remediation(text: str, context: Point3PipelineContext) -> RemediationOutcome:
     retry_policy = load_retry_policy()
     max_retries = int(retry_policy.get("retry_policy", {}).get("max_retries", 0) or 0)
-    candidate = normalize_generated_paragraph(text)
+    candidate = _apply_grounded_output_repairs(normalize_generated_paragraph(text), context)
     validation = validate_generated_paragraph(candidate, context)
     retries_used = 0
 
     while validation.blockers and retries_used < max_retries:
         candidate = remediate_generated_paragraph(candidate, validation)
+        candidate = _apply_grounded_output_repairs(candidate, context)
         retries_used += 1
         validation = validate_generated_paragraph(candidate, context)
+
+    if validation.warning_codes:
+        repaired_candidate = _apply_grounded_output_repairs(candidate, context)
+        if repaired_candidate != candidate:
+            candidate = repaired_candidate
+            validation = validate_generated_paragraph(candidate, context)
 
     safe_fallback_used = False
     if validation.blockers:
         candidate = build_safe_fallback_paragraph(context)
+        candidate = _apply_grounded_output_repairs(candidate, context)
         validation = validate_generated_paragraph(candidate, context)
         safe_fallback_used = True
 
@@ -1047,6 +1113,11 @@ def _norm_ref_mentioned_in_text(norm_ref: str, draft_text: str) -> bool:
     return any(re.search(rf"\b{re.escape(number)}\b", str(draft_text or "")) for number in article_numbers)
 
 
+def _primary_article_number(norm_ref: str) -> str:
+    numbers = _NUMBER_PATTERN.findall(_normalize_inline(norm_ref))
+    return numbers[0] if numbers else ""
+
+
 def _has_direct_fact_trigger(
     *,
     normalized_input: NormalizedSuggestInput,
@@ -1074,6 +1145,15 @@ def _has_direct_fact_trigger(
         court_terms = thresholds.get("document_priority", {}).get("court_proceedings_terms", ())
         return _contains_any_substring(combined_text, court_terms)
 
+    primary_article_number = _primary_article_number(norm.article_label)
+    if group_key == "processual_code" and primary_article_number == "19":
+        combined_text = " ".join((normalized_input.draft_text, normalized_input.applicability_notes, fact_text))
+        return _contains_any_substring(combined_text, _STATE_SERVICE_TERMS)
+
+    if group_key == "processual_code" and primary_article_number == "29":
+        combined_text = " ".join((normalized_input.draft_text, normalized_input.applicability_notes, fact_text))
+        return _contains_any_substring(combined_text, _SEARCH_ACTION_TERMS)
+
     if group_key == "advocate_law":
         return _contains_any_substring(
             " ".join((fact_text, norm.search_text)),
@@ -1100,8 +1180,7 @@ def _is_mask_exception_trigger(
         return False
 
     norm_text = norm.search_text
-    normalized_norm_text = _normalize_inline(norm_text).lower()
-    if "статья 18" not in normalized_norm_text:
+    if _primary_article_number(norm_text) != "18":
         return False
     return _contains_any_substring(norm_text, _MASK_TRIGGER_TERMS)
 
@@ -1167,6 +1246,31 @@ def _has_protected_term_collision(lowered_draft: str, left_group: str, right_gro
     left_terms = _PROTECTED_TERM_GROUPS.get(left_group, ())
     right_terms = _PROTECTED_TERM_GROUPS.get(right_group, ())
     return _contains_any_substring(lowered_draft, left_terms) and _contains_any_substring(lowered_draft, right_terms)
+
+
+def _is_personal_conflict_case(draft_text: str) -> bool:
+    normalized = _normalize_inline(draft_text).lower()
+    return _contains_any_substring(normalized, _PERSONAL_CONFLICT_TERMS) and _contains_any_substring(
+        normalized,
+        _PROTECTED_TERM_GROUPS.get("detention", ()) + _PROTECTED_TERM_GROUPS.get("arrest", ()),
+    )
+
+
+def _is_generic_processual_trigger(trigger: NormTrigger) -> bool:
+    group_key = _document_group_key(trigger.document_title)
+    if group_key != "processual_code":
+        return False
+    return _primary_article_number(trigger.norm_ref) in {"17", "19", "29", "59"}
+
+
+def _should_force_factual_fallback_for_personal_conflict(
+    *,
+    normalized_input: NormalizedSuggestInput,
+    valid_triggers: Sequence[NormTrigger],
+) -> bool:
+    if not valid_triggers or not _is_personal_conflict_case(normalized_input.draft_text):
+        return False
+    return all(_is_generic_processual_trigger(item) and not item.matched_in_input for item in valid_triggers)
 
 
 def _extract_protected_terms(lowered_draft: str) -> list[str]:
@@ -1250,6 +1354,112 @@ def _contains_assessment_phrase(text: str, phrases: Iterable[str]) -> bool:
     )
 
 
+def _article_reference_has_document_title(text: str, *, match_start: int, match_end: int) -> bool:
+    sentence_start = max(text.rfind(".", 0, match_start), text.rfind("!", 0, match_start), text.rfind("?", 0, match_start))
+    sentence_end_candidates = [index for index in (text.find(".", match_end), text.find("!", match_end), text.find("?", match_end)) if index >= 0]
+    sentence_end = min(sentence_end_candidates) if sentence_end_candidates else len(text)
+    sentence_text = text[sentence_start + 1 : sentence_end].lower()
+    return any(marker in sentence_text for marker in _CODE_OR_LAW_MARKERS)
+
+
+def _clean_document_title_for_reference(document_title: str) -> str:
+    cleaned = _normalize_inline(document_title)
+    cleaned = re.sub(r"^\s*Важно\s*-\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*\((?:редакция|version)[^)]+\)\s*$", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip(" ,;")
+
+
+def _build_article_reference_title_map(context: Point3PipelineContext) -> tuple[dict[str, str], dict[str, str]]:
+    exact_map: dict[str, str] = {}
+    number_to_title_candidates: dict[str, set[str]] = {}
+    for trigger in context.triggers:
+        if not trigger.is_valid:
+            continue
+        cleaned_title = _clean_document_title_for_reference(trigger.document_title)
+        normalized_ref = _normalize_inline(trigger.norm_ref).lower()
+        if cleaned_title and normalized_ref:
+            exact_map[normalized_ref] = cleaned_title
+        for number in _NUMBER_PATTERN.findall(trigger.norm_ref):
+            if cleaned_title:
+                number_to_title_candidates.setdefault(number, set()).add(cleaned_title)
+    number_map = {
+        number: next(iter(titles))
+        for number, titles in number_to_title_candidates.items()
+        if len(titles) == 1
+    }
+    return exact_map, number_map
+
+
+def _apply_article_reference_titles(text: str, context: Point3PipelineContext) -> str:
+    if context.policy_decision.mode != MODE_LEGAL_GROUNDED:
+        return text
+
+    exact_map, number_map = _build_article_reference_title_map(context)
+
+    def replace(match: re.Match[str]) -> str:
+        if _article_reference_has_document_title(text, match_start=match.start(), match_end=match.end()):
+            return match.group(0)
+        ref_text = _normalize_inline(match.group(0))
+        normalized_ref = ref_text.lower()
+        title = exact_map.get(normalized_ref)
+        if not title:
+            numbers = _NUMBER_PATTERN.findall(ref_text)
+            if numbers:
+                title = number_map.get(numbers[0], "")
+        if not title:
+            return match.group(0)
+        return f"{match.group(0)} ({title})"
+
+    return _ARTICLE_REF_PATTERN.sub(replace, text)
+
+
+def _mask_case_location_phrase(draft_text: str) -> str:
+    normalized = _normalize_inline(draft_text)
+    if "Maze Bank Arena".lower() in normalized.lower():
+        return "на территории Maze Bank Arena"
+    return "в соответствующем развлекательном учреждении"
+
+
+def _apply_mask_exception_rule(text: str, context: Point3PipelineContext) -> str:
+    if not _is_mask_exception_case(context.normalized_input.draft_text):
+        return text
+    if _contains_any_substring(text, ("допуска", "разреш", "исключени")):
+        return text
+
+    article_18_trigger = next(
+        (
+            item
+            for item in context.triggers
+            if item.is_valid and _primary_article_number(item.norm_ref) == "18"
+        ),
+        None,
+    )
+    if article_18_trigger is None:
+        return text
+
+    document_title = _clean_document_title_for_reference(article_18_trigger.document_title)
+    location_phrase = _mask_case_location_phrase(context.normalized_input.draft_text)
+    sentence = (
+        f"При этом статья 18 {document_title} предусматривает исключение, при котором ношение маски "
+        f"{location_phrase} допускается и требует отдельной проверки достаточности основания задержания."
+    ).strip()
+    if sentence.lower() in text.lower():
+        return text
+
+    parts = [item.strip() for item in re.split(r"(?<=[.!?])\s+", text) if item.strip()]
+    if len(parts) >= 2:
+        parts.insert(2, sentence)
+        return normalize_generated_paragraph(" ".join(parts))
+    return normalize_generated_paragraph(f"{text} {sentence}")
+
+
+def _apply_grounded_output_repairs(text: str, context: Point3PipelineContext) -> str:
+    repaired = normalize_generated_paragraph(text)
+    repaired = _apply_article_reference_titles(repaired, context)
+    repaired = _apply_mask_exception_rule(repaired, context)
+    return _normalize_after_rewrite(repaired)
+
+
 def _dedupe_issues(issues: Sequence[ValidationIssue]) -> list[ValidationIssue]:
     deduped: list[ValidationIssue] = []
     seen: set[tuple[object, ...]] = set()
@@ -1287,6 +1497,9 @@ def _normalize_after_rewrite(text: str) -> str:
     normalized = re.sub(r"\s{2,}", " ", normalized)
     normalized = re.sub(r"\.\s*,", ".", normalized)
     normalized = re.sub(r",\s*\.", ".", normalized)
+    normalized = re.sub(r"\b(сотрудника|сотрудник)\s+\1\b", r"\1", normalized, flags=re.IGNORECASE)
+    normalized = normalized.replace("материалова", "материалов")
+    normalized = normalized.replace("оценкисть", "оценки")
     return normalized.strip(" ,;")
 
 

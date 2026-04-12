@@ -155,3 +155,59 @@ def test_policy_router_prioritizes_article_18_mask_exception_for_maze_bank_arena
     valid_refs = {item.norm_ref for item in context.triggers if item.is_valid}
     assert "Статья 18" in valid_refs
     assert all("23.1" not in item.norm_ref for item in context.triggers if item.is_valid)
+
+
+def test_policy_router_requires_state_service_trigger_for_article_19() -> None:
+    context = build_point3_pipeline_context(
+        complainant="Test Principal 3",
+        organization="LSPD",
+        target_person="Test Officer 3",
+        event_datetime="12.04.2026 18:30",
+        draft_text=(
+            "Между человеком и сотрудником сначала произошёл личный конфликт, "
+            "а спустя короткое время тот же сотрудник уже в служебном статусе вернулся и оформил задержание."
+        ),
+        retrieval_status="normal_context",
+        retrieval_confidence="high",
+        retrieved_law_context="Источник: https://laws.example/processual\nНорма: Статья 19",
+        selected_norms=(
+            {
+                "source_url": "https://laws.example/processual",
+                "document_title": "Процессуальный кодекс",
+                "article_label": "Статья 19",
+                "excerpt": "Статья 19. Порядок уведомления и процедуры при задержании сотрудников государственной службы.",
+                "score": 95,
+            },
+        ),
+    )
+
+    assert context.policy_decision.mode == MODE_FACTUAL_FALLBACK_EXPANDED
+    assert context.policy_decision.valid_triggers_count == 0
+
+
+def test_policy_router_falls_back_for_personal_conflict_with_only_generic_processual_triggers() -> None:
+    context = build_point3_pipeline_context(
+        complainant="Test Principal 3",
+        organization="LSPD",
+        target_person="Test Officer 3",
+        event_datetime="12.04.2026 18:30",
+        draft_text=(
+            "Между человеком и сотрудником сначала произошёл личный конфликт, "
+            "а спустя короткое время тот же сотрудник уже в служебном статусе вернулся и оформил задержание."
+        ),
+        retrieval_status="normal_context",
+        retrieval_confidence="high",
+        retrieved_law_context="Источник: https://laws.example/processual\nНорма: Статья 17",
+        selected_norms=(
+            {
+                "source_url": "https://laws.example/processual",
+                "document_title": "Процессуальный кодекс",
+                "article_label": "Статья 17",
+                "excerpt": "Статья 17. Общий порядок задержания и разъяснения оснований задержания.",
+                "score": 92,
+            },
+        ),
+    )
+
+    assert context.policy_decision.mode == MODE_FACTUAL_FALLBACK_EXPANDED
+    assert context.policy_decision.reason == "personal_conflict_requires_factual_fallback"
