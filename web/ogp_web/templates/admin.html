@@ -42,6 +42,9 @@
       <a class="legal-section-jump__link" href="#admin-section-import">Импорт экзаменов</a>
       {% endif %}
       {% if admin_focus == "users" %}
+      <a class="legal-section-jump__link" href="#admin-cost-summary-content">AI бюджет</a>
+      <a class="legal-section-jump__link" href="#admin-ai-pipeline-content">AI Pipeline</a>
+      <a class="legal-section-jump__link" href="#admin-role-history-content">История ролей</a>
       <a class="legal-section-jump__link" href="#admin-section-users">Пользователи</a>
       <a class="legal-section-jump__link" href="#admin-errors-explorer-content">Error Explorer</a>
       <a class="legal-section-jump__link" href="#admin-section-events">События</a>
@@ -229,6 +232,72 @@
       {% endif %}
 
       {% if admin_focus == "users" %}
+      <section class="legal-subcard admin-collapsible" data-collapsible-section="cost-summary">
+        <div class="legal-subcard__header admin-collapsible__header">
+          <div>
+            <span class="legal-field__label">AI бюджет и токены</span>
+            <p class="legal-section__description">Сводка по расходам и токенам AI прямо в режиме управления пользователями.</p>
+          </div>
+          <button
+            type="button"
+            class="ghost-button admin-collapsible__toggle"
+            data-collapsible-target="admin-cost-summary-content"
+            data-expanded-default="true"
+            aria-expanded="true"
+            aria-controls="admin-cost-summary-content"
+          >
+            Скрыть
+          </button>
+        </div>
+        <div id="admin-cost-summary-content" class="admin-collapsible__content">
+          <div id="admin-cost-summary" class="admin-performance-grid"></div>
+        </div>
+      </section>
+
+      <section class="legal-subcard admin-collapsible" data-collapsible-section="ai-pipeline">
+        <div class="legal-subcard__header admin-collapsible__header">
+          <div>
+            <span class="legal-field__label">AI Pipeline</span>
+            <p class="legal-section__description">Сводка генераций, стоимости и обратной связи по качеству ответов.</p>
+          </div>
+          <button
+            type="button"
+            class="ghost-button admin-collapsible__toggle"
+            data-collapsible-target="admin-ai-pipeline-content"
+            data-expanded-default="false"
+            aria-expanded="false"
+            aria-controls="admin-ai-pipeline-content"
+          >
+            Показать
+          </button>
+        </div>
+        <div id="admin-ai-pipeline-content" class="admin-collapsible__content" hidden>
+          <div id="admin-ai-pipeline"></div>
+        </div>
+      </section>
+
+      <section class="legal-subcard admin-collapsible" data-collapsible-section="role-history">
+        <div class="legal-subcard__header admin-collapsible__header">
+          <div>
+            <span class="legal-field__label">История ролей</span>
+            <p class="legal-section__description">Последние назначения и снятия ролей тестера и ГКА.</p>
+          </div>
+          <button
+            type="button"
+            class="ghost-button admin-collapsible__toggle"
+            data-collapsible-target="admin-role-history-content"
+            data-expanded-default="false"
+            aria-expanded="false"
+            aria-controls="admin-role-history-content"
+          >
+            Показать
+          </button>
+        </div>
+        <div id="admin-role-history-content" class="admin-collapsible__content" hidden>
+          <div id="admin-role-history"></div>
+        </div>
+      </section>
+
       <section id="admin-section-users" class="legal-subcard admin-collapsible" data-collapsible-section="users">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>

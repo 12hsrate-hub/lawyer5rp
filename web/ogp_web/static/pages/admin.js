@@ -7,6 +7,9 @@ const usersHost = document.getElementById("admin-users");
 const eventsHost = document.getElementById("admin-events");
 const adminEventsHost = document.getElementById("admin-admin-events");
 const errorExplorerHost = document.getElementById("admin-errors-explorer");
+const costSummaryHost = document.getElementById("admin-cost-summary");
+const aiPipelineHost = document.getElementById("admin-ai-pipeline");
+const roleHistoryHost = document.getElementById("admin-role-history");
 const endpointsHost = document.getElementById("admin-top-endpoints");
 const activeFiltersHost = document.getElementById("admin-active-filters");
 const userSearchField = document.getElementById("admin-user-search");
@@ -341,6 +344,9 @@ function showOverviewLoading() {
   renderLoadingState(errorExplorerHost, { count: 3, compact: true });
   renderLoadingState(adminEventsHost, { count: 3, compact: true });
   renderLoadingState(eventsHost, { count: 3, compact: true });
+  renderLoadingState(costSummaryHost, { count: 2, compact: true });
+  renderLoadingState(aiPipelineHost, { count: 3, compact: true });
+  renderLoadingState(roleHistoryHost, { count: 3, compact: true });
 }
 
 function setLiveStatus(text, tone = "muted") {
@@ -439,6 +445,114 @@ function renderPerformance(payload) {
       <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(top[0]?.path || "—"))}</strong>
       <span class="admin-user-cell__secondary">Запросов: ${escapeHtml(String(top[0]?.count || 0))}</span>
     </article>
+  `;
+}
+
+function renderCostSummary(totals) {
+  if (!costSummaryHost) {
+    return;
+  }
+  const samples = Number(totals?.ai_estimated_cost_samples || 0);
+  costSummaryHost.innerHTML = `
+    <article class="legal-status-card">
+      <span class="legal-status-card__label">AI cost (USD)</span>
+      <strong class="legal-status-card__value legal-status-card__value--small">$${escapeHtml(formatUsd(totals?.ai_estimated_cost_total_usd || 0))}</strong>
+      <span class="admin-user-cell__secondary">Сэмплов: ${escapeHtml(String(samples))}</span>
+    </article>
+    <article class="legal-status-card">
+      <span class="legal-status-card__label">AI токены (in/out/total)</span>
+      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatNumber(totals?.ai_input_tokens_total || 0))} / ${escapeHtml(formatNumber(totals?.ai_output_tokens_total || 0))} / ${escapeHtml(formatNumber(totals?.ai_total_tokens_total || 0))}</strong>
+      <span class="admin-user-cell__secondary">Генераций: ${escapeHtml(String(totals?.ai_generation_total || 0))}</span>
+    </article>
+  `;
+}
+
+function renderAiPipeline(payload) {
+  if (!aiPipelineHost) {
+    return;
+  }
+  const summary = payload?.summary || {};
+  const models = Object.entries(summary?.models || {});
+  const feedback = Array.isArray(payload?.feedback) ? payload.feedback.slice(0, 8) : [];
+  aiPipelineHost.innerHTML = `
+    <div class="admin-performance-grid">
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Генерации</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary?.total_generations || 0))}</strong>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Оценка стоимости</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">$${escapeHtml(formatUsd(summary?.estimated_cost_total_usd || 0))}</strong>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">p95 latency</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary?.latency_ms_p95 ?? "—"))} ms</strong>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Budget warnings</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary?.budget_warning_count || 0))}</strong>
+      </article>
+    </div>
+    <div class="admin-section-toolbar">
+      <span class="admin-user-cell__secondary">Модели: ${escapeHtml(models.map(([name, count]) => `${name} (${count})`).join(", ") || "нет данных")}</span>
+    </div>
+    ${
+      feedback.length
+        ? `
+      <div class="legal-table-shell">
+        <table class="legal-table admin-table admin-table--compact">
+          <thead><tr><th>Когда</th><th>Flow</th><th>Issue</th><th>Комментарий</th></tr></thead>
+          <tbody>
+            ${feedback
+              .map(
+                (row) => `
+                <tr>
+                  <td>${escapeHtml(String(row.created_at || "—"))}</td>
+                  <td>${escapeHtml(String((row.meta || {}).flow || "—"))}</td>
+                  <td>${escapeHtml(String((row.meta || {}).issue_type || "—"))}</td>
+                  <td>${escapeHtml(String((row.meta || {}).comment || "—"))}</td>
+                </tr>
+              `,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </div>`
+        : '<p class="legal-section__description">Нет обратной связи по AI-пайплайну.</p>'
+    }
+  `;
+}
+
+function renderRoleHistory(payload) {
+  if (!roleHistoryHost) {
+    return;
+  }
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (!items.length) {
+    roleHistoryHost.innerHTML = '<p class="legal-section__description">Изменений ролей пока нет.</p>';
+    return;
+  }
+  roleHistoryHost.innerHTML = `
+    <div class="legal-table-shell">
+      <table class="legal-table admin-table admin-table--compact">
+        <thead><tr><th>Когда</th><th>Админ</th><th>Действие</th><th>Пользователь</th></tr></thead>
+        <tbody>
+          ${items
+            .slice(0, 20)
+            .map(
+              (item) => `
+              <tr>
+                <td>${escapeHtml(String(item.created_at || "—"))}</td>
+                <td>${escapeHtml(String(item.username || "—"))}</td>
+                <td>${escapeHtml(String(item.event_type || "—"))}</td>
+                <td>${escapeHtml(String((item.meta || {}).target_username || "—"))}</td>
+              </tr>
+            `,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
   `;
 }
 
@@ -1299,6 +1413,54 @@ function openUserModal(username) {
   userModal.open();
 }
 
+async function loadAiPipeline({ silent = false } = {}) {
+  if (!aiPipelineHost) {
+    return;
+  }
+  if (!silent) {
+    renderLoadingState(aiPipelineHost, { count: 3, compact: true });
+  }
+  try {
+    const response = await apiFetch("/api/admin/ai-pipeline?limit=50");
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      if (!silent) {
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить AI Pipeline."));
+      }
+      return;
+    }
+    renderAiPipeline(payload);
+  } catch (error) {
+    if (!silent) {
+      setStateError(errorsHost, error?.message || "Не удалось загрузить AI Pipeline.");
+    }
+  }
+}
+
+async function loadRoleHistory({ silent = false } = {}) {
+  if (!roleHistoryHost) {
+    return;
+  }
+  if (!silent) {
+    renderLoadingState(roleHistoryHost, { count: 3, compact: true });
+  }
+  try {
+    const response = await apiFetch("/api/admin/role-history?limit=100");
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      if (!silent) {
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить историю ролей."));
+      }
+      return;
+    }
+    renderRoleHistory(payload);
+  } catch (error) {
+    if (!silent) {
+      setStateError(errorsHost, error?.message || "Не удалось загрузить историю ролей.");
+    }
+  }
+}
+
 async function loadAdminPerformance({ silent = false } = {}) {
   if (!silent) {
     renderLoadingState(performanceHost, { count: 4, compact: true });
@@ -1345,6 +1507,7 @@ async function loadAdminOverview({ silent = false } = {}) {
     const payload = await parsePayload(response);
     renderActiveFilters(currentFilters());
     renderTotals(payload.totals || {});
+    renderCostSummary(payload.totals || {});
     renderExamImport(payload.exam_import || null);
     renderTopEndpoints(payload.top_endpoints || []);
     renderUsers(payload.users || [], payload.filters?.user_sort || "complaints");
@@ -1408,6 +1571,8 @@ function scheduleLiveRefresh() {
     await Promise.all([
       loadAdminOverview({ silent: true }),
       loadAdminPerformance({ silent: true }),
+      loadAiPipeline({ silent: true }),
+      loadRoleHistory({ silent: true }),
     ]);
   }, safeIntervalMs);
 }
@@ -1796,6 +1961,8 @@ refreshNowButton?.addEventListener("click", async () => {
   await Promise.all([
     loadAdminOverview(),
     loadAdminPerformance(),
+    loadAiPipeline(),
+    loadRoleHistory(),
   ]);
 });
 activeFiltersHost?.addEventListener("click", (event) => {
@@ -1838,6 +2005,8 @@ document.addEventListener("visibilitychange", () => {
     Promise.all([
       loadAdminOverview({ silent: true }),
       loadAdminPerformance({ silent: true }),
+      loadAiPipeline({ silent: true }),
+      loadRoleHistory({ silent: true }),
     ]);
   }
 });
@@ -1847,6 +2016,8 @@ initCollapsibles();
 Promise.all([
   loadAdminOverview(),
   loadAdminPerformance(),
+  loadAiPipeline(),
+  loadRoleHistory(),
 ]).then(() => {
   scheduleLiveRefresh();
 });
