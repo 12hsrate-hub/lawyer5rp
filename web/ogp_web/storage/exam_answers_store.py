@@ -308,6 +308,20 @@ class ExamAnswersStore:
                 archived_source_row -= 1
 
             for row, existing in zip(normalized_rows, matched_rows):
+                if existing is None:
+                    continue
+                existing_source_row = int(existing.get("source_row") or 0)
+                target_source_row = int(row["source_row"])
+                if existing_source_row <= 0 or existing_source_row == target_source_row:
+                    continue
+                conn.execute(
+                    f"UPDATE exam_answers SET source_row = {placeholder} WHERE id = {placeholder}",
+                    (archived_source_row, existing["id"]),
+                )
+                existing["source_row"] = archived_source_row
+                archived_source_row -= 1
+
+            for row, existing in zip(normalized_rows, matched_rows):
                 source_row = int(row["source_row"])
                 submitted_at = str(row["submitted_at"])
                 full_name = str(row["full_name"])

@@ -690,6 +690,7 @@ class FakeExamAnswersConnection:
             source_row, row_id = params
             row = self._find_by_id(int(row_id))
             if row:
+                self._ensure_unique_source_row(int(source_row), row_id=int(row_id))
                 row["import_key"] = None
                 row["source_row"] = int(source_row)
             return FakeCursor(rowcount=1 if row else 0)
@@ -700,6 +701,7 @@ class FakeExamAnswersConnection:
             source_row, row_id = params
             row = self._find_by_id(int(row_id))
             if row:
+                self._ensure_unique_source_row(int(source_row), row_id=int(row_id))
                 row["source_row"] = int(source_row)
             return FakeCursor(rowcount=1 if row else 0)
         if normalized.startswith("SELECT id, source_row, submitted_at, full_name, discord_tag, passport, exam_format, payload_json, answer_count FROM exam_answers WHERE import_key = %s"):
@@ -787,8 +789,22 @@ class FakeExamAnswersConnection:
     def _find_by_source_row(self, source_row: int):
         return next((row for row in self.state["rows"] if row["source_row"] == source_row), None)
 
+    def _ensure_unique_source_row(self, source_row: int, *, row_id: int | None = None) -> None:
+        source_row = int(source_row)
+        duplicate = next(
+            (
+                row
+                for row in self.state["rows"]
+                if row["source_row"] == source_row and (row_id is None or row["id"] != row_id)
+            ),
+            None,
+        )
+        if duplicate is not None:
+            raise RuntimeError(f'duplicate key value violates unique constraint "exam_answers_source_row_key": {source_row}')
+
     def _insert_row(self, params):
         source_row, submitted_at, full_name, discord_tag, passport, exam_format, payload_json, answer_count, needs_rescore, import_key = params
+        self._ensure_unique_source_row(int(source_row))
         row = {
             "id": self.state["next_id"],
             "source_row": int(source_row),
@@ -821,6 +837,7 @@ class FakeExamAnswersConnection:
         row = self._find_by_id(int(row_id))
         if not row:
             return FakeCursor(rowcount=0)
+        self._ensure_unique_source_row(int(source_row), row_id=int(row_id))
         row.update(
             {
                 "source_row": int(source_row),
@@ -850,6 +867,7 @@ class FakeExamAnswersConnection:
         row = self._find_by_id(int(row_id))
         if not row:
             return FakeCursor(rowcount=0)
+        self._ensure_unique_source_row(int(source_row), row_id=int(row_id))
         row.update(
             {
                 "source_row": int(source_row),
@@ -1198,6 +1216,83 @@ class WebStorageTests(unittest.TestCase):
             self.assertIsNotNone(store.get_entry(14))
             self.assertEqual(store.get_entry(14)["full_name"], "Ryota Experience")
             self.assertIsNone(store.get_entry(15))
+        finally:
+            del store
+            gc.collect()
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_exam_answers_store_releases_source_row_before_inserting_new_shifted_entry(self):
+        tmpdir = make_temp_dir()
+        try:
+            root = Path(tmpdir)
+            store = ExamAnswersStore(root / "exam_answers.db", backend=FakeExamAnswersPostgresBackend())
+            original_row = {
+                "source_row": 7,
+                "submitted_at": "2026-04-08 12:00:00",
+                "full_name": "Existing User",
+                "discord_tag": "existing",
+                "passport": "700001",
+                "exam_format": "remote",
+                "payload": {
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "full_name": "Existing User",
+                    "discord_tag": "existing",
+                    "passport": "700001",
+                    "exam_format": "remote",
+                    "Question F": "Answer F",
+                    "Question G": "Answer G",
+                },
+                "answer_count": 2,
+            }
+            store.import_rows([original_row])
+
+            shifted_rows = [
+                {
+                    "source_row": 7,
+                    "submitted_at": "2026-04-09 09:00:00",
+                    "full_name": "New User",
+                    "discord_tag": "new",
+                    "passport": "700002",
+                    "exam_format": "remote",
+                    "payload": {
+                        "submitted_at": "2026-04-09 09:00:00",
+                        "full_name": "New User",
+                        "discord_tag": "new",
+                        "passport": "700002",
+                        "exam_format": "remote",
+                        "Question F": "Other F",
+                        "Question G": "Other G",
+                    },
+                    "answer_count": 2,
+                },
+                {
+                    "source_row": 8,
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "full_name": "Existing User",
+                    "discord_tag": "existing",
+                    "passport": "700001",
+                    "exam_format": "remote",
+                    "payload": {
+                        "submitted_at": "2026-04-08 12:00:00",
+                        "full_name": "Existing User",
+                        "discord_tag": "existing",
+                        "passport": "700001",
+                        "exam_format": "remote",
+                        "Question F": "Answer F",
+                        "Question G": "Answer G",
+                    },
+                    "answer_count": 2,
+                },
+            ]
+
+            result = store.import_rows(shifted_rows)
+
+            self.assertEqual(result["inserted_count"], 1)
+            self.assertEqual(result["updated_count"], 1)
+            self.assertIsNotNone(store.get_entry(7))
+            self.assertIsNotNone(store.get_entry(8))
+            self.assertEqual(store.get_entry(7)["full_name"], "New User")
+            self.assertEqual(store.get_entry(8)["full_name"], "Existing User")
         finally:
             del store
             gc.collect()
