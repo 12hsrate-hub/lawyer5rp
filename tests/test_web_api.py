@@ -1054,6 +1054,28 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(payload["top_inaccurate_generations"][0]["generation_id"], "gen_cost_invalid")
         self.assertEqual(payload["top_inaccurate_generations"][0]["estimated_cost_usd"], 0.0)
 
+    def test_admin_ai_pipeline_quality_summary_allows_zero_feedback_samples(self):
+        self.admin_store.log_ai_generation(
+            username="tester",
+            server_code="blackberry",
+            flow="law_qa",
+            generation_id="gen_feedback_zero_1",
+            path="/api/ai/law-qa-test",
+            meta={"guard_status": "pass"},
+        )
+
+        self._register_verify_and_login("12345", "admin_pipeline_zero_feedback@example.com")
+        response = self.client.get("/api/admin/ai-pipeline?flow=law_qa")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        quality_summary = payload["quality_summary"]
+        self.assertEqual(quality_summary["generation_samples"], 1)
+        self.assertEqual(quality_summary["feedback_samples"], 0)
+        self.assertIsNone(quality_summary["wrong_law_rate"])
+        self.assertIsNone(quality_summary["hallucination_rate"])
+        self.assertFalse(payload.get("partial_errors"))
+
     def test_safe_float_parsing_cases(self):
         self.assertEqual(admin_route._safe_float("12.5"), 12.5)
         with self.assertLogs("ogp_web.routes.admin", level="WARNING") as captured:
