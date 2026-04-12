@@ -283,8 +283,15 @@ class AdminMetricsStore:
                 str(row["name"])
                 for row in conn.execute("PRAGMA table_info(metric_events)").fetchall()
             }
-            if "server_code" not in existing_columns:
-                conn.execute("ALTER TABLE metric_events ADD COLUMN server_code TEXT")
+            required_columns = {
+                "server_code": "TEXT",
+                "meta_json": "TEXT NOT NULL DEFAULT '{}'",
+            }
+            for column_name, column_definition in required_columns.items():
+                if column_name not in existing_columns:
+                    conn.execute(
+                        f"ALTER TABLE metric_events ADD COLUMN {column_name} {column_definition}"
+                    )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_server_code ON metric_events(server_code)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_event_type ON metric_events(event_type)")
             conn.commit()

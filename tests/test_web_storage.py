@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import gc
 import os
+import sqlite3
 import shutil
 import sys
 import threading
@@ -24,6 +25,7 @@ from ogp_web.storage.user_repository import UserRepository
 from ogp_web.rate_limit import PersistentRateLimiter
 from ogp_web.services.auth_service import AuthError
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
+from ogp_web.db.backends.sqlite import SQLiteBackend
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from tests.temp_helpers import make_temp_dir
 
@@ -1680,6 +1682,83 @@ class PostgresAdminMetricsStoreTests(unittest.TestCase):
         events_csv = store.export_events_csv()
         self.assertIn("created_at,username,event_type,path", events_csv)
         self.assertIn("/api/generate", events_csv)
+
+
+class SqliteAdminMetricsStoreSchemaMigrationTests(unittest.TestCase):
+    def test_store_initialization_migrates_old_metric_events_schema_without_meta_json(self):
+        tmpdir = make_temp_dir()
+        self.addCleanup(shutil.rmtree, tmpdir, True)
+        root = Path(tmpdir)
+        db_path = root / "admin_metrics.db"
+
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE metric_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    username TEXT,
+                    event_type TEXT NOT NULL,
+                    path TEXT,
+                    method TEXT,
+                    status_code INTEGER,
+                    duration_ms INTEGER,
+                    request_bytes INTEGER,
+                    response_bytes INTEGER,
+                    resource_units INTEGER
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO metric_events (
+                    username, event_type, path, method, status_code, duration_ms, request_bytes, response_bytes, resource_units
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("legacy_user", "api_request", "/api/legacy", "GET", 200, 45, 10, 30, 1),
+            )
+            conn.commit()
+
+        store = AdminMetricsStore(db_path, backend=SQLiteBackend(db_path))
+
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            columns = {
+                str(row["name"]): row
+                for row in conn.execute("PRAGMA table_info(metric_events)").fetchall()
+            }
+            self.assertIn("server_code", columns)
+            self.assertIn("meta_json", columns)
+            self.assertEqual(columns["meta_json"]["notnull"], 1)
+            self.assertEqual(columns["meta_json"]["dflt_value"], "'{}'")
+
+        store.log_ai_generation(
+            username="legacy_user",
+            flow="suggest",
+            generation_id="legacy-gen-1",
+            path="/api/ai/suggest",
+            meta={"retrieval_context_mode": "normal_context"},
+        )
+
+        logs = store.list_ai_generation_logs(flow="suggest", limit=10)
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(logs[0]["meta"]["generation_id"], "legacy-gen-1")
+
+        overview = store.get_overview(
+            users=[
+                {
+                    "username": "legacy_user",
+                    "email": "legacy@example.com",
+                    "created_at": "2026-04-10T00:00:00Z",
+                    "email_verified_at": "2026-04-10T00:00:01Z",
+                    "access_blocked_at": "",
+                    "access_blocked_reason": "",
+                    "is_tester": False,
+                    "is_gka": False,
+                }
+            ]
+        )
+        self.assertGreaterEqual(overview["totals"]["events_total"], 2)
 
 
 class PostgresExamAnswersStoreTests(unittest.TestCase):
