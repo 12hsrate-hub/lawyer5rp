@@ -1613,9 +1613,65 @@ https://laws.example/article
 
         self.assertEqual(result.text, "Ответ по закону.")
         self.assertEqual(result.retrieval_profile, "law_qa")
+        self.assertEqual(result.guard_status, "pass")
         self.assertTrue(result.retrieval_confidence)
         self.assertEqual(result.selected_norms[0]["article_label"], "Статья 20")
         self.assertEqual(result.selected_norms[0]["source_url"], "https://laws.example/base")
+
+    def test_law_qa_strips_source_urls_from_model_output(self):
+        original_get_server_config = ai_service.get_server_config
+        original_build_index = ai_service._build_law_chunk_index_cached
+        original_create_client = ai_service.create_openai_client
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ("https://laws.example/base",)
+
+        class DummyResponses:
+            def create(self, **kwargs):
+                return type(
+                    "DummyResponse",
+                    (),
+                    {
+                        "output_text": (
+                            "Ответ: применяется статья 20 (Процессуальный кодекс). "
+                            "[Источник: https://laws.example/base] "
+                            "Дополнительно см. https://laws.example/base."
+                        )
+                    },
+                )()
+
+        class DummyClient:
+            responses = DummyResponses()
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service._build_law_chunk_index_cached = lambda source_urls: (
+            ai_service._LawChunk(
+                url="https://laws.example/base",
+                document_title="Процессуальный кодекс",
+                article_label="Статья 20",
+                text="Статья 20. Основания освобождения задержанного.",
+            ),
+        )
+        ai_service.create_openai_client = lambda **kwargs: DummyClient()
+        try:
+            result = ai_service.answer_law_question_details(
+                LawQaPayload(
+                    server_code="blackberry",
+                    model="gpt-5.4",
+                    question="Когда обязаны освободить задержанного?",
+                    max_answer_chars=2000,
+                )
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service._build_law_chunk_index_cached = original_build_index
+            ai_service.create_openai_client = original_create_client
+
+        self.assertNotIn("Источник:", result.text)
+        self.assertNotIn("https://", result.text)
+        self.assertEqual(result.guard_status, "pass")
 
     def test_law_qa_retries_when_model_returns_empty_text_once(self):
         original_get_server_config = ai_service.get_server_config
@@ -1919,6 +1975,20 @@ https://laws.example/article
         self.assertIn("неверную предпосылку", prompt)
         self.assertIn("опечатками", prompt)
         self.assertIn("Уверенность в подборе норм низкая", prompt)
+
+    def test_law_qa_prompt_forbids_source_urls_in_answer(self):
+        prompt = ai_service._build_law_qa_prompt(
+            server_name="BlackBerry",
+            server_code="blackberry",
+            model_name="gpt-5.4",
+            question="Какая норма регулирует доступ адвоката?",
+            max_answer_chars=2000,
+            context_blocks=["[Документ: Кодекс]\n[Норма: Статья 1]\nТекст"],
+            retrieval_confidence="high",
+        )
+
+        self.assertIn("Не добавляй в ответ URL", prompt)
+        self.assertIn('формат "статья N (название кодекса или закона)"', prompt)
 
     def test_normalize_ai_feedback_issues_maps_aliases_to_stable_codes(self):
         issues = ai_service.normalize_ai_feedback_issues(["wronglaw", "fact", "unknown-custom"])

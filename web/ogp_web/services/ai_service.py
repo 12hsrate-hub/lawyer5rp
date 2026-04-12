@@ -34,6 +34,7 @@ from ogp_web.services.legal_pipeline_service import (
     new_generation_id,
     normalize_feedback_issues,
     short_text_hash,
+    strip_law_qa_source_urls,
 )
 from ogp_web.services.point3_pipeline import (
     MODE_FACTUAL_FALLBACK_EXPANDED,
@@ -55,7 +56,7 @@ from shared.ogp_ai import (
 from shared.ogp_ai_prompts import SUGGEST_PROMPT_VERSION, build_suggest_prompt
 
 LOGGER = logging.getLogger(__name__)
-LAW_QA_PROMPT_VERSION = "law_qa.v2"
+LAW_QA_PROMPT_VERSION = "law_qa.v3"
 
 
 _LawChunk = LawChunk
@@ -969,12 +970,13 @@ def _build_law_qa_prompt(
         "3. Если вопрос содержит неверную предпосылку, смешивает кодексы или не подтверждается переданными нормами, укажи это в первой фразе.\n"
         "4. Если вопрос задан разговорно, с опечатками или перефразированием, трактуй его только по ближайшему смыслу внутри переданных норм.\n"
         "5. Если вопрос требует перечисления, перечисляй только прямо подтвержденные элементы.\n"
-        "6. В конце каждого смыслового абзаца указывай ссылки на использованные источники в формате [Источник: URL].\n"
+        "6. Не добавляй в ответ URL, [Источник: ...] и любые ссылки на форум. Достаточно указывать статью и название кодекса или закона.\n"
         "7. Ответ должен быть точным, прикладным, без воды и не длиннее заданного лимита.\n"
         f"8. {confidence_guidance}\n\n"
         "Формат ответа:\n"
         "- Сначала дай прямой вывод по вопросу.\n"
-        "- Затем коротко приведи правовое основание: статья, кодекс и смысл нормы.\n"
+        "- Затем коротко приведи правовое основание: статья, кодекс или закон и смысл нормы.\n"
+        '- Если ссылаешься на норму, используй формат "статья N (название кодекса или закона)".\n'
         "- Если данных недостаточно, скажи это прямо без догадок.\n\n"
         f"Лимит ответа: не более {max_answer_chars} символов.\n"
         f"Модель: {model_name}\n\n"
@@ -1033,7 +1035,6 @@ def _build_law_qa_context_blocks_limited(
         excerpt = _truncate_law_excerpt(match.excerpt or match.chunk.text, max_chars=max_excerpt_chars)
         context_blocks.append(
             (
-                f"[\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a: {match.chunk.url}]\n"
                 f"[\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442: {match.chunk.document_title}]\n"
                 f"[\u041d\u043e\u0440\u043c\u0430: {match.chunk.article_label}]\n"
                 f"{excerpt}"
@@ -1099,7 +1100,6 @@ def _build_law_qa_context_blocks(retrieval_result) -> list[str]:
         excerpt = match.excerpt or match.chunk.text.strip()
         context_blocks.append(
             (
-                f"[\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a: {match.chunk.url}]\n"
                 f"[\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442: {match.chunk.document_title}]\n"
                 f"[\u041d\u043e\u0440\u043c\u0430: {match.chunk.article_label}]\n"
                 f"{excerpt}"
@@ -2003,7 +2003,8 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
             raise
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
 
-    limited = text[: payload.max_answer_chars].strip()
+    sanitized_text = strip_law_qa_source_urls(text)
+    limited = sanitized_text[: payload.max_answer_chars].strip()
     latency_ms = int((monotonic() - request_started_at) * 1000)
     telemetry = build_ai_telemetry(
         model_name=model_name,
