@@ -48,6 +48,7 @@ const {
   setStateIdle,
   escapeHtml,
   createModalController,
+  redirectIfUnauthorized,
 } = window.OGPWeb;
 const ExamView = window.OGPExamImportView;
 const ADMIN_COLLAPSE_STORAGE_KEY = "ogp_admin_collapsible_sections";
@@ -441,6 +442,40 @@ function extractErrorMessage(payload, fallback) {
     return payload.message.trim();
   }
   return fallback;
+}
+
+function formatHttpError(response, payload, fallback) {
+  const status = Number(response?.status || 0);
+  if (redirectIfUnauthorized?.(status)) {
+    return "Требуется повторный вход в систему.";
+  }
+
+  const details = extractErrorMessage(payload, fallback);
+  const requestId = String(response?.headers?.get?.("x-request-id") || "").trim();
+
+  let prefix = "";
+  if (status === 403) {
+    prefix = "Доступ запрещен.";
+  } else if (status === 429) {
+    prefix = "Превышен лимит запросов.";
+  } else if (status >= 500) {
+    prefix = "Ошибка сервера.";
+  } else if (status >= 400) {
+    prefix = "Ошибка запроса.";
+  }
+
+  const parts = [];
+  if (prefix) {
+    parts.push(prefix);
+  }
+  parts.push(details);
+  if (status > 0) {
+    parts.push(`(HTTP ${status})`);
+  }
+  if (requestId) {
+    parts.push(`[request_id: ${requestId}]`);
+  }
+  return parts.join(" ").trim();
 }
 
 function renderTopEndpoints(items) {
@@ -1167,7 +1202,7 @@ async function openExamEntryDetail(sourceRow) {
     const response = await apiFetch(`/api/exam-import/rows/${encodeURIComponent(normalizedSourceRow)}`);
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, payload.detail || "Не удалось загрузить разбор ответа.");
+      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить разбор ответа."));
       return;
     }
     selectedUser = null;
@@ -1197,7 +1232,7 @@ async function loadAdminPerformance({ silent = false } = {}) {
     if (!response.ok) {
       const payload = await parsePayload(response);
       if (!silent) {
-        setStateError(errorsHost, payload.detail || "Не удалось загрузить метрики производительности.");
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить метрики производительности."));
       }
       return;
     }
@@ -1224,7 +1259,7 @@ async function loadAdminOverview({ silent = false } = {}) {
     if (!response.ok) {
       const payload = await parsePayload(response);
       if (!silent) {
-        setStateError(errorsHost, extractErrorMessage(payload, "Не удалось загрузить данные админ-панели."));
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить данные админ-панели."));
       } else {
         setLiveStatus("Live: ошибка обновления", "danger");
       }
@@ -1345,7 +1380,7 @@ async function performAdminAction(url, successText, body = null) {
     });
     if (!response.ok) {
       const payload = await parsePayload(response);
-      setStateError(errorsHost, payload.detail || "Не удалось выполнить действие администратора.");
+      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось выполнить действие администратора."));
       return;
     }
     showMessage(successText);
@@ -1361,7 +1396,7 @@ async function pollBulkTask(taskId) {
     const response = await apiFetch(`/api/admin/tasks/${encodeURIComponent(taskId)}`);
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, payload.detail || "Не удалось получить статус bulk-задачи.");
+      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось получить статус bulk-задачи."));
       return;
     }
     const progress = payload.progress || {};
@@ -1405,7 +1440,7 @@ async function runBulkAction() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, payload.detail || "Не удалось запустить bulk-операцию.");
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось запустить bulk-операцию."));
     return;
   }
   showMessage("Bulk-задача добавлена в очередь.");
