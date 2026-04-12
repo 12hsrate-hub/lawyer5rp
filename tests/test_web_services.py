@@ -13,19 +13,19 @@ for candidate in (ROOT_DIR, WEB_DIR):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-os.environ.setdefault("OGP_DB_BACKEND", "postgres")
+os.environ.setdefault("OGP_DB_BACKEND", "sqlite")
 os.environ.setdefault("OGP_WEB_SECRET", "test-secret")
 
 import httpx
 from fastapi import HTTPException
 
+from ogp_web.db.backends.sqlite import SQLiteBackend
 from ogp_web.schemas import ComplaintPayload, LawQaPayload, PrincipalScanPayload, RehabPayload, SuggestPayload, VictimPayload
 from ogp_web.services import ai_service, auth_service, complaint_service, email_service, exam_import_service, exam_sheet_service
 from ogp_web.services.auth_service import AuthUser
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.storage.user_store import UserStore
 from tests.temp_helpers import make_temp_dir
-from tests.test_web_storage import PostgresBackend
 
 
 class WebServiceTests(unittest.TestCase):
@@ -35,7 +35,7 @@ class WebServiceTests(unittest.TestCase):
         self.store = UserStore(
             root / "app.db",
             root / "users.json",
-            repository=UserRepository(PostgresBackend()),
+            repository=UserRepository(SQLiteBackend(root / "app.db")),
         )
         self.user, token = self.store.register("tester", "tester@example.com", "Password123!")
         self.store.confirm_email(token)
@@ -580,6 +580,8 @@ class WebServiceTests(unittest.TestCase):
             code = "blackberry"
             name = "BlackBerry"
             law_qa_sources = ()
+            law_qa_bundle_path = "bundle.json"
+            law_qa_bundle_path = "bundle.json"
             law_qa_bundle_path = "law_bundles/blackberry.json"
 
         ai_service.get_server_config = lambda server_code: DummyServerConfig()
@@ -1459,6 +1461,47 @@ https://laws.example/article
         )
         self.assertIn("Article 20", excerpt)
         self.assertIn("Grounds for release of a detainee", excerpt)
+
+    def test_build_suggest_law_context_prioritizes_processual_code_over_judicial_system_law(self):
+        original_get_server_config = ai_service.get_server_config
+        original_load_bundle = ai_service.load_law_bundle_chunks
+        original_select_chunks = ai_service._select_law_qa_chunks
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ()
+            law_qa_bundle_path = "bundle.json"
+
+        processual_chunk = ai_service._LawChunk(
+            url="https://laws.example/processual",
+            document_title="Важно - Процессуальный кодекс штата Сан-Андреас",
+            article_label="Статья 17",
+            text="Порядок задержания и реализация прав задержанного.",
+        )
+        judicial_chunk = ai_service._LawChunk(
+            url="https://laws.example/judicial",
+            document_title='Важно - Закон "О судебной системе и судопроизводстве"',
+            article_label="Статья 2",
+            text="Представитель истца может действовать при наличии договора.",
+        )
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service.load_law_bundle_chunks = lambda server_code, bundle_path: [processual_chunk, judicial_chunk]
+        ai_service._select_law_qa_chunks = lambda chunks, question, profile="suggest": (list(chunks), "high")
+        try:
+            context = ai_service._build_suggest_law_context(
+                server_code="blackberry",
+                question="FIB Pavel Clayton задержали за оскорбление, адвокатский запрос, запись не поступила",
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service.load_law_bundle_chunks = original_load_bundle
+            ai_service._select_law_qa_chunks = original_select_chunks
+
+        self.assertGreaterEqual(context.selected_norms_count, 1)
+        self.assertIn("Процессуальный кодекс", context.selected_norms[0]["document_title"])
+        self.assertNotIn("судопроизводстве", context.selected_norms[0]["document_title"].lower())
 
 if __name__ == "__main__":
     unittest.main()

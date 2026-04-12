@@ -360,19 +360,28 @@ def match_norm_triggers(
     for norm in normalized_input.selected_norms:
         best_fact = facts[0] if facts else ExtractedFact("F1", "", "draft", 0.0, "low", True)
         best_overlap = -1
-        norm_tokens = _tokenize(" ".join((norm.document_title, norm.article_label, norm.excerpt)))
+        norm_text = " ".join((norm.document_title, norm.article_label, norm.excerpt))
+        norm_roots = _token_roots(norm_text)
         for fact in facts:
-            overlap = len(set(_tokenize(fact.text)) & set(norm_tokens))
+            overlap = len(set(_token_roots(fact.text)) & set(norm_roots))
             if overlap > best_overlap:
                 best_fact = fact
                 best_overlap = overlap
         matched_in_input = _norm_ref_mentioned_in_text(norm.article_label, draft_text)
         matched_in_retrieval = bool(norm.article_label or norm.document_title or norm.excerpt)
+        direct_fact_trigger = _has_direct_fact_trigger(
+            normalized_input=normalized_input,
+            fact_text=best_fact.text,
+            norm=norm,
+            overlap=max(best_overlap, 0),
+        )
         confidence = _score_trigger_confidence(
             retrieval_confidence=normalized_input.retrieval_confidence,
             norm_score=norm.score,
             overlap=max(best_overlap, 0),
             matched_in_input=matched_in_input,
+            document_title=norm.document_title,
+            direct_fact_trigger=direct_fact_trigger,
         )
         triggers.append(
             NormTrigger(
@@ -380,7 +389,7 @@ def match_norm_triggers(
                 norm_ref=norm.article_label or norm.document_title or "N/A",
                 matched_in_input=matched_in_input,
                 matched_in_retrieval=matched_in_retrieval,
-                is_valid=bool(matched_in_retrieval and confidence >= min_valid),
+                is_valid=bool(matched_in_retrieval and direct_fact_trigger and confidence >= min_valid),
                 trigger_confidence=confidence,
                 source_url=norm.source_url,
                 document_title=norm.document_title,
@@ -729,12 +738,27 @@ def _tokenize(text: str) -> list[str]:
     return [token for token in normalized.split() if len(token) >= 3 and token not in _STOPWORDS]
 
 
+def _token_roots(text: str) -> set[str]:
+    roots: set[str] = set()
+    for token in _tokenize(text):
+        normalized = token.lower()
+        if len(normalized) >= 8:
+            roots.add(normalized[:7])
+        elif len(normalized) >= 6:
+            roots.add(normalized[:6])
+        else:
+            roots.add(normalized)
+    return roots
+
+
 def _score_trigger_confidence(
     *,
     retrieval_confidence: str,
     norm_score: int,
     overlap: int,
     matched_in_input: bool,
+    document_title: str,
+    direct_fact_trigger: bool,
 ) -> float:
     base = {
         "high": 0.68,
@@ -744,7 +768,11 @@ def _score_trigger_confidence(
     score_component = max(0.0, min(float(norm_score or 0), 100.0)) / 320.0
     overlap_component = min(0.18, max(0, int(overlap or 0)) * 0.06)
     input_bonus = 0.08 if matched_in_input else 0.0
-    return round(min(0.99, base + score_component + overlap_component + input_bonus), 2)
+    priority_component = _document_priority_weight(document_title) / 1000.0
+    confidence = min(0.99, base + score_component + overlap_component + input_bonus + priority_component)
+    if not direct_fact_trigger:
+        confidence = min(confidence, 0.59)
+    return round(confidence, 2)
 
 
 def _norm_ref_mentioned_in_text(norm_ref: str, draft_text: str) -> bool:
@@ -755,6 +783,68 @@ def _norm_ref_mentioned_in_text(norm_ref: str, draft_text: str) -> bool:
     if not article_numbers:
         return normalized_ref.lower() in str(draft_text or "").lower()
     return any(re.search(rf"\b{re.escape(number)}\b", str(draft_text or "")) for number in article_numbers)
+
+
+def _has_direct_fact_trigger(
+    *,
+    normalized_input: NormalizedSuggestInput,
+    fact_text: str,
+    norm: SelectedNorm,
+    overlap: int,
+) -> bool:
+    thresholds = load_policy_thresholds()
+    min_root_overlap = int(thresholds["thresholds"].get("min_root_overlap_for_trigger", 1) or 1)
+    if overlap < min_root_overlap:
+        return False
+
+    group_key = _document_group_key(norm.document_title)
+    if group_key == "judicial_system_law":
+        combined_text = " ".join(
+            (
+                normalized_input.draft_text,
+                normalized_input.applicability_notes,
+                normalized_input.retrieved_law_context,
+            )
+        )
+        court_terms = thresholds.get("document_priority", {}).get("court_proceedings_terms", ())
+        return _contains_any_substring(combined_text, court_terms)
+
+    if group_key == "advocate_law":
+        return _contains_any_substring(
+            " ".join((fact_text, norm.excerpt, norm.article_label)),
+            ("адвокат", "запрос", "защит", "юридическ"),
+        )
+
+    return True
+
+
+def _document_priority_weight(document_title: str) -> int:
+    thresholds = load_policy_thresholds()
+    priority_config = thresholds.get("document_priority", {})
+    default_weight = int(priority_config.get("default_weight", 0) or 0)
+    normalized_title = _normalize_inline(document_title).lower()
+    for group in priority_config.get("groups", []):
+        patterns = tuple(str(item or "").strip().lower() for item in group.get("patterns", ()) if str(item or "").strip())
+        if normalized_title and any(pattern in normalized_title for pattern in patterns):
+            return int(group.get("weight", default_weight) or default_weight)
+    return default_weight
+
+
+def _document_group_key(document_title: str) -> str:
+    thresholds = load_policy_thresholds()
+    normalized_title = _normalize_inline(document_title).lower()
+    for group in thresholds.get("document_priority", {}).get("groups", []):
+        patterns = tuple(str(item or "").strip().lower() for item in group.get("patterns", ()) if str(item or "").strip())
+        if normalized_title and any(pattern in normalized_title for pattern in patterns):
+            return str(group.get("key", "") or "").strip()
+    return ""
+
+
+def _contains_any_substring(text: str, values: Iterable[str]) -> bool:
+    normalized_text = _normalize_inline(text).lower()
+    if not normalized_text:
+        return False
+    return any(str(value or "").strip().lower() in normalized_text for value in values if str(value or "").strip())
 
 
 def _extract_allowed_numbers(context: Point3PipelineContext) -> set[str]:

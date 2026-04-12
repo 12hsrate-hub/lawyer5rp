@@ -39,6 +39,7 @@ from ogp_web.services.point3_pipeline import (
     MODE_FACTUAL_FALLBACK_EXPANDED,
     apply_validation_remediation,
     build_point3_pipeline_context,
+    load_policy_thresholds,
 )
 from ogp_web.services.law_retrieval_service import retrieve_law_context, unique_sources
 from shared.ogp_ai import (
@@ -1292,6 +1293,57 @@ def build_suggest_metrics_meta(*, payload: SuggestPayload, result: SuggestTextRe
     return _suggest_metrics_meta(payload=payload, result=result, server_code=server_code)
 
 
+def _normalize_suggest_inline(value: object) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip())
+
+
+def _suggest_document_priority_weight(document_title: str) -> int:
+    thresholds = load_policy_thresholds()
+    priority_config = thresholds.get("document_priority", {})
+    default_weight = int(priority_config.get("default_weight", 0) or 0)
+    normalized_title = _normalize_suggest_inline(document_title).lower()
+    for group in priority_config.get("groups", []):
+        patterns = tuple(str(item or "").strip().lower() for item in group.get("patterns", ()) if str(item or "").strip())
+        if normalized_title and any(pattern in normalized_title for pattern in patterns):
+            return int(group.get("weight", default_weight) or default_weight)
+    return default_weight
+
+
+def _suggest_document_group_key(document_title: str) -> str:
+    thresholds = load_policy_thresholds()
+    normalized_title = _normalize_suggest_inline(document_title).lower()
+    for group in thresholds.get("document_priority", {}).get("groups", []):
+        patterns = tuple(str(item or "").strip().lower() for item in group.get("patterns", ()) if str(item or "").strip())
+        if normalized_title and any(pattern in normalized_title for pattern in patterns):
+            return str(group.get("key", "") or "").strip()
+    return ""
+
+
+def _suggest_document_is_applicable(document_title: str, query: str) -> bool:
+    group_key = _suggest_document_group_key(document_title)
+    if group_key != "judicial_system_law":
+        return True
+    court_terms = load_policy_thresholds().get("document_priority", {}).get("court_proceedings_terms", ())
+    normalized_query = _normalize_suggest_inline(query).lower()
+    return any(
+        str(term or "").strip().lower() in normalized_query
+        for term in court_terms
+        if str(term or "").strip()
+    )
+
+
+def _rerank_suggest_matches(matches, query: str):
+    reranked = []
+    for match in matches:
+        title = str(getattr(getattr(match, "chunk", None), "document_title", "") or "")
+        adjusted_score = int(getattr(match, "score", 0) or 0) + _suggest_document_priority_weight(title)
+        if not _suggest_document_is_applicable(title, query):
+            adjusted_score -= 80
+        reranked.append((adjusted_score, match))
+    reranked.sort(key=lambda item: item[0], reverse=True)
+    return reranked
+
+
 def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: int = 4) -> SuggestContextBuildResult:
     retrieval_query = str(question or "").strip()
     if not retrieval_query:
@@ -1326,10 +1378,11 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
             selected_norms=(),
         )
 
-    positive = [match for match in retrieval_result.matches if match.score > 0][:max_chunks]
+    ranked_matches = _rerank_suggest_matches(retrieval_result.matches, retrieval_query)
+    positive = [match for adjusted_score, match in ranked_matches if adjusted_score > 0][:max_chunks]
     selected_matches = list(positive)
-    if not selected_matches and retrieval_result.matches:
-        selected_matches = list(retrieval_result.matches[:max_chunks])
+    if not selected_matches and ranked_matches:
+        selected_matches = [match for _, match in ranked_matches[:max_chunks]]
     if not selected_matches:
         return SuggestContextBuildResult(
             context_text="",
