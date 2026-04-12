@@ -666,6 +666,76 @@ class WebServiceTests(unittest.TestCase):
         self.assertTrue({"exception", "note", "comment"}.issubset(qualifier_kinds))
         self.assertTrue(any("33" in ref for ref in context.selected_norms[0]["cross_refs"]))
 
+    def test_build_suggest_law_context_forces_article_18_for_mask_exception_case(self):
+        original_get_server_config = ai_service.get_server_config
+        original_load_bundle = ai_service.load_law_bundle_chunks
+        original_retrieve = ai_service._retrieve_law_context
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ()
+            law_qa_bundle_path = "bundle.json"
+
+        processual_chunk = ai_service._LawChunk(
+            url="https://laws.example/processual",
+            document_title="Процессуальный кодекс",
+            article_label="Статья 29",
+            text="Личный обыск при задержании.",
+        )
+        forced_chunk = ai_service._LawChunk(
+            url="https://laws.example/admin",
+            document_title="Административный кодекс",
+            article_label="Статья 18",
+            text=(
+                "Статья 18. Ношение маски. "
+                "Исключение: ношение маски допускается на территории Maze Bank Arena и иных развлекательных учреждений."
+            ),
+        )
+
+        retrieval_result = type(
+            "RetrievalResult",
+            (),
+            {
+                "indexed_chunk_count": 2,
+                "confidence": "high",
+                "profile": "suggest",
+                "bundle_health": type(
+                    "BundleHealth",
+                    (),
+                    {"status": "ready", "generated_at": "2026-04-12T00:00:00Z", "fingerprint": "bundle-mask-force"},
+                )(),
+                "matches": [
+                    type(
+                        "Match",
+                        (),
+                        {
+                            "score": 370,
+                            "excerpt": "Личный обыск при задержании.",
+                            "chunk": processual_chunk,
+                        },
+                    )(),
+                ],
+            },
+        )()
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service.load_law_bundle_chunks = lambda server_code, bundle_path: [forced_chunk, processual_chunk]
+        ai_service._retrieve_law_context = lambda **kwargs: retrieval_result
+        try:
+            context = ai_service._build_suggest_law_context(
+                server_code="blackberry",
+                question="статья 18 маска Maze Bank Arena задержание",
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service.load_law_bundle_chunks = original_load_bundle
+            ai_service._retrieve_law_context = original_retrieve
+
+        self.assertGreaterEqual(context.selected_norms_count, 2)
+        self.assertEqual(context.selected_norms[0]["article_label"], "Статья 18")
+        self.assertIn("Maze Bank Arena", context.selected_norms[0]["excerpt"])
+
     def test_filtered_prompt_law_context_limits_grounded_norms_to_two_and_keeps_qualifiers(self):
         selected_norms = (
             {

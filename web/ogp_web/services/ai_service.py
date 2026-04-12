@@ -1502,6 +1502,43 @@ def _rerank_suggest_matches(matches, query: str):
     return reranked
 
 
+def _build_suggest_forced_norms(*, server_code: str, query: str) -> tuple[dict[str, object], ...]:
+    if not _suggest_is_mask_exception_case(query):
+        return ()
+    try:
+        server_config = get_server_config(server_code)
+        bundle_path = str(getattr(server_config, "law_qa_bundle_path", "") or "").strip()
+        if not bundle_path:
+            return ()
+        chunks = load_law_bundle_chunks(server_code, bundle_path)
+    except Exception:
+        return ()
+
+    forced_norms: list[dict[str, object]] = []
+    for chunk in chunks:
+        if not _suggest_norm_targets_mask_exception(chunk.document_title, chunk.article_label, chunk.text):
+            continue
+        excerpt = _extract_relevant_law_excerpt(chunk.text, query, max_chars=900) or _truncate_law_excerpt(
+            chunk.text,
+            max_chars=900,
+        )
+        qualifiers = _extract_suggest_norm_qualifiers(chunk.text, article_label=str(chunk.article_label or ""))
+        cross_refs = _extract_suggest_norm_cross_refs(chunk.text, article_label=str(chunk.article_label or ""))
+        forced_norms.append(
+            {
+                "source_url": chunk.url,
+                "document_title": chunk.document_title,
+                "article_label": chunk.article_label,
+                "excerpt": excerpt,
+                "score": 100,
+                "qualifiers": list(qualifiers),
+                "cross_refs": list(cross_refs),
+            }
+        )
+        break
+    return tuple(forced_norms)
+
+
 def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: int = 4) -> SuggestContextBuildResult:
     retrieval_query = str(question or "").strip()
     if not retrieval_query:
@@ -1556,6 +1593,32 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
 
     parts: list[str] = []
     selected_norms: list[dict[str, object]] = []
+    seen_norm_keys: set[tuple[str, str, str]] = set()
+    forced_norms = _build_suggest_forced_norms(server_code=server_code, query=retrieval_query)
+    for norm in forced_norms:
+        key = (
+            str(norm.get("source_url", "") or "").strip(),
+            str(norm.get("document_title", "") or "").strip(),
+            str(norm.get("article_label", "") or "").strip(),
+        )
+        if key in seen_norm_keys:
+            continue
+        seen_norm_keys.add(key)
+        selected_norms.append(norm)
+        parts.append(
+            "\n".join(
+                (
+                    f"Источник: {norm.get('source_url', '')}",
+                    f"Документ: {norm.get('document_title', '')}",
+                    f"Норма: {norm.get('article_label', '')}",
+                    f"Фрагмент: {norm.get('excerpt', '')}",
+                    *_format_suggest_norm_sections(
+                        qualifiers=tuple(norm.get("qualifiers", ()) or ()),
+                        cross_refs=tuple(norm.get("cross_refs", ()) or ()),
+                    ),
+                )
+            ).strip()
+        )
     for match in selected_matches:
         excerpt = match.excerpt
         if not excerpt:
@@ -1563,17 +1626,24 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
         chunk_text = str(getattr(match.chunk, "text", "") or excerpt)
         qualifiers = _extract_suggest_norm_qualifiers(chunk_text, article_label=str(match.chunk.article_label or ""))
         cross_refs = _extract_suggest_norm_cross_refs(chunk_text, article_label=str(match.chunk.article_label or ""))
-        selected_norms.append(
-            {
-                "source_url": match.chunk.url,
-                "document_title": match.chunk.document_title,
-                "article_label": match.chunk.article_label,
-                "excerpt": excerpt,
-                "score": match.score,
-                "qualifiers": list(qualifiers),
-                "cross_refs": list(cross_refs),
-            }
+        norm_payload = {
+            "source_url": match.chunk.url,
+            "document_title": match.chunk.document_title,
+            "article_label": match.chunk.article_label,
+            "excerpt": excerpt,
+            "score": match.score,
+            "qualifiers": list(qualifiers),
+            "cross_refs": list(cross_refs),
+        }
+        key = (
+            str(norm_payload.get("source_url", "") or "").strip(),
+            str(norm_payload.get("document_title", "") or "").strip(),
+            str(norm_payload.get("article_label", "") or "").strip(),
         )
+        if key in seen_norm_keys:
+            continue
+        seen_norm_keys.add(key)
+        selected_norms.append(norm_payload)
         parts.append(
             "\n".join(
                 (
@@ -1599,7 +1669,7 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
         bundle_status=retrieval_result.bundle_health.status,
         bundle_generated_at=retrieval_result.bundle_health.generated_at,
         bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
-        selected_norms_count=len(selected_matches),
+        selected_norms_count=len(selected_norms),
         selected_norms=tuple(selected_norms),
     )
 
