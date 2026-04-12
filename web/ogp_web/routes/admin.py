@@ -779,41 +779,105 @@ async def admin_ai_pipeline_data(
     normalized_context_mode = str(retrieval_context_mode or "").strip().lower()
     normalized_guard_warning = str(guard_warning or "").strip().lower()
     safe_history_limit = min(limit * 6, 500)
-    summary = metrics_store.summarize_ai_generation_logs(
-        flow=normalized_flow,
-        retrieval_context_mode=normalized_context_mode,
-        guard_warning=normalized_guard_warning,
-        limit=min(limit * 4, 500),
-    )
-    generations = metrics_store.list_ai_generation_logs(
-        flow=normalized_flow,
-        retrieval_context_mode=normalized_context_mode,
-        guard_warning=normalized_guard_warning,
-        limit=safe_history_limit,
-    )
-    feedback = metrics_store.list_ai_feedback(
-        flow=normalized_flow,
-        issue_type=normalized_issue_type,
-        limit=safe_history_limit,
-    )
-    recent_generations = _filter_recent_metric_items(generations, since_hours=24)
-    recent_feedback = _filter_recent_metric_items(feedback, since_hours=24)
-    law_qa_summary = metrics_store.summarize_ai_generation_logs(flow="law_qa", limit=300)
-    suggest_summary = metrics_store.summarize_ai_generation_logs(flow="suggest", limit=300)
-    quality_summary = _build_ai_pipeline_quality_summary(
-        generations=recent_generations,
-        feedback=recent_feedback,
-    )
-    cost_tables = _build_ai_pipeline_cost_tables(recent_generations)
-    top_inaccurate_generations = _build_top_inaccurate_generations(
-        generations=recent_generations,
-        feedback=recent_feedback,
-        limit=min(limit, 10),
-    )
-    flow_summaries = {
-        "law_qa": law_qa_summary,
-        "suggest": suggest_summary,
-    }
+
+    partial_errors: list[dict[str, str]] = []
+    failed_blocks: set[str] = set()
+
+    summary: dict[str, Any] = {}
+    generations: list[dict[str, Any]] = []
+    feedback: list[dict[str, Any]] = []
+    recent_generations: list[dict[str, Any]] = []
+    recent_feedback: list[dict[str, Any]] = []
+    quality_summary: dict[str, Any] = _build_ai_pipeline_quality_summary(generations=[], feedback=[])
+    cost_tables: dict[str, Any] = _build_ai_pipeline_cost_tables([])
+    top_inaccurate_generations: list[dict[str, Any]] = []
+    flow_summaries: dict[str, dict[str, Any]] = {"law_qa": {}, "suggest": {}}
+    policy_actions: list[dict[str, Any]] = []
+
+    try:
+        summary = metrics_store.summarize_ai_generation_logs(
+            flow=normalized_flow,
+            retrieval_context_mode=normalized_context_mode,
+            guard_warning=normalized_guard_warning,
+            limit=min(limit * 4, 500),
+        )
+    except Exception as exc:  # noqa: BLE001
+        partial_errors.append(_normalize_api_error(exc, source="summary"))
+        failed_blocks.add("summary")
+
+    try:
+        generations = metrics_store.list_ai_generation_logs(
+            flow=normalized_flow,
+            retrieval_context_mode=normalized_context_mode,
+            guard_warning=normalized_guard_warning,
+            limit=safe_history_limit,
+        )
+    except Exception as exc:  # noqa: BLE001
+        partial_errors.append(_normalize_api_error(exc, source="generations"))
+        failed_blocks.add("generations")
+        generations = []
+
+    try:
+        feedback = metrics_store.list_ai_feedback(
+            flow=normalized_flow,
+            issue_type=normalized_issue_type,
+            limit=safe_history_limit,
+        )
+    except Exception as exc:  # noqa: BLE001
+        partial_errors.append(_normalize_api_error(exc, source="feedback"))
+        failed_blocks.add("feedback")
+        feedback = []
+
+    try:
+        recent_generations = _filter_recent_metric_items(generations, since_hours=24)
+        recent_feedback = _filter_recent_metric_items(feedback, since_hours=24)
+        law_qa_summary = metrics_store.summarize_ai_generation_logs(flow="law_qa", limit=300)
+        suggest_summary = metrics_store.summarize_ai_generation_logs(flow="suggest", limit=300)
+        flow_summaries = {
+            "law_qa": law_qa_summary,
+            "suggest": suggest_summary,
+        }
+        quality_summary = _build_ai_pipeline_quality_summary(
+            generations=recent_generations,
+            feedback=recent_feedback,
+        )
+        top_inaccurate_generations = _build_top_inaccurate_generations(
+            generations=recent_generations,
+            feedback=recent_feedback,
+            limit=min(limit, 10),
+        )
+    except Exception as exc:  # noqa: BLE001
+        partial_errors.append(_normalize_api_error(exc, source="quality"))
+        failed_blocks.add("quality")
+        recent_generations = _filter_recent_metric_items(generations, since_hours=24)
+        recent_feedback = _filter_recent_metric_items(feedback, since_hours=24)
+        quality_summary = _build_ai_pipeline_quality_summary(generations=[], feedback=[])
+        top_inaccurate_generations = []
+        flow_summaries = {"law_qa": {}, "suggest": {}}
+
+    try:
+        cost_tables = _build_ai_pipeline_cost_tables(recent_generations)
+    except Exception as exc:  # noqa: BLE001
+        partial_errors.append(_normalize_api_error(exc, source="cost"))
+        failed_blocks.add("cost")
+        cost_tables = _build_ai_pipeline_cost_tables([])
+
+    try:
+        policy_actions = _build_policy_action_log(
+            quality_summary=quality_summary,
+            flow_summaries=flow_summaries,
+        )
+    except Exception as exc:  # noqa: BLE001
+        partial_errors.append(_normalize_api_error(exc, source="policy_actions"))
+        failed_blocks.add("policy_actions")
+        policy_actions = []
+
+    if len(failed_blocks) == 6:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=["Не удалось загрузить AI Pipeline: все блоки недоступны."],
+        )
+
     return {
         "flow": normalized_flow,
         "issue_type": normalized_issue_type,
@@ -825,12 +889,10 @@ async def admin_ai_pipeline_data(
         "flow_summaries": flow_summaries,
         "cost_tables": cost_tables,
         "top_inaccurate_generations": top_inaccurate_generations,
-        "policy_actions": _build_policy_action_log(
-            quality_summary=quality_summary,
-            flow_summaries=flow_summaries,
-        ),
+        "policy_actions": policy_actions,
         "generations": generations[:limit],
         "feedback": feedback[:limit],
+        "partial_errors": partial_errors,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
