@@ -230,7 +230,20 @@ class AdminMetricsStore:
         return self.backend.healthcheck()
 
     def _ensure_schema(self) -> None:
-        return
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT to_regclass(%s) AS regclass",
+                ("public.metric_events",),
+            ).fetchone()
+            if not row or not row["regclass"]:
+                return
+            conn.execute("ALTER TABLE metric_events ADD COLUMN IF NOT EXISTS server_code TEXT")
+            conn.execute(
+                "ALTER TABLE metric_events ADD COLUMN IF NOT EXISTS meta_json JSONB NOT NULL DEFAULT '{}'::jsonb"
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_server_code ON metric_events(server_code)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_event_type ON metric_events(event_type)")
+            conn.commit()
 
     def log_event(
         self,

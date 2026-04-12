@@ -352,8 +352,35 @@ class FakePostgresConnection:
 
 
 class FakeAdminMetricsPostgresBackend:
-    def __init__(self):
-        self._state = {"metric_events": [], "next_id": 1, "clock": 0}
+    def __init__(
+        self,
+        *,
+        has_metric_events_table: bool = True,
+        metric_columns: set[str] | None = None,
+    ):
+        self._state = {
+            "metric_events": [],
+            "next_id": 1,
+            "clock": 0,
+            "has_metric_events_table": has_metric_events_table,
+            "metric_columns": set(
+                metric_columns if metric_columns is not None else {
+                    "id",
+                    "created_at",
+                    "username",
+                    "server_code",
+                    "event_type",
+                    "path",
+                    "method",
+                    "status_code",
+                    "duration_ms",
+                    "request_bytes",
+                    "response_bytes",
+                    "resource_units",
+                    "meta_json",
+                }
+            ),
+        }
 
     def connect(self):
         return FakeAdminMetricsConnection(self._state)
@@ -383,9 +410,18 @@ class FakeAdminMetricsConnection:
     def execute(self, query: str, params=()):
         normalized = " ".join(query.split())
 
+        if normalized == "SELECT to_regclass(%s) AS regclass":
+            present = bool(self.state["has_metric_events_table"])
+            return FakeCursor(rowcount=1, one={"regclass": params[0] if present else None})
         if normalized.startswith("CREATE TABLE IF NOT EXISTS metric_events"):
             return FakeCursor(rowcount=0)
         if normalized.startswith("CREATE INDEX IF NOT EXISTS idx_metric_events_"):
+            return FakeCursor(rowcount=0)
+        if normalized == "ALTER TABLE metric_events ADD COLUMN IF NOT EXISTS server_code TEXT":
+            self.state["metric_columns"].add("server_code")
+            return FakeCursor(rowcount=0)
+        if normalized == "ALTER TABLE metric_events ADD COLUMN IF NOT EXISTS meta_json JSONB NOT NULL DEFAULT '{}'::jsonb":
+            self.state["metric_columns"].add("meta_json")
             return FakeCursor(rowcount=0)
         if normalized.startswith("INSERT INTO metric_events "):
             return self._insert_event(params)
@@ -1680,6 +1716,60 @@ class PostgresAdminMetricsStoreTests(unittest.TestCase):
         events_csv = store.export_events_csv()
         self.assertIn("created_at,username,event_type,path", events_csv)
         self.assertIn("/api/generate", events_csv)
+
+
+class PostgresAdminMetricsStoreSchemaMigrationTests(unittest.TestCase):
+    def test_store_initialization_migrates_old_metric_events_schema_without_required_columns(self):
+        tmpdir = make_temp_dir()
+        self.addCleanup(shutil.rmtree, tmpdir, True)
+        root = Path(tmpdir)
+        backend = FakeAdminMetricsPostgresBackend(
+            metric_columns={
+                "id",
+                "created_at",
+                "username",
+                "event_type",
+                "path",
+                "method",
+                "status_code",
+                "duration_ms",
+                "request_bytes",
+                "response_bytes",
+                "resource_units",
+            }
+        )
+
+        store = AdminMetricsStore(root / "admin_metrics.db", backend=backend)
+
+        self.assertIn("server_code", backend._state["metric_columns"])
+        self.assertIn("meta_json", backend._state["metric_columns"])
+
+        store.log_ai_generation(
+            username="legacy_user",
+            server_code="blackberry",
+            flow="suggest",
+            generation_id="legacy-gen-1",
+            path="/api/ai/suggest",
+            meta={"retrieval_context_mode": "normal_context"},
+        )
+
+        logs = store.list_ai_generation_logs(flow="suggest", limit=10)
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(logs[0]["meta"]["generation_id"], "legacy-gen-1")
+
+    def test_store_initialization_skips_metric_events_migration_when_table_absent(self):
+        tmpdir = make_temp_dir()
+        self.addCleanup(shutil.rmtree, tmpdir, True)
+        root = Path(tmpdir)
+        backend = FakeAdminMetricsPostgresBackend(
+            has_metric_events_table=False,
+            metric_columns=set(),
+        )
+
+        AdminMetricsStore(root / "admin_metrics.db", backend=backend)
+
+        self.assertNotIn("server_code", backend._state["metric_columns"])
+        self.assertNotIn("meta_json", backend._state["metric_columns"])
 
 
 class PostgresExamAnswersStoreTests(unittest.TestCase):
