@@ -820,6 +820,67 @@ class WebServiceTests(unittest.TestCase):
         self.assertIn("supporting only", prompt_law_context)
         self.assertNotIn("Статья 33\nФрагмент", prompt_law_context)
 
+    def test_filtered_prompt_law_context_prefers_single_primary_norm_when_secondary_is_generic_support(self):
+        selected_norms = (
+            {
+                "source_url": "https://laws.example/admin",
+                "document_title": "Административный кодекс штата Сан-Андреас",
+                "article_label": "Статья 18",
+                "excerpt": "Ношение маски на территории Maze Bank Arena оценивается по статье 18.",
+                "score": 96,
+                "qualifiers": (
+                    {
+                        "kind": "exception",
+                        "text": "Исключение: ношение маски допускается на территории Maze Bank Arena.",
+                        "related_refs": (),
+                    },
+                ),
+                "cross_refs": (),
+            },
+            {
+                "source_url": "https://laws.example/processual",
+                "document_title": "Процессуальный кодекс штата Сан-Андреас",
+                "article_label": "Статья 59",
+                "excerpt": "Задержание как мера процессуального принуждения применяется при подозрении в совершении преступления.",
+                "score": 78,
+                "qualifiers": (),
+                "cross_refs": (),
+            },
+        )
+        point3_context = ai_service.build_point3_pipeline_context(
+            complainant="Victim",
+            organization="LSPD",
+            target_person="Officer",
+            event_datetime="08.04.2026 14:30",
+            draft_text=(
+                "Человека задержали на территории Maze Bank Arena из-за маски и потребовали снять её без внятного основания."
+            ),
+            retrieval_status="normal_context",
+            retrieval_confidence="high",
+            retrieved_law_context="law context",
+            selected_norms=selected_norms,
+        )
+        prompt_law_context = ai_service._build_filtered_prompt_law_context(
+            point3_context=point3_context,
+            suggest_context=ai_service.SuggestContextBuildResult(
+                context_text="law context",
+                retrieval_confidence="high",
+                retrieval_context_mode="normal_context",
+                retrieval_profile="suggest",
+                bundle_status="ready",
+                bundle_generated_at="2026-04-12T00:00:00Z",
+                bundle_fingerprint="bundle-primary-norm-test",
+                selected_norms_count=2,
+                selected_norms=selected_norms,
+            ),
+            fallback_law_context="fallback",
+        )
+
+        self.assertEqual(prompt_law_context.count("Норма:"), 1)
+        self.assertIn("Статья 18", prompt_law_context)
+        self.assertIn("Исключение: ношение маски допускается", prompt_law_context)
+        self.assertNotIn("Статья 59", prompt_law_context)
+
     def test_suggest_text_retries_with_compacted_context_on_context_window_error(self):
         captured_calls: list[dict[str, object]] = []
         original = ai_service.suggest_description_with_proxy_fallback_result

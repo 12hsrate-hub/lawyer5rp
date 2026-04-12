@@ -1314,6 +1314,7 @@ _SUGGEST_ENTERTAINMENT_TERMS = (
     "бар",
 )
 _SUGGEST_TICKET_SANCTION_TERMS = ("штраф", "тикет")
+_SUGGEST_GENERIC_SECONDARY_PROCESSUAL_ARTICLES = {"20", "39", "59"}
 
 
 _SUGGEST_QUALIFIER_PATTERNS = (
@@ -1466,6 +1467,11 @@ def _suggest_is_mask_exception_case(text: str) -> bool:
     return any(term in normalized_text for term in _SUGGEST_MASK_TERMS) and any(
         term in normalized_text for term in _SUGGEST_ENTERTAINMENT_TERMS
     )
+
+
+def _suggest_primary_article_number(norm_ref: str) -> str:
+    numbers = re.findall(r"\b\d{1,4}(?:\.\d+)?\b", _normalize_suggest_inline(norm_ref))
+    return numbers[0] if numbers else ""
 
 
 def _suggest_norm_targets_mask_exception(document_title: str, article_label: str, excerpt: str) -> bool:
@@ -1713,14 +1719,34 @@ def build_suggest_retrieval_query_light(payload: SuggestPayload, *, raw_desc_lim
 
 
 def _select_prompt_valid_triggers(valid_triggers, *, max_items: int = 2):
+    def is_generic_secondary_support(trigger) -> bool:
+        group_key = _suggest_document_group_key(str(getattr(trigger, "document_title", "") or ""))
+        if group_key != "processual_code":
+            return False
+        return _suggest_primary_article_number(str(getattr(trigger, "norm_ref", "") or "")) in _SUGGEST_GENERIC_SECONDARY_PROCESSUAL_ARTICLES
+
+    def trigger_key(trigger):
+        generic_secondary = is_generic_secondary_support(trigger)
+        return (
+            1 if getattr(trigger, "matched_in_input", False) else 0,
+            0 if generic_secondary else 1,
+            1 if getattr(trigger, "qualifiers", ()) and not generic_secondary else 0,
+            float(getattr(trigger, "trigger_confidence", 0.0) or 0.0),
+            _suggest_document_priority_weight(str(getattr(trigger, "document_title", "") or "")),
+        )
+
+    def deserves_secondary_slot(trigger) -> bool:
+        if is_generic_secondary_support(trigger) and not bool(getattr(trigger, "matched_in_input", False)):
+            return False
+        return (
+            bool(getattr(trigger, "matched_in_input", False))
+            or bool(getattr(trigger, "qualifiers", ()) or ())
+            or not is_generic_secondary_support(trigger)
+        )
+
     ranked = sorted(
         valid_triggers,
-        key=lambda item: (
-            1 if getattr(item, "matched_in_input", False) else 0,
-            1 if getattr(item, "qualifiers", ()) else 0,
-            float(getattr(item, "trigger_confidence", 0.0) or 0.0),
-            _suggest_document_priority_weight(str(getattr(item, "document_title", "") or "")),
-        ),
+        key=trigger_key,
         reverse=True,
     )
     selected = []
@@ -1734,6 +1760,8 @@ def _select_prompt_valid_triggers(valid_triggers, *, max_items: int = 2):
         if key in seen:
             continue
         seen.add(key)
+        if selected and not deserves_secondary_slot(trigger):
+            continue
         selected.append(trigger)
         if len(selected) >= max_items:
             break
