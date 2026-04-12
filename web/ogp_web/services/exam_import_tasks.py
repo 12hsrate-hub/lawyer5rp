@@ -100,14 +100,13 @@ class ExamImportTaskRegistry:
 
     @property
     def is_postgres_backend(self) -> bool:
-        name = self.backend.__class__.__name__
-        return name == "PostgresBackend" or name.endswith("PostgresBackend")
+        return True
 
     def _placeholder(self) -> str:
-        return "%s" if self.is_postgres_backend else "?"
+        return "%s"
 
     def _cast_json_value(self, placeholder: str) -> str:
-        return f"{placeholder}::jsonb" if self.is_postgres_backend else placeholder
+        return f"{placeholder}::jsonb"
 
     @staticmethod
     def _decode_json_field(raw: Any) -> dict[str, Any] | None:
@@ -125,35 +124,7 @@ class ExamImportTaskRegistry:
         return self.backend.healthcheck()
 
     def _ensure_schema(self) -> None:
-        if self.is_postgres_backend:
-            return
-        with closing(self._connect()) as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS exam_import_tasks (
-                    id TEXT PRIMARY KEY,
-                    task_type TEXT NOT NULL,
-                    source_row INTEGER,
-                    status TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    started_at TEXT NOT NULL DEFAULT '',
-                    finished_at TEXT NOT NULL DEFAULT '',
-                    error TEXT NOT NULL DEFAULT '',
-                    progress_json TEXT NOT NULL DEFAULT '',
-                    result_json TEXT NOT NULL DEFAULT ''
-                )
-                """
-            )
-            columns = {
-                str(row["name"])
-                for row in conn.execute("PRAGMA table_info(exam_import_tasks)").fetchall()
-            }
-            if "progress_json" not in columns:
-                conn.execute("ALTER TABLE exam_import_tasks ADD COLUMN progress_json TEXT NOT NULL DEFAULT ''")
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_exam_import_tasks_created_at ON exam_import_tasks(created_at DESC)"
-            )
-            conn.commit()
+        return
 
     def _mark_interrupted_tasks(self) -> None:
         placeholder = self._placeholder()
@@ -202,9 +173,9 @@ class ExamImportTaskRegistry:
     ) -> ExamTaskRecord:
         record = ExamTaskRecord(id=uuid.uuid4().hex, task_type=task_type, source_row=source_row)
         placeholder = self._placeholder()
-        empty_json = "{}" if self.is_postgres_backend else ""
-        started_at_value = None if self.is_postgres_backend else record.started_at
-        finished_at_value = None if self.is_postgres_backend else record.finished_at
+        empty_json = "{}"
+        started_at_value = None
+        finished_at_value = None
         with self._lock, closing(self._connect()) as conn:
             self._raise_if_capacity_exceeded(conn)
             conn.execute(

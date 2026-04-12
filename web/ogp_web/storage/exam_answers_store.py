@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from contextlib import closing
 from pathlib import Path
 from typing import Any
@@ -73,31 +72,25 @@ class ExamAnswersStore:
 
     @property
     def is_postgres_backend(self) -> bool:
-        name = self.backend.__class__.__name__
-        return name == "PostgresBackend" or name.endswith("PostgresBackend")
+        return True
 
     def _placeholder(self) -> str:
-        return "%s" if self.is_postgres_backend else "?"
-
-    def _json_column_type(self) -> str:
-        return "JSONB" if self.is_postgres_backend else "TEXT"
+        return "%s"
 
     def _cast_json_value(self, placeholder: str) -> str:
-        return f"{placeholder}::jsonb" if self.is_postgres_backend else placeholder
+        return f"{placeholder}::jsonb"
 
     def _current_timestamp_sql(self) -> str:
-        return "NOW()" if self.is_postgres_backend else "CURRENT_TIMESTAMP"
+        return "NOW()"
 
     def _needs_rescore_predicate(self) -> str:
-        return "needs_rescore IS TRUE" if self.is_postgres_backend else "needs_rescore = 1"
+        return "needs_rescore IS TRUE"
 
     def _json_present_predicate(self, column_name: str) -> str:
-        if self.is_postgres_backend:
-            return f"{column_name} IS NOT NULL AND {column_name}::text <> 'null'"
-        return f"{column_name} IS NOT NULL AND TRIM({column_name}) <> ''"
+        return f"{column_name} IS NOT NULL AND {column_name}::text <> 'null'"
 
     def _bool_true_value(self) -> bool | int:
-        return True if self.is_postgres_backend else 1
+        return True
 
     def _decode_json_value(self, raw: Any, default: Any):
         if raw in (None, ""):
@@ -211,129 +204,7 @@ class ExamAnswersStore:
         return self.backend.healthcheck()
 
     def _ensure_schema(self) -> None:
-        if self.is_postgres_backend:
-            return
-        with closing(self._connect()) as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS exam_answers (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    source_row INTEGER NOT NULL UNIQUE,
-                    submitted_at TEXT,
-                    full_name TEXT,
-                    discord_tag TEXT,
-                    passport TEXT,
-                    exam_format TEXT,
-                    payload_json TEXT NOT NULL,
-                    answer_count INTEGER NOT NULL DEFAULT 0,
-                    imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
-            columns = {
-                str(row["name"])
-                for row in conn.execute("PRAGMA table_info(exam_answers)").fetchall()
-            }
-            additions = {
-                "question_g_score": "ALTER TABLE exam_answers ADD COLUMN question_g_score INTEGER",
-                "question_g_rationale": "ALTER TABLE exam_answers ADD COLUMN question_g_rationale TEXT",
-                "question_g_scored_at": "ALTER TABLE exam_answers ADD COLUMN question_g_scored_at TEXT",
-                "exam_scores_json": "ALTER TABLE exam_answers ADD COLUMN exam_scores_json TEXT",
-                "exam_scores_scored_at": "ALTER TABLE exam_answers ADD COLUMN exam_scores_scored_at TEXT",
-                "average_score": "ALTER TABLE exam_answers ADD COLUMN average_score REAL",
-                "average_score_answer_count": "ALTER TABLE exam_answers ADD COLUMN average_score_answer_count INTEGER",
-                "average_score_scored_at": "ALTER TABLE exam_answers ADD COLUMN average_score_scored_at TEXT",
-                "needs_rescore": "ALTER TABLE exam_answers ADD COLUMN needs_rescore INTEGER NOT NULL DEFAULT 0",
-                "import_key": "ALTER TABLE exam_answers ADD COLUMN import_key TEXT",
-            }
-            for column_name, statement in additions.items():
-                if column_name in columns:
-                    continue
-                try:
-                    conn.execute(statement)
-                except sqlite3.OperationalError as exc:
-                    if "duplicate column name" not in str(exc).lower():
-                        raise
-                columns.add(column_name)
-            self._normalize_import_keys(conn)
-            self._ensure_import_key_index(conn)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_exam_answers_source_row_import_key "
-                "ON exam_answers(source_row, import_key)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_exam_answers_pending_scores "
-                "ON exam_answers(source_row, average_score, needs_rescore)"
-            )
-            conn.commit()
-
-    def _normalize_import_keys(self, conn) -> None:
-        placeholder = self._placeholder()
-        rows = conn.execute(
-            """
-            SELECT
-                id,
-                source_row,
-                submitted_at,
-                full_name,
-                discord_tag,
-                passport,
-                exam_format,
-                question_g_score,
-                exam_scores_json,
-                average_score
-            FROM exam_answers
-            ORDER BY id ASC
-            """
-        ).fetchall()
-
-        grouped: dict[str, list[sqlite3.Row]] = {}
-        for row in rows:
-            grouped.setdefault(
-                self.build_import_key(
-                    row["submitted_at"],
-                    row["full_name"],
-                    row["discord_tag"],
-                    row["passport"],
-                    row["exam_format"],
-                ),
-                [],
-            ).append(row)
-
-        archived_source_row = self._next_archived_source_row(conn)
-        for import_key, items in grouped.items():
-            items = sorted(
-                items,
-                key=lambda item: (
-                    1 if item["exam_scores_json"] else 0,
-                    1 if item["average_score"] is not None else 0,
-                    1 if item["question_g_score"] is not None else 0,
-                    int(item["source_row"] or 0),
-                    int(item["id"] or 0),
-                ),
-                reverse=True,
-            )
-            keeper = items[0]
-            conn.execute(
-                f"UPDATE exam_answers SET import_key = {placeholder} WHERE id = {placeholder}",
-                (import_key, keeper["id"]),
-            )
-            for duplicate in items[1:]:
-                conn.execute(
-                    f"UPDATE exam_answers SET import_key = NULL, source_row = {placeholder} WHERE id = {placeholder}",
-                    (archived_source_row, duplicate["id"]),
-                )
-                archived_source_row -= 1
-
-    def _ensure_import_key_index(self, conn) -> None:
-        conn.execute(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_exam_answers_import_key
-            ON exam_answers(import_key)
-            WHERE import_key IS NOT NULL
-            """
-        )
+        return
 
     def _next_archived_source_row(self, conn) -> int:
         row = conn.execute("SELECT MIN(source_row) AS min_source_row FROM exam_answers").fetchone()
@@ -394,8 +265,6 @@ class ExamAnswersStore:
         normalized_rows = list({str(row["import_key"]): row for row in normalized_rows}.values())
 
         with closing(self._connect()) as conn:
-            if not self.is_postgres_backend:
-                conn.execute("BEGIN IMMEDIATE")
             existing_rows = conn.execute(
                 """
                 SELECT

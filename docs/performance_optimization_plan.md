@@ -24,7 +24,7 @@
 
 ```bash
 py scripts/perf_baseline.py --window-minutes 15,60,1440 --top-endpoints 10 --output scripts/perf-baseline.json
-py scripts/perf_sql_profile.py --backend sqlite
+py scripts/perf_sql_profile.py --backend postgres
 ```
 
 ### Baseline format

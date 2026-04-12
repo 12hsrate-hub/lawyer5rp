@@ -3,13 +3,6 @@ name: CI Runtime
 on:
   push:
   pull_request:
-  workflow_dispatch:
-    inputs:
-      run_legacy_migration_checks:
-        description: "Run optional SQLite->Postgres legacy migration suite"
-        required: false
-        default: false
-        type: boolean
 
 jobs:
   postgres-runtime:
@@ -31,30 +24,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r web/requirements_web.txt
 
-      - name: Run postgres runtime tests (legacy migration suite excluded)
+      - name: Run postgres runtime tests
         run: |
-          python -m pytest -q tests --ignore=tests/test_sqlite_to_postgres_migration.py
-
-  legacy-sqlite-migration:
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_legacy_migration_checks }}
-    env:
-      OGP_DB_BACKEND: postgres
-      OGP_WEB_SECRET: ci-secret
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r web/requirements_web.txt
-
-      - name: Run optional legacy SQLite migration tests
-        run: |
-          python -m pytest -q tests/test_sqlite_to_postgres_migration.py
+          python -m pytest -q tests

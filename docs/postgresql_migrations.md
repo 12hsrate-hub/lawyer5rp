@@ -32,5 +32,5 @@ What `0001_postgres_core` creates:
 Notes:
 
 - Runner currently applies PostgreSQL migrations only.
-- Web runtime is PostgreSQL-only; SQLite remains only as a migration source and backup/archive format where needed.
+- Web runtime is PostgreSQL-only across application code, CI, and maintenance scripts.
 - The migration runner is intentionally simple: SQL files are versioned and applied in sorted order.

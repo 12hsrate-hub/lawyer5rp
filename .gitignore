@@ -16,8 +16,6 @@ credentials.json
 
 web/data/
 *.db
-*.sqlite
-*.sqlite3
 *.log
 
 stable_versions/

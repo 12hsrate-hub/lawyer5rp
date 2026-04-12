@@ -17,7 +17,7 @@
 ## Current warnings / follow-up
 - FastAPI deprecation warning: `@app.on_event("shutdown")` should move to lifespan handlers.
 - Local log rotation lock on Windows (`PermissionError` for `web/data/logs/ogp_web.log`) appears during tests.
-- Resource warnings around SQLite handles in tests should be cleaned up separately.
+- Resource warnings around file/database handles in tests should be cleaned up separately.
 
 ## Target after next optimization cycle
 - Keep `tests.test_web_pages` below `3s`.

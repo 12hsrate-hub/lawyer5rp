@@ -12,9 +12,8 @@ OGP Builder for `lawyer5rp`: shared domain logic and a FastAPI-based web applica
 
 ## Current Runtime Direction
 
-- Web runtime is PostgreSQL-first.
+- Web runtime is PostgreSQL-only.
 - Production is already running on PostgreSQL.
-- SQLite remains only as a legacy import path (historical migration source).
 
 ## Review Starting Points
 
@@ -64,4 +63,3 @@ Deploy docs:
 - `AGENTS.md`
 - `docs/github_deploy.md`
 - `docs/postgresql_migrations.md`
-- `docs/postgres_cutover_runbook.md`

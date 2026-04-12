@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sqlite3
 from typing import TYPE_CHECKING, Any
 
 from ogp_web.db.errors import IntegrityConflictError
@@ -174,7 +173,7 @@ def admin_update_email(store: UserStore, username: str, email: str) -> dict[str,
             """,
             (normalized_email, normalized),
         )
-    except (sqlite3.IntegrityError, IntegrityConflictError) as exc:
+    except IntegrityConflictError as exc:
         raise AuthError("Пользователь с таким email уже существует.") from exc
     if rowcount <= 0:
         raise AuthError("Пользователь не найден.")

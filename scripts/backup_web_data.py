@@ -16,7 +16,6 @@ from shared.ogp_temp import get_named_temp_root
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE_DIR = ROOT_DIR / "web" / "data"
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "backups" / "web_data"
-LEGACY_SQLITE_SUFFIXES = {".db", ".sqlite", ".sqlite3"}
 
 
 def _collect_source_files(source_dir: Path) -> list[Path]:
@@ -42,8 +41,6 @@ def _copy_to_staging(source_dir: Path, files: list[Path], staging_dir: Path) -> 
     archived_files: list[str] = []
     for source_path in files:
         relative_path = source_path.relative_to(source_dir)
-        if source_path.suffix.lower() in LEGACY_SQLITE_SUFFIXES:
-            continue
         staged_path = staging_dir / relative_path
         staged_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_path, staged_path)
@@ -89,15 +86,10 @@ def create_backup(source_dir: Path, output_dir: Path, keep: int, database_url: s
                 "database_backup": {
                     "engine": "postgresql",
                     "method": "pg_dump_custom",
-                    "artifact": str(dump_relative_path),
+                    "artifact": dump_relative_path.as_posix(),
                     "database_url_masked": database_url.split("@")[-1] if "@" in database_url else "configured",
                 },
                 "files": archived_files,
-                "legacy_sqlite_skipped": [
-                    str(path.relative_to(source_dir))
-                    for path in files
-                    if path.suffix.lower() in LEGACY_SQLITE_SUFFIXES
-                ],
             }
             archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
             for staged_path in sorted(path for path in staging_dir.rglob("*") if path.is_file()):

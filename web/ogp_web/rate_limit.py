@@ -42,7 +42,7 @@ class InMemoryRateLimiter:
     def check(self, key: str, max_requests: int, window_seconds: int) -> None:
         if not self.is_allowed(key, max_requests, window_seconds):
             raise RateLimitExceeded(
-                f"Слишком много запросов. Попробуйте снова через {window_seconds} секунд."
+                f"РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ Р·Р°РїСЂРѕСЃРѕРІ. РџРѕРїСЂРѕР±СѓР№С‚Рµ СЃРЅРѕРІР° С‡РµСЂРµР· {window_seconds} СЃРµРєСѓРЅРґ."
             )
 
     def reset(self) -> None:
@@ -63,40 +63,13 @@ class PersistentRateLimiter:
 
     @property
     def is_postgres_backend(self) -> bool:
-        return self.backend.__class__.__name__ == "PostgresBackend"
+        return True
 
     def _ensure_schema(self) -> None:
-        if self.is_postgres_backend:
-            return
-        conn = self.repository.connect()
-        try:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS auth_rate_limit_events (
-                    action TEXT NOT NULL,
-                    subject_key TEXT NOT NULL,
-                    created_at REAL NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_auth_rate_limit_lookup
-                ON auth_rate_limit_events (action, subject_key, created_at)
-                """
-            )
-            conn.commit()
-        except Exception as exc:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-            self._activate_fallback(str(exc))
-            LOGGER.warning("Rate limit storage init failed, using in-memory fallback: %s", exc)
+        return
 
     def healthcheck(self) -> dict[str, object]:
-        details = self.backend.healthcheck()
-        details = dict(details)
+        details = dict(self.backend.healthcheck())
         details["component"] = "rate_limiter"
         fallback_reason = self._get_fallback_reason()
         if details.get("ok") and not fallback_reason:
@@ -135,56 +108,21 @@ class PersistentRateLimiter:
     def _check_persistent(self, key: str, max_requests: int, window_seconds: int, *, action: str) -> None:
         conn = self.repository.connect()
         try:
-            if self.is_postgres_backend:
-                conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"{action}:{key}",))
-                conn.execute(
-                    """
-                    DELETE FROM auth_rate_limit_events
-                    WHERE action = %s
-                      AND subject_key = %s
-                      AND created_at < NOW() - (%s * INTERVAL '1 second')
-                    """,
-                    (action, key, window_seconds),
-                )
-                row = conn.execute(
-                    """
-                    SELECT COUNT(*) AS total
-                    FROM auth_rate_limit_events
-                    WHERE action = %s AND subject_key = %s
-                    """,
-                    (action, key),
-                ).fetchone()
-                total = int(row["total"] if row else 0)
-                if total >= max_requests:
-                    conn.rollback()
-                    raise RateLimitExceeded(
-                        f"Слишком много запросов. Попробуйте снова через {window_seconds} секунд."
-                    )
-                conn.execute(
-                    """
-                    INSERT INTO auth_rate_limit_events (action, subject_key)
-                    VALUES (%s, %s)
-                    """,
-                    (action, key),
-                )
-                conn.commit()
-                self._clear_fallback()
-                return
-
-            now = time.time()
-            cutoff = now - window_seconds
+            conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"{action}:{key}",))
             conn.execute(
                 """
                 DELETE FROM auth_rate_limit_events
-                WHERE action = ? AND subject_key = ? AND created_at < ?
+                WHERE action = %s
+                  AND subject_key = %s
+                  AND created_at < NOW() - (%s * INTERVAL '1 second')
                 """,
-                (action, key, cutoff),
+                (action, key, window_seconds),
             )
             row = conn.execute(
                 """
                 SELECT COUNT(*) AS total
                 FROM auth_rate_limit_events
-                WHERE action = ? AND subject_key = ?
+                WHERE action = %s AND subject_key = %s
                 """,
                 (action, key),
             ).fetchone()
@@ -192,14 +130,14 @@ class PersistentRateLimiter:
             if total >= max_requests:
                 conn.rollback()
                 raise RateLimitExceeded(
-                    f"Слишком много запросов. Попробуйте снова через {window_seconds} секунд."
+                    f"РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ Р·Р°РїСЂРѕСЃРѕРІ. РџРѕРїСЂРѕР±СѓР№С‚Рµ СЃРЅРѕРІР° С‡РµСЂРµР· {window_seconds} СЃРµРєСѓРЅРґ."
                 )
             conn.execute(
                 """
-                INSERT INTO auth_rate_limit_events (action, subject_key, created_at)
-                VALUES (?, ?, ?)
+                INSERT INTO auth_rate_limit_events (action, subject_key)
+                VALUES (%s, %s)
                 """,
-                (action, key, now),
+                (action, key),
             )
             conn.commit()
             self._clear_fallback()
@@ -251,9 +189,9 @@ def reset_for_testing(limiter: PersistentRateLimiter | None = None) -> None:
 def auth_rate_limit(ip: str, action: str, limiter: PersistentRateLimiter | None = None) -> None:
     """
     Limits:
-      login          — 10 attempts per 5 minutes
-      register       — 5 attempts per 10 minutes
-      forgot-password — 5 attempts per 10 minutes
+      login          вЂ” 10 attempts per 5 minutes
+      register       вЂ” 5 attempts per 10 minutes
+      forgot-password вЂ” 5 attempts per 10 minutes
     """
     limits = {
         "login": (10, 300),

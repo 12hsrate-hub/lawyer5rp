@@ -25,7 +25,7 @@
   - `admin_overview()` -> `metrics_store.get_overview(...)` + `exam_store.count_entries_needing_scores/list_entries/list_entries_with_failed_scores` + `user_store.list_users(...)`.
   - `get_overview()` в [admin_metrics_store.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/storage/admin_metrics_store.py) тянет totals/top_endpoints/recent_events/user_metrics/ai_exam_stats.
 - External dependencies:
-  - DB backend (`PostgresBackend`/`SQLiteBackend`).
+  - DB backend (`PostgresBackend`).
   - (косвенно) rate limit + quota middleware в [app.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/app.py).
 - Где именно ломается цепочка:
   - `require_admin_user` (401/403).
@@ -251,4 +251,3 @@
   - [tests/test_web_api.py](/c:/Users/12hs/Desktop/VS/tests/test_web_api.py)
   - [tests/test_web_pages.py](/c:/Users/12hs/Desktop/VS/tests/test_web_pages.py)
   - [tests/test_web_storage.py](/c:/Users/12hs/Desktop/VS/tests/test_web_storage.py)
-

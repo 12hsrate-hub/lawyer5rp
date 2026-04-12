@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from contextlib import closing
 from typing import TYPE_CHECKING
 
@@ -71,7 +70,7 @@ def register_user(store: UserStore, username: str, email: str, password: str) ->
                 ),
             )
             conn.commit()
-    except (sqlite3.IntegrityError, IntegrityConflictError) as exc:
+    except IntegrityConflictError as exc:
         message = "Пользователь с таким логином уже существует."
         lowered = str(exc).lower()
         if "users.email" in lowered or "idx_users_email_unique" in lowered:
