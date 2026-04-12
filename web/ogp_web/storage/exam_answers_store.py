@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from contextlib import closing
 from pathlib import Path
 from typing import Any
@@ -71,33 +70,23 @@ class ExamAnswersStore:
     def _connect(self):
         return self.backend.connect()
 
-    @property
-    def is_postgres_backend(self) -> bool:
-        name = self.backend.__class__.__name__
-        return name == "PostgresBackend" or name.endswith("PostgresBackend")
-
     def _placeholder(self) -> str:
-        return "%s" if self.is_postgres_backend else "?"
-
-    def _json_column_type(self) -> str:
-        return "JSONB" if self.is_postgres_backend else "TEXT"
+        return "%s"
 
     def _cast_json_value(self, placeholder: str) -> str:
-        return f"{placeholder}::jsonb" if self.is_postgres_backend else placeholder
+        return f"{placeholder}::jsonb"
 
     def _current_timestamp_sql(self) -> str:
-        return "NOW()" if self.is_postgres_backend else "CURRENT_TIMESTAMP"
+        return "NOW()"
 
     def _needs_rescore_predicate(self) -> str:
-        return "needs_rescore IS TRUE" if self.is_postgres_backend else "needs_rescore = 1"
+        return "needs_rescore IS TRUE"
 
     def _json_present_predicate(self, column_name: str) -> str:
-        if self.is_postgres_backend:
-            return f"{column_name} IS NOT NULL AND {column_name}::text <> 'null'"
-        return f"{column_name} IS NOT NULL AND TRIM({column_name}) <> ''"
+        return f"{column_name} IS NOT NULL AND {column_name}::text <> 'null'"
 
-    def _bool_true_value(self) -> bool | int:
-        return True if self.is_postgres_backend else 1
+    def _bool_true_value(self) -> bool:
+        return True
 
     def _decode_json_value(self, raw: Any, default: Any):
         if raw in (None, ""):
@@ -212,77 +201,33 @@ class ExamAnswersStore:
 
     def _ensure_schema(self) -> None:
         with closing(self._connect()) as conn:
-            if self.is_postgres_backend:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS exam_answers (
-                        id BIGSERIAL PRIMARY KEY,
-                        source_row INTEGER NOT NULL UNIQUE,
-                        submitted_at TEXT,
-                        full_name TEXT,
-                        discord_tag TEXT,
-                        passport TEXT,
-                        exam_format TEXT,
-                        payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-                        answer_count INTEGER NOT NULL DEFAULT 0,
-                        imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        question_g_score INTEGER,
-                        question_g_rationale TEXT,
-                        question_g_scored_at TIMESTAMPTZ,
-                        exam_scores_json JSONB,
-                        exam_scores_scored_at TIMESTAMPTZ,
-                        average_score DOUBLE PRECISION,
-                        average_score_answer_count INTEGER,
-                        average_score_scored_at TIMESTAMPTZ,
-                        needs_rescore BOOLEAN NOT NULL DEFAULT FALSE,
-                        import_key TEXT
-                    )
-                    """
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS exam_answers (
+                    id BIGSERIAL PRIMARY KEY,
+                    source_row INTEGER NOT NULL UNIQUE,
+                    submitted_at TEXT,
+                    full_name TEXT,
+                    discord_tag TEXT,
+                    passport TEXT,
+                    exam_format TEXT,
+                    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    answer_count INTEGER NOT NULL DEFAULT 0,
+                    imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    question_g_score INTEGER,
+                    question_g_rationale TEXT,
+                    question_g_scored_at TIMESTAMPTZ,
+                    exam_scores_json JSONB,
+                    exam_scores_scored_at TIMESTAMPTZ,
+                    average_score DOUBLE PRECISION,
+                    average_score_answer_count INTEGER,
+                    average_score_scored_at TIMESTAMPTZ,
+                    needs_rescore BOOLEAN NOT NULL DEFAULT FALSE,
+                    import_key TEXT
                 )
-            else:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS exam_answers (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        source_row INTEGER NOT NULL UNIQUE,
-                        submitted_at TEXT,
-                        full_name TEXT,
-                        discord_tag TEXT,
-                        passport TEXT,
-                        exam_format TEXT,
-                        payload_json TEXT NOT NULL,
-                        answer_count INTEGER NOT NULL DEFAULT 0,
-                        imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-                    )
-                    """
-                )
-                columns = {
-                    str(row["name"])
-                    for row in conn.execute("PRAGMA table_info(exam_answers)").fetchall()
-                }
-                additions = {
-                    "question_g_score": "ALTER TABLE exam_answers ADD COLUMN question_g_score INTEGER",
-                    "question_g_rationale": "ALTER TABLE exam_answers ADD COLUMN question_g_rationale TEXT",
-                    "question_g_scored_at": "ALTER TABLE exam_answers ADD COLUMN question_g_scored_at TEXT",
-                    "exam_scores_json": "ALTER TABLE exam_answers ADD COLUMN exam_scores_json TEXT",
-                    "exam_scores_scored_at": "ALTER TABLE exam_answers ADD COLUMN exam_scores_scored_at TEXT",
-                    "average_score": "ALTER TABLE exam_answers ADD COLUMN average_score REAL",
-                    "average_score_answer_count": "ALTER TABLE exam_answers ADD COLUMN average_score_answer_count INTEGER",
-                    "average_score_scored_at": "ALTER TABLE exam_answers ADD COLUMN average_score_scored_at TEXT",
-                    "needs_rescore": "ALTER TABLE exam_answers ADD COLUMN needs_rescore INTEGER NOT NULL DEFAULT 0",
-                    "import_key": "ALTER TABLE exam_answers ADD COLUMN import_key TEXT",
-                }
-                for column_name, statement in additions.items():
-                    if column_name in columns:
-                        continue
-                    try:
-                        conn.execute(statement)
-                    except sqlite3.OperationalError as exc:
-                        if "duplicate column name" not in str(exc).lower():
-                            raise
-                    columns.add(column_name)
+                """
+            )
             self._normalize_import_keys(conn)
             self._ensure_import_key_index(conn)
             conn.execute(
@@ -315,7 +260,7 @@ class ExamAnswersStore:
             """
         ).fetchall()
 
-        grouped: dict[str, list[sqlite3.Row]] = {}
+        grouped: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
             grouped.setdefault(
                 self.build_import_key(
@@ -421,8 +366,6 @@ class ExamAnswersStore:
         normalized_rows = list({str(row["import_key"]): row for row in normalized_rows}.values())
 
         with closing(self._connect()) as conn:
-            if not self.is_postgres_backend:
-                conn.execute("BEGIN IMMEDIATE")
             existing_rows = conn.execute(
                 """
                 SELECT

@@ -12,9 +12,9 @@ OGP Builder for `lawyer5rp`: shared domain logic and a FastAPI-based web applica
 
 ## Current Runtime Direction
 
-- Web runtime is PostgreSQL-first.
-- Production is already running on PostgreSQL.
-- SQLite is kept only for migration, backup, and some explicit test scenarios.
+- Web runtime is PostgreSQL-only.
+- `DATABASE_URL` is mandatory at startup; app initialization fails fast without it.
+- SQLite runtime/backends are not supported.
 
 ## Review Starting Points
 
@@ -37,7 +37,6 @@ See `web/README_WEB.md` for the full web setup.
 Minimal expectation:
 
 ```env
-OGP_DB_BACKEND=postgres
 DATABASE_URL=postgresql://user:password@host:5432/dbname
 OGP_WEB_SECRET=change-me
 ```

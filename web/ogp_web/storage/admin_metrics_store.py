@@ -3,7 +3,6 @@ from __future__ import annotations
 import csv
 import json
 import logging
-import sqlite3
 from contextlib import closing
 from io import StringIO
 from datetime import datetime, timedelta
@@ -31,16 +30,8 @@ class AdminMetricsStore:
     def _connect(self):
         return self.backend.connect()
 
-    @property
-    def is_postgres_backend(self) -> bool:
-        backend = getattr(self, "backend", None)
-        if backend is None:
-            return False
-        name = backend.__class__.__name__
-        return name == "PostgresBackend" or name.endswith("PostgresBackend")
-
     def _placeholder(self) -> str:
-        return "%s" if self.is_postgres_backend else "?"
+        return "%s"
 
     def _decode_json_field(self, raw: Any) -> dict[str, Any]:
         if isinstance(raw, dict):
@@ -96,11 +87,7 @@ class AdminMetricsStore:
         if not normalized_username:
             return 0
         placeholder = self._placeholder()
-        created_filter = (
-            "created_at >= NOW() - INTERVAL '1 day'"
-            if self.is_postgres_backend
-            else "created_at >= datetime('now', '-1 day')"
-        )
+        created_filter = "created_at >= NOW() - INTERVAL '1 day'"
         with closing(self._connect()) as conn:
             row = conn.execute(
                 f"""
@@ -126,12 +113,8 @@ class AdminMetricsStore:
         endpoint_limit = max(1, int(top_endpoints or 10))
         start_at = datetime.utcnow() - timedelta(minutes=window)
 
-        if self.is_postgres_backend:
-            created_at_filter = "created_at >= %s"
-            created_at_param = start_at.isoformat()
-        else:
-            created_at_filter = "datetime(created_at) >= datetime(?)"
-            created_at_param = start_at.strftime("%Y-%m-%d %H:%M:%S")
+        created_at_filter = "created_at >= %s"
+        created_at_param = start_at.isoformat()
 
         with closing(self._connect()) as conn:
             totals = conn.execute(
@@ -236,7 +219,7 @@ class AdminMetricsStore:
                 "resource_units_total": self._safe_request_count(totals["resource_units"]),
             },
             "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
-            "backend": "postgres" if self.is_postgres_backend else "sqlite",
+            "backend": "postgres",
         }
 
     def healthcheck(self) -> dict[str, object]:
@@ -244,46 +227,25 @@ class AdminMetricsStore:
 
     def _ensure_schema(self) -> None:
         with closing(self._connect()) as conn:
-            if self.is_postgres_backend:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS metric_events (
-                        id BIGSERIAL PRIMARY KEY,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        username TEXT,
-                        server_code TEXT,
-                        event_type TEXT NOT NULL,
-                        path TEXT,
-                        method TEXT,
-                        status_code INTEGER,
-                        duration_ms INTEGER,
-                        request_bytes INTEGER,
-                        response_bytes INTEGER,
-                        resource_units INTEGER,
-                        meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
-                    )
-                    """
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS metric_events (
+                    id BIGSERIAL PRIMARY KEY,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    username TEXT,
+                    server_code TEXT,
+                    event_type TEXT NOT NULL,
+                    path TEXT,
+                    method TEXT,
+                    status_code INTEGER,
+                    duration_ms INTEGER,
+                    request_bytes INTEGER,
+                    response_bytes INTEGER,
+                    resource_units INTEGER,
+                    meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
                 )
-            else:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS metric_events (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        username TEXT,
-                        server_code TEXT,
-                        event_type TEXT NOT NULL,
-                        path TEXT,
-                        method TEXT,
-                        status_code INTEGER,
-                        duration_ms INTEGER,
-                        request_bytes INTEGER,
-                        response_bytes INTEGER,
-                        resource_units INTEGER,
-                        meta_json TEXT NOT NULL DEFAULT '{}'
-                    )
-                    """
-                )
+                """
+            )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_created_at ON metric_events(created_at DESC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_username ON metric_events(username)")
             conn.execute(
@@ -298,13 +260,6 @@ class AdminMetricsStore:
                 "CREATE INDEX IF NOT EXISTS idx_metric_events_username_created_at "
                 "ON metric_events(username, created_at DESC)"
             )
-            if not self.is_postgres_backend:
-                existing_columns = {
-                    str(row["name"])
-                    for row in conn.execute("PRAGMA table_info(metric_events)").fetchall()
-                }
-                if "server_code" not in existing_columns:
-                    conn.execute("ALTER TABLE metric_events ADD COLUMN server_code TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_server_code ON metric_events(server_code)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_event_type ON metric_events(event_type)")
             conn.commit()
@@ -326,40 +281,22 @@ class AdminMetricsStore:
     ) -> bool:
         placeholder = self._placeholder()
         meta_value = json.dumps(meta or {}, ensure_ascii=False)
-        if self.is_postgres_backend:
-            insert_sql = f"""
-                INSERT INTO metric_events (
-                    username,
-                    server_code,
-                    event_type,
-                    path,
-                    method,
-                    status_code,
-                    duration_ms,
-                    request_bytes,
-                    response_bytes,
-                    resource_units,
-                    meta_json
-                )
-                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}::jsonb)
-            """
-        else:
-            insert_sql = f"""
-                INSERT INTO metric_events (
-                    username,
-                    server_code,
-                    event_type,
-                    path,
-                    method,
-                    status_code,
-                    duration_ms,
-                    request_bytes,
-                    response_bytes,
-                    resource_units,
-                    meta_json
-                )
-                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
-            """
+        insert_sql = f"""
+            INSERT INTO metric_events (
+                username,
+                server_code,
+                event_type,
+                path,
+                method,
+                status_code,
+                duration_ms,
+                request_bytes,
+                response_bytes,
+                resource_units,
+                meta_json
+            )
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}::jsonb)
+        """
         try:
             with closing(self._connect()) as conn:
                 conn.execute(
@@ -379,7 +316,7 @@ class AdminMetricsStore:
                     ),
                 )
                 conn.commit()
-        except (sqlite3.Error, DatabaseUnavailableError, Exception):
+        except (DatabaseUnavailableError, Exception):
             logger.exception("Failed to write admin metric event: %s %s", event_type, path)
             return False
         return True
@@ -507,11 +444,7 @@ class AdminMetricsStore:
         ]
 
     def _load_user_metrics(self, conn) -> dict[str, dict[str, Any]]:
-        api_requests_24h_sql = (
-            "SUM(CASE WHEN event_type = 'api_request' AND created_at >= NOW() - INTERVAL '1 day' THEN 1 ELSE 0 END)"
-            if self.is_postgres_backend
-            else "SUM(CASE WHEN event_type = 'api_request' AND created_at >= datetime('now', '-1 day') THEN 1 ELSE 0 END)"
-        )
+        api_requests_24h_sql = "SUM(CASE WHEN event_type = 'api_request' AND created_at >= NOW() - INTERVAL '1 day' THEN 1 ELSE 0 END)"
         return {
             str(row["username"] or ""): dict(row)
             for row in conn.execute(
@@ -646,8 +579,8 @@ class AdminMetricsStore:
                     **user,
                     "email_verified": bool(user.get("email_verified_at")),
                     "access_blocked": bool(user.get("access_blocked_at")),
-                    "is_tester": bool(int(user.get("is_tester") or 0)),
-                    "is_gka": bool(int(user.get("is_gka") or 0)),
+                    "is_tester": bool(user.get("is_tester")),
+                    "is_gka": bool(user.get("is_gka")),
                     "api_requests": int(metrics.get("api_requests") or 0),
                     "failed_api_requests": int(metrics.get("failed_api_requests") or 0),
                     "api_requests_24h": int(metrics.get("api_requests_24h") or 0),
@@ -914,11 +847,7 @@ class AdminMetricsStore:
         failed_events_only: bool = False,
         user_sort: str = "complaints",
     ) -> dict[str, Any]:
-        events_last_24h_sql = (
-            "COALESCE(SUM(CASE WHEN created_at >= NOW() - INTERVAL '1 day' THEN 1 ELSE 0 END), 0)"
-            if self.is_postgres_backend
-            else "COALESCE(SUM(CASE WHEN created_at >= datetime('now', '-1 day') THEN 1 ELSE 0 END), 0)"
-        )
+        events_last_24h_sql = "COALESCE(SUM(CASE WHEN created_at >= NOW() - INTERVAL '1 day' THEN 1 ELSE 0 END), 0)"
         with closing(self._connect()) as conn:
             totals = conn.execute(
                 f"""
