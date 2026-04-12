@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+import logging
 from pathlib import Path
 import re
 from typing import Iterable
@@ -15,11 +16,39 @@ from ogp_web.services.law_retrieval_service import LawRetrievalMatch
 ROOT_DIR = Path(__file__).resolve().parents[3]
 ARTICLE_TRIGGER_CONFIG_PATH = ROOT_DIR / "config" / "legal_article_triggers.yaml"
 POINT3_EVAL_THRESHOLD_PATH = ROOT_DIR / "config" / "point3_eval_thresholds.yaml"
+logger = logging.getLogger(__name__)
 ARTICLE_REF_PATTERN = re.compile(r"(?i)(?:ст\.?|статья|article)\s*(\d{1,3}(?:\.\d+)?)")
 DATE_TOKEN_PATTERN = re.compile(r"\b\d{1,4}[./:-]\d{1,2}[./:-]\d{1,4}\b|\b\d{1,2}:\d{2}\b")
 LONG_NUMBER_PATTERN = re.compile(r"(?:#\d{2,}|\b\d{3,}\b)")
 URL_PATTERN = re.compile(r"https?://\S+", flags=re.IGNORECASE)
 LIST_MARKER_PATTERN = re.compile(r"(?m)^\s*(?:[-*]|\d+\.)\s+")
+DEFAULT_POINT3_EVAL_THRESHOLDS: dict[str, object] = {
+    "version": 1,
+    "release_gates": {
+        "factual_integrity_min": 1.0,
+        "unsupported_article_rate_max": 0.0,
+        "new_fact_rate_max": 0.0,
+        "format_violation_rate_max": 0.01,
+        "safe_fallback_rate_max": 0.1,
+        "validation_retry_rate_max": 0.12,
+    },
+    "monitoring": {
+        "warning": {
+            "unsupported_article_rate": 0.01,
+            "new_fact_rate": 0.01,
+            "format_violation_rate": 0.03,
+            "validation_retry_rate": 0.08,
+            "safe_fallback_rate": 0.08,
+        },
+        "critical": {
+            "unsupported_article_rate": 0.03,
+            "new_fact_rate": 0.02,
+            "format_violation_rate": 0.05,
+            "validation_retry_rate": 0.12,
+            "safe_fallback_rate": 0.12,
+        },
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -143,9 +172,24 @@ def load_article_trigger_rules(server_code: str) -> tuple[ArticleTriggerRule, ..
 
 @lru_cache(maxsize=4)
 def load_point3_eval_thresholds() -> dict[str, object]:
-    raw = POINT3_EVAL_THRESHOLD_PATH.read_text(encoding="utf-8")
-    payload = yaml.safe_load(raw) or {}
-    return payload if isinstance(payload, dict) else {}
+    try:
+        raw = POINT3_EVAL_THRESHOLD_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.warning(
+            "point3_eval_thresholds_missing path=%s; using built-in defaults",
+            POINT3_EVAL_THRESHOLD_PATH,
+        )
+        return dict(DEFAULT_POINT3_EVAL_THRESHOLDS)
+    try:
+        payload = yaml.safe_load(raw) or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "point3_eval_thresholds_invalid path=%s error=%s; using built-in defaults",
+            POINT3_EVAL_THRESHOLD_PATH,
+            exc,
+        )
+        return dict(DEFAULT_POINT3_EVAL_THRESHOLDS)
+    return payload if isinstance(payload, dict) else dict(DEFAULT_POINT3_EVAL_THRESHOLDS)
 
 
 def _payload_input_text(payload: SuggestPayload) -> str:

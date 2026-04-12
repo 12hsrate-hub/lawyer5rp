@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -17,6 +19,7 @@ from ogp_web.services.law_retrieval_service import LawRetrievalMatch
 from ogp_web.services import ai_service
 from ogp_web.services.point3_policy_service import (
     build_safe_factual_fallback,
+    load_point3_eval_thresholds,
     select_applicable_articles,
     validate_suggest_output,
 )
@@ -79,6 +82,27 @@ def test_safe_factual_fallback_returns_single_plain_paragraph() -> None:
     assert "\n\n" not in text
     assert "http" not in text.lower()
     assert "ст." not in text.lower()
+
+
+def test_load_point3_eval_thresholds_uses_defaults_when_file_missing() -> None:
+    import ogp_web.services.point3_policy_service as point3_policy_service
+
+    original_path = point3_policy_service.POINT3_EVAL_THRESHOLD_PATH
+    temp_root = Path(tempfile.mkdtemp())
+    try:
+        point3_policy_service.POINT3_EVAL_THRESHOLD_PATH = temp_root / "missing_point3_eval_thresholds.yaml"
+        load_point3_eval_thresholds.cache_clear()
+        payload = load_point3_eval_thresholds()
+    finally:
+        point3_policy_service.POINT3_EVAL_THRESHOLD_PATH = original_path
+        load_point3_eval_thresholds.cache_clear()
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+    monitoring = payload.get("monitoring") if isinstance(payload, dict) else {}
+    warning = monitoring.get("warning") if isinstance(monitoring, dict) else {}
+    critical = monitoring.get("critical") if isinstance(monitoring, dict) else {}
+    assert warning.get("new_fact_rate") == 0.01
+    assert critical.get("safe_fallback_rate") == 0.12
 
 
 def test_data_driven_prompt_forces_article_trigger_contract() -> None:
