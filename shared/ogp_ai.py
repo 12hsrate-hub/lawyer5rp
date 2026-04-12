@@ -136,6 +136,16 @@ def _create_openai_client_compat(*, api_key: str, proxy_url: str = "", connect_t
         return create_openai_client(api_key=api_key, proxy_url=proxy_url)
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return int(default)
+
+
 def _normalize_route_policy(route_policy: str | None) -> str:
     normalized = str(route_policy or "").strip().lower()
     if normalized in {"proxy_only", "proxy_first", "direct_first"}:
@@ -544,7 +554,7 @@ def suggest_description_result(
                 "total_tokens": usage.total_tokens,
             },
         },
-        ttl_seconds=int(os.getenv("OGP_AI_SUGGEST_CACHE_TTL_SECONDS", "259200") or 259200),
+        ttl_seconds=_env_int("OGP_AI_SUGGEST_CACHE_TTL_SECONDS", 259200),
     )
     return TextGenerationResult(text=text, usage=usage, cache_hit=False)
 

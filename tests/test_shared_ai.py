@@ -625,6 +625,64 @@ class SharedAiTests(unittest.TestCase):
         self.assertEqual(second, "cached text")
         self.assertEqual(client.calls, 2)
 
+    def test_suggest_description_invalid_ttl_env_does_not_crash(self):
+        tmpdir = make_temporary_directory()
+        previous_enabled = os.environ.get("OGP_AI_CACHE_ENABLED")
+        previous_dir = os.environ.get("OGP_AI_CACHE_DIR")
+        previous_ttl = os.environ.get("OGP_AI_SUGGEST_CACHE_TTL_SECONDS")
+        os.environ["OGP_AI_CACHE_ENABLED"] = "1"
+        os.environ["OGP_AI_CACHE_DIR"] = tmpdir.name
+        os.environ["OGP_AI_SUGGEST_CACHE_TTL_SECONDS"] = "3d"
+
+        class DummyResponse:
+            output_text = "cached text"
+
+        class DummyClient:
+            def __init__(self):
+                self.calls = 0
+                self.responses = self
+
+            def create(self, **kwargs):
+                self.calls += 1
+                return DummyResponse()
+
+        client = DummyClient()
+        try:
+            first = ogp_ai.suggest_description(
+                client,
+                victim_name="Victim",
+                org="Org",
+                subject="Subject",
+                event_dt="08.04.2026 14:30",
+                raw_desc="Draft",
+            )
+            second = ogp_ai.suggest_description(
+                client,
+                victim_name="Victim",
+                org="Org",
+                subject="Subject",
+                event_dt="08.04.2026 14:30",
+                raw_desc="Draft",
+            )
+        finally:
+            if previous_enabled is None:
+                os.environ.pop("OGP_AI_CACHE_ENABLED", None)
+            else:
+                os.environ["OGP_AI_CACHE_ENABLED"] = previous_enabled
+            if previous_dir is None:
+                os.environ.pop("OGP_AI_CACHE_DIR", None)
+            else:
+                os.environ["OGP_AI_CACHE_DIR"] = previous_dir
+            if previous_ttl is None:
+                os.environ.pop("OGP_AI_SUGGEST_CACHE_TTL_SECONDS", None)
+            else:
+                os.environ["OGP_AI_SUGGEST_CACHE_TTL_SECONDS"] = previous_ttl
+            tmpdir.cleanup()
+
+        self.assertEqual(first, "cached text")
+        self.assertEqual(second, "cached text")
+        self.assertEqual(client.calls, 1)
+
     def test_suggest_prompt_data_driven_mode_uses_minimal_contract(self):
         prompt = build_suggest_prompt(
             victim_name="Victim",
