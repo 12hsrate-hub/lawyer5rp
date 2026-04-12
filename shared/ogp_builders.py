@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 from shared.ogp_formatting import (
     build_evidence_line,
     escape_bbcode_text,
@@ -102,6 +104,12 @@ def build_ai_prompt(
     event_dt: str,
     raw_desc: str,
 ) -> str:
+    warnings.warn(
+        "build_ai_prompt is deprecated and kept only for backward compatibility. "
+        "Use shared.ogp_ai_prompts.build_suggest_prompt instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return f"""
 Ты юридический помощник по жалобам GTA5RP в Офис Генерального прокурора.
 Жалоба подаётся адвокатом в интересах доверителя. Нужно переписать только описательную часть жалобы, то есть пункт 3, в нейтральном, деловом и связном стиле.

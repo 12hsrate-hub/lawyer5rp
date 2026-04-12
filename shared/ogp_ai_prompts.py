@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-SUGGEST_PROMPT_VERSION = "suggest.v26"
+SUGGEST_PROMPT_VERSION = "suggest.v27"
 PRINCIPAL_SCAN_PROMPT_VERSION = "principal_scan.v2"
 EXAM_SCORING_PROMPT_MODE_FULL = "full"
 EXAM_SCORING_PROMPT_MODE_COMPACT = "compact"
@@ -11,6 +11,15 @@ EXAM_SCORING_PROMPT_VERSION = "exam_scoring.full.v8"
 EXAM_SCORING_COMPACT_PROMPT_VERSION = "exam_scoring.compact.v8"
 EXAM_BATCH_SCORING_PROMPT_VERSION = "exam_batch_scoring.full.v8"
 EXAM_BATCH_SCORING_COMPACT_PROMPT_VERSION = "exam_batch_scoring.compact.v8"
+SUGGEST_PROMPT_MODE_LEGACY = "legacy"
+SUGGEST_PROMPT_MODE_DATA_DRIVEN = "data_driven"
+
+
+def normalize_suggest_prompt_mode(mode: str) -> str:
+    normalized = str(mode or "").strip().lower()
+    if normalized == SUGGEST_PROMPT_MODE_DATA_DRIVEN:
+        return SUGGEST_PROMPT_MODE_DATA_DRIVEN
+    return SUGGEST_PROMPT_MODE_LEGACY
 
 
 @dataclass(frozen=True)
@@ -267,6 +276,82 @@ def _build_selected_basis_sections(*, complaint_basis: str) -> tuple[str, str]:
     )
 
 
+def _build_suggest_prompt_spec_data_driven(
+    *,
+    victim_name: str,
+    org: str,
+    subject: str,
+    event_dt: str,
+    raw_desc: str,
+    complaint_basis: str = "",
+    main_focus: str = "",
+    law_context: str = "",
+    retrieval_context_mode: str = "normal_context",
+) -> PromptSpec:
+    focus_input = _build_focus_input_section(complaint_basis=complaint_basis, main_focus=main_focus)
+    retrieval_note = {
+        "normal_context": "Контекст норм подобран и подтвержден retrieval.",
+        "low_confidence_context": "Контекст норм подобран с низкой уверенностью: не делай категоричных выводов.",
+        "no_context": "Надежный контекст норм не найден: не придумывай нормы и пиши только по фактам черновика.",
+    }.get(str(retrieval_context_mode or "").strip(), "Уровень правового контекста не определен.")
+    retrieval_mode_value = str(retrieval_context_mode or "").strip() or "unknown_context"
+    retrieval_note = f"[mode={retrieval_mode_value}] {retrieval_note}"
+    if retrieval_mode_value == "no_context":
+        retrieval_note = f"{retrieval_note} не выдумывай нормы."
+    return PromptSpec(
+        name="suggest",
+        version=SUGGEST_PROMPT_VERSION,
+        text=_render_prompt_sections(
+            (
+                "system",
+                """
+Ты юридический ассистент игрового сервера.
+Переписывай только пункт 3 жалобы в нейтральном деловом стиле.
+""",
+            ),
+            (
+                "task",
+                """
+Нужно вернуть один связный абзац для пункта 3.
+Опирайся только на факты из черновика и переданный retrieval-контекст.
+Не добавляй новых фактов, дат, документов, номеров и ссылок.
+""",
+            ),
+            ("retrieval_status", retrieval_note),
+            ("focus_input", focus_input),
+            ("retrieved_law_context", law_context),
+            (
+                "rules",
+                """
+- без списков, markdown, BBCode и служебных секций;
+- без мета-инструкций и технических пояснений;
+- если контекст норм слабый или пустой, не выдумывай статьи;
+- если статья подтверждена контекстом, упоминай ее сдержанно и по существу.
+""",
+            ),
+            (
+                "output_contract",
+                """
+Верни один связный текст без заголовков и без URL.
+Текст должен быть готов для прямой вставки в пункт 3 жалобы.
+""",
+            ),
+            (
+                "input_data",
+                f"""
+Доверитель: {victim_name}
+Организация: {org}
+Объект заявления: {subject}
+Дата и время события: {event_dt}
+
+Черновик пункта 3:
+{raw_desc}
+""",
+            ),
+        ),
+    )
+
+
 def build_suggest_prompt_spec(
     *,
     victim_name: str,
@@ -277,7 +362,22 @@ def build_suggest_prompt_spec(
     complaint_basis: str = "",
     main_focus: str = "",
     law_context: str = "",
+    prompt_mode: str = SUGGEST_PROMPT_MODE_LEGACY,
+    retrieval_context_mode: str = "normal_context",
 ) -> PromptSpec:
+    normalized_mode = normalize_suggest_prompt_mode(prompt_mode)
+    if normalized_mode == SUGGEST_PROMPT_MODE_DATA_DRIVEN:
+        return _build_suggest_prompt_spec_data_driven(
+            victim_name=victim_name,
+            org=org,
+            subject=subject,
+            event_dt=event_dt,
+            raw_desc=raw_desc,
+            complaint_basis=complaint_basis,
+            main_focus=main_focus,
+            law_context=law_context,
+            retrieval_context_mode=retrieval_context_mode,
+        )
     article_anchors, basis_strategy = _build_selected_basis_sections(complaint_basis=complaint_basis)
     return PromptSpec(
         name="suggest",
@@ -408,6 +508,8 @@ def build_suggest_prompt(
     complaint_basis: str = "",
     main_focus: str = "",
     law_context: str = "",
+    prompt_mode: str = SUGGEST_PROMPT_MODE_LEGACY,
+    retrieval_context_mode: str = "normal_context",
 ) -> str:
     return build_suggest_prompt_spec(
         victim_name=victim_name,
@@ -418,6 +520,8 @@ def build_suggest_prompt(
         complaint_basis=complaint_basis,
         main_focus=main_focus,
         law_context=law_context,
+        prompt_mode=prompt_mode,
+        retrieval_context_mode=retrieval_context_mode,
     ).text
 
 

@@ -174,6 +174,8 @@ BLACKBERRY_SERVER_CONFIG = ServerConfig(
     ),
     law_qa_bundle_path="law_bundles/blackberry.json",
     law_qa_bundle_max_age_hours=168,
+    suggest_prompt_mode="data_driven",
+    suggest_low_confidence_policy="controlled_fallback",
     exam_sheet_url=EXAM_SHEET_URL,
     complaint_forum_url="https://forum.gta5rp.com/forums/zhaloby-v-prokuraturu.748/",
     complaint_test_preset=BLACKBERRY_TEST_COMPLAINT_PRESET,

@@ -1429,6 +1429,51 @@ class PostgresAdminMetricsStoreTests(unittest.TestCase):
         self.assertEqual(summary["estimated_cost_samples"], 1)
         self.assertEqual(summary["estimated_cost_total_usd"], 0.0012)
 
+    def test_list_ai_generation_logs_supports_context_and_guard_filters(self):
+        tmpdir = make_temp_dir()
+        self.addCleanup(shutil.rmtree, tmpdir, True)
+        root = Path(tmpdir)
+        store = AdminMetricsStore(root / "admin_metrics.db", backend=SQLiteBackend(root / "admin_metrics.db"))
+
+        store.log_ai_generation(
+            username="alpha",
+            server_code="blackberry",
+            flow="suggest",
+            generation_id="gen_low",
+            path="/api/ai/suggest",
+            meta={
+                "retrieval_context_mode": "low_confidence_context",
+                "guard_warnings": ["suggest_low_confidence_context"],
+            },
+        )
+        store.log_ai_generation(
+            username="alpha",
+            server_code="blackberry",
+            flow="suggest",
+            generation_id="gen_normal",
+            path="/api/ai/suggest",
+            meta={
+                "retrieval_context_mode": "normal_context",
+                "guard_warnings": [],
+            },
+        )
+
+        low_context_only = store.list_ai_generation_logs(
+            flow="suggest",
+            retrieval_context_mode="low_confidence_context",
+            limit=10,
+        )
+        self.assertEqual(len(low_context_only), 1)
+        self.assertEqual(low_context_only[0]["meta"]["generation_id"], "gen_low")
+
+        with_guard_warning = store.list_ai_generation_logs(
+            flow="suggest",
+            guard_warning="suggest_low_confidence_context",
+            limit=10,
+        )
+        self.assertEqual(len(with_guard_warning), 1)
+        self.assertEqual(with_guard_warning[0]["meta"]["generation_id"], "gen_low")
+
     def test_postgres_admin_metrics_store_logs_overview_and_csv(self):
         store = self.make_store()
 

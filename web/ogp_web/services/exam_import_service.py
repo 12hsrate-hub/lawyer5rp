@@ -51,6 +51,14 @@ def _merge_scoring_stats(target: dict[str, object], extra: dict[str, object], *,
             target[key] = incoming
 
 
+def _ensure_scoring_stats_defaults(stats: dict[str, object]) -> dict[str, object]:
+    for key in _SCORING_STAT_KEYS:
+        stats.setdefault(key, 0)
+    for key in _SCORING_META_KEYS:
+        stats.setdefault(key, "")
+    return stats
+
+
 def _is_invalid_batch_result(result: dict[str, object] | None) -> bool:
     rationale = str((result or {}).get("rationale") or "").strip()
     return rationale == DEFAULT_INVALID_BATCH_RATIONALE
@@ -124,6 +132,7 @@ def retry_invalid_batch_scores(
     results: dict[str, dict[str, object]],
     stats: dict[str, object],
 ) -> dict[str, dict[str, object]]:
+    _ensure_scoring_stats_defaults(stats)
     item_by_column = {_normalize_exam_column_key(item["column"]): item for item in score_items}
     retried_results = dict(results)
     normalized_results = {_normalize_exam_column_key(column): result for column, result in results.items()}
@@ -242,6 +251,7 @@ def score_exam_answers_if_needed(
         items=score_items,
         return_stats=True,
     )
+    _ensure_scoring_stats_defaults(stats)
     stats["scoring_ms"] = int((time.perf_counter() - start_ts) * 1000)
     results = retry_invalid_batch_scores(
         api_key=api_key,

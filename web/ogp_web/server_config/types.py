@@ -42,6 +42,8 @@ class ServerConfig:
     law_qa_bundle_max_age_hours: int = 168
     shadow_law_qa_profile: str = ""
     shadow_suggest_profile: str = ""
+    suggest_prompt_mode: str = "legacy"
+    suggest_low_confidence_policy: str = "controlled_fallback"
     exam_sheet_url: str = ""
     complaint_forum_url: str = ""
     complaint_test_preset: dict[str, object] = field(default_factory=dict)

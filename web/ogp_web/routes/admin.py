@@ -388,6 +388,8 @@ async def admin_dashboard_data(
 async def admin_ai_pipeline_data(
     flow: str = Query(default="", max_length=32),
     issue_type: str = Query(default="", max_length=64),
+    retrieval_context_mode: str = Query(default="", max_length=64),
+    guard_warning: str = Query(default="", max_length=64),
     limit: int = Query(default=50, ge=1, le=200),
     user: AuthUser = Depends(require_admin_user),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
@@ -395,12 +397,26 @@ async def admin_ai_pipeline_data(
     _ = user
     normalized_flow = str(flow or "").strip().lower()
     normalized_issue_type = str(issue_type or "").strip().lower()
+    normalized_context_mode = str(retrieval_context_mode or "").strip().lower()
+    normalized_guard_warning = str(guard_warning or "").strip().lower()
     return {
         "flow": normalized_flow,
         "issue_type": normalized_issue_type,
+        "retrieval_context_mode": normalized_context_mode,
+        "guard_warning": normalized_guard_warning,
         "limit": limit,
-        "summary": metrics_store.summarize_ai_generation_logs(flow=normalized_flow, limit=min(limit * 4, 500)),
-        "generations": metrics_store.list_ai_generation_logs(flow=normalized_flow, limit=limit),
+        "summary": metrics_store.summarize_ai_generation_logs(
+            flow=normalized_flow,
+            retrieval_context_mode=normalized_context_mode,
+            guard_warning=normalized_guard_warning,
+            limit=min(limit * 4, 500),
+        ),
+        "generations": metrics_store.list_ai_generation_logs(
+            flow=normalized_flow,
+            retrieval_context_mode=normalized_context_mode,
+            guard_warning=normalized_guard_warning,
+            limit=limit,
+        ),
         "feedback": metrics_store.list_ai_feedback(
             flow=normalized_flow,
             issue_type=normalized_issue_type,

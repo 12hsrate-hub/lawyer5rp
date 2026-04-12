@@ -16,6 +16,7 @@ from shared.ogp_ai_prompts import (
     EXAM_SCORING_PROMPT_VERSION,
     PRINCIPAL_SCAN_PROMPT_VERSION,
     SUGGEST_PROMPT_VERSION,
+    SUGGEST_PROMPT_MODE_DATA_DRIVEN,
     build_batch_exam_scoring_prompt_spec,
     build_exam_scoring_prompt,
     build_exam_scoring_prompt_spec,
@@ -567,6 +568,78 @@ class SharedAiTests(unittest.TestCase):
         self.assertEqual(first, "cached text")
         self.assertEqual(second, "cached text")
         self.assertEqual(client.calls, 1)
+
+    def test_suggest_description_cache_key_changes_on_bundle_fingerprint(self):
+        tmpdir = make_temporary_directory()
+        previous_enabled = os.environ.get("OGP_AI_CACHE_ENABLED")
+        previous_dir = os.environ.get("OGP_AI_CACHE_DIR")
+        os.environ["OGP_AI_CACHE_ENABLED"] = "1"
+        os.environ["OGP_AI_CACHE_DIR"] = tmpdir.name
+
+        class DummyResponse:
+            output_text = "cached text"
+
+        class DummyClient:
+            def __init__(self):
+                self.calls = 0
+                self.responses = self
+
+            def create(self, **kwargs):
+                self.calls += 1
+                return DummyResponse()
+
+        client = DummyClient()
+        try:
+            first = ogp_ai.suggest_description(
+                client,
+                victim_name="Victim",
+                org="Org",
+                subject="Subject",
+                event_dt="08.04.2026 14:30",
+                raw_desc="Draft",
+                bundle_fingerprint="bundle-a",
+                retrieval_profile="suggest",
+            )
+            second = ogp_ai.suggest_description(
+                client,
+                victim_name="Victim",
+                org="Org",
+                subject="Subject",
+                event_dt="08.04.2026 14:30",
+                raw_desc="Draft",
+                bundle_fingerprint="bundle-b",
+                retrieval_profile="suggest",
+            )
+        finally:
+            if previous_enabled is None:
+                os.environ.pop("OGP_AI_CACHE_ENABLED", None)
+            else:
+                os.environ["OGP_AI_CACHE_ENABLED"] = previous_enabled
+            if previous_dir is None:
+                os.environ.pop("OGP_AI_CACHE_DIR", None)
+            else:
+                os.environ["OGP_AI_CACHE_DIR"] = previous_dir
+            tmpdir.cleanup()
+
+        self.assertEqual(first, "cached text")
+        self.assertEqual(second, "cached text")
+        self.assertEqual(client.calls, 2)
+
+    def test_suggest_prompt_data_driven_mode_uses_minimal_contract(self):
+        prompt = build_suggest_prompt(
+            victim_name="Victim",
+            org="LSPD",
+            subject="John Doe",
+            event_dt="08.04.2026 14:30",
+            raw_desc="Draft facts",
+            law_context="Источник: https://laws.example\nНорма: Статья 20",
+            prompt_mode=SUGGEST_PROMPT_MODE_DATA_DRIVEN,
+            retrieval_context_mode="no_context",
+        )
+        self.assertIn("один связный текст", prompt)
+        self.assertIn("retrieval_status", prompt)
+        self.assertIn("no_context", prompt)
+        self.assertIn("не выдумывай нормы", prompt)
 
     def test_suggest_prompt_requires_only_selected_basis_sections(self):
         prompt = build_suggest_prompt(
