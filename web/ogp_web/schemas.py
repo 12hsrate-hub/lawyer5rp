@@ -133,7 +133,6 @@ class SuggestResponse(BaseModel):
 
 class LawQaPayload(BaseModel):
     server_code: str = ""
-    model: str = ""
     question: str = ""
     max_answer_chars: int = 2200
 
@@ -141,11 +140,6 @@ class LawQaPayload(BaseModel):
     @classmethod
     def validate_server_code(cls, value: str) -> str:
         return str(value or "").strip().lower()
-
-    @field_validator("model")
-    @classmethod
-    def validate_model(cls, value: str) -> str:
-        return str(value or "").strip()
 
     @field_validator("max_answer_chars")
     @classmethod

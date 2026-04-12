@@ -1023,6 +1023,17 @@ def _truncate_law_excerpt(text: str, *, max_chars: int) -> str:
     return head[:split_index].rstrip(" ,;:-") + "..."
 
 
+def _truncate_law_answer(text: str, *, max_chars: int) -> str:
+    normalized = str(text or "").strip()
+    if max_chars <= 0 or len(normalized) <= max_chars:
+        return normalized
+    head = normalized[: max_chars + 1]
+    split_index = head.rfind(" ")
+    if split_index < max(0, int(max_chars * 0.6)):
+        split_index = max_chars
+    return head[:split_index].rstrip(" ,;:-") + "..."
+
+
 def _build_law_qa_context_blocks_limited(
     retrieval_result,
     *,
@@ -1515,7 +1526,7 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
             detail=["\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0432\u043e\u043f\u0440\u043e\u0441 \u0434\u043b\u044f \u0430\u043d\u0430\u043b\u0438\u0437\u0430."],
         )
 
-    model_name = resolve_law_qa_model(payload.model)
+    model_name = get_default_law_qa_model()
     generation_id = new_generation_id()
     retrieval_result = _retrieve_law_context(
         server_code=payload.server_code or DEFAULT_SERVER_CODE,
@@ -1617,7 +1628,7 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
             raise
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
 
-    limited = text[: payload.max_answer_chars].strip()
+    limited = _truncate_law_answer(text, max_chars=payload.max_answer_chars)
     latency_ms = int((monotonic() - request_started_at) * 1000)
     telemetry = build_ai_telemetry(
         model_name=model_name,

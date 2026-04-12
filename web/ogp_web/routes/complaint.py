@@ -326,7 +326,7 @@ async def law_qa_test(
 ) -> LawQaResponse:
     _ensure_law_qa_permission(store, user)
     effective_server_code = payload.server_code or user.server_code or store.get_server_code(user.username)
-    payload = payload.model_copy(update={"server_code": effective_server_code, "model": get_default_law_qa_model()})
+    payload = payload.model_copy(update={"server_code": effective_server_code})
     result = await run_in_threadpool(answer_law_question_details, payload)
     metrics_store.log_event(
         event_type="ai_law_qa_test",
