@@ -68,7 +68,12 @@ def _column_to_index(column: str) -> int:
 
 
 def _normalize_match_text(value: str) -> str:
-    text = str(value or "").lower().replace("ё", "е")
+    text = str(value or "")
+    try:
+        text = text.encode("cp1251").decode("utf-8")
+    except Exception:
+        pass
+    text = text.lower().replace("ё", "е")
     normalized_chars: list[str] = []
     for char in text:
         if char.isalnum() or char.isspace():
@@ -80,8 +85,8 @@ def _normalize_match_text(value: str) -> str:
 
 def _detect_question_start_index(headers: list[str]) -> int:
     for index, header in enumerate(headers):
-        normalized = str(header or "").strip().lower()
-        if normalized in {"формат экзамена", "format", "exam_format"}:
+        normalized = _normalize_match_text(str(header))
+        if normalized in {"формат экзамена", "format", "exam format", "exam_format"}:
             return index + 1
     return EXAM_BASE_COLUMNS
 
@@ -91,7 +96,7 @@ def _is_reference_marker(value: object) -> bool:
 
 
 def _is_non_scoring_header(header: str) -> bool:
-    normalized = str(header or "").strip().lower()
+    normalized = _normalize_match_text(str(header))
     if not normalized:
         return True
     blocked_fragments = (
@@ -100,13 +105,15 @@ def _is_non_scoring_header(header: str) -> bool:
         "time",
         "ваше имя",
         "имя/фамилия",
-        "full_name",
+        "имя фамилия",
+        "full name",
         "discord",
         "passport",
         "номер паспорта",
         "формат экзамена",
-        "exam_format",
-        "exam_type",
+        "exam format",
+        "exam type",
+        "exam type extra",
         "format",
     )
     return any(fragment in normalized for fragment in blocked_fragments)
@@ -142,7 +149,7 @@ def is_exam_reference_payload(
             normalized_header = _normalize_match_text(str(header))
             if not normalized_header:
                 continue
-            if normalized_header in {"full name", "exam format", "format", "exam_type_extra"}:
+            if normalized_header in {"full name", "exam format", "format", "exam type extra"}:
                 candidates.append(value)
                 continue
             if "ваше имя" in normalized_header or "имя фамилия" in normalized_header:
@@ -259,7 +266,7 @@ def _column_letter(index: int) -> str:
 
 def normalize_exam_type(raw_value: object) -> str:
     value = str(raw_value or "").strip()
-    lowered = value.lower()
+    lowered = _normalize_match_text(value)
     if "государ" in lowered:
         return EXAM_STATE_TYPE
     if "лиценз" in lowered:
