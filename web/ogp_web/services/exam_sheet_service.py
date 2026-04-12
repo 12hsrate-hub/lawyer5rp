@@ -113,22 +113,18 @@ def _is_non_scoring_header(header: str) -> bool:
 
 
 def build_exam_correct_answers_from_payload(payload: dict[str, str]) -> dict[str, str]:
-    items = list((payload or {}).items())
-    question_start_index = _detect_question_start_index([str(header) for header, _ in items])
     answers: dict[str, str] = {}
-    question_offset = 0
-    for index, (header, answer) in enumerate(items):
-        if index < question_start_index:
+    answer_key = dict(load_exam_correct_answers())
+    ordered_columns = sorted(answer_key.keys(), key=_column_to_index)
+    mapped_answers = _map_payload_answers_by_column(payload or {}, ordered_columns)
+    for column in ordered_columns:
+        mapped_item = mapped_answers.get(column)
+        if mapped_item is None:
             continue
-        if _is_non_scoring_header(str(header)):
-            continue
-        logical_index = EXAM_BASE_COLUMNS + question_offset
-        question_offset += 1
+        _, answer = mapped_item
         value = str(answer or "").strip()
-        if not value:
-            continue
-        column = _column_letter(logical_index).upper()
-        answers[column] = value
+        if value:
+            answers[column] = value
     return answers
 
 

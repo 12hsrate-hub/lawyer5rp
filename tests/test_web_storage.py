@@ -1643,6 +1643,72 @@ class WebStorageTests(unittest.TestCase):
             gc.collect()
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_exam_answers_store_preserves_scores_when_payload_order_changes_but_answers_match(self):
+        tmpdir = make_temp_dir()
+        try:
+            root = Path(tmpdir)
+            store = ExamAnswersStore(root / "exam_answers.db", backend=FakeExamAnswersPostgresBackend())
+            original = {
+                "source_row": 2,
+                "submitted_at": "2026-04-08 12:00:00",
+                "full_name": "Student One",
+                "discord_tag": "student1",
+                "passport": "111111",
+                "exam_format": "remote",
+                "payload": {
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "full_name": "Student One",
+                    "discord_tag": "student1",
+                    "passport": "111111",
+                    "exam_format": "remote",
+                    "Question F": "Answer F",
+                    "Question G": "Answer G",
+                },
+                "answer_count": 2,
+            }
+            reordered = {
+                "source_row": 2,
+                "submitted_at": "2026-04-08 12:00:00",
+                "full_name": "Student One",
+                "discord_tag": "student1",
+                "passport": "111111",
+                "exam_format": "remote",
+                "payload": {
+                    "Question G": "Answer G",
+                    "exam_format": "remote",
+                    "passport": "111111",
+                    "Question F": "Answer F",
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "discord_tag": "student1",
+                    "full_name": "Student One",
+                },
+                "answer_count": 2,
+            }
+
+            store.import_rows([original])
+            store.save_exam_scores(
+                2,
+                [
+                    {"column": "F", "score": 80},
+                    {"column": "G", "score": 100},
+                ],
+            )
+
+            result = store.import_rows([reordered])
+            rescored = store.get_entry(2)
+
+            self.assertEqual(result["inserted_count"], 0)
+            self.assertEqual(result["updated_count"], 1)
+            self.assertIsNotNone(rescored)
+            self.assertEqual(rescored["average_score"], 90.0)
+            self.assertEqual(rescored["average_score_answer_count"], 2)
+            self.assertEqual(rescored["needs_rescore"], 0)
+            self.assertEqual(len(store.list_entries_needing_scores(limit=10)), 0)
+        finally:
+            del store
+            gc.collect()
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
 
 class PostgresUserStoreTests(unittest.TestCase):
     def make_store(self) -> UserStore:

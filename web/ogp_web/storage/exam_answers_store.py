@@ -7,7 +7,12 @@ from typing import Any
 
 from ogp_web.db.factory import get_database_backend
 from ogp_web.db.types import DatabaseBackend
-from ogp_web.services.exam_sheet_service import is_exam_reference_payload, is_exam_reference_row
+from ogp_web.services.exam_sheet_service import (
+    _is_non_scoring_header,
+    _normalize_match_text,
+    is_exam_reference_payload,
+    is_exam_reference_row,
+)
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 DATA_DIR = ROOT_DIR / "web" / "data"
@@ -45,15 +50,16 @@ class ExamAnswersStore:
 
     @staticmethod
     def _build_score_signature(*, payload: dict[str, object], exam_format: str) -> str:
-        ordered_items = list((payload or {}).items())
         scoring_items: list[list[str]] = []
-        for index, (header, value) in enumerate(ordered_items):
-            if index < 5:
-                continue
+        for header, value in (payload or {}).items():
             header_text = str(header or "").strip()
-            if not header_text:
+            if not header_text or _is_non_scoring_header(header_text):
                 continue
-            scoring_items.append([header_text, str(value or "").strip()])
+            scoring_items.append([
+                _normalize_match_text(header_text) or header_text.lower(),
+                str(value or "").strip(),
+            ])
+        scoring_items.sort(key=lambda item: item[0])
         return json.dumps(
             {
                 "exam_format": str(exam_format or "").strip(),
