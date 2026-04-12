@@ -7,6 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 from time import monotonic
+import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, Response
 from datetime import datetime, timezone
@@ -35,6 +36,7 @@ _PERFORMANCE_CACHE_LOCK = threading.Lock()
 _ADMIN_TASKS: dict[str, dict[str, Any]] = {}
 _ADMIN_TASKS_LOCK = threading.Lock()
 _ADMIN_TASKS_PATH = Path(__file__).resolve().parents[3] / "web" / "data" / "admin_tasks.json"
+_MODEL_POLICY_PATH = Path(__file__).resolve().parents[3] / "config" / "model_policy.yaml"
 
 
 def _cache_key(*, window_minutes: int, top_endpoints: int) -> str:
@@ -65,6 +67,16 @@ def _normalize_api_error(exc: Exception, *, source: str) -> dict[str, str]:
         "source": source,
         "message": str(exc) or f"{source}_error",
     }
+
+
+def _load_model_policy() -> dict[str, Any]:
+    if not _MODEL_POLICY_PATH.exists():
+        return {}
+    try:
+        payload = yaml.safe_load(_MODEL_POLICY_PATH.read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"failed_to_load_model_policy: {exc}") from exc
+    return payload if isinstance(payload, dict) else {}
 
 
 def _save_admin_tasks_to_disk() -> None:
@@ -663,6 +675,12 @@ async def admin_overview(
         totals["ai_estimated_cost_samples"] = int(ai_summary.get("estimated_cost_samples") or 0)
     except Exception as exc:  # noqa: BLE001
         partial_errors.append(_normalize_api_error(exc, source="ai_costs"))
+
+    try:
+        payload["model_policy"] = _load_model_policy()
+    except Exception as exc:  # noqa: BLE001
+        partial_errors.append(_normalize_api_error(exc, source="model_policy"))
+        payload["model_policy"] = {}
 
     try:
         error_items = metrics_store.list_error_events(

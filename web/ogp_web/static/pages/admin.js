@@ -8,6 +8,7 @@ const eventsHost = document.getElementById("admin-events");
 const adminEventsHost = document.getElementById("admin-admin-events");
 const errorExplorerHost = document.getElementById("admin-errors-explorer");
 const costSummaryHost = document.getElementById("admin-cost-summary");
+const modelPolicyHost = document.getElementById("admin-model-policy");
 const aiPipelineHost = document.getElementById("admin-ai-pipeline");
 const roleHistoryHost = document.getElementById("admin-role-history");
 const endpointsHost = document.getElementById("admin-top-endpoints");
@@ -464,6 +465,110 @@ function renderCostSummary(totals) {
       <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatNumber(totals?.ai_input_tokens_total || 0))} / ${escapeHtml(formatNumber(totals?.ai_output_tokens_total || 0))} / ${escapeHtml(formatNumber(totals?.ai_total_tokens_total || 0))}</strong>
       <span class="admin-user-cell__secondary">Генераций: ${escapeHtml(String(totals?.ai_generation_total || 0))}</span>
     </article>
+  `;
+}
+
+function renderModelPolicy(policy) {
+  if (!modelPolicyHost) {
+    return;
+  }
+
+  const thresholds = Object.entries(policy?.kpi_thresholds || {});
+  const autoActions = Array.isArray(policy?.auto_actions) ? policy.auto_actions : [];
+  const rolloutConfig = policy?.cheap_model_rollout || {};
+  const rolloutStages = Object.entries(rolloutConfig).filter(([key]) => key !== "immediate_rollback");
+  const rollbackItems = Array.isArray(rolloutConfig.immediate_rollback) ? rolloutConfig.immediate_rollback : [];
+  const defaults = policy?.recommended_defaults || {};
+  const cadence = defaults?.review_cadence || {};
+  const routing = policy?.model_routing || {};
+  const checklist = policy?.daily_admin_checklist || {};
+
+  if (!thresholds.length && !autoActions.length) {
+    modelPolicyHost.innerHTML = '<p class="legal-section__description">Policy config is not loaded yet.</p>';
+    return;
+  }
+
+  modelPolicyHost.innerHTML = `
+    <div class="admin-performance-grid">
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Default tier</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(defaults.default_tier || "gpt-5.4-mini"))}</strong>
+        <span class="admin-user-cell__secondary">Nano share: ${escapeHtml(String(defaults.nano_share_simple_cases || "n/a"))}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Auto escalation</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(defaults.auto_escalation ?? false))}</strong>
+        <span class="admin-user-cell__secondary">Manual model UI: ${escapeHtml(String(defaults.manual_model_selection_ui ?? false))}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Review cadence</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(cadence.operational || "daily"))}</strong>
+        <span class="admin-user-cell__secondary">Policy review: ${escapeHtml(String(cadence.policy || "weekly"))}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Law QA routing</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(routing?.law_qa?.default_model || "gpt-5.4-mini"))}</strong>
+        <span class="admin-user-cell__secondary">Low confidence: ${escapeHtml(String(routing?.law_qa?.low_confidence_model || "gpt-5.4"))}</span>
+      </article>
+    </div>
+    <div class="legal-table-shell">
+      <table class="legal-table admin-table admin-table--compact">
+        <thead><tr><th>KPI</th><th>Green</th><th>Yellow</th><th>Red</th></tr></thead>
+        <tbody>
+          ${thresholds
+            .map(
+              ([metric, bands]) => `
+                <tr>
+                  <td>${escapeHtml(String(metric))}</td>
+                  <td>${escapeHtml(String((bands || {}).green || "-"))}</td>
+                  <td>${escapeHtml(String((bands || {}).yellow || "-"))}</td>
+                  <td>${escapeHtml(String((bands || {}).red || "-"))}</td>
+                </tr>
+              `,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+    <div class="legal-field-grid legal-field-grid--two">
+      <article class="legal-subcard">
+        <div class="legal-field__label">Auto actions</div>
+        <ul class="legal-list">
+          ${autoActions
+            .map(
+              (item) => `<li><strong>${escapeHtml(String(item.when || "-"))}</strong>: ${escapeHtml(String(item.action || "-"))} (${escapeHtml(String(item.duration || "-"))})</li>`,
+            )
+            .join("")}
+        </ul>
+      </article>
+      <article class="legal-subcard">
+        <div class="legal-field__label">Daily admin checklist</div>
+        <ul class="legal-list">
+          ${["quality", "cost", "stability", "drill_down"]
+            .map((key) => {
+              const values = Array.isArray(checklist?.[key]) ? checklist[key] : [];
+              return values.map((item) => `<li>${escapeHtml(`${key}: ${String(item)}`)}</li>`).join("");
+            })
+            .join("")}
+        </ul>
+      </article>
+      <article class="legal-subcard">
+        <div class="legal-field__label">Cheap-tier rollout</div>
+        <ul class="legal-list">
+          ${rolloutStages
+            .map(
+              ([stage, meta]) => `<li><strong>${escapeHtml(String(stage))}</strong>: ${escapeHtml(String((meta || {}).traffic_share || "-"))}, ${escapeHtml(String((meta || {}).promote_when || "-"))}</li>`,
+            )
+            .join("")}
+        </ul>
+      </article>
+      <article class="legal-subcard">
+        <div class="legal-field__label">Immediate rollback</div>
+        <ul class="legal-list">
+          ${rollbackItems.map((item) => `<li>${escapeHtml(String(item))}</li>`).join("")}
+        </ul>
+      </article>
+    </div>
   `;
 }
 
@@ -1507,6 +1612,7 @@ async function loadAdminOverview({ silent = false } = {}) {
     const payload = await parsePayload(response);
     renderActiveFilters(currentFilters());
     renderTotals(payload.totals || {});
+    renderModelPolicy(payload.model_policy || {});
     renderCostSummary(payload.totals || {});
     renderExamImport(payload.exam_import || null);
     renderTopEndpoints(payload.top_endpoints || []);

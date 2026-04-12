@@ -206,6 +206,9 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("ai_estimated_cost_total_usd", payload["totals"])
         self.assertIn("ai_total_tokens_total", payload["totals"])
         self.assertIn("ai_generation_total", payload["totals"])
+        self.assertIn("model_policy", payload)
+        self.assertEqual(payload["model_policy"]["recommended_defaults"]["default_tier"], "gpt-5.4-mini")
+        self.assertIn("law_qa", payload["model_policy"]["model_routing"])
 
     def test_admin_overview_supports_user_sort_and_csv_exports(self):
         self._register_verify_and_login("alpha", "alpha@example.com")

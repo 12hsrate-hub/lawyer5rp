@@ -1,0 +1,129 @@
+kpi_thresholds:
+  guard_fail_rate_24h:
+    green: "<1.5%"
+    yellow: "1.5-3.0%"
+    red: ">3.0%"
+  guard_warn_rate_24h:
+    green: "<8%"
+    yellow: "8-15%"
+    red: ">15%"
+  wrong_law_rate:
+    green: "<2.0%"
+    yellow: "2.0-4.0%"
+    red: ">4.0%"
+  hallucination_rate:
+    green: "<0.8%"
+    yellow: "0.8-1.5%"
+    red: ">1.5%"
+  unclear_answer_rate:
+    green: "<5%"
+    yellow: "5-9%"
+    red: ">9%"
+  p95_latency_law_qa:
+    green: "<7s"
+    yellow: "7-10s"
+    red: ">10s"
+  p95_latency_suggest:
+    green: "<9s"
+    yellow: "9-13s"
+    red: ">13s"
+  avg_cost_per_req_law_qa:
+    green: "target"
+    yellow: "+15%"
+    red: "+30%"
+  avg_cost_per_req_suggest:
+    green: "target"
+    yellow: "+15%"
+    red: "+30%"
+
+auto_actions:
+  - when: "guard_fail on a single generation"
+    action: "immediate retry on the next stronger model tier"
+    duration: "instant"
+  - when: "guard_fail_rate > 3% over 1h"
+    action: "force minimum tier = mini; disable nano"
+    duration: "6h"
+  - when: "wrong_law_rate > 4% over 24h"
+    action: "force full for law_qa"
+    duration: "24h"
+  - when: "hallucination_rate > 1.5%"
+    action: "enable strict mode and force full for low-confidence requests"
+    duration: "24h"
+  - when: "p95_latency in red and quality stays green"
+    action: "lower tier for simple segment"
+    duration: "2h"
+  - when: "cost uplift > 30% with green quality"
+    action: "increase cheap-tier share by 15%"
+    duration: "until next review"
+
+model_routing:
+  law_qa:
+    default_model: "gpt-5.4-mini"
+    low_confidence_model: "gpt-5.4"
+    high_confidence_short_question_model: "gpt-5.4-nano"
+    high_confidence_short_question_flag: "law_qa_nano_enabled"
+    escalation_on_guard_fail: true
+    max_retries: 1
+    rules:
+      - "retrieval_confidence=low -> gpt-5.4"
+      - "context_compacted=true -> gpt-5.4"
+      - "retrieval_confidence=high and short question and no history warning -> gpt-5.4-nano"
+      - "guard_fail -> escalate by one tier and retry once"
+  suggest:
+    default_model: "gpt-5.4-mini"
+    low_confidence_model: "gpt-5.4"
+    short_editorial_model: "gpt-5.4-nano"
+    escalation_on_repeated_critical_warn: true
+    critical_warn_lock_duration: "24h"
+    rules:
+      - "low_confidence_context -> gpt-5.4"
+      - "wrong_fact or wrong_law history by user or scenario -> gpt-5.4"
+      - "short rewrite/cleanup request -> gpt-5.4-nano"
+      - "two consecutive critical guard_warn codes -> disable nano for 24h"
+
+cheap_model_rollout:
+  stage_1:
+    traffic_share: "10%"
+    promote_when: "3 days with quality no worse than baseline by more than 10%"
+  stage_2:
+    traffic_share: "30%"
+    promote_when: "7 days with wrong_law and hallucination in green/yellow"
+  stage_3:
+    traffic_share: "60%"
+    promote_when: "7 days with stable cost win >= 25%"
+  stage_4:
+    traffic_share: "100%"
+    promote_when: "14 days without red incidents"
+  immediate_rollback:
+    - "guard_fail_rate stays red for 2h"
+    - "wrong_law_rate > 5% over 24h"
+    - "inaccuracy complaints grow >2x baseline"
+
+daily_admin_checklist:
+  quality:
+    - "guard_fail_rate"
+    - "guard_warn_rate"
+    - "wrong_law_rate"
+    - "hallucination_rate"
+    - "unclear_answer_rate"
+  cost:
+    - "avg_cost_per_req by flow and model"
+    - "estimated_cost_total_usd day-to-date"
+  stability:
+    - "p95 latency"
+    - "p99 latency"
+    - "fallback_rate"
+  drill_down:
+    - "top generation_id with wrong_law"
+    - "top generation_id with hallucination"
+    - "answer/source/guard/feedback comparison"
+
+recommended_defaults:
+  default_tier: "gpt-5.4-mini"
+  nano_share_simple_cases: "10%"
+  auto_escalation: true
+  manual_model_selection_ui: false
+  review_cadence:
+    operational: "daily"
+    policy: "weekly"
+
