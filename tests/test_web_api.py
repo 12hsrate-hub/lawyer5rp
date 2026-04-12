@@ -23,6 +23,7 @@ from ogp_web.app import create_app
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
 from ogp_web.routes import complaint as complaint_route
+from ogp_web.routes import admin as admin_route
 from ogp_web.routes import exam_import as exam_import_route
 from ogp_web.services import ai_service
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
@@ -970,6 +971,64 @@ class WebApiTests(unittest.TestCase):
         self.assertTrue(any("invented-fact spike" in item["title"].lower() for item in payload["policy_actions"]))
         self.assertTrue(any(item["meta"]["generation_id"] == "gen_admin_1" for item in payload["generations"]))
         self.assertTrue(any(item["meta"]["generation_id"] == "gen_admin_1" for item in payload["feedback"]))
+
+    def test_admin_ai_pipeline_endpoint_handles_invalid_estimated_cost_values(self):
+        self.admin_store.log_ai_generation(
+            username="tester",
+            server_code="blackberry",
+            flow="law_qa",
+            generation_id="gen_cost_invalid",
+            path="/api/ai/law-qa-test",
+            meta={
+                "model": "gpt-5.4-mini",
+                "estimated_cost_usd": "n/a",
+                "total_tokens": 120,
+            },
+        )
+        self.admin_store.log_ai_generation(
+            username="tester",
+            server_code="blackberry",
+            flow="law_qa",
+            generation_id="gen_cost_string",
+            path="/api/ai/law-qa-test",
+            meta={
+                "model": "gpt-5.4-mini",
+                "estimated_cost_usd": "1.25",
+                "total_tokens": 240,
+            },
+        )
+        self.admin_store.log_ai_feedback(
+            username="tester",
+            server_code="blackberry",
+            generation_id="gen_cost_invalid",
+            flow="law_qa",
+            normalized_issues=["wrong_law"],
+            note="Bad source",
+        )
+
+        self._register_verify_and_login("12345", "admin_pipeline_costs@example.com")
+        response = self.client.get("/api/admin/ai-pipeline?flow=law_qa&issue_type=wrong_law")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        by_flow = payload["cost_tables"]["by_flow"][0]
+        self.assertEqual(by_flow["flow"], "law_qa")
+        self.assertEqual(by_flow["estimated_cost_total_usd"], 1.25)
+        self.assertEqual(by_flow["avg_cost_per_request_usd"], 0.625)
+        self.assertEqual(payload["top_inaccurate_generations"][0]["generation_id"], "gen_cost_invalid")
+        self.assertEqual(payload["top_inaccurate_generations"][0]["estimated_cost_usd"], 0.0)
+
+    def test_safe_float_parsing_cases(self):
+        self.assertEqual(admin_route._safe_float("12.5"), 12.5)
+        with self.assertLogs("ogp_web.routes.admin", level="WARNING") as captured:
+            self.assertEqual(admin_route._safe_float(None, generation_id="gen_none"), 0.0)
+            self.assertEqual(admin_route._safe_float("", generation_id="gen_empty"), 0.0)
+            self.assertEqual(admin_route._safe_float("n/a", generation_id="gen_na"), 0.0)
+            self.assertEqual(admin_route._safe_float({"bad": "object"}, generation_id="gen_obj"), 0.0)
+        self.assertTrue(any("generation_id=gen_none" in item for item in captured.output))
+        self.assertTrue(any("generation_id=gen_empty" in item for item in captured.output))
+        self.assertTrue(any("generation_id=gen_na" in item for item in captured.output))
+        self.assertTrue(any("generation_id=gen_obj" in item for item in captured.output))
 
     def test_law_qa_test_page_available_for_tester(self):
         self._register_verify_and_login("tester", "tester_law_page@example.com")
