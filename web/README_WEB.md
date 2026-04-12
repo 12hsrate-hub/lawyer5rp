@@ -12,12 +12,14 @@
 
 ## База данных
 
-Runtime-бэкенд веб-приложения: только `postgres`, подключение через `DATABASE_URL`.
+Runtime-бэкенд веб-приложения: только PostgreSQL.
+
+- `DATABASE_URL` обязателен для старта приложения.
+- При отсутствии `DATABASE_URL` приложение завершается с понятной ошибкой и не стартует в fallback-режиме.
 
 Пример для PostgreSQL:
 
 ```env
-OGP_DB_BACKEND=postgres
 DATABASE_URL=postgresql://user:password@host:5432/dbname
 ```
 

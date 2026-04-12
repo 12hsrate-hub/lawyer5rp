@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from contextlib import closing
 from pathlib import Path
 from typing import Any
@@ -117,13 +116,14 @@ class UserStore:
     def backend(self) -> DatabaseBackend:
         return self.repository.backend
 
+
     @property
     def is_postgres_backend(self) -> bool:
-        return self.backend.__class__.__name__ == "PostgresBackend"
+        return True
 
     def healthcheck(self) -> dict[str, object]:
         details = dict(self.backend.healthcheck())
-        if not details.get("ok") or not self.is_postgres_backend:
+        if not details.get("ok"):
             return details
 
         required_tables = (
@@ -217,160 +217,16 @@ class UserStore:
         )
 
     def _fetch_user_by_username(self, username: str, columns: str = "*"):
-        if self.is_postgres_backend:
-            return self._pg_fetch_user("u.username = %s", (_normalize_username(username),), columns=columns)
-        return self._fetchone(
-            f"SELECT {_validate_columns(columns)} FROM users WHERE username = ?",
-            (_normalize_username(username),),
-        )
+        return self._pg_fetch_user("u.username = %s", (_normalize_username(username),), columns=columns)
 
     def _fetch_user_by_email(self, email: str, columns: str = "*"):
-        if self.is_postgres_backend:
-            return self._pg_fetch_user("u.email = %s", (_normalize_email(email),), columns=columns)
-        return self._fetchone(
-            f"SELECT {_validate_columns(columns)} FROM users WHERE email = ?",
-            (_normalize_email(email),),
-        )
+        return self._pg_fetch_user("u.email = %s", (_normalize_email(email),), columns=columns)
 
     def _ensure_schema(self) -> None:
-        if self.is_postgres_backend:
-            return
-        with closing(self._connect()) as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    username TEXT PRIMARY KEY,
-                    email TEXT,
-                    salt TEXT NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    email_verified_at TEXT,
-                    email_verification_token_hash TEXT,
-                    email_verification_sent_at TEXT,
-                    password_reset_token_hash TEXT,
-                    password_reset_sent_at TEXT,
-                    access_blocked_at TEXT,
-                    access_blocked_reason TEXT,
-                    deactivated_at TEXT,
-                    deactivated_reason TEXT,
-                    api_quota_daily INTEGER NOT NULL DEFAULT 0,
-                    server_code TEXT NOT NULL DEFAULT 'blackberry',
-                    is_tester INTEGER NOT NULL DEFAULT 0,
-                    is_gka INTEGER NOT NULL DEFAULT 0,
-                    representative_profile TEXT NOT NULL,
-                    complaint_draft_json TEXT,
-                    complaint_draft_updated_at TEXT
-                )
-                """
-            )
-            existing_columns = {
-                str(row["name"])
-                for row in conn.execute("PRAGMA table_info(users)").fetchall()
-            }
-            additions = {
-                "email": "ALTER TABLE users ADD COLUMN email TEXT",
-                "email_verified_at": "ALTER TABLE users ADD COLUMN email_verified_at TEXT",
-                "email_verification_token_hash": "ALTER TABLE users ADD COLUMN email_verification_token_hash TEXT",
-                "email_verification_sent_at": "ALTER TABLE users ADD COLUMN email_verification_sent_at TEXT",
-                "password_reset_token_hash": "ALTER TABLE users ADD COLUMN password_reset_token_hash TEXT",
-                "password_reset_sent_at": "ALTER TABLE users ADD COLUMN password_reset_sent_at TEXT",
-                "access_blocked_at": "ALTER TABLE users ADD COLUMN access_blocked_at TEXT",
-                "access_blocked_reason": "ALTER TABLE users ADD COLUMN access_blocked_reason TEXT",
-                "deactivated_at": "ALTER TABLE users ADD COLUMN deactivated_at TEXT",
-                "deactivated_reason": "ALTER TABLE users ADD COLUMN deactivated_reason TEXT",
-                "api_quota_daily": "ALTER TABLE users ADD COLUMN api_quota_daily INTEGER NOT NULL DEFAULT 0",
-                "server_code": f"ALTER TABLE users ADD COLUMN server_code TEXT NOT NULL DEFAULT '{DEFAULT_SERVER_CODE}'",
-                "is_tester": "ALTER TABLE users ADD COLUMN is_tester INTEGER NOT NULL DEFAULT 0",
-                "is_gka": "ALTER TABLE users ADD COLUMN is_gka INTEGER NOT NULL DEFAULT 0",
-                "complaint_draft_json": "ALTER TABLE users ADD COLUMN complaint_draft_json TEXT",
-                "complaint_draft_updated_at": "ALTER TABLE users ADD COLUMN complaint_draft_updated_at TEXT",
-            }
-            for column_name, statement in additions.items():
-                if column_name not in existing_columns:
-                    try:
-                        conn.execute(statement)
-                    except sqlite3.OperationalError as exc:
-                        if "duplicate column name" not in str(exc).lower():
-                            raise
-            conn.execute(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
-                ON users(email)
-                WHERE email IS NOT NULL AND email <> ''
-                """
-            )
-            conn.commit()
-
-    def _user_count(self) -> int:
-        if self.is_postgres_backend:
-            row = self._pg_fetchone("SELECT COUNT(*) AS total FROM users")
-            return int(row["total"] if row else 0)
-        row = self._fetchone("SELECT COUNT(*) AS total FROM users")
-        return int(row["total"] if row else 0)
+        return
 
     def _migrate_legacy_json_if_needed(self) -> None:
-        if self.is_postgres_backend:
-            return
-        if self._user_count() > 0 or not self.legacy_json_path.exists():
-            return
-        data = _safe_json_load(self.legacy_json_path)
-        users = data.get("users", {})
-        if not isinstance(users, dict) or not users:
-            return
-
-        with closing(self._connect()) as conn:
-            for username, raw_record in users.items():
-                if not isinstance(raw_record, dict):
-                    continue
-                profile = raw_record.get("representative_profile")
-                if not isinstance(profile, dict):
-                    profile = {}
-                sanitized_profile = {
-                    key: str(profile.get(key, "") or "").strip()
-                    for key in REPRESENTATIVE_PROFILE_DEFAULTS
-                }
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO users (
-                        username,
-                        email,
-                        salt,
-                        password_hash,
-                        created_at,
-                        email_verified_at,
-                        email_verification_token_hash,
-                        email_verification_sent_at,
-                        password_reset_token_hash,
-                        password_reset_sent_at,
-                        access_blocked_at,
-                        access_blocked_reason,
-                        server_code,
-                        is_tester,
-                        is_gka,
-                        representative_profile
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        str(username).strip().lower(),
-                        None,
-                        str(raw_record.get("salt", "") or ""),
-                        str(raw_record.get("password_hash", "") or ""),
-                        str(raw_record.get("created_at", "") or ""),
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        DEFAULT_SERVER_CODE,
-                        0,
-                        0,
-                        json.dumps(sanitized_profile, ensure_ascii=False),
-                    ),
-                )
-            conn.commit()
+        return
 
     def _pg_register(self, username: str, email: str, password: str) -> tuple[AuthUser, str]:
         normalized = _normalize_username(username)
@@ -616,46 +472,22 @@ class UserStore:
         return dict(row) if row else {}
 
     def register(self, username: str, email: str, password: str) -> tuple[AuthUser, str]:
-        if self.is_postgres_backend:
-            return self._pg_register(username, email, password)
-        from ogp_web.services.user_auth_store_service import register_user
-
-        return register_user(self, username, email, password)
+        return self._pg_register(username, email, password)
 
     def authenticate(self, username: str, password: str) -> AuthUser:
-        if self.is_postgres_backend:
-            return self._pg_authenticate(username, password)
-        from ogp_web.services.user_auth_store_service import authenticate_user
-
-        return authenticate_user(self, username, password)
+        return self._pg_authenticate(username, password)
 
     def confirm_email(self, token: str) -> AuthUser:
-        if self.is_postgres_backend:
-            return self._pg_confirm_email(token)
-        from ogp_web.services.user_auth_store_service import confirm_email
-
-        return confirm_email(self, token)
+        return self._pg_confirm_email(token)
 
     def issue_email_verification_token(self, email: str) -> tuple[AuthUser, str]:
-        if self.is_postgres_backend:
-            return self._pg_issue_email_verification_token(email)
-        from ogp_web.services.user_auth_store_service import issue_email_verification_token
-
-        return issue_email_verification_token(self, email)
+        return self._pg_issue_email_verification_token(email)
 
     def issue_password_reset_token(self, email: str) -> tuple[AuthUser, str]:
-        if self.is_postgres_backend:
-            return self._pg_issue_password_reset_token(email)
-        from ogp_web.services.user_auth_store_service import issue_password_reset_token
-
-        return issue_password_reset_token(self, email)
+        return self._pg_issue_password_reset_token(email)
 
     def reset_password(self, token: str, new_password: str) -> AuthUser:
-        if self.is_postgres_backend:
-            return self._pg_reset_password(token, new_password)
-        from ogp_web.services.user_auth_store_service import reset_password
-
-        return reset_password(self, token, new_password)
+        return self._pg_reset_password(token, new_password)
 
     def get_representative_profile(self, username: str) -> dict[str, str]:
         row = self._fetch_user_by_username(username, "representative_profile")
@@ -670,26 +502,16 @@ class UserStore:
             for key in REPRESENTATIVE_PROFILE_DEFAULTS
         }
         profile_json = dump_profile_json(sanitized, REPRESENTATIVE_PROFILE_DEFAULTS)
-        if self.is_postgres_backend:
-            rowcount = self._pg_execute(
-                "UPDATE users SET representative_profile = %s::jsonb WHERE username = %s",
-                (profile_json, normalized),
-            )
-        else:
-            rowcount = self._execute(
-                "UPDATE users SET representative_profile = ? WHERE username = ?",
-                (profile_json, normalized),
-            )
+        rowcount = self._pg_execute(
+            "UPDATE users SET representative_profile = %s::jsonb WHERE username = %s",
+            (profile_json, normalized),
+        )
         if rowcount <= 0:
             raise AuthError("Пользователь не найден.")
         return sanitized
 
     def change_password(self, username: str, current_password: str, new_password: str) -> AuthUser:
-        if self.is_postgres_backend:
-            return self._pg_change_password(username, current_password, new_password)
-        from ogp_web.services.user_auth_store_service import change_password
-
-        return change_password(self, username, current_password, new_password)
+        return self._pg_change_password(username, current_password, new_password)
 
     def get_complaint_draft(self, username: str) -> dict[str, Any]:
         row = self._fetch_user_by_username(
@@ -716,56 +538,34 @@ class UserStore:
         normalized = _normalize_username(username)
         if not isinstance(draft, dict):
             raise AuthError("Черновик жалобы должен быть объектом.")
-        if self.is_postgres_backend:
-            rowcount = self._pg_execute(
-                """
-                INSERT INTO complaint_drafts (user_id, server_code, draft_json, updated_at)
-                SELECT id, %s, %s::jsonb, NOW()
-                FROM users
-                WHERE username = %s
-                ON CONFLICT (user_id, server_code)
-                DO UPDATE SET draft_json = EXCLUDED.draft_json, updated_at = NOW()
-                """,
-                (DEFAULT_SERVER_CODE, json.dumps(draft, ensure_ascii=False), normalized),
-            )
-        else:
-            rowcount = self._execute(
-                """
-                UPDATE users
-                SET complaint_draft_json = ?,
-                    complaint_draft_updated_at = CURRENT_TIMESTAMP
-                WHERE username = ?
-                """,
-                (json.dumps(draft, ensure_ascii=False), normalized),
-            )
+        rowcount = self._pg_execute(
+            """
+            INSERT INTO complaint_drafts (user_id, server_code, draft_json, updated_at)
+            SELECT id, %s, %s::jsonb, NOW()
+            FROM users
+            WHERE username = %s
+            ON CONFLICT (user_id, server_code)
+            DO UPDATE SET draft_json = EXCLUDED.draft_json, updated_at = NOW()
+            """,
+            (DEFAULT_SERVER_CODE, json.dumps(draft, ensure_ascii=False), normalized),
+        )
         if rowcount <= 0:
             raise AuthError("Пользователь не найден.")
         return self.get_complaint_draft(normalized)
 
     def clear_complaint_draft(self, username: str) -> None:
         normalized = _normalize_username(username)
-        if self.is_postgres_backend:
-            self._pg_execute(
-                """
-                UPDATE complaint_drafts cd
-                SET draft_json = '{}'::jsonb,
-                    updated_at = NOW()
-                FROM users u
-                WHERE cd.user_id = u.id
-                  AND cd.server_code = %s
-                  AND u.username = %s
-                """,
-                (DEFAULT_SERVER_CODE, normalized),
-            )
-            return
-        rowcount = self._execute(
+        rowcount = self._pg_execute(
             """
-            UPDATE users
-            SET complaint_draft_json = NULL,
-                complaint_draft_updated_at = NULL
-            WHERE username = ?
+            UPDATE complaint_drafts cd
+            SET draft_json = '{}'::jsonb,
+                updated_at = NOW()
+            FROM users u
+            WHERE cd.user_id = u.id
+              AND cd.server_code = %s
+              AND u.username = %s
             """,
-            (normalized,),
+            (DEFAULT_SERVER_CODE, normalized),
         )
         if rowcount <= 0:
             raise AuthError("Пользователь не найден.")
