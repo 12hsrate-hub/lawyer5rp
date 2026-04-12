@@ -1,0 +1,50 @@
+blockers:
+  - new_entity_or_date_or_document_or_number_or_url
+  - article_without_valid_trigger
+  - strong_unconfirmed_qualification
+
+warnings:
+  min_fallback_sentences: 4
+  max_sentences: 7
+  require_employee_assessment_in_fallback: true
+  conversational_style_warning: true
+
+info:
+  - low_confidence_context
+  - fallback_selected_correctly
+
+employee_assessment_phrases:
+  - требует проверки
+  - требуют проверки
+  - вызывает сомнения
+  - вызывают сомнения
+  - наличие спорности
+  - подлежит проверке
+  - подлежат проверке
+  - требует правовой оценки
+  - требуют правовой оценки
+
+strong_qualification_phrases:
+  - без оснований
+  - действия незаконны
+  - незаконно
+  - незаконны
+  - превысил полномочия
+  - превышение полномочий
+
+conversational_markers:
+  - мне кажется
+  - думаю
+  - вообще
+  - по-моему
+  - ну
+
+document_keywords:
+  - протокол
+  - постановление
+  - рапорт
+  - запрос
+  - решение
+  - ордер
+  - заключение
+  - уведомление

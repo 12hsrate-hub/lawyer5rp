@@ -286,9 +286,92 @@ def _build_suggest_prompt_spec_data_driven(
     complaint_basis: str = "",
     main_focus: str = "",
     law_context: str = "",
+    policy_mode: str = "",
+    pipeline_context: str = "",
     retrieval_context_mode: str = "normal_context",
 ) -> PromptSpec:
     focus_input = _build_focus_input_section(complaint_basis=complaint_basis, main_focus=main_focus)
+    normalized_policy_mode = str(policy_mode or "").strip().lower()
+    retrieval_mode_value = str(retrieval_context_mode or "").strip() or "unknown_context"
+    if normalized_policy_mode not in {"legal_grounded", "factual_fallback_expanded"}:
+        normalized_policy_mode = (
+            "factual_fallback_expanded" if retrieval_mode_value in {"low_confidence_context", "no_context"} else "legal_grounded"
+        )
+    mode_rules = (
+        """
+Mode: legal_grounded
+- Return one cohesive paragraph in Russian with 4-7 sentences.
+- Mention articles only when they appear in pipeline_context as valid triggers.
+- Keep the assessment of the employee's actions restrained and procedural.
+"""
+        if normalized_policy_mode == "legal_grounded"
+        else """
+Mode: factual_fallback_expanded
+- Return one cohesive paragraph in Russian with 4-7 sentences.
+- Do not cite article numbers, code names, or legal acts.
+- Keep legal-business tone and include a restrained procedural assessment such as "требует проверки", "вызывает сомнения", or "наличие спорности".
+"""
+    )
+    pipeline_payload = str(pipeline_context or "").strip() or "{}"
+    return PromptSpec(
+        name="suggest",
+        version=SUGGEST_PROMPT_VERSION,
+        text=_render_prompt_sections(
+            (
+                "system",
+                """
+You rewrite only point 3 of a complaint.
+Think internally, but return only the final paragraph in Russian.
+Never invent facts, dates, documents, numbers, URLs, or legal references not confirmed below.
+""",
+            ),
+            (
+                "task",
+                """
+Return one cohesive paragraph for complaint point 3.
+Use only draft facts plus the explicit policy and trigger data from pipeline_context.
+If confidence is weak, prefer cautious procedural language over hard legal conclusions.
+""",
+            ),
+            ("generation_mode", mode_rules),
+            ("retrieval_status", f"[mode={retrieval_mode_value}] " + {
+                "normal_context": "retrieval context is available and may support grounded legal references.",
+                "low_confidence_context": "retrieval context is low confidence; avoid categorical legal conclusions.",
+                "no_context": "reliable retrieval context is missing; do not invent any legal norm; не выдумывай нормы.",
+            }.get(retrieval_mode_value, "retrieval context status is unknown.")),
+            ("focus_input", focus_input),
+            ("pipeline_context", pipeline_payload),
+            ("retrieved_law_context", law_context),
+            (
+                "rules",
+                """
+- One paragraph only.
+- No lists, markdown, BBCode, or service notes.
+- No categorical accusations if support is weak.
+- Preserve a restrained, procedural, legal-business tone.
+""",
+            ),
+            (
+                "output_contract",
+                """
+Верни один связный текст без заголовков и без URL.
+The paragraph must contain 4-7 sentences and be ready for direct insertion into point 3.
+""",
+            ),
+            (
+                "input_data",
+                f"""
+Complainant: {victim_name}
+Organization: {org}
+Target person: {subject}
+Event date/time: {event_dt}
+
+Draft point 3:
+{raw_desc}
+""",
+            ),
+        ),
+    )
     retrieval_note = {
         "normal_context": "Контекст норм подобран и подтвержден retrieval.",
         "low_confidence_context": "Контекст норм подобран с низкой уверенностью: не делай категоричных выводов.",
@@ -352,98 +435,6 @@ def _build_suggest_prompt_spec_data_driven(
     )
 
 
-def _build_suggest_prompt_spec_data_driven(
-    *,
-    victim_name: str,
-    org: str,
-    subject: str,
-    event_dt: str,
-    raw_desc: str,
-    complaint_basis: str = "",
-    main_focus: str = "",
-    law_context: str = "",
-    retrieval_context_mode: str = "normal_context",
-    applicability_notes: str = "",
-    validation_error: str = "",
-    force_factual_only: bool = False,
-) -> PromptSpec:
-    focus_input = _build_focus_input_section(complaint_basis=complaint_basis, main_focus=main_focus)
-    retrieval_note = {
-        "normal_context": "Контекст норм подобран и подтвержден retrieval.",
-        "low_confidence_context": "Контекст норм подобран с низкой уверенностью: не делай категоричных выводов.",
-        "no_context": "Надежный контекст норм не найден: не придумывай нормы и пиши только по фактам черновика.",
-    }.get(str(retrieval_context_mode or "").strip(), "Уровень правового контекста не определен.")
-    retrieval_mode_value = str(retrieval_context_mode or "").strip() or "unknown_context"
-    retrieval_note = f"[mode={retrieval_mode_value}] {retrieval_note}"
-    if retrieval_mode_value == "no_context":
-        retrieval_note = f"{retrieval_note} не выдумывай нормы."
-    applicability_block = (
-        str(applicability_notes or "").strip()
-        or "Нет отдельно подтвержденных триггеров для упоминания статей."
-    )
-    validation_block = str(validation_error or "").strip()
-    rules_lines = [
-        "- строго запрещено добавлять новые факты, даты, документы, номера, ссылки и любые детали, которых нет в input_data;",
-        "- упоминать статью можно только при прямом факт-триггере одновременно в черновике/input_data и в applicability_notes;",
-        "- если прямых триггеров нет, пиши один абзац без ссылок на статьи;",
-        "- никакие предположения, домысливания, подмена или расширение фактов не допускаются;",
-        "- без списков, markdown, BBCode и служебных секций;",
-        "- без мета-инструкций и технических пояснений;",
-        "- если контекст норм слабый или пустой, не выдумывай статьи;",
-        "- если статья подтверждена и применима, упоминай ее сдержанно и только по существу.",
-    ]
-    if force_factual_only:
-        rules_lines.append(
-            "- режим factual_only обязателен: пиши один нейтральный фактический абзац без ссылок на статьи и без правовых предположений."
-        )
-    return PromptSpec(
-        name="suggest",
-        version=SUGGEST_PROMPT_VERSION,
-        text=_render_prompt_sections(
-            (
-                "system",
-                """
-Ты юридический ассистент игрового сервера.
-Переписывай только пункт 3 жалобы в нейтрально-деловом стиле.
-""",
-            ),
-            (
-                "task",
-                """
-Нужно вернуть один связный абзац для пункта 3.
-Опирайся только на факты из черновика и переданный retrieval-контекст.
-Не добавляй новых фактов, дат, документов, номеров и ссылок.
-""",
-            ),
-            ("retrieval_status", retrieval_note),
-            ("applicability_notes", applicability_block),
-            ("validation_retry", validation_block),
-            ("focus_input", focus_input),
-            ("retrieved_law_context", law_context),
-            ("rules", "\n".join(rules_lines)),
-            (
-                "output_contract",
-                """
-Верни один связный текст без заголовков и без URL.
-Текст должен быть готов для прямой вставки в пункт 3 жалобы.
-""",
-            ),
-            (
-                "input_data",
-                f"""
-Доверитель: {victim_name}
-Организация: {org}
-Объект заявления: {subject}
-Дата и время события: {event_dt}
-
-Черновик пункта 3:
-{raw_desc}
-""",
-            ),
-        ),
-    )
-
-
 def build_suggest_prompt_spec(
     *,
     victim_name: str,
@@ -455,10 +446,9 @@ def build_suggest_prompt_spec(
     main_focus: str = "",
     law_context: str = "",
     prompt_mode: str = SUGGEST_PROMPT_MODE_LEGACY,
+    policy_mode: str = "",
+    pipeline_context: str = "",
     retrieval_context_mode: str = "normal_context",
-    applicability_notes: str = "",
-    validation_error: str = "",
-    force_factual_only: bool = False,
 ) -> PromptSpec:
     normalized_mode = normalize_suggest_prompt_mode(prompt_mode)
     if normalized_mode == SUGGEST_PROMPT_MODE_DATA_DRIVEN:
@@ -471,10 +461,9 @@ def build_suggest_prompt_spec(
             complaint_basis=complaint_basis,
             main_focus=main_focus,
             law_context=law_context,
+            policy_mode=policy_mode,
+            pipeline_context=pipeline_context,
             retrieval_context_mode=retrieval_context_mode,
-            applicability_notes=applicability_notes,
-            validation_error=validation_error,
-            force_factual_only=force_factual_only,
         )
     article_anchors, basis_strategy = _build_selected_basis_sections(complaint_basis=complaint_basis)
     return PromptSpec(
@@ -607,10 +596,9 @@ def build_suggest_prompt(
     main_focus: str = "",
     law_context: str = "",
     prompt_mode: str = SUGGEST_PROMPT_MODE_LEGACY,
+    policy_mode: str = "",
+    pipeline_context: str = "",
     retrieval_context_mode: str = "normal_context",
-    applicability_notes: str = "",
-    validation_error: str = "",
-    force_factual_only: bool = False,
 ) -> str:
     return build_suggest_prompt_spec(
         victim_name=victim_name,
@@ -622,10 +610,9 @@ def build_suggest_prompt(
         main_focus=main_focus,
         law_context=law_context,
         prompt_mode=prompt_mode,
+        policy_mode=policy_mode,
+        pipeline_context=pipeline_context,
         retrieval_context_mode=retrieval_context_mode,
-        applicability_notes=applicability_notes,
-        validation_error=validation_error,
-        force_factual_only=force_factual_only,
     ).text
 
 

@@ -1,0 +1,27 @@
+thresholds:
+  min_valid_trigger_confidence: 0.70
+  borderline_trigger_confidence_min: 0.65
+  borderline_trigger_confidence_max: 0.70
+
+routing:
+  valid_trigger_mode: legal_grounded
+  fallback_mode: factual_fallback_expanded
+  low_confidence_context_borderline_action: factual_fallback_expanded
+  no_context_action: factual_fallback_expanded
+
+mode_contracts:
+  legal_grounded:
+    min_sentences: 4
+    max_sentences: 7
+    allow_article_references: true
+    require_employee_assessment: true
+  factual_fallback_expanded:
+    min_sentences: 4
+    max_sentences: 7
+    allow_article_references: false
+    require_employee_assessment: true
+
+safe_fallback:
+  mode: factual_fallback_expanded
+  min_sentences: 4
+  max_sentences: 4

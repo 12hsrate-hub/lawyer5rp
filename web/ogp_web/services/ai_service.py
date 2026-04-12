@@ -35,13 +35,12 @@ from ogp_web.services.legal_pipeline_service import (
     normalize_feedback_issues,
     short_text_hash,
 )
-from ogp_web.services.law_retrieval_service import retrieve_law_context, unique_sources
-from ogp_web.services.point3_policy_service import (
-    build_safe_factual_fallback,
-    build_validation_retry_instruction,
-    select_applicable_articles,
-    validate_suggest_output,
+from ogp_web.services.point3_pipeline import (
+    MODE_FACTUAL_FALLBACK_EXPANDED,
+    apply_validation_remediation,
+    build_point3_pipeline_context,
 )
+from ogp_web.services.law_retrieval_service import retrieve_law_context, unique_sources
 from shared.ogp_ai import (
     AiUsageSummary,
     OPENAI_TEXT_MODEL,
@@ -106,13 +105,12 @@ class SuggestTextResult:
     bundle_generated_at: str
     bundle_fingerprint: str
     selected_norms_count: int
-    applicability_mode: str
-    applicability_notes: str
-    allowed_article_numbers: tuple[str, ...]
-    validation_status: str
-    validation_errors: tuple[str, ...]
-    validation_retry_count: int
-    safe_fallback_used: bool
+    policy_mode: str = ""
+    policy_reason: str = ""
+    valid_triggers_count: int = 0
+    avg_trigger_confidence: float = 0.0
+    remediation_retries: int = 0
+    safe_fallback_used: bool = False
 
 
 @dataclass(frozen=True)
@@ -125,9 +123,7 @@ class SuggestContextBuildResult:
     bundle_generated_at: str
     bundle_fingerprint: str
     selected_norms_count: int
-    applicability_mode: str
-    applicability_notes: str
-    allowed_article_numbers: tuple[str, ...]
+    selected_norms: tuple[dict[str, object], ...] = ()
 
 
 def normalize_ai_feedback_issues(raw_issues: list[str] | tuple[str, ...]) -> tuple[str, ...]:
@@ -1236,20 +1232,11 @@ def _suggest_metrics_meta(
     bundle_generated_at = str(getattr(result, "bundle_generated_at", "") or "").strip()
     bundle_fingerprint = str(getattr(result, "bundle_fingerprint", "") or "").strip()
     selected_norms_count = int(getattr(result, "selected_norms_count", 0) or 0)
-    applicability_mode = str(getattr(result, "applicability_mode", "") or "").strip().lower()
-    applicability_notes = str(getattr(result, "applicability_notes", "") or "").strip()
-    allowed_article_numbers = [
-        str(value).strip()
-        for value in (getattr(result, "allowed_article_numbers", ()) or ())
-        if str(value).strip()
-    ]
-    validation_status = str(getattr(result, "validation_status", "") or "").strip().lower()
-    validation_errors = [
-        str(value).strip().lower()
-        for value in (getattr(result, "validation_errors", ()) or ())
-        if str(value).strip()
-    ]
-    validation_retry_count = int(getattr(result, "validation_retry_count", 0) or 0)
+    policy_mode = str(getattr(result, "policy_mode", "") or "").strip()
+    policy_reason = str(getattr(result, "policy_reason", "") or "").strip()
+    valid_triggers_count = int(getattr(result, "valid_triggers_count", 0) or 0)
+    avg_trigger_confidence = float(getattr(result, "avg_trigger_confidence", 0.0) or 0.0)
+    remediation_retries = int(getattr(result, "remediation_retries", 0) or 0)
     safe_fallback_used = bool(getattr(result, "safe_fallback_used", False))
     retrieval_ms = int(getattr(result, "retrieval_ms", 0) or 0)
     openai_ms = int(getattr(result, "openai_ms", 0) or 0)
@@ -1283,12 +1270,11 @@ def _suggest_metrics_meta(
         "bundle_generated_at": bundle_generated_at,
         "bundle_fingerprint": bundle_fingerprint,
         "selected_norms_count": selected_norms_count,
-        "applicability_mode": applicability_mode,
-        "applicability_notes": applicability_notes,
-        "allowed_article_numbers": allowed_article_numbers,
-        "validation_status": validation_status,
-        "validation_errors": validation_errors,
-        "validation_retry_count": validation_retry_count,
+        "policy_mode": policy_mode,
+        "policy_reason": policy_reason,
+        "valid_triggers_count": valid_triggers_count,
+        "avg_trigger_confidence": avg_trigger_confidence,
+        "remediation_retries": remediation_retries,
         "safe_fallback_used": safe_fallback_used,
         "retrieval_ms": retrieval_ms,
         "openai_ms": openai_ms,
@@ -1306,13 +1292,7 @@ def build_suggest_metrics_meta(*, payload: SuggestPayload, result: SuggestTextRe
     return _suggest_metrics_meta(payload=payload, result=result, server_code=server_code)
 
 
-def _build_suggest_law_context(
-    *,
-    server_code: str,
-    question: str,
-    payload: SuggestPayload | None = None,
-    max_chunks: int = 4,
-) -> SuggestContextBuildResult:
+def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: int = 4) -> SuggestContextBuildResult:
     retrieval_query = str(question or "").strip()
     if not retrieval_query:
         return SuggestContextBuildResult(
@@ -1324,9 +1304,7 @@ def _build_suggest_law_context(
             bundle_generated_at="",
             bundle_fingerprint="",
             selected_norms_count=0,
-            applicability_mode="factual_only",
-            applicability_notes="Прямые факт-триггеры для статей не найдены.",
-            allowed_article_numbers=(),
+            selected_norms=(),
         )
 
     retrieval_result = _retrieve_law_context(
@@ -1345,9 +1323,7 @@ def _build_suggest_law_context(
             bundle_generated_at=retrieval_result.bundle_health.generated_at,
             bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
             selected_norms_count=0,
-            applicability_mode="factual_only",
-            applicability_notes="Retrieval не нашел надежный правовой контекст для прямых факт-триггеров.",
-            allowed_article_numbers=(),
+            selected_norms=(),
         )
 
     positive = [match for match in retrieval_result.matches if match.score > 0][:max_chunks]
@@ -1364,45 +1340,24 @@ def _build_suggest_law_context(
             bundle_generated_at=retrieval_result.bundle_health.generated_at,
             bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
             selected_norms_count=0,
-            applicability_mode="factual_only",
-            applicability_notes="Retrieval не вернул применимых норм для черновика.",
-            allowed_article_numbers=(),
+            selected_norms=(),
         )
-
-    applicability_mode = "factual_plus_legal"
-    applicability_notes = "Применимость норм не проверялась."
-    allowed_article_numbers: tuple[str, ...] = ()
-    if payload is not None:
-        applicability = select_applicable_articles(
-            server_code=server_code,
-            payload=payload,
-            matches=selected_matches,
-        )
-        selected_matches = list(applicability.matches) or ([] if applicability.mode == "factual_only" else list(selected_matches))
-        applicability_mode = applicability.mode
-        applicability_notes = applicability.prompt_block
-        allowed_article_numbers = applicability.allowed_article_numbers
-        if applicability.mode == "factual_only":
-            context_mode = "no_context" if retrieval_result.confidence == "low" else "low_confidence_context"
-            return SuggestContextBuildResult(
-                context_text="",
-                retrieval_confidence=retrieval_result.confidence,
-                retrieval_context_mode=context_mode,
-                retrieval_profile=retrieval_result.profile,
-                bundle_status=retrieval_result.bundle_health.status,
-                bundle_generated_at=retrieval_result.bundle_health.generated_at,
-                bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
-                selected_norms_count=0,
-                applicability_mode=applicability.mode,
-                applicability_notes=applicability.prompt_block,
-                allowed_article_numbers=(),
-            )
 
     parts: list[str] = []
+    selected_norms: list[dict[str, object]] = []
     for match in selected_matches:
         excerpt = match.excerpt
         if not excerpt:
             continue
+        selected_norms.append(
+            {
+                "source_url": match.chunk.url,
+                "document_title": match.chunk.document_title,
+                "article_label": match.chunk.article_label,
+                "excerpt": excerpt,
+                "score": match.score,
+            }
+        )
         parts.append(
             "\n".join(
                 (
@@ -1428,9 +1383,7 @@ def _build_suggest_law_context(
         bundle_generated_at=retrieval_result.bundle_health.generated_at,
         bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
         selected_norms_count=len(selected_matches),
-        applicability_mode=applicability_mode,
-        applicability_notes=applicability_notes,
-        allowed_article_numbers=allowed_article_numbers,
+        selected_norms=tuple(selected_norms),
     )
 
 
@@ -1491,8 +1444,7 @@ def _clean_suggest_text(text: str) -> str:
         cleaned_lines.append(line)
 
     cleaned = "\n".join(cleaned_lines)
-    cleaned = re.sub(r"\n{2,}", " ", cleaned)
-    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
 
@@ -1702,7 +1654,6 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
     suggest_context_raw = _build_suggest_law_context(
         server_code=server_code,
         question=suggest_query,
-        payload=payload,
     )
     if isinstance(suggest_context_raw, SuggestContextBuildResult):
         suggest_context = suggest_context_raw
@@ -1716,9 +1667,7 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
             bundle_generated_at="",
             bundle_fingerprint="",
             selected_norms_count=0,
-            applicability_mode="factual_plus_legal" if str(suggest_context_raw or "").strip() else "factual_only",
-            applicability_notes="Fallback context result without applicability metadata.",
-            allowed_article_numbers=(),
+            selected_norms=(),
         )
     retrieval_ms = int((monotonic() - retrieval_started_at) * 1000)
     law_context = suggest_context.context_text
@@ -1773,6 +1722,21 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
                 "Недостаточно надежного правового контекста для генерации. Уточните факты и повторите запрос.",
             ],
         )
+    point3_context = build_point3_pipeline_context(
+        complainant=victim_name,
+        organization=org,
+        target_person=subject,
+        event_datetime=event_dt,
+        draft_text=raw_desc,
+        complaint_basis=complaint_basis,
+        main_focus=main_focus,
+        retrieval_status=suggest_context.retrieval_context_mode,
+        retrieval_confidence=suggest_context.retrieval_confidence,
+        retrieved_law_context=law_context,
+        selected_norms=suggest_context.selected_norms,
+    )
+    policy_mode = point3_context.policy_decision.mode
+    pipeline_context_payload = point3_context.prompt_context_json()
     suggest_attempts = (
         (raw_desc, law_context),
         (raw_desc, _truncate_suggest_value(law_context, max_chars=2600)),
@@ -1780,19 +1744,11 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
         (_truncate_suggest_value(raw_desc, max_chars=8000), _truncate_suggest_value(law_context, max_chars=1200)),
         (_truncate_suggest_value(raw_desc, max_chars=5000), _truncate_suggest_value(law_context, max_chars=700)),
     )
-    applicability_notes = str(suggest_context.applicability_notes or "").strip()
-    force_factual_only = str(suggest_context.applicability_mode or "").strip().lower() == "factual_only"
-    selected_raw_desc = raw_desc
-    selected_law_context = law_context
 
     prompt_text = ""
     generation_result: TextGenerationResult | None = None
     openai_ms = 0
     suggest_compaction_level = 0
-    validation_retry_count = 0
-    validation_status = "pass"
-    validation_errors: tuple[str, ...] = ()
-    safe_fallback_used = False
     request_started_at = monotonic()
     try:
         for attempt_index, (attempt_raw_desc, attempt_law_context) in enumerate(suggest_attempts):
@@ -1806,9 +1762,9 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
                 main_focus=main_focus,
                 law_context=attempt_law_context,
                 prompt_mode=suggest_prompt_mode,
+                policy_mode=policy_mode,
+                pipeline_context=pipeline_context_payload,
                 retrieval_context_mode=suggest_context.retrieval_context_mode,
-                applicability_notes=applicability_notes,
-                force_factual_only=force_factual_only,
             )
             try:
                 generation_result = suggest_description_with_proxy_fallback_result(
@@ -1823,15 +1779,13 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
                     main_focus=main_focus,
                     law_context=attempt_law_context,
                     prompt_mode=suggest_prompt_mode,
+                    policy_mode=policy_mode,
+                    pipeline_context=pipeline_context_payload,
                     retrieval_context_mode=suggest_context.retrieval_context_mode,
                     bundle_fingerprint=suggest_context.bundle_fingerprint,
                     retrieval_profile=suggest_context.retrieval_profile,
-                    applicability_notes=applicability_notes,
-                    force_factual_only=force_factual_only,
                 )
                 suggest_compaction_level = attempt_index
-                selected_raw_desc = attempt_raw_desc
-                selected_law_context = attempt_law_context
                 break
             except Exception as exc:
                 if _is_context_window_error(exc) and attempt_index < len(suggest_attempts) - 1:
@@ -1843,6 +1797,7 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
                 raise
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
+    openai_ms = int((monotonic() - request_started_at) * 1000)
     if generation_result is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1861,85 +1816,28 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=["Модель вернула некорректный формат ответа. Попробуйте еще раз."],
         )
-    validation_result = validate_suggest_output(
-        text=cleaned,
-        payload=payload,
-        server_code=server_code,
-        allowed_article_numbers=suggest_context.allowed_article_numbers,
-        allow_article_citations=not force_factual_only,
-    )
-    if validation_result.status != "pass":
-        validation_retry_count = 1
-        validation_status = "retry"
-        validation_errors = tuple(validation_result.error_codes)
-        retry_instruction = build_validation_retry_instruction(validation_result)
-        try:
-            prompt_text = build_suggest_prompt(
-                victim_name=victim_name,
-                org=org,
-                subject=subject,
-                event_dt=event_dt,
-                raw_desc=selected_raw_desc,
-                complaint_basis=complaint_basis,
-                main_focus=main_focus,
-                law_context=selected_law_context,
-                prompt_mode=suggest_prompt_mode,
-                retrieval_context_mode=suggest_context.retrieval_context_mode,
-                applicability_notes=applicability_notes,
-                validation_error=retry_instruction,
-                force_factual_only=force_factual_only,
-            )
-            generation_result = suggest_description_with_proxy_fallback_result(
-                api_key=api_key,
-                proxy_url=proxy_url,
-                victim_name=victim_name,
-                org=org,
-                subject=subject,
-                event_dt=event_dt,
-                raw_desc=selected_raw_desc,
-                complaint_basis=complaint_basis,
-                main_focus=main_focus,
-                law_context=selected_law_context,
-                prompt_mode=suggest_prompt_mode,
-                retrieval_context_mode=suggest_context.retrieval_context_mode,
-                bundle_fingerprint=suggest_context.bundle_fingerprint,
-                retrieval_profile=suggest_context.retrieval_profile,
-                applicability_notes=applicability_notes,
-                validation_error=retry_instruction,
-                force_factual_only=force_factual_only,
-            )
-            retry_cleaned = _clean_suggest_text(generation_result.text or "")
-            retry_validation = validate_suggest_output(
-                text=retry_cleaned,
-                payload=payload,
-                server_code=server_code,
-                allowed_article_numbers=suggest_context.allowed_article_numbers,
-                allow_article_citations=not force_factual_only,
-            )
-            if retry_cleaned and retry_validation.status == "pass":
-                cleaned = retry_cleaned
-                validation_status = "pass_after_retry"
-            else:
-                validation_status = "fallback"
-                validation_errors = tuple(retry_validation.error_codes or validation_result.error_codes)
-                cleaned = build_safe_factual_fallback(payload)
-                safe_fallback_used = True
-        except Exception:
-            validation_status = "fallback"
-            cleaned = build_safe_factual_fallback(payload)
-            safe_fallback_used = True
-    openai_ms = int((monotonic() - request_started_at) * 1000)
+    remediation = apply_validation_remediation(cleaned, point3_context)
+    final_text = remediation.text
+    if not final_text:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=["РњРѕРґРµР»СЊ РІРµСЂРЅСѓР»Р° РїСѓСЃС‚РѕР№ РёР»Рё РЅРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ С‚РµРєСЃС‚ РїРѕСЃР»Рµ РІР°Р»РёРґР°С†РёРё."],
+        )
     total_suggest_ms = int((monotonic() - total_started_at) * 1000)
     telemetry = build_ai_telemetry(
         model_name=OPENAI_TEXT_MODEL,
         prompt_text=prompt_text,
-        output_text=cleaned,
+        output_text=final_text,
         usage=generation_result.usage,
         latency_ms=openai_ms,
         cache_hit=generation_result.cache_hit,
     )
     budget_assessment = evaluate_budget(flow="suggest", telemetry=telemetry)
-    guard_result = guard_suggest_answer(text=cleaned)
+    validation_result = remediation.validation
+    guard_result = guard_suggest_answer(text=final_text)
+    combined_guard_status = "fail" if validation_result.blockers else "warn" if (
+        guard_result.status == "warn" or validation_result.status == "warn"
+    ) else "pass"
     telemetry_meta = telemetry_to_meta(telemetry)
     telemetry_meta.update(
         {
@@ -1949,34 +1847,40 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
             "context_compaction_level": suggest_compaction_level,
             "context_compacted": bool(suggest_compaction_level > 0),
             "retrieval_context_mode": suggest_context.retrieval_context_mode,
-            "applicability_mode": suggest_context.applicability_mode,
-            "allowed_article_numbers": list(suggest_context.allowed_article_numbers),
-            "validation_status": validation_status,
-            "validation_errors": list(validation_errors),
-            "validation_retry_count": validation_retry_count,
-            "safe_fallback_used": safe_fallback_used,
+            "policy_mode": policy_mode,
+            "policy_reason": point3_context.policy_decision.reason,
+            "valid_triggers_count": point3_context.policy_decision.valid_triggers_count,
+            "avg_trigger_confidence": point3_context.policy_decision.avg_confidence,
+            "validator_warning_codes": list(validation_result.warning_codes),
+            "validator_info_codes": list(validation_result.info_codes),
+            "remediation_retries": remediation.retries_used,
+            "safe_fallback_used": remediation.safe_fallback_used,
         }
     )
     return SuggestTextResult(
-        text=cleaned,
+        text=final_text,
         generation_id=generation_id,
-        guard_status=guard_result.status,
+        guard_status=combined_guard_status,
         contract_version=LEGAL_PIPELINE_CONTRACT_VERSION,
         warnings=list(
             dict.fromkeys(
                 list(guard_result.warning_codes)
+                + list(validation_result.warning_codes)
                 + list(budget_assessment.warnings)
                 + (
                     ["suggest_low_confidence_context"]
                     if suggest_context.retrieval_context_mode == "low_confidence_context"
                     else []
                 )
-                + (["suggest_no_article_triggers"] if force_factual_only else [])
                 + (["suggest_no_context"] if suggest_context.retrieval_context_mode == "no_context" else [])
                 + (["suggest_context_compacted"] if suggest_compaction_level > 0 else [])
-                + ([f"suggest_validation_{code}" for code in validation_errors])
-                + (["suggest_validation_retry"] if validation_retry_count else [])
-                + (["suggest_safe_factual_fallback"] if safe_fallback_used else [])
+                + (["suggest_output_remediated"] if remediation.retries_used > 0 else [])
+                + (["suggest_safe_fallback_template"] if remediation.safe_fallback_used else [])
+                + (
+                    ["suggest_factual_fallback_expanded"]
+                    if policy_mode == MODE_FACTUAL_FALLBACK_EXPANDED
+                    else ["suggest_legal_grounded"]
+                )
             )
         ),
         shadow=_shadow_to_dict(shadow),
@@ -1995,13 +1899,12 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
         bundle_generated_at=suggest_context.bundle_generated_at,
         bundle_fingerprint=suggest_context.bundle_fingerprint,
         selected_norms_count=suggest_context.selected_norms_count,
-        applicability_mode=suggest_context.applicability_mode,
-        applicability_notes=suggest_context.applicability_notes,
-        allowed_article_numbers=suggest_context.allowed_article_numbers,
-        validation_status=validation_status,
-        validation_errors=validation_errors,
-        validation_retry_count=validation_retry_count,
-        safe_fallback_used=safe_fallback_used,
+        policy_mode=policy_mode,
+        policy_reason=point3_context.policy_decision.reason,
+        valid_triggers_count=point3_context.policy_decision.valid_triggers_count,
+        avg_trigger_confidence=point3_context.policy_decision.avg_confidence,
+        remediation_retries=remediation.retries_used,
+        safe_fallback_used=remediation.safe_fallback_used,
     )
 
 
