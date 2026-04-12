@@ -1506,6 +1506,27 @@ def _normalize_after_rewrite(text: str) -> str:
     normalized = re.sub(r"\s{2,}", " ", normalized)
     normalized = re.sub(r"\.\s*,", ".", normalized)
     normalized = re.sub(r",\s*\.", ".", normalized)
+    normalized = re.sub(
+        r"\bстать(?:я|е|ёй|и)\s+\(([^)]+(?:кодекс|закон)[^)]+)\)",
+        r"положениями \1",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\bположениями Процессуальный кодекс\b",
+        "положениями Процессуального кодекса",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\bположениями Административный кодекс\b",
+        "положениями Административного кодекса",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(r"\bположениями Закон\b", "положениями Закона", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\bна требует правовой оценки\b", "и требует правовой оценки", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\bслужебное материалов\b", "служебное поведение", normalized, flags=re.IGNORECASE)
     normalized = re.sub(r"\b(сотрудника|сотрудник)\s+\1\b", r"\1", normalized, flags=re.IGNORECASE)
     normalized = normalized.replace("материалова", "материалов")
     normalized = normalized.replace("оценкисть", "оценки")

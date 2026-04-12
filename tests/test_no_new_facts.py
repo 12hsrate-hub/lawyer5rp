@@ -163,3 +163,39 @@ def test_remediation_explicitly_states_mask_exception_rule() -> None:
     lowered = outcome.text.lower()
     assert "maze bank arena" in lowered
     assert "допуска" in lowered
+
+
+def test_remediation_normalizes_incomplete_article_reference_and_phrase_artifacts() -> None:
+    context = build_point3_pipeline_context(
+        complainant="Test Principal",
+        organization="LSPD",
+        target_person="Test Officer",
+        event_datetime="12.04.2026 18:20",
+        draft_text=(
+            "Человека задержали возле банка, а затем на действия сотрудника подается жалоба."
+        ),
+        retrieval_status="normal_context",
+        retrieval_confidence="high",
+        retrieved_law_context="Источник: https://laws.example/processual\nНорма: Статья 29",
+        selected_norms=(
+            {
+                "source_url": "https://laws.example/processual",
+                "document_title": "Процессуальный кодекс штата Сан-Андреас",
+                "article_label": "Статья 29",
+                "excerpt": "Порядок проведения личного обыска при задержании.",
+                "score": 90,
+            },
+        ),
+    )
+
+    outcome = apply_validation_remediation(
+        "Порядок действий регулируется статьёй (Процессуальный кодекс штата Сан-Андреас), "
+        "а жалоба подается в ОГП на требует правовой оценки и проверяет служебное материалов.",
+        context,
+    )
+
+    lowered = outcome.text.lower()
+    assert "статьёй (" not in lowered
+    assert "положениями процессуального кодекса штата сан-андреас" in lowered
+    assert "на требует правовой оценки" not in lowered
+    assert "служебное материалов" not in lowered
