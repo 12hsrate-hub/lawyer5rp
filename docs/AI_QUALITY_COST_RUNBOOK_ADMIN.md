@@ -26,7 +26,7 @@
 ### Cost KPI
 - `avg_cost_per_req_law_qa`
 - `avg_cost_per_req_suggest`
-- `estimated_cost_total_usd_day`
+- `estimated_cost_total_usd`
 - `total_tokens_total` (flow/model)
 
 ### Stability KPI
@@ -42,11 +42,13 @@
 | --- | ---: | ---: | ---: |
 | guard_fail_rate (24h) | <1.5% | 1.5-3.0% | >3.0% |
 | guard_warn_rate (24h) | <8% | 8-15% | >15% |
-| wrong_law_rate (24h) | <2.0% | 2.0-4.0% | >4.0% |
-| hallucination_rate (24h) | <0.8% | 0.8-1.5% | >1.5% |
-| unclear_answer_rate (24h) | <5% | 5-9% | >9% |
-| p95 law_qa | <7s | 7-10s | >10s |
-| p95 suggest | <9s | 9-13s | >13s |
+| wrong_law_rate (24h) | <2.0% | 2.0–4.0% | >4.0% |
+| hallucination_rate (24h) | <0.8% | 0.8–1.5% | >1.5% |
+| unclear_answer_rate (24h) | <5% | 5–9% | >9% |
+| p95 law_qa | <7s | 7–10s | >10s |
+| p95 suggest | <9s | 9–13s | >13s |
+| avg_cost_per_req_law_qa | target | +15% | +30% |
+| avg_cost_per_req_suggest | target | +15% | +30% |
 
 ---
 
@@ -64,6 +66,8 @@
 
 4. Rollback:
    - 2 часа подряд Red по `guard_fail_rate` => немедленный rollback policy.
+   - `wrong_law_rate > 5%` за 24h => rollback policy.
+   - жалобы на неточность растут >2x к baseline => rollback policy.
 
 ---
 
