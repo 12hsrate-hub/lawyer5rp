@@ -211,78 +211,51 @@ class ExamAnswersStore:
         return self.backend.healthcheck()
 
     def _ensure_schema(self) -> None:
+        if self.is_postgres_backend:
+            return
         with closing(self._connect()) as conn:
-            if self.is_postgres_backend:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS exam_answers (
-                        id BIGSERIAL PRIMARY KEY,
-                        source_row INTEGER NOT NULL UNIQUE,
-                        submitted_at TEXT,
-                        full_name TEXT,
-                        discord_tag TEXT,
-                        passport TEXT,
-                        exam_format TEXT,
-                        payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-                        answer_count INTEGER NOT NULL DEFAULT 0,
-                        imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        question_g_score INTEGER,
-                        question_g_rationale TEXT,
-                        question_g_scored_at TIMESTAMPTZ,
-                        exam_scores_json JSONB,
-                        exam_scores_scored_at TIMESTAMPTZ,
-                        average_score DOUBLE PRECISION,
-                        average_score_answer_count INTEGER,
-                        average_score_scored_at TIMESTAMPTZ,
-                        needs_rescore BOOLEAN NOT NULL DEFAULT FALSE,
-                        import_key TEXT
-                    )
-                    """
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS exam_answers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_row INTEGER NOT NULL UNIQUE,
+                    submitted_at TEXT,
+                    full_name TEXT,
+                    discord_tag TEXT,
+                    passport TEXT,
+                    exam_format TEXT,
+                    payload_json TEXT NOT NULL,
+                    answer_count INTEGER NOT NULL DEFAULT 0,
+                    imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
-            else:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS exam_answers (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        source_row INTEGER NOT NULL UNIQUE,
-                        submitted_at TEXT,
-                        full_name TEXT,
-                        discord_tag TEXT,
-                        passport TEXT,
-                        exam_format TEXT,
-                        payload_json TEXT NOT NULL,
-                        answer_count INTEGER NOT NULL DEFAULT 0,
-                        imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-                    )
-                    """
-                )
-                columns = {
-                    str(row["name"])
-                    for row in conn.execute("PRAGMA table_info(exam_answers)").fetchall()
-                }
-                additions = {
-                    "question_g_score": "ALTER TABLE exam_answers ADD COLUMN question_g_score INTEGER",
-                    "question_g_rationale": "ALTER TABLE exam_answers ADD COLUMN question_g_rationale TEXT",
-                    "question_g_scored_at": "ALTER TABLE exam_answers ADD COLUMN question_g_scored_at TEXT",
-                    "exam_scores_json": "ALTER TABLE exam_answers ADD COLUMN exam_scores_json TEXT",
-                    "exam_scores_scored_at": "ALTER TABLE exam_answers ADD COLUMN exam_scores_scored_at TEXT",
-                    "average_score": "ALTER TABLE exam_answers ADD COLUMN average_score REAL",
-                    "average_score_answer_count": "ALTER TABLE exam_answers ADD COLUMN average_score_answer_count INTEGER",
-                    "average_score_scored_at": "ALTER TABLE exam_answers ADD COLUMN average_score_scored_at TEXT",
-                    "needs_rescore": "ALTER TABLE exam_answers ADD COLUMN needs_rescore INTEGER NOT NULL DEFAULT 0",
-                    "import_key": "ALTER TABLE exam_answers ADD COLUMN import_key TEXT",
-                }
-                for column_name, statement in additions.items():
-                    if column_name in columns:
-                        continue
-                    try:
-                        conn.execute(statement)
-                    except sqlite3.OperationalError as exc:
-                        if "duplicate column name" not in str(exc).lower():
-                            raise
-                    columns.add(column_name)
+                """
+            )
+            columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(exam_answers)").fetchall()
+            }
+            additions = {
+                "question_g_score": "ALTER TABLE exam_answers ADD COLUMN question_g_score INTEGER",
+                "question_g_rationale": "ALTER TABLE exam_answers ADD COLUMN question_g_rationale TEXT",
+                "question_g_scored_at": "ALTER TABLE exam_answers ADD COLUMN question_g_scored_at TEXT",
+                "exam_scores_json": "ALTER TABLE exam_answers ADD COLUMN exam_scores_json TEXT",
+                "exam_scores_scored_at": "ALTER TABLE exam_answers ADD COLUMN exam_scores_scored_at TEXT",
+                "average_score": "ALTER TABLE exam_answers ADD COLUMN average_score REAL",
+                "average_score_answer_count": "ALTER TABLE exam_answers ADD COLUMN average_score_answer_count INTEGER",
+                "average_score_scored_at": "ALTER TABLE exam_answers ADD COLUMN average_score_scored_at TEXT",
+                "needs_rescore": "ALTER TABLE exam_answers ADD COLUMN needs_rescore INTEGER NOT NULL DEFAULT 0",
+                "import_key": "ALTER TABLE exam_answers ADD COLUMN import_key TEXT",
+            }
+            for column_name, statement in additions.items():
+                if column_name in columns:
+                    continue
+                try:
+                    conn.execute(statement)
+                except sqlite3.OperationalError as exc:
+                    if "duplicate column name" not in str(exc).lower():
+                        raise
+                columns.add(column_name)
             self._normalize_import_keys(conn)
             self._ensure_import_key_index(conn)
             conn.execute(

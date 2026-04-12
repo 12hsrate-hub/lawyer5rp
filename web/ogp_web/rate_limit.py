@@ -66,40 +66,25 @@ class PersistentRateLimiter:
         return self.backend.__class__.__name__ == "PostgresBackend"
 
     def _ensure_schema(self) -> None:
+        if self.is_postgres_backend:
+            return
         conn = self.repository.connect()
         try:
-            if self.is_postgres_backend:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS auth_rate_limit_events (
-                        action TEXT NOT NULL,
-                        subject_key TEXT NOT NULL,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                    )
-                    """
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS auth_rate_limit_events (
+                    action TEXT NOT NULL,
+                    subject_key TEXT NOT NULL,
+                    created_at REAL NOT NULL
                 )
-                conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_auth_rate_limit_lookup
-                    ON auth_rate_limit_events (action, subject_key, created_at)
-                    """
-                )
-            else:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS auth_rate_limit_events (
-                        action TEXT NOT NULL,
-                        subject_key TEXT NOT NULL,
-                        created_at REAL NOT NULL
-                    )
-                    """
-                )
-                conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_auth_rate_limit_lookup
-                    ON auth_rate_limit_events (action, subject_key, created_at)
-                    """
-                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_auth_rate_limit_lookup
+                ON auth_rate_limit_events (action, subject_key, created_at)
+                """
+            )
             conn.commit()
         except Exception as exc:
             try:

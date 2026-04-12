@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 WEB_DIR = ROOT_DIR / "web"
-os.environ.setdefault("OGP_DB_BACKEND", "sqlite")
+os.environ.setdefault("OGP_DB_BACKEND", "postgres")
 for candidate in (ROOT_DIR, WEB_DIR):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
@@ -52,6 +52,9 @@ def _print_summary(report: dict[str, object]) -> None:
 
 
 def main() -> int:
+    if not os.getenv("DATABASE_URL", "").strip():
+        raise SystemExit("DATABASE_URL is required for perf_baseline.py.")
+
     parser = argparse.ArgumentParser(description="Collect performance baseline from admin metrics store.")
     parser.add_argument(
         "--window-minutes",
