@@ -668,6 +668,12 @@ function renderAiPipeline(payload) {
       return `${source}: ${message}`;
     })
     .join("; ");
+  const formatQualityRate = (value, sampleLabel) => {
+    if (value === null || value === undefined) {
+      return `n/a (no ${sampleLabel} samples)%`;
+    }
+    return `${String(value)}%`;
+  };
 
   aiPipelineHost.innerHTML = `
     ${
@@ -693,51 +699,51 @@ function renderAiPipeline(payload) {
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">Fallback rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.fallback_rate ?? "n/a"))}%</strong>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.fallback_rate, "generation"))}</strong>
         <span class="admin-user-cell__secondary">Budget warnings: ${escapeHtml(String(summary?.budget_warning_count || 0))}</span>
       </article>
     </div>
     <div class="admin-performance-grid">
       <article class="legal-status-card">
         <span class="legal-status-card__label">guard_fail_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.guard_fail_rate ?? "n/a"))}%</strong>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.guard_fail_rate, "generation"))}</strong>
         <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.guard_fail_rate)}</span>
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">guard_warn_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.guard_warn_rate ?? "n/a"))}%</strong>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.guard_warn_rate, "generation"))}</strong>
         <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.guard_warn_rate)}</span>
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">wrong_law_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.wrong_law_rate ?? "n/a"))}%</strong>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.wrong_law_rate, "feedback"))}</strong>
         <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.wrong_law_rate)}</span>
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">hallucination_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.hallucination_rate ?? "n/a"))}%</strong>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.hallucination_rate, "feedback"))}</strong>
         <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.hallucination_rate)}</span>
       </article>
     </div>
     <div class="admin-performance-grid">
       <article class="legal-status-card">
         <span class="legal-status-card__label">new_fact_validation_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.new_fact_validation_rate ?? "n/a"))}%</strong>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.new_fact_validation_rate, "generation"))}</strong>
         <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.new_fact_validation_rate)}</span>
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">unsupported_article_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.unsupported_article_rate ?? "n/a"))}%</strong>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.unsupported_article_rate, "generation"))}</strong>
         <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.unsupported_article_rate)}</span>
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">format_violation_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.format_violation_rate ?? "n/a"))}%</strong>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.format_violation_rate, "generation"))}</strong>
         <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.format_violation_rate)}</span>
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">safe_fallback_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.safe_fallback_rate ?? "n/a"))}%</strong>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.safe_fallback_rate, "generation"))}</strong>
         <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.safe_fallback_rate)}</span>
       </article>
     </div>
@@ -762,7 +768,7 @@ function renderAiPipeline(payload) {
         <ul class="legal-list">
           ${policyActions.map((item) => `<li>${renderBandBadge(item.severity)} <strong>${escapeHtml(String(item.title || "-"))}</strong>: ${escapeHtml(String(item.reason || "-"))}</li>`).join("")}
         </ul>
-        <p class="admin-user-cell__secondary">validation_retry_rate: ${escapeHtml(String(quality?.validation_retry_rate ?? "n/a"))}%</p>
+        <p class="admin-user-cell__secondary">validation_retry_rate: ${escapeHtml(formatQualityRate(quality?.validation_retry_rate, "generation"))}</p>
       </article>
     </div>
     ${
