@@ -144,8 +144,23 @@ def _match_rule(rule: ArticleTriggerRule, match: LawRetrievalMatch) -> bool:
 
 @lru_cache(maxsize=16)
 def _load_article_trigger_rules_payload() -> dict[str, object]:
-    raw = ARTICLE_TRIGGER_CONFIG_PATH.read_text(encoding="utf-8")
-    payload = yaml.safe_load(raw) or {}
+    try:
+        raw = ARTICLE_TRIGGER_CONFIG_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.warning(
+            "legal_article_triggers_missing path=%s; using empty trigger rules",
+            ARTICLE_TRIGGER_CONFIG_PATH,
+        )
+        return {}
+    try:
+        payload = yaml.safe_load(raw) or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "legal_article_triggers_invalid path=%s error=%s; using empty trigger rules",
+            ARTICLE_TRIGGER_CONFIG_PATH,
+            exc,
+        )
+        return {}
     return payload if isinstance(payload, dict) else {}
 
 

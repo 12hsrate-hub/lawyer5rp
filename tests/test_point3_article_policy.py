@@ -19,6 +19,7 @@ from ogp_web.services.law_retrieval_service import LawRetrievalMatch
 from ogp_web.services import ai_service
 from ogp_web.services.point3_policy_service import (
     build_safe_factual_fallback,
+    load_article_trigger_rules,
     load_point3_eval_thresholds,
     select_applicable_articles,
     validate_suggest_output,
@@ -103,6 +104,25 @@ def test_load_point3_eval_thresholds_uses_defaults_when_file_missing() -> None:
     critical = monitoring.get("critical") if isinstance(monitoring, dict) else {}
     assert warning.get("new_fact_rate") == 0.01
     assert critical.get("safe_fallback_rate") == 0.12
+
+
+def test_load_article_trigger_rules_uses_empty_defaults_when_file_missing() -> None:
+    import ogp_web.services.point3_policy_service as point3_policy_service
+
+    original_path = point3_policy_service.ARTICLE_TRIGGER_CONFIG_PATH
+    temp_root = Path(tempfile.mkdtemp())
+    try:
+        point3_policy_service.ARTICLE_TRIGGER_CONFIG_PATH = temp_root / "missing_legal_article_triggers.yaml"
+        load_article_trigger_rules.cache_clear()
+        point3_policy_service._load_article_trigger_rules_payload.cache_clear()
+        payload = load_article_trigger_rules("blackberry")
+    finally:
+        point3_policy_service.ARTICLE_TRIGGER_CONFIG_PATH = original_path
+        load_article_trigger_rules.cache_clear()
+        point3_policy_service._load_article_trigger_rules_payload.cache_clear()
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+    assert payload == ()
 
 
 def test_data_driven_prompt_forces_article_trigger_contract() -> None:
