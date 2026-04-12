@@ -295,6 +295,20 @@ function renderBadge(text, tone = "neutral") {
   return `<span class="admin-badge admin-badge--${tone}">${escapeHtml(text)}</span>`;
 }
 
+function renderBandBadge(band) {
+  const normalized = String(band || "unknown").trim().toLowerCase();
+  if (normalized === "green" || normalized === "success" || normalized === "success-soft") {
+    return renderBadge("Green", "success-soft");
+  }
+  if (normalized === "yellow" || normalized === "warn" || normalized === "warning" || normalized === "info") {
+    return renderBadge("Yellow", "info");
+  }
+  if (normalized === "red" || normalized === "danger" || normalized === "error") {
+    return renderBadge("Red", "danger");
+  }
+  return renderBadge("Unknown", "muted");
+}
+
 function riskLabel(user) {
   const riskScore = Number(user.risk_score || 0);
   if (riskScore >= 4) return renderBadge("Риск: высокий", "danger");
@@ -624,6 +638,176 @@ function renderAiPipeline(payload) {
         </table>
       </div>`
         : '<p class="legal-section__description">Нет обратной связи по AI-пайплайну.</p>'
+    }
+  `;
+}
+
+function renderAiPipeline(payload) {
+  if (!aiPipelineHost) {
+    return;
+  }
+  const summary = payload?.summary || {};
+  const models = Object.entries(summary?.models || {});
+  const feedback = Array.isArray(payload?.feedback) ? payload.feedback.slice(0, 8) : [];
+  const quality = payload?.quality_summary || {};
+  const flowSummaries = payload?.flow_summaries || {};
+  const costTables = payload?.cost_tables || {};
+  const topInaccurate = Array.isArray(payload?.top_inaccurate_generations) ? payload.top_inaccurate_generations : [];
+  const policyActions = Array.isArray(payload?.policy_actions) ? payload.policy_actions : [];
+  const modelCostRows = Array.isArray(costTables?.by_model) ? costTables.by_model : [];
+  const flowCostRows = Array.isArray(costTables?.by_flow) ? costTables.by_flow : [];
+  const issueCounts = quality?.issue_counts || {};
+  const lawQaP95 = flowSummaries?.law_qa?.latency_ms_p95;
+  const suggestP95 = flowSummaries?.suggest?.latency_ms_p95;
+
+  aiPipelineHost.innerHTML = `
+    <div class="admin-performance-grid">
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Recent generations</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary?.total_generations || 0))}</strong>
+        <span class="admin-user-cell__secondary">24h sample: ${escapeHtml(String(quality?.generation_samples || 0))}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Estimated cost</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">$${escapeHtml(formatUsd(summary?.estimated_cost_total_usd || 0))}</strong>
+        <span class="admin-user-cell__secondary">Samples: ${escapeHtml(String(summary?.estimated_cost_samples || 0))}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">p95 latency</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary?.latency_ms_p95 ?? "-"))} ms</strong>
+        <span class="admin-user-cell__secondary">law_qa: ${escapeHtml(String(lawQaP95 ?? "-"))} / suggest: ${escapeHtml(String(suggestP95 ?? "-"))}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Fallback rate</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.fallback_rate ?? "n/a"))}%</strong>
+        <span class="admin-user-cell__secondary">Budget warnings: ${escapeHtml(String(summary?.budget_warning_count || 0))}</span>
+      </article>
+    </div>
+    <div class="admin-performance-grid">
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">guard_fail_rate</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.guard_fail_rate ?? "n/a"))}%</strong>
+        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.guard_fail_rate)}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">guard_warn_rate</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.guard_warn_rate ?? "n/a"))}%</strong>
+        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.guard_warn_rate)}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">wrong_law_rate</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.wrong_law_rate ?? "n/a"))}%</strong>
+        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.wrong_law_rate)}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">hallucination_rate</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.hallucination_rate ?? "n/a"))}%</strong>
+        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.hallucination_rate)}</span>
+      </article>
+    </div>
+    <div class="admin-section-toolbar">
+      <span class="admin-user-cell__secondary">Models: ${escapeHtml(models.map(([name, count]) => `${name} (${count})`).join(", ") || "no data")}</span>
+    </div>
+    <div class="legal-field-grid legal-field-grid--two">
+      <article class="legal-subcard">
+        <div class="legal-field__label">Accuracy taxonomy</div>
+        <ul class="legal-list">
+          <li>wrong_law: ${escapeHtml(String(issueCounts.wrong_law || 0))}</li>
+          <li>wrong_fact: ${escapeHtml(String(issueCounts.wrong_fact || 0))}</li>
+          <li>hallucination: ${escapeHtml(String(issueCounts.hallucination || 0))}</li>
+          <li>unclear_answer: ${escapeHtml(String(issueCounts.unclear_answer || 0))}</li>
+        </ul>
+      </article>
+      <article class="legal-subcard">
+        <div class="legal-field__label">Policy actions</div>
+        <ul class="legal-list">
+          ${policyActions.map((item) => `<li>${renderBandBadge(item.severity)} <strong>${escapeHtml(String(item.title || "-"))}</strong>: ${escapeHtml(String(item.reason || "-"))}</li>`).join("")}
+        </ul>
+      </article>
+    </div>
+    ${
+      modelCostRows.length
+        ? `
+      <div class="legal-table-shell">
+        <table class="legal-table admin-table admin-table--compact">
+          <thead><tr><th>Model</th><th>Requests</th><th>Total cost</th><th>Avg cost</th><th>Total tokens</th></tr></thead>
+          <tbody>
+            ${modelCostRows.map((row) => `
+                <tr>
+                  <td>${escapeHtml(String(row.model || "-"))}</td>
+                  <td>${escapeHtml(String(row.requests || 0))}</td>
+                  <td>$${escapeHtml(formatUsd(row.estimated_cost_total_usd || 0))}</td>
+                  <td>$${escapeHtml(formatUsd(row.avg_cost_per_request_usd || 0))}</td>
+                  <td>${escapeHtml(formatNumber(row.total_tokens || 0))}</td>
+                </tr>
+              `).join("")}
+          </tbody>
+        </table>
+      </div>`
+        : ""
+    }
+    ${
+      flowCostRows.length
+        ? `
+      <div class="legal-table-shell">
+        <table class="legal-table admin-table admin-table--compact">
+          <thead><tr><th>Flow</th><th>Requests</th><th>Total cost</th><th>Avg cost</th><th>Total tokens</th></tr></thead>
+          <tbody>
+            ${flowCostRows.map((row) => `
+                <tr>
+                  <td>${escapeHtml(String(row.flow || "-"))}</td>
+                  <td>${escapeHtml(String(row.requests || 0))}</td>
+                  <td>$${escapeHtml(formatUsd(row.estimated_cost_total_usd || 0))}</td>
+                  <td>$${escapeHtml(formatUsd(row.avg_cost_per_request_usd || 0))}</td>
+                  <td>${escapeHtml(formatNumber(row.total_tokens || 0))}</td>
+                </tr>
+              `).join("")}
+          </tbody>
+        </table>
+      </div>`
+        : ""
+    }
+    ${
+      topInaccurate.length
+        ? `
+      <div class="legal-table-shell">
+        <table class="legal-table admin-table admin-table--compact">
+          <thead><tr><th>generation_id</th><th>Flow</th><th>Issues</th><th>Preview</th><th>Guard</th><th>Note</th></tr></thead>
+          <tbody>
+            ${topInaccurate.map((row) => `
+                <tr>
+                  <td>${escapeHtml(String(row.generation_id || "-"))}</td>
+                  <td>${escapeHtml(String(row.flow || "-"))}</td>
+                  <td>${escapeHtml(String((row.issues || []).join(", ") || "-"))}</td>
+                  <td>${escapeHtml(String(row.output_preview || "-"))}</td>
+                  <td>${escapeHtml(String(row.guard_status || "-"))}</td>
+                  <td>${escapeHtml(String(row.note || "-"))}</td>
+                </tr>
+              `).join("")}
+          </tbody>
+        </table>
+      </div>`
+        : '<p class="legal-section__description">No inaccurate generations in the recent sample.</p>'
+    }
+    ${
+      feedback.length
+        ? `
+      <div class="legal-table-shell">
+        <table class="legal-table admin-table admin-table--compact">
+          <thead><tr><th>When</th><th>Flow</th><th>Issues</th><th>Comment</th></tr></thead>
+          <tbody>
+            ${feedback.map((row) => `
+                <tr>
+                  <td>${escapeHtml(String(row.created_at || "-"))}</td>
+                  <td>${escapeHtml(String((row.meta || {}).flow || "-"))}</td>
+                  <td>${escapeHtml(String(((row.meta || {}).issues || []).join(", ") || "-"))}</td>
+                  <td>${escapeHtml(String((row.meta || {}).note || "-"))}</td>
+                </tr>
+              `).join("")}
+          </tbody>
+        </table>
+      </div>`
+        : '<p class="legal-section__description">No feedback items in the recent sample.</p>'
     }
   `;
 }

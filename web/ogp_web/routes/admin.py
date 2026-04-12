@@ -79,6 +79,251 @@ def _load_model_policy() -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _parse_metric_event_timestamp(value: Any) -> datetime | None:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _filter_recent_metric_items(items: list[dict[str, Any]], *, since_hours: int = 24) -> list[dict[str, Any]]:
+    safe_hours = max(0, int(since_hours or 0))
+    if safe_hours <= 0:
+        return list(items)
+    threshold = datetime.now(timezone.utc).timestamp() - safe_hours * 3600
+    filtered: list[dict[str, Any]] = []
+    for item in items:
+        parsed = _parse_metric_event_timestamp(item.get("created_at"))
+        if parsed is None or parsed.timestamp() >= threshold:
+            filtered.append(item)
+    return filtered
+
+
+def _round_rate(numerator: int, denominator: int) -> float | None:
+    if denominator <= 0:
+        return None
+    return round((numerator / denominator) * 100.0, 2)
+
+
+def _band_from_thresholds(value: float | None, *, green_max: float, yellow_max: float) -> str:
+    if value is None:
+        return "unknown"
+    if value < green_max:
+        return "green"
+    if value <= yellow_max:
+        return "yellow"
+    return "red"
+
+
+def _build_ai_pipeline_quality_summary(
+    *,
+    generations: list[dict[str, Any]],
+    feedback: list[dict[str, Any]],
+) -> dict[str, Any]:
+    total_generations = len(generations)
+    total_feedback = len(feedback)
+    guard_fail_count = 0
+    guard_warn_count = 0
+    fallback_count = 0
+    issue_counts = {
+        "wrong_law": 0,
+        "wrong_fact": 0,
+        "hallucination": 0,
+        "unclear_answer": 0,
+    }
+
+    for row in generations:
+        meta = row.get("meta") or {}
+        guard_status = str(meta.get("guard_status") or "").strip().lower()
+        if guard_status == "fail":
+            guard_fail_count += 1
+        elif guard_status == "warn":
+            guard_warn_count += 1
+        if meta.get("context_compacted") or meta.get("attempt_path") not in (None, "", "direct", "proxy"):
+            fallback_count += 1
+
+    for row in feedback:
+        issues = {str(value or "").strip().lower() for value in (row.get("meta") or {}).get("issues") or []}
+        for issue_key in issue_counts:
+            if issue_key in issues:
+                issue_counts[issue_key] += 1
+
+    guard_fail_rate = _round_rate(guard_fail_count, total_generations)
+    guard_warn_rate = _round_rate(guard_warn_count, total_generations)
+    wrong_law_rate = _round_rate(issue_counts["wrong_law"], total_feedback)
+    hallucination_rate = _round_rate(issue_counts["hallucination"], total_feedback)
+    unclear_answer_rate = _round_rate(issue_counts["unclear_answer"], total_feedback)
+    wrong_fact_rate = _round_rate(issue_counts["wrong_fact"], total_feedback)
+    fallback_rate = _round_rate(fallback_count, total_generations)
+
+    return {
+        "sample_window_hours": 24,
+        "generation_samples": total_generations,
+        "feedback_samples": total_feedback,
+        "guard_fail_rate": guard_fail_rate,
+        "guard_warn_rate": guard_warn_rate,
+        "wrong_law_rate": wrong_law_rate,
+        "wrong_fact_rate": wrong_fact_rate,
+        "hallucination_rate": hallucination_rate,
+        "unclear_answer_rate": unclear_answer_rate,
+        "fallback_rate": fallback_rate,
+        "issue_counts": issue_counts,
+        "bands": {
+            "guard_fail_rate": _band_from_thresholds(guard_fail_rate, green_max=1.5, yellow_max=3.0),
+            "guard_warn_rate": _band_from_thresholds(guard_warn_rate, green_max=8.0, yellow_max=15.0),
+            "wrong_law_rate": _band_from_thresholds(wrong_law_rate, green_max=2.0, yellow_max=4.0),
+            "hallucination_rate": _band_from_thresholds(hallucination_rate, green_max=0.8, yellow_max=1.5),
+            "unclear_answer_rate": _band_from_thresholds(unclear_answer_rate, green_max=5.0, yellow_max=9.0),
+        },
+    }
+
+
+def _build_ai_pipeline_cost_tables(generations: list[dict[str, Any]]) -> dict[str, Any]:
+    by_model: dict[str, dict[str, Any]] = {}
+    by_flow: dict[str, dict[str, Any]] = {}
+    for row in generations:
+        meta = row.get("meta") or {}
+        model = str(meta.get("model") or "unknown").strip() or "unknown"
+        flow = str(meta.get("flow") or "unknown").strip() or "unknown"
+        cost_value = float(meta.get("estimated_cost_usd") or 0.0)
+        token_value = int(meta.get("total_tokens") or 0)
+
+        model_item = by_model.setdefault(model, {"model": model, "requests": 0, "estimated_cost_total_usd": 0.0, "total_tokens": 0})
+        model_item["requests"] += 1
+        model_item["estimated_cost_total_usd"] += cost_value
+        model_item["total_tokens"] += token_value
+
+        flow_item = by_flow.setdefault(flow, {"flow": flow, "requests": 0, "estimated_cost_total_usd": 0.0, "total_tokens": 0})
+        flow_item["requests"] += 1
+        flow_item["estimated_cost_total_usd"] += cost_value
+        flow_item["total_tokens"] += token_value
+
+    def _finalize_rows(items: dict[str, dict[str, Any]], *, key: str) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for item in items.values():
+            requests = max(1, int(item["requests"]))
+            rows.append(
+                {
+                    key: item[key],
+                    "requests": requests,
+                    "estimated_cost_total_usd": round(float(item["estimated_cost_total_usd"]), 6),
+                    "avg_cost_per_request_usd": round(float(item["estimated_cost_total_usd"]) / requests, 6),
+                    "total_tokens": int(item["total_tokens"]),
+                }
+            )
+        return sorted(rows, key=lambda value: (-float(value["estimated_cost_total_usd"]), -int(value["requests"]), str(value[key])))
+
+    return {
+        "by_model": _finalize_rows(by_model, key="model"),
+        "by_flow": _finalize_rows(by_flow, key="flow"),
+    }
+
+
+def _build_top_inaccurate_generations(
+    *,
+    generations: list[dict[str, Any]],
+    feedback: list[dict[str, Any]],
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    by_generation_id = {
+        str((row.get("meta") or {}).get("generation_id") or "").strip(): row
+        for row in generations
+        if str((row.get("meta") or {}).get("generation_id") or "").strip()
+    }
+    items: list[dict[str, Any]] = []
+    for row in feedback:
+        meta = row.get("meta") or {}
+        generation_id = str(meta.get("generation_id") or "").strip()
+        generation = by_generation_id.get(generation_id, {})
+        generation_meta = generation.get("meta") or {}
+        items.append(
+            {
+                "created_at": row.get("created_at"),
+                "generation_id": generation_id,
+                "flow": str(meta.get("flow") or generation_meta.get("flow") or "").strip(),
+                "issues": list(meta.get("issues") or []),
+                "note": str(meta.get("note") or "").strip(),
+                "output_preview": str(generation_meta.get("output_preview") or "").strip(),
+                "guard_status": str(generation_meta.get("guard_status") or "").strip(),
+                "guard_warnings": list(generation_meta.get("guard_warnings") or []),
+                "model": str(generation_meta.get("model") or "").strip(),
+                "estimated_cost_usd": float(generation_meta.get("estimated_cost_usd") or 0.0),
+            }
+        )
+    return items[: max(1, int(limit or 10))]
+
+
+def _build_policy_action_log(
+    *,
+    quality_summary: dict[str, Any],
+    flow_summaries: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    actions: list[dict[str, Any]] = []
+
+    guard_fail_rate = quality_summary.get("guard_fail_rate")
+    wrong_law_rate = quality_summary.get("wrong_law_rate")
+    hallucination_rate = quality_summary.get("hallucination_rate")
+    law_qa_p95 = (flow_summaries.get("law_qa") or {}).get("latency_ms_p95")
+    suggest_p95 = (flow_summaries.get("suggest") or {}).get("latency_ms_p95")
+
+    if isinstance(guard_fail_rate, (int, float)) and guard_fail_rate > 3.0:
+        actions.append(
+            {
+                "severity": "danger",
+                "title": "Disable nano for 6h",
+                "reason": f"guard_fail_rate={guard_fail_rate}%",
+            }
+        )
+    if isinstance(wrong_law_rate, (int, float)) and wrong_law_rate > 4.0:
+        actions.append(
+            {
+                "severity": "danger",
+                "title": "Force full for law_qa for 24h",
+                "reason": f"wrong_law_rate={wrong_law_rate}%",
+            }
+        )
+    if isinstance(hallucination_rate, (int, float)) and hallucination_rate > 1.5:
+        actions.append(
+            {
+                "severity": "danger",
+                "title": "Enable strict mode for low-confidence",
+                "reason": f"hallucination_rate={hallucination_rate}%",
+            }
+        )
+    if isinstance(law_qa_p95, (int, float)) and law_qa_p95 > 10000:
+        actions.append(
+            {
+                "severity": "warn",
+                "title": "Review law_qa latency tiering",
+                "reason": f"p95_latency_law_qa={law_qa_p95}ms",
+            }
+        )
+    if isinstance(suggest_p95, (int, float)) and suggest_p95 > 13000:
+        actions.append(
+            {
+                "severity": "warn",
+                "title": "Review suggest latency tiering",
+                "reason": f"p95_latency_suggest={suggest_p95}ms",
+            }
+        )
+
+    if not actions:
+        actions.append(
+            {
+                "severity": "success-soft",
+                "title": "No active policy triggers",
+                "reason": "Recent quality and latency sample stays within configured bands.",
+            }
+        )
+    return actions
+
+
 def _save_admin_tasks_to_disk() -> None:
     try:
         _ADMIN_TASKS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -418,29 +663,59 @@ async def admin_ai_pipeline_data(
     normalized_issue_type = str(issue_type or "").strip().lower()
     normalized_context_mode = str(retrieval_context_mode or "").strip().lower()
     normalized_guard_warning = str(guard_warning or "").strip().lower()
+    safe_history_limit = min(limit * 6, 500)
+    summary = metrics_store.summarize_ai_generation_logs(
+        flow=normalized_flow,
+        retrieval_context_mode=normalized_context_mode,
+        guard_warning=normalized_guard_warning,
+        limit=min(limit * 4, 500),
+    )
+    generations = metrics_store.list_ai_generation_logs(
+        flow=normalized_flow,
+        retrieval_context_mode=normalized_context_mode,
+        guard_warning=normalized_guard_warning,
+        limit=safe_history_limit,
+    )
+    feedback = metrics_store.list_ai_feedback(
+        flow=normalized_flow,
+        issue_type=normalized_issue_type,
+        limit=safe_history_limit,
+    )
+    recent_generations = _filter_recent_metric_items(generations, since_hours=24)
+    recent_feedback = _filter_recent_metric_items(feedback, since_hours=24)
+    law_qa_summary = metrics_store.summarize_ai_generation_logs(flow="law_qa", limit=300)
+    suggest_summary = metrics_store.summarize_ai_generation_logs(flow="suggest", limit=300)
+    quality_summary = _build_ai_pipeline_quality_summary(
+        generations=recent_generations,
+        feedback=recent_feedback,
+    )
+    cost_tables = _build_ai_pipeline_cost_tables(recent_generations)
+    top_inaccurate_generations = _build_top_inaccurate_generations(
+        generations=recent_generations,
+        feedback=recent_feedback,
+        limit=min(limit, 10),
+    )
+    flow_summaries = {
+        "law_qa": law_qa_summary,
+        "suggest": suggest_summary,
+    }
     return {
         "flow": normalized_flow,
         "issue_type": normalized_issue_type,
         "retrieval_context_mode": normalized_context_mode,
         "guard_warning": normalized_guard_warning,
         "limit": limit,
-        "summary": metrics_store.summarize_ai_generation_logs(
-            flow=normalized_flow,
-            retrieval_context_mode=normalized_context_mode,
-            guard_warning=normalized_guard_warning,
-            limit=min(limit * 4, 500),
+        "summary": summary,
+        "quality_summary": quality_summary,
+        "flow_summaries": flow_summaries,
+        "cost_tables": cost_tables,
+        "top_inaccurate_generations": top_inaccurate_generations,
+        "policy_actions": _build_policy_action_log(
+            quality_summary=quality_summary,
+            flow_summaries=flow_summaries,
         ),
-        "generations": metrics_store.list_ai_generation_logs(
-            flow=normalized_flow,
-            retrieval_context_mode=normalized_context_mode,
-            guard_warning=normalized_guard_warning,
-            limit=limit,
-        ),
-        "feedback": metrics_store.list_ai_feedback(
-            flow=normalized_flow,
-            issue_type=normalized_issue_type,
-            limit=limit,
-        ),
+        "generations": generations[:limit],
+        "feedback": feedback[:limit],
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
