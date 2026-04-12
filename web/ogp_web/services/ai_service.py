@@ -56,7 +56,7 @@ from shared.ogp_ai import (
 from shared.ogp_ai_prompts import SUGGEST_PROMPT_VERSION, build_suggest_prompt
 
 LOGGER = logging.getLogger(__name__)
-LAW_QA_PROMPT_VERSION = "law_qa.v3"
+LAW_QA_PROMPT_VERSION = "law_qa.v4"
 
 
 _LawChunk = LawChunk
@@ -342,6 +342,25 @@ LAW_QA_QUERY_ALIASES: dict[str, tuple[str, ...]] = {
     "ак": ("административный", "административного", "административный кодекс"),
     "дк": ("дорожный", "дорожного", "дорожный кодекс"),
 }
+LAW_QA_RIGHTS_MARKERS = ("права", "право", "вправе", "полномочия")
+LAW_QA_DUTIES_MARKERS = ("обязанности", "обязанность")
+LAW_QA_FOCUS_IGNORED_TERMS = {
+    "права",
+    "право",
+    "вправе",
+    "полномочия",
+    "обязанности",
+    "обязанность",
+    "кодекс",
+    "закон",
+    "статья",
+    "ст",
+    "норма",
+    "нормы",
+    "ли",
+    "может",
+    "имеет",
+}
 
 def _humanize_ai_exception(exc: Exception) -> str:
     raw = str(exc).strip() or exc.__class__.__name__
@@ -573,6 +592,96 @@ def _expand_question_terms(question: str) -> set[str]:
     }
 
 
+def _detect_law_qa_focus(question: str) -> str:
+    normalized_question = _normalize_law_text(question)
+    tokens = set(_tokenize_normalized_text(normalized_question))
+    asks_rights = any(marker in tokens for marker in LAW_QA_RIGHTS_MARKERS)
+    asks_duties = any(marker in tokens for marker in LAW_QA_DUTIES_MARKERS)
+    if asks_rights and not asks_duties:
+        return "rights_only"
+    if asks_duties and not asks_rights:
+        return "duties_only"
+    return ""
+
+
+def _extract_law_qa_focus_subject_terms(question: str) -> tuple[str, ...]:
+    focus = _detect_law_qa_focus(question)
+    if not focus:
+        return ()
+    subject_terms: list[str] = []
+    for token in _extract_keywords(question):
+        stem = _stem_law_token(token)
+        if token in LAW_QA_FOCUS_IGNORED_TERMS or stem in LAW_QA_FOCUS_IGNORED_TERMS:
+            continue
+        subject_terms.append(token)
+    return tuple(dict.fromkeys(subject_terms))
+
+
+def _law_qa_focus_adjustment(
+    *,
+    chunk: _LawChunk,
+    question: str,
+    normalized_label: str,
+    normalized_text: str,
+    title_tokens: tuple[str, ...],
+    text_tokens: tuple[str, ...],
+    title_stems: tuple[str, ...],
+    text_stems: tuple[str, ...],
+) -> int:
+    focus = _detect_law_qa_focus(question)
+    if not focus:
+        return 0
+
+    score = 0
+    head_text = _normalize_law_text(str(chunk.text or "")[:500])
+    rights_word_pattern = r"\b(?:права|право|вправе|полномоч\w*)\b"
+    duties_word_pattern = r"\bобязанност\w*\b"
+    rights_heading = bool(re.search(rf"статья\s+\d+(?:\.\d+)?\s+[^.]{0,120}{rights_word_pattern}", head_text))
+    duties_heading = bool(re.search(rf"статья\s+\d+(?:\.\d+)?\s+[^.]{0,120}{duties_word_pattern}", head_text))
+    subject_terms = _extract_law_qa_focus_subject_terms(question)
+    subject_title_hits = 0
+    subject_text_hits = 0
+    for term in subject_terms:
+        stem = _stem_law_token(term)
+        if term in title_tokens or (stem and stem in title_stems):
+            subject_title_hits += 1
+        elif term in text_tokens or (stem and stem in text_stems):
+            subject_text_hits += 1
+
+    score += subject_title_hits * 18
+    score += subject_text_hits * 6
+    if subject_terms and subject_title_hits == 0 and subject_text_hits == 0:
+        score -= 60
+
+    if focus == "rights_only":
+        if re.search(rights_word_pattern, normalized_label):
+            score += 26
+        if rights_heading:
+            score += 24
+        if re.search(r"\bвправе\b", head_text):
+            score += 12
+        if re.search(duties_word_pattern, normalized_label):
+            score -= 28
+        if duties_heading:
+            score -= 30
+        if re.search(r"\bадвокат\s+обязан\b", head_text):
+            score -= 18
+    elif focus == "duties_only":
+        if re.search(duties_word_pattern, normalized_label):
+            score += 26
+        if duties_heading:
+            score += 24
+        if re.search(r"\bобязан(?:а|ы|о)?\b", head_text):
+            score += 12
+        if re.search(rights_word_pattern, normalized_label):
+            score -= 24
+        if rights_heading:
+            score -= 24
+        if re.search(r"\bвправе\b", head_text):
+            score -= 12
+    return score
+
+
 @lru_cache(maxsize=4096)
 def _chunk_search_payload(chunk: _LawChunk) -> tuple[str, str, tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
     normalized_title = _normalize_law_text(chunk.document_title)
@@ -715,6 +824,16 @@ def _score_law_chunk(chunk: _LawChunk, question: str) -> int:
         score += matched_terms * 2
         if matched_terms >= max(2, min(4, len(terms) // 3 or 1)):
             score += 8
+    score += _law_qa_focus_adjustment(
+        chunk=chunk,
+        question=question,
+        normalized_label=normalized_label,
+        normalized_text=normalized_text,
+        title_tokens=title_tokens,
+        text_tokens=text_tokens,
+        title_stems=title_stems,
+        text_stems=text_stems,
+    )
     return score
 
 
@@ -796,6 +915,16 @@ def _cheap_score_law_chunk(chunk: _LawChunk, question: str) -> int:
         score += matched_terms * 2
         if matched_terms >= max(2, min(4, len(terms) // 3 or 1)):
             score += 6
+    score += _law_qa_focus_adjustment(
+        chunk=chunk,
+        question=question,
+        normalized_label=normalized_label,
+        normalized_text=normalized_text,
+        title_tokens=title_tokens,
+        text_tokens=text_tokens,
+        title_stems=title_stems,
+        text_stems=text_stems,
+    )
     return score
 
 
@@ -820,12 +949,16 @@ def _select_law_qa_chunks(chunks: list[_LawChunk], question: str, profile: str =
     ranked = sorted(scored, key=lambda pair: pair[1], reverse=True)
     positive = [item for item, score in ranked if score > 0]
     confidence = _classify_law_qa_confidence([score for _, score in ranked], question)
+    question_focus = _detect_law_qa_focus(question)
+    short_focus_question = bool(question_focus) and len(_extract_keywords(question)) <= 4
     if str(profile or "law_qa").strip().lower() == "suggest":
         target_count = {"high": 8, "medium": 7, "low": 6}.get(confidence, 7)
         fallback_count = 4
     else:
         target_count = {"high": 12, "medium": 14, "low": 16}.get(confidence, 14)
         fallback_count = 6
+        if short_focus_question:
+            target_count = min(target_count, {"high": 3, "medium": 4, "low": 5}.get(confidence, 4))
     selected = positive[:target_count] or [item for item, _ in ranked[:fallback_count]]
     return selected, confidence
 
@@ -961,6 +1094,11 @@ def _build_law_qa_prompt(
         "medium": "Уверенность в подборе норм средняя: если есть сомнение между нормами или формулировками, коротко обозначь его и не достраивай выводы.",
         "low": "Уверенность в подборе норм низкая: избегай категоричности; если прямого подтверждения нет, прямо скажи, что данных недостаточно.",
     }.get(retrieval_confidence, "Уверенность в подборе норм не определена.")
+    focus_guidance = {
+        "rights_only": "Если вопрос задан только о правах или полномочиях, не добавляй обязанности, запреты и соседние нормы, если они прямо не нужны для ответа.",
+        "duties_only": "Если вопрос задан только об обязанностях, не добавляй права и иные соседние нормы, если они прямо не нужны для ответа.",
+    }.get(_detect_law_qa_focus(question), "")
+    focus_guidance_block = f"9. {focus_guidance}\n\n" if focus_guidance else "\n"
     return (
         f"Ты юридический ассистент игрового сервера {server_name} ({server_code}).\n"
         "Отвечай только по переданным внутриигровым нормам.\n\n"
@@ -972,8 +1110,9 @@ def _build_law_qa_prompt(
         "5. Если вопрос требует перечисления, перечисляй только прямо подтвержденные элементы.\n"
         "6. Не добавляй в ответ URL, [Источник: ...] и любые ссылки на форум. Достаточно указывать статью и название кодекса или закона.\n"
         "7. Ответ должен быть точным, прикладным, без воды и не длиннее заданного лимита.\n"
-        f"8. {confidence_guidance}\n\n"
-        "Формат ответа:\n"
+        f"8. {confidence_guidance}\n"
+        + focus_guidance_block
+        + "Формат ответа:\n"
         "- Сначала дай прямой вывод по вопросу.\n"
         "- Затем коротко приведи правовое основание: статья, кодекс или закон и смысл нормы.\n"
         '- Если ссылаешься на норму, используй формат "статья N (название кодекса или закона)".\n'

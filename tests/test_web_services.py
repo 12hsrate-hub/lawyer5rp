@@ -1962,6 +1962,44 @@ https://laws.example/article
         self.assertIn(confidence, {"medium", "high"})
         self.assertIn("Уголовный кодекс", selected[0].document_title)
 
+    def test_law_qa_prefers_advocate_rights_article_over_duties_for_short_question(self):
+        chunks = list(ai_service.load_law_bundle_chunks("blackberry", "law_bundles/blackberry.json"))
+        rights_chunk = None
+        duties_chunk = None
+        for item in chunks:
+            if "адвокатуре" not in item.document_title.lower():
+                continue
+            if item.article_label == "Статья 4":
+                rights_chunk = item
+            elif item.article_label == "Статья 6":
+                duties_chunk = item
+
+        self.assertIsNotNone(rights_chunk)
+        self.assertIsNotNone(duties_chunk)
+
+        question = "Права адвоката"
+        self.assertGreater(
+            ai_service._cheap_score_law_chunk(rights_chunk, question),
+            ai_service._cheap_score_law_chunk(duties_chunk, question),
+        )
+
+        selected, confidence = ai_service._select_law_qa_chunks(chunks, question)
+        self.assertIn(confidence, {"medium", "high"})
+        self.assertIn("адвокатуре", selected[0].document_title.lower())
+        self.assertEqual(selected[0].article_label, "Статья 4")
+
+    def test_law_qa_prompt_keeps_rights_question_narrow(self):
+        prompt = ai_service._build_law_qa_prompt(
+            server_name="BlackBerry",
+            server_code="blackberry",
+            model_name="gpt-5.4",
+            question="Права адвоката",
+            max_answer_chars=2000,
+            context_blocks=["[Документ: Закон]\n[Норма: Статья 4]\nТекст"],
+            retrieval_confidence="high",
+        )
+        self.assertIn("не добавляй обязанности", prompt)
+
     def test_law_qa_prompt_warns_about_false_premise_on_low_confidence(self):
         prompt = ai_service._build_law_qa_prompt(
             server_name="BlackBerry",
