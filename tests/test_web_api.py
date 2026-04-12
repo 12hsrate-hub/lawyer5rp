@@ -921,6 +921,9 @@ class WebApiTests(unittest.TestCase):
                 "retrieval_ms": 35,
                 "openai_ms": 210,
                 "total_suggest_ms": 245,
+                "validation_errors": ["new_fact_detected", "unsupported_article_reference"],
+                "validation_retry_count": 1,
+                "safe_fallback_used": True,
             },
         )
         self.admin_store.log_ai_feedback(
@@ -951,10 +954,16 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["total_suggest_ms_p95"], 245)
         self.assertEqual(payload["quality_summary"]["guard_warn_rate"], 100.0)
         self.assertEqual(payload["quality_summary"]["wrong_law_rate"], 100.0)
+        self.assertEqual(payload["quality_summary"]["new_fact_validation_rate"], 100.0)
+        self.assertEqual(payload["quality_summary"]["unsupported_article_rate"], 100.0)
+        self.assertEqual(payload["quality_summary"]["validation_retry_rate"], 100.0)
+        self.assertEqual(payload["quality_summary"]["safe_fallback_rate"], 100.0)
         self.assertEqual(payload["quality_summary"]["bands"]["wrong_law_rate"], "red")
+        self.assertEqual(payload["quality_summary"]["bands"]["new_fact_validation_rate"], "red")
         self.assertEqual(payload["cost_tables"]["by_flow"][0]["flow"], "law_qa")
         self.assertEqual(payload["top_inaccurate_generations"][0]["generation_id"], "gen_admin_1")
         self.assertTrue(payload["policy_actions"])
+        self.assertTrue(any("invented-fact spike" in item["title"].lower() for item in payload["policy_actions"]))
         self.assertTrue(any(item["meta"]["generation_id"] == "gen_admin_1" for item in payload["generations"]))
         self.assertTrue(any(item["meta"]["generation_id"] == "gen_admin_1" for item in payload["feedback"]))
 

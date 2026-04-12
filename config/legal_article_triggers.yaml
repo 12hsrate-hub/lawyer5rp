@@ -1,0 +1,92 @@
+version: 1
+servers:
+  blackberry:
+    suggest:
+      rules:
+        - key: pk_23_detention_video
+          document_title_contains: "Процессуальный кодекс"
+          article_numbers: ["23"]
+          basis_codes_any: ["wrongful_article", "no_video_or_no_evidence", "no_materials_by_request"]
+          trigger_terms_any:
+            - "не разъяснили причину задержания"
+            - "не сообщили причину задержания"
+            - "не назвали статью задержания"
+            - "не разъяснили права"
+            - "не предоставили видеозапись задержания"
+            - "не предоставили видео задержания"
+            - "нет видео задержания"
+            - "видеофиксация отсутствует"
+            - "не предоставили видеофиксацию"
+            - "не предоставили запись задержания"
+          description: "Прямые процессуальные нарушения при задержании и видеофиксации."
+        - key: pk_17_18_advocate_access
+          document_title_contains: "Процессуальный кодекс"
+          article_numbers: ["17", "18"]
+          basis_codes_any: ["wrongful_article", "no_materials_by_request"]
+          trigger_terms_any:
+            - "не допустили адвоката"
+            - "отказали в адвокате"
+            - "не дали связаться с адвокатом"
+            - "не дали телефонный звонок"
+            - "не зачитали миранду"
+            - "не разъяснили право на адвоката"
+            - "не дали право на адвоката"
+          description: "Право на адвоката, звонок и процессуальные права задержанного."
+        - key: pk_11_14_evidence
+          document_title_contains: "Процессуальный кодекс"
+          article_numbers: ["11", "12", "13", "14"]
+          basis_codes_any: ["wrongful_article", "no_video_or_no_evidence", "no_materials_by_request"]
+          trigger_terms_any:
+            - "нет доказательств"
+            - "доказательства отсутствуют"
+            - "не предоставили доказательства"
+            - "нет материалов дела"
+            - "материалы не предоставили"
+            - "нечем подтвердить нарушение"
+            - "обвинение не подтверждено"
+          description: "Недостаточность или отсутствие доказательственной базы."
+        - key: law_4_5_advocate_request
+          document_title_contains: "Об адвокатуре"
+          article_numbers: ["4", "5"]
+          basis_codes_any: ["no_materials_by_request", "no_video_or_no_evidence"]
+          trigger_terms_any:
+            - "адвокатский запрос"
+            - "запрос адвоката"
+            - "не ответили на адвокатский запрос"
+            - "не исполнили адвокатский запрос"
+            - "не предоставили материалы по запросу"
+            - "не выдали материалы по запросу"
+            - "не предоставили видео по запросу"
+          description: "Права адвоката на истребование материалов и режим адвокатского запроса."
+        - key: uk_84_advocate_request_obstruction
+          document_title_contains: "Уголовный кодекс"
+          article_numbers: ["84"]
+          basis_codes_any: ["no_materials_by_request"]
+          trigger_terms_any:
+            - "не исполнили адвокатский запрос"
+            - "воспрепятствовали адвокатскому запросу"
+            - "уклонились от ответа на адвокатский запрос"
+            - "скрыли материалы по адвокатскому запросу"
+          description: "Прямое воспрепятствование исполнению адвокатского запроса."
+        - key: uk_71_711_wrongful_qualification
+          document_title_contains: "Уголовный кодекс"
+          article_numbers: ["71", "71.1"]
+          basis_codes_any: ["wrongful_article"]
+          trigger_terms_any:
+            - "незаконно задержали"
+            - "задержали без оснований"
+            - "вменили не ту статью"
+            - "неверно квалифицировали"
+            - "ошибочно указали статью"
+            - "задержание без состава"
+          description: "Незаконное использование полномочий и спорная квалификация."
+        - key: uk_74_dereliction
+          document_title_contains: "Уголовный кодекс"
+          article_numbers: ["74"]
+          basis_codes_any: ["no_materials_by_request", "no_video_or_no_evidence"]
+          trigger_terms_any:
+            - "халатность"
+            - "ненадлежащее исполнение обязанностей"
+            - "проигнорировали обязанность"
+            - "допустили грубую небрежность"
+          description: "Только при прямом указании на халатность или грубое неисполнение обязанностей."

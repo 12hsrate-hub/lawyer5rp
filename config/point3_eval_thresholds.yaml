@@ -1,0 +1,21 @@
+version: 1
+release_gates:
+  factual_integrity_min: 1.0
+  unsupported_article_rate_max: 0.0
+  new_fact_rate_max: 0.0
+  format_violation_rate_max: 0.01
+  safe_fallback_rate_max: 0.1
+  validation_retry_rate_max: 0.12
+monitoring:
+  warning:
+    unsupported_article_rate: 0.01
+    new_fact_rate: 0.01
+    format_violation_rate: 0.03
+    validation_retry_rate: 0.08
+    safe_fallback_rate: 0.08
+  critical:
+    unsupported_article_rate: 0.03
+    new_fact_rate: 0.02
+    format_violation_rate: 0.05
+    validation_retry_rate: 0.12
+    safe_fallback_rate: 0.12

@@ -705,6 +705,28 @@ function renderAiPipeline(payload) {
         <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.hallucination_rate)}</span>
       </article>
     </div>
+    <div class="admin-performance-grid">
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">new_fact_validation_rate</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.new_fact_validation_rate ?? "n/a"))}%</strong>
+        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.new_fact_validation_rate)}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">unsupported_article_rate</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.unsupported_article_rate ?? "n/a"))}%</strong>
+        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.unsupported_article_rate)}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">format_violation_rate</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.format_violation_rate ?? "n/a"))}%</strong>
+        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.format_violation_rate)}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">safe_fallback_rate</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(quality?.safe_fallback_rate ?? "n/a"))}%</strong>
+        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.safe_fallback_rate)}</span>
+      </article>
+    </div>
     <div class="admin-section-toolbar">
       <span class="admin-user-cell__secondary">Models: ${escapeHtml(models.map(([name, count]) => `${name} (${count})`).join(", ") || "no data")}</span>
     </div>
@@ -716,6 +738,9 @@ function renderAiPipeline(payload) {
           <li>wrong_fact: ${escapeHtml(String(issueCounts.wrong_fact || 0))}</li>
           <li>hallucination: ${escapeHtml(String(issueCounts.hallucination || 0))}</li>
           <li>unclear_answer: ${escapeHtml(String(issueCounts.unclear_answer || 0))}</li>
+          <li>new_fact_detected: ${escapeHtml(String(issueCounts.new_fact_detected || 0))}</li>
+          <li>unsupported_article_reference: ${escapeHtml(String(issueCounts.unsupported_article_reference || 0))}</li>
+          <li>format_violation: ${escapeHtml(String(issueCounts.format_violation || 0))}</li>
         </ul>
       </article>
       <article class="legal-subcard">
@@ -723,6 +748,7 @@ function renderAiPipeline(payload) {
         <ul class="legal-list">
           ${policyActions.map((item) => `<li>${renderBandBadge(item.severity)} <strong>${escapeHtml(String(item.title || "-"))}</strong>: ${escapeHtml(String(item.reason || "-"))}</li>`).join("")}
         </ul>
+        <p class="admin-user-cell__secondary">validation_retry_rate: ${escapeHtml(String(quality?.validation_retry_rate ?? "n/a"))}%</p>
       </article>
     </div>
     ${

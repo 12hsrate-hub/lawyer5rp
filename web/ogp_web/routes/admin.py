@@ -23,6 +23,7 @@ from ogp_web.schemas import (
     AdminQuotaPayload,
 )
 from ogp_web.services.auth_service import AuthError, AuthUser, require_admin_user
+from ogp_web.services.point3_policy_service import load_point3_eval_thresholds
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
@@ -37,6 +38,17 @@ _ADMIN_TASKS: dict[str, dict[str, Any]] = {}
 _ADMIN_TASKS_LOCK = threading.Lock()
 _ADMIN_TASKS_PATH = Path(__file__).resolve().parents[3] / "web" / "data" / "admin_tasks.json"
 _MODEL_POLICY_PATH = Path(__file__).resolve().parents[3] / "config" / "model_policy.yaml"
+
+
+def _point3_monitoring_threshold(level: str, metric: str, fallback: float) -> float:
+    payload = load_point3_eval_thresholds()
+    monitoring = payload.get("monitoring") if isinstance(payload, dict) else {}
+    level_payload = monitoring.get(level) if isinstance(monitoring, dict) else {}
+    try:
+        value = float((level_payload or {}).get(metric))
+    except (TypeError, ValueError, AttributeError):
+        value = fallback
+    return value * 100.0
 
 
 def _cache_key(*, window_minutes: int, top_endpoints: int) -> str:
@@ -131,11 +143,16 @@ def _build_ai_pipeline_quality_summary(
     guard_fail_count = 0
     guard_warn_count = 0
     fallback_count = 0
+    validation_retry_count = 0
+    safe_fallback_count = 0
     issue_counts = {
         "wrong_law": 0,
         "wrong_fact": 0,
         "hallucination": 0,
         "unclear_answer": 0,
+        "unsupported_article_reference": 0,
+        "new_fact_detected": 0,
+        "format_violation": 0,
     }
 
     for row in generations:
@@ -147,6 +164,14 @@ def _build_ai_pipeline_quality_summary(
             guard_warn_count += 1
         if meta.get("context_compacted") or meta.get("attempt_path") not in (None, "", "direct", "proxy"):
             fallback_count += 1
+        validation_errors = {str(value or "").strip().lower() for value in meta.get("validation_errors") or []}
+        for issue_key in ("unsupported_article_reference", "new_fact_detected", "format_violation"):
+            if issue_key in validation_errors:
+                issue_counts[issue_key] += 1
+        if int(meta.get("validation_retry_count") or 0) > 0:
+            validation_retry_count += 1
+        if bool(meta.get("safe_fallback_used")):
+            safe_fallback_count += 1
 
     for row in feedback:
         issues = {str(value or "").strip().lower() for value in (row.get("meta") or {}).get("issues") or []}
@@ -161,6 +186,21 @@ def _build_ai_pipeline_quality_summary(
     unclear_answer_rate = _round_rate(issue_counts["unclear_answer"], total_feedback)
     wrong_fact_rate = _round_rate(issue_counts["wrong_fact"], total_feedback)
     fallback_rate = _round_rate(fallback_count, total_generations)
+    unsupported_article_rate = _round_rate(issue_counts["unsupported_article_reference"], total_generations)
+    new_fact_validation_rate = _round_rate(issue_counts["new_fact_detected"], total_generations)
+    format_violation_rate = _round_rate(issue_counts["format_violation"], total_generations)
+    validation_retry_rate = _round_rate(validation_retry_count, total_generations)
+    safe_fallback_rate = _round_rate(safe_fallback_count, total_generations)
+    warning_new_fact_rate = _point3_monitoring_threshold("warning", "new_fact_rate", 0.01)
+    critical_new_fact_rate = _point3_monitoring_threshold("critical", "new_fact_rate", 0.02)
+    warning_unsupported_rate = _point3_monitoring_threshold("warning", "unsupported_article_rate", 0.01)
+    critical_unsupported_rate = _point3_monitoring_threshold("critical", "unsupported_article_rate", 0.03)
+    warning_format_rate = _point3_monitoring_threshold("warning", "format_violation_rate", 0.03)
+    critical_format_rate = _point3_monitoring_threshold("critical", "format_violation_rate", 0.05)
+    warning_retry_rate = _point3_monitoring_threshold("warning", "validation_retry_rate", 0.08)
+    critical_retry_rate = _point3_monitoring_threshold("critical", "validation_retry_rate", 0.12)
+    warning_fallback_rate = _point3_monitoring_threshold("warning", "safe_fallback_rate", 0.08)
+    critical_fallback_rate = _point3_monitoring_threshold("critical", "safe_fallback_rate", 0.12)
 
     return {
         "sample_window_hours": 24,
@@ -173,6 +213,11 @@ def _build_ai_pipeline_quality_summary(
         "hallucination_rate": hallucination_rate,
         "unclear_answer_rate": unclear_answer_rate,
         "fallback_rate": fallback_rate,
+        "unsupported_article_rate": unsupported_article_rate,
+        "new_fact_validation_rate": new_fact_validation_rate,
+        "format_violation_rate": format_violation_rate,
+        "validation_retry_rate": validation_retry_rate,
+        "safe_fallback_rate": safe_fallback_rate,
         "issue_counts": issue_counts,
         "bands": {
             "guard_fail_rate": _band_from_thresholds(guard_fail_rate, green_max=1.5, yellow_max=3.0),
@@ -180,6 +225,31 @@ def _build_ai_pipeline_quality_summary(
             "wrong_law_rate": _band_from_thresholds(wrong_law_rate, green_max=2.0, yellow_max=4.0),
             "hallucination_rate": _band_from_thresholds(hallucination_rate, green_max=0.8, yellow_max=1.5),
             "unclear_answer_rate": _band_from_thresholds(unclear_answer_rate, green_max=5.0, yellow_max=9.0),
+            "unsupported_article_rate": _band_from_thresholds(
+                unsupported_article_rate,
+                green_max=warning_unsupported_rate,
+                yellow_max=critical_unsupported_rate,
+            ),
+            "new_fact_validation_rate": _band_from_thresholds(
+                new_fact_validation_rate,
+                green_max=warning_new_fact_rate,
+                yellow_max=critical_new_fact_rate,
+            ),
+            "format_violation_rate": _band_from_thresholds(
+                format_violation_rate,
+                green_max=warning_format_rate,
+                yellow_max=critical_format_rate,
+            ),
+            "validation_retry_rate": _band_from_thresholds(
+                validation_retry_rate,
+                green_max=warning_retry_rate,
+                yellow_max=critical_retry_rate,
+            ),
+            "safe_fallback_rate": _band_from_thresholds(
+                safe_fallback_rate,
+                green_max=warning_fallback_rate,
+                yellow_max=critical_fallback_rate,
+            ),
         },
     }
 
@@ -269,6 +339,11 @@ def _build_policy_action_log(
     guard_fail_rate = quality_summary.get("guard_fail_rate")
     wrong_law_rate = quality_summary.get("wrong_law_rate")
     hallucination_rate = quality_summary.get("hallucination_rate")
+    unsupported_article_rate = quality_summary.get("unsupported_article_rate")
+    new_fact_validation_rate = quality_summary.get("new_fact_validation_rate")
+    format_violation_rate = quality_summary.get("format_violation_rate")
+    validation_retry_rate = quality_summary.get("validation_retry_rate")
+    safe_fallback_rate = quality_summary.get("safe_fallback_rate")
     law_qa_p95 = (flow_summaries.get("law_qa") or {}).get("latency_ms_p95")
     suggest_p95 = (flow_summaries.get("suggest") or {}).get("latency_ms_p95")
 
@@ -294,6 +369,46 @@ def _build_policy_action_log(
                 "severity": "danger",
                 "title": "Enable strict mode for low-confidence",
                 "reason": f"hallucination_rate={hallucination_rate}%",
+            }
+        )
+    if isinstance(unsupported_article_rate, (int, float)) and unsupported_article_rate > _point3_monitoring_threshold("critical", "unsupported_article_rate", 0.03):
+        actions.append(
+            {
+                "severity": "danger",
+                "title": "Rollback to factual_only for article references",
+                "reason": f"unsupported_article_rate={unsupported_article_rate}%",
+            }
+        )
+    if isinstance(new_fact_validation_rate, (int, float)) and new_fact_validation_rate > _point3_monitoring_threshold("critical", "new_fact_rate", 0.02):
+        actions.append(
+            {
+                "severity": "danger",
+                "title": "Investigate invented-fact spike",
+                "reason": f"new_fact_validation_rate={new_fact_validation_rate}%",
+            }
+        )
+    if isinstance(format_violation_rate, (int, float)) and format_violation_rate > _point3_monitoring_threshold("critical", "format_violation_rate", 0.05):
+        actions.append(
+            {
+                "severity": "warn",
+                "title": "Tighten prompt format enforcement",
+                "reason": f"format_violation_rate={format_violation_rate}%",
+            }
+        )
+    if isinstance(validation_retry_rate, (int, float)) and validation_retry_rate > _point3_monitoring_threshold("critical", "validation_retry_rate", 0.12):
+        actions.append(
+            {
+                "severity": "warn",
+                "title": "Review point3 retry volume",
+                "reason": f"validation_retry_rate={validation_retry_rate}%",
+            }
+        )
+    if isinstance(safe_fallback_rate, (int, float)) and safe_fallback_rate > _point3_monitoring_threshold("critical", "safe_fallback_rate", 0.12):
+        actions.append(
+            {
+                "severity": "warn",
+                "title": "Review safe factual fallback spike",
+                "reason": f"safe_fallback_rate={safe_fallback_rate}%",
             }
         )
     if isinstance(law_qa_p95, (int, float)) and law_qa_p95 > 10000:

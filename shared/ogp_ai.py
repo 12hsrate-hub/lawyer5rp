@@ -433,6 +433,9 @@ def _build_suggest_prompt(
     law_context: str = "",
     prompt_mode: str = "legacy",
     retrieval_context_mode: str = "normal_context",
+    applicability_notes: str = "",
+    validation_error: str = "",
+    force_factual_only: bool = False,
 ) -> str:
     return build_suggest_prompt(
         victim_name=victim_name,
@@ -445,6 +448,9 @@ def _build_suggest_prompt(
         law_context=law_context,
         prompt_mode=prompt_mode,
         retrieval_context_mode=retrieval_context_mode,
+        applicability_notes=applicability_notes,
+        validation_error=validation_error,
+        force_factual_only=force_factual_only,
     )
 
 
@@ -462,6 +468,9 @@ def suggest_description(
     retrieval_context_mode: str = "normal_context",
     bundle_fingerprint: str = "",
     retrieval_profile: str = "suggest",
+    applicability_notes: str = "",
+    validation_error: str = "",
+    force_factual_only: bool = False,
 ) -> str:
     return suggest_description_result(
         client=client,
@@ -477,6 +486,9 @@ def suggest_description(
         retrieval_context_mode=retrieval_context_mode,
         bundle_fingerprint=bundle_fingerprint,
         retrieval_profile=retrieval_profile,
+        applicability_notes=applicability_notes,
+        validation_error=validation_error,
+        force_factual_only=force_factual_only,
     ).text
 
 
@@ -494,6 +506,9 @@ def suggest_description_result(
     retrieval_context_mode: str = "normal_context",
     bundle_fingerprint: str = "",
     retrieval_profile: str = "suggest",
+    applicability_notes: str = "",
+    validation_error: str = "",
+    force_factual_only: bool = False,
 ) -> TextGenerationResult:
     prompt = _build_suggest_prompt(
         victim_name=victim_name,
@@ -506,6 +521,9 @@ def suggest_description_result(
         law_context=law_context,
         prompt_mode=prompt_mode,
         retrieval_context_mode=retrieval_context_mode,
+        applicability_notes=applicability_notes,
+        validation_error=validation_error,
+        force_factual_only=force_factual_only,
     )
     cache = get_ai_cache()
     cache_key = cache.build_key(
@@ -517,6 +535,9 @@ def suggest_description_result(
             "retrieval_context_mode": str(retrieval_context_mode or "normal_context").strip().lower(),
             "bundle_fingerprint": str(bundle_fingerprint or "").strip(),
             "retrieval_profile": str(retrieval_profile or "suggest").strip().lower(),
+            "applicability_notes": str(applicability_notes or "").strip(),
+            "validation_error": str(validation_error or "").strip(),
+            "force_factual_only": bool(force_factual_only),
             "victim_name": victim_name,
             "org": org,
             "subject": subject,
@@ -815,6 +836,9 @@ def suggest_description_with_proxy_fallback(
     retrieval_context_mode: str = "normal_context",
     bundle_fingerprint: str = "",
     retrieval_profile: str = "suggest",
+    applicability_notes: str = "",
+    validation_error: str = "",
+    force_factual_only: bool = False,
     *,
     route_policy: str | None = None,
     status_callback: Callable[[str], None] | None = None,
@@ -838,6 +862,9 @@ def suggest_description_with_proxy_fallback(
                 retrieval_context_mode=retrieval_context_mode,
                 bundle_fingerprint=bundle_fingerprint,
                 retrieval_profile=retrieval_profile,
+                applicability_notes=applicability_notes,
+                validation_error=validation_error,
+                force_factual_only=force_factual_only,
             ),
         route_policy=route_policy,
         status_callback=status_callback,
@@ -861,6 +888,9 @@ def suggest_description_with_proxy_fallback_result(
     retrieval_context_mode: str = "normal_context",
     bundle_fingerprint: str = "",
     retrieval_profile: str = "suggest",
+    applicability_notes: str = "",
+    validation_error: str = "",
+    force_factual_only: bool = False,
     *,
     route_policy: str | None = None,
     status_callback: Callable[[str], None] | None = None,
@@ -885,6 +915,9 @@ def suggest_description_with_proxy_fallback_result(
                 retrieval_context_mode=retrieval_context_mode,
                 bundle_fingerprint=bundle_fingerprint,
                 retrieval_profile=retrieval_profile,
+                applicability_notes=applicability_notes,
+                validation_error=validation_error,
+                force_factual_only=force_factual_only,
             ),
         route_policy=route_policy,
         status_callback=status_callback,

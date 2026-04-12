@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-SUGGEST_PROMPT_VERSION = "suggest.v27"
+SUGGEST_PROMPT_VERSION = "suggest.v28"
 PRINCIPAL_SCAN_PROMPT_VERSION = "principal_scan.v2"
 EXAM_SCORING_PROMPT_MODE_FULL = "full"
 EXAM_SCORING_PROMPT_MODE_COMPACT = "compact"
@@ -352,6 +352,98 @@ def _build_suggest_prompt_spec_data_driven(
     )
 
 
+def _build_suggest_prompt_spec_data_driven(
+    *,
+    victim_name: str,
+    org: str,
+    subject: str,
+    event_dt: str,
+    raw_desc: str,
+    complaint_basis: str = "",
+    main_focus: str = "",
+    law_context: str = "",
+    retrieval_context_mode: str = "normal_context",
+    applicability_notes: str = "",
+    validation_error: str = "",
+    force_factual_only: bool = False,
+) -> PromptSpec:
+    focus_input = _build_focus_input_section(complaint_basis=complaint_basis, main_focus=main_focus)
+    retrieval_note = {
+        "normal_context": "Контекст норм подобран и подтвержден retrieval.",
+        "low_confidence_context": "Контекст норм подобран с низкой уверенностью: не делай категоричных выводов.",
+        "no_context": "Надежный контекст норм не найден: не придумывай нормы и пиши только по фактам черновика.",
+    }.get(str(retrieval_context_mode or "").strip(), "Уровень правового контекста не определен.")
+    retrieval_mode_value = str(retrieval_context_mode or "").strip() or "unknown_context"
+    retrieval_note = f"[mode={retrieval_mode_value}] {retrieval_note}"
+    if retrieval_mode_value == "no_context":
+        retrieval_note = f"{retrieval_note} не выдумывай нормы."
+    applicability_block = (
+        str(applicability_notes or "").strip()
+        or "Нет отдельно подтвержденных триггеров для упоминания статей."
+    )
+    validation_block = str(validation_error or "").strip()
+    rules_lines = [
+        "- строго запрещено добавлять новые факты, даты, документы, номера, ссылки и любые детали, которых нет в input_data;",
+        "- упоминать статью можно только при прямом факт-триггере одновременно в черновике/input_data и в applicability_notes;",
+        "- если прямых триггеров нет, пиши один абзац без ссылок на статьи;",
+        "- никакие предположения, домысливания, подмена или расширение фактов не допускаются;",
+        "- без списков, markdown, BBCode и служебных секций;",
+        "- без мета-инструкций и технических пояснений;",
+        "- если контекст норм слабый или пустой, не выдумывай статьи;",
+        "- если статья подтверждена и применима, упоминай ее сдержанно и только по существу.",
+    ]
+    if force_factual_only:
+        rules_lines.append(
+            "- режим factual_only обязателен: пиши один нейтральный фактический абзац без ссылок на статьи и без правовых предположений."
+        )
+    return PromptSpec(
+        name="suggest",
+        version=SUGGEST_PROMPT_VERSION,
+        text=_render_prompt_sections(
+            (
+                "system",
+                """
+Ты юридический ассистент игрового сервера.
+Переписывай только пункт 3 жалобы в нейтрально-деловом стиле.
+""",
+            ),
+            (
+                "task",
+                """
+Нужно вернуть один связный абзац для пункта 3.
+Опирайся только на факты из черновика и переданный retrieval-контекст.
+Не добавляй новых фактов, дат, документов, номеров и ссылок.
+""",
+            ),
+            ("retrieval_status", retrieval_note),
+            ("applicability_notes", applicability_block),
+            ("validation_retry", validation_block),
+            ("focus_input", focus_input),
+            ("retrieved_law_context", law_context),
+            ("rules", "\n".join(rules_lines)),
+            (
+                "output_contract",
+                """
+Верни один связный текст без заголовков и без URL.
+Текст должен быть готов для прямой вставки в пункт 3 жалобы.
+""",
+            ),
+            (
+                "input_data",
+                f"""
+Доверитель: {victim_name}
+Организация: {org}
+Объект заявления: {subject}
+Дата и время события: {event_dt}
+
+Черновик пункта 3:
+{raw_desc}
+""",
+            ),
+        ),
+    )
+
+
 def build_suggest_prompt_spec(
     *,
     victim_name: str,
@@ -364,6 +456,9 @@ def build_suggest_prompt_spec(
     law_context: str = "",
     prompt_mode: str = SUGGEST_PROMPT_MODE_LEGACY,
     retrieval_context_mode: str = "normal_context",
+    applicability_notes: str = "",
+    validation_error: str = "",
+    force_factual_only: bool = False,
 ) -> PromptSpec:
     normalized_mode = normalize_suggest_prompt_mode(prompt_mode)
     if normalized_mode == SUGGEST_PROMPT_MODE_DATA_DRIVEN:
@@ -377,6 +472,9 @@ def build_suggest_prompt_spec(
             main_focus=main_focus,
             law_context=law_context,
             retrieval_context_mode=retrieval_context_mode,
+            applicability_notes=applicability_notes,
+            validation_error=validation_error,
+            force_factual_only=force_factual_only,
         )
     article_anchors, basis_strategy = _build_selected_basis_sections(complaint_basis=complaint_basis)
     return PromptSpec(
@@ -510,6 +608,9 @@ def build_suggest_prompt(
     law_context: str = "",
     prompt_mode: str = SUGGEST_PROMPT_MODE_LEGACY,
     retrieval_context_mode: str = "normal_context",
+    applicability_notes: str = "",
+    validation_error: str = "",
+    force_factual_only: bool = False,
 ) -> str:
     return build_suggest_prompt_spec(
         victim_name=victim_name,
@@ -522,6 +623,9 @@ def build_suggest_prompt(
         law_context=law_context,
         prompt_mode=prompt_mode,
         retrieval_context_mode=retrieval_context_mode,
+        applicability_notes=applicability_notes,
+        validation_error=validation_error,
+        force_factual_only=force_factual_only,
     ).text
 
 
