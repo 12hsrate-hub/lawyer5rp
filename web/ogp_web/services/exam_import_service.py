@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import HTTPException, status
 
 from ogp_web.schemas import ExamAnswerScore, ExamImportDetail, ExamImportEntry, ExamImportResponse
+from ogp_web.services.exam_sheet_service import build_exam_correct_answers_from_payload, is_exam_reference_payload
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from shared.ogp_ai import DEFAULT_INVALID_BATCH_RATIONALE, score_exam_answer_with_proxy_fallback
@@ -231,6 +232,14 @@ def score_exam_answers_if_needed(
         entry["exam_scores"] = []
         fill_question_g_fields(entry)
         return False, empty_stats
+    if is_exam_reference_payload(
+        payload,
+        full_name=entry.get("full_name"),
+        exam_format=entry.get("exam_format"),
+    ):
+        entry["exam_scores"] = []
+        fill_question_g_fields(entry)
+        return False, empty_stats
 
     cached_scores = entry.get("exam_scores") or []
     needs_rescore = bool(entry.get("needs_rescore"))
@@ -241,7 +250,18 @@ def score_exam_answers_if_needed(
         fill_question_g_fields(entry)
         return False, empty_stats
 
-    score_items = build_exam_score_items(payload)
+    correct_answers = None
+    get_reference_entry = getattr(store, "get_reference_entry", None)
+    if callable(get_reference_entry):
+        reference_entry = get_reference_entry()
+        reference_payload = (reference_entry or {}).get("payload") if isinstance(reference_entry, dict) else None
+        if isinstance(reference_payload, dict):
+            correct_answers = build_exam_correct_answers_from_payload(reference_payload)
+
+    try:
+        score_items = build_exam_score_items(payload, correct_answers=correct_answers)
+    except TypeError:
+        score_items = build_exam_score_items(payload)
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
     start_ts = time.perf_counter()

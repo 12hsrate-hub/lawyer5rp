@@ -1267,6 +1267,106 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(scored["G"]["rationale"], "Готово через batch")
         self.assertEqual(scored["H"]["rationale"], "Case-variant key")
 
+    def test_score_exam_answers_if_needed_uses_reference_entry_answers(self):
+        original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
+        original_single = exam_import_service.score_exam_answer_with_proxy_fallback
+        captured: list[dict[str, object]] = []
+
+        def fake_batch(**kwargs):
+            captured.extend(kwargs["items"])
+            return (
+                {"F": {"score": 100, "rationale": "ok"}},
+                exam_import_service._empty_scoring_stats(),
+            )
+
+        class FakeStore:
+            def __init__(self):
+                self.saved = None
+
+            def get_reference_entry(self):
+                return {
+                    "source_row": 0,
+                    "payload": {
+                        "submitted": "",
+                        "full_name": "эталонные ответы",
+                        "discord": "",
+                        "passport": "",
+                        "format": "эталонные ответы",
+                        "QF": "reference F",
+                    },
+                }
+
+            def save_exam_scores(self, source_row: int, scores: list[dict[str, object]]):
+                self.saved = (source_row, list(scores))
+
+            def get_entry(self, source_row: int):
+                return entry
+
+        entry = {
+            "source_row": 778,
+            "full_name": "Student",
+            "exam_format": "remote",
+            "payload": {
+                "submitted": "2026-04-11",
+                "full_name": "Student",
+                "discord": "disc",
+                "passport": "123456",
+                "format": "remote",
+                "QF": "candidate F",
+            },
+            "exam_scores": [],
+        }
+
+        exam_import_service.score_exam_answers_batch_with_proxy_fallback = fake_batch
+        exam_import_service.score_exam_answer_with_proxy_fallback = lambda **kwargs: {"score": 1, "rationale": "unused"}
+        store = FakeStore()
+        try:
+            did_score, _ = exam_import_service.score_exam_answers_if_needed(
+                store=store,
+                entry=entry,
+                build_exam_score_items=exam_sheet_service.build_exam_score_items,
+            )
+        finally:
+            exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
+            exam_import_service.score_exam_answer_with_proxy_fallback = original_single
+
+        self.assertTrue(did_score)
+        self.assertEqual(captured[0]["column"], "F")
+        self.assertEqual(captured[0]["correct_answer"], "reference F")
+        self.assertEqual(store.saved[0], 778)
+
+    def test_score_exam_answers_if_needed_skips_reference_entry(self):
+        class FakeStore:
+            def save_exam_scores(self, source_row: int, scores: list[dict[str, object]]):
+                raise AssertionError("reference entry must not be scored")
+
+            def get_entry(self, source_row: int):
+                return None
+
+        entry = {
+            "source_row": 0,
+            "full_name": "эталонные ответы",
+            "exam_format": "эталонные ответы",
+            "payload": {
+                "submitted": "",
+                "full_name": "эталонные ответы",
+                "discord": "",
+                "passport": "",
+                "format": "эталонные ответы",
+                "QF": "reference F",
+            },
+            "exam_scores": [],
+        }
+
+        did_score, stats = exam_import_service.score_exam_answers_if_needed(
+            store=FakeStore(),
+            entry=entry,
+            build_exam_score_items=exam_sheet_service.build_exam_score_items,
+        )
+
+        self.assertFalse(did_score)
+        self.assertEqual(stats["llm_calls"], 0)
+
     def test_build_row_scoring_result_logs_prompt_version_meta(self):
         original_score_if_needed = exam_import_service.score_exam_answers_if_needed
 

@@ -20,6 +20,7 @@ EXAM_SHEET_CSV_URL = (
     f"?tqx=out:csv&sheet={quote(EXAM_SHEET_NAME)}"
 )
 EXAM_BASE_COLUMNS = 5
+EXAM_REFERENCE_ROW_MARKER = "эталонные ответы"
 EXAM_ANSWER_KEY_PATH = Path(__file__).resolve().parents[1] / "exam_answer_key.json"
 EXAM_QUESTION_COLUMNS_PATH = Path(__file__).resolve().parents[1] / "exam_question_columns.json"
 EXAM_SHEET_CACHE_TTL = 300  # секунд
@@ -85,6 +86,10 @@ def _detect_question_start_index(headers: list[str]) -> int:
     return EXAM_BASE_COLUMNS
 
 
+def _is_reference_marker(value: object) -> bool:
+    return _normalize_match_text(str(value or "")) == _normalize_match_text(EXAM_REFERENCE_ROW_MARKER)
+
+
 def _is_non_scoring_header(header: str) -> bool:
     normalized = str(header or "").strip().lower()
     if not normalized:
@@ -125,6 +130,42 @@ def build_exam_correct_answers_from_payload(payload: dict[str, str]) -> dict[str
         column = _column_letter(logical_index).upper()
         answers[column] = value
     return answers
+
+
+def is_exam_reference_payload(
+    payload: dict[str, object] | None,
+    *,
+    full_name: object = "",
+    exam_format: object = "",
+) -> bool:
+    candidates: list[object] = [full_name, exam_format]
+    if isinstance(payload, dict):
+        for key in ("full_name", "exam_format", "format", "exam_type_extra"):
+            candidates.append(payload.get(key))
+        for header, value in payload.items():
+            normalized_header = _normalize_match_text(str(header))
+            if not normalized_header:
+                continue
+            if normalized_header in {"full name", "exam format", "format", "exam_type_extra"}:
+                candidates.append(value)
+                continue
+            if "ваше имя" in normalized_header or "имя фамилия" in normalized_header:
+                candidates.append(value)
+                continue
+            if "формат экзамена" in normalized_header:
+                candidates.append(value)
+    return any(_is_reference_marker(candidate) for candidate in candidates)
+
+
+def is_exam_reference_row(row: dict[str, object] | None) -> bool:
+    if not isinstance(row, dict):
+        return False
+    payload = row.get("payload") if isinstance(row.get("payload"), dict) else None
+    return is_exam_reference_payload(
+        payload,
+        full_name=row.get("full_name"),
+        exam_format=row.get("exam_format"),
+    )
 
 
 @lru_cache(maxsize=1)

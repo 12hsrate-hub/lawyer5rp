@@ -760,7 +760,7 @@ class FakeExamAnswersConnection:
             rows.sort(key=lambda item: item["source_row"])
             rows = rows[: int(params[0])]
             return FakeCursor(rowcount=len(rows), rows=[{**self._summary_row(row), "exam_scores_json": row["exam_scores_json"]} for row in rows])
-        if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, imported_at, updated_at, question_g_score, question_g_rationale, question_g_scored_at, exam_scores_json, exam_scores_scored_at, average_score, average_score_answer_count, average_score_scored_at, needs_rescore, payload_json FROM exam_answers WHERE source_row = %s AND source_row > 0"):
+        if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, imported_at, updated_at, question_g_score, question_g_rationale, question_g_scored_at, exam_scores_json, exam_scores_scored_at, average_score, average_score_answer_count, average_score_scored_at, needs_rescore, payload_json FROM exam_answers WHERE source_row = %s"):
             row = self._find_by_source_row(int(params[0]))
             return FakeCursor(rowcount=1 if row else 0, one=self._detail_row(row) if row else None)
         if normalized.startswith("UPDATE exam_answers SET question_g_score = %s, question_g_rationale = %s, question_g_scored_at = NOW() WHERE source_row = %s"):
@@ -1293,6 +1293,140 @@ class WebStorageTests(unittest.TestCase):
             self.assertIsNotNone(store.get_entry(8))
             self.assertEqual(store.get_entry(7)["full_name"], "New User")
             self.assertEqual(store.get_entry(8)["full_name"], "Existing User")
+        finally:
+            del store
+            gc.collect()
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_exam_answers_store_keeps_reference_answers_in_reserved_slot(self):
+        tmpdir = make_temp_dir()
+        try:
+            root = Path(tmpdir)
+            store = ExamAnswersStore(root / "exam_answers.db", backend=FakeExamAnswersPostgresBackend())
+            result = store.import_rows(
+                [
+                    {
+                        "source_row": 2,
+                        "submitted_at": "2026-04-08 12:00:00",
+                        "full_name": "Candidate User",
+                        "discord_tag": "candidate",
+                        "passport": "700010",
+                        "exam_format": "remote",
+                        "payload": {
+                            "submitted_at": "2026-04-08 12:00:00",
+                            "full_name": "Candidate User",
+                            "discord_tag": "candidate",
+                            "passport": "700010",
+                            "format": "remote",
+                            "Question F": "Answer F",
+                        },
+                        "answer_count": 1,
+                    },
+                    {
+                        "source_row": 9,
+                        "submitted_at": "",
+                        "full_name": "эталонные ответы",
+                        "discord_tag": "",
+                        "passport": "",
+                        "exam_format": "эталонные ответы",
+                        "payload": {
+                            "submitted_at": "",
+                            "full_name": "эталонные ответы",
+                            "discord_tag": "эталонные ответы",
+                            "passport": "",
+                            "format": "эталонные ответы",
+                            "Question F": "Reference F",
+                        },
+                        "answer_count": 1,
+                    },
+                ]
+            )
+
+            self.assertEqual(result["inserted_count"], 1)
+            self.assertEqual(result["updated_count"], 0)
+            self.assertEqual(result["total_rows"], 1)
+            self.assertIsNotNone(store.get_entry(2))
+            self.assertIsNone(store.get_entry(9))
+            self.assertEqual(len(store.list_entries(limit=10)), 1)
+            self.assertEqual(len(store.list_entries_needing_scores(limit=10)), 1)
+
+            reference_entry = store.get_reference_entry()
+            self.assertIsNotNone(reference_entry)
+            self.assertEqual(reference_entry["source_row"], 0)
+            self.assertEqual(reference_entry["full_name"], "эталонные ответы")
+            self.assertFalse(reference_entry["needs_rescore"])
+        finally:
+            del store
+            gc.collect()
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_exam_answers_store_migrates_legacy_reference_row_to_reserved_slot(self):
+        tmpdir = make_temp_dir()
+        try:
+            root = Path(tmpdir)
+            backend = FakeExamAnswersPostgresBackend()
+            store = ExamAnswersStore(root / "exam_answers.db", backend=backend)
+            legacy_conn = FakeExamAnswersConnection(backend._state)
+            legacy_payload = {
+                "submitted_at": "",
+                "full_name": "эталонные ответы",
+                "discord_tag": "эталонные ответы",
+                "passport": "",
+                "format": "эталонные ответы",
+                "Question F": "Reference F",
+            }
+            legacy_conn._insert_row(
+                (
+                    9,
+                    "",
+                    "эталонные ответы",
+                    "",
+                    "",
+                    "эталонные ответы",
+                    json.dumps(legacy_payload, ensure_ascii=False),
+                    1,
+                    True,
+                    "legacy-reference",
+                )
+            )
+            backend._state["rows"][0]["exam_scores_json"] = json.dumps(
+                [{"column": "F", "score": 50, "rationale": "legacy"}],
+                ensure_ascii=False,
+            )
+            backend._state["rows"][0]["average_score"] = 50.0
+
+            result = store.import_rows(
+                [
+                    {
+                        "source_row": 2,
+                        "submitted_at": "2026-04-09 09:00:00",
+                        "full_name": "Candidate User",
+                        "discord_tag": "candidate",
+                        "passport": "700011",
+                        "exam_format": "remote",
+                        "payload": {
+                            "submitted_at": "2026-04-09 09:00:00",
+                            "full_name": "Candidate User",
+                            "discord_tag": "candidate",
+                            "passport": "700011",
+                            "format": "remote",
+                            "Question F": "Answer F",
+                        },
+                        "answer_count": 1,
+                    }
+                ]
+            )
+
+            self.assertEqual(result["inserted_count"], 1)
+            self.assertEqual(result["total_rows"], 1)
+            self.assertIsNone(store.get_entry(9))
+            reference_entry = store.get_reference_entry()
+            self.assertIsNotNone(reference_entry)
+            self.assertEqual(reference_entry["source_row"], 0)
+            self.assertEqual(reference_entry["full_name"], "эталонные ответы")
+            self.assertFalse(reference_entry["needs_rescore"])
+            self.assertEqual(reference_entry["exam_scores"], [])
+            self.assertIsNone(reference_entry["average_score"])
         finally:
             del store
             gc.collect()
