@@ -6,6 +6,7 @@ import os
 import socket
 import sys
 import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from logging.handlers import TimedRotatingFileHandler
@@ -222,6 +223,14 @@ def create_app(
     )
     app.state.server_config = get_server_config(os.getenv("OGP_DEFAULT_SERVER_CODE", "blackberry"))
 
+    @app.middleware("http")
+    async def attach_request_id(request, call_next):
+        request_id = (request.headers.get("x-request-id") or "").strip() or uuid.uuid4().hex
+        request.state.request_id = request_id
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
     _allowed_origins = _allowed_csrf_origins()
     _unsafe_methods = frozenset({"POST", "PUT", "DELETE", "PATCH"})
 
@@ -260,11 +269,15 @@ def create_app(
         forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
         if request.url.scheme == "https" or forwarded_proto == "https":
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        request_id = getattr(request.state, "request_id", "")
+        if request_id:
+            response.headers["X-Request-ID"] = request_id
         return response
 
     @app.middleware("http")
     async def capture_admin_metrics(request, call_next):
         started = time.perf_counter()
+        request_id = getattr(request.state, "request_id", "")
         user = get_current_user(request) if request.url.path.startswith("/api/") else None
         if request.url.path.startswith("/api/") and user and not request.url.path.startswith("/api/auth/"):
             try:
@@ -292,13 +305,33 @@ def create_app(
                         duration_ms=0,
                         request_bytes=int(request.headers.get("content-length") or 0),
                         response_bytes=len(response.body or b""),
-                        meta={"quota_daily": quota_daily, "used_last_24h": used_last_24h},
+                        meta={"quota_daily": quota_daily, "used_last_24h": used_last_24h, "request_id": request_id},
                     )
                     return response
         try:
             response = await call_next(request)
-        except Exception:
+        except Exception as exc:
             logging.getLogger(__name__).exception("Unhandled request error: %s %s", request.method, request.url.path)
+            if request.url.path.startswith("/api/"):
+                user = user or get_current_user(request)
+                request_bytes = int(request.headers.get("content-length") or 0)
+                duration_ms = int((time.perf_counter() - started) * 1000)
+                app.state.admin_metrics_store.log_event(
+                    event_type="api_exception",
+                    username=user.username if user else "",
+                    server_code=user.server_code if user else "",
+                    path=request.url.path,
+                    method=request.method,
+                    status_code=500,
+                    duration_ms=duration_ms,
+                    request_bytes=request_bytes,
+                    response_bytes=0,
+                    meta={
+                        "request_id": request_id,
+                        "error_type": exc.__class__.__name__,
+                        "error_message": str(exc),
+                    },
+                )
             raise
         if request.url.path.startswith("/api/"):
             user = user or get_current_user(request)
@@ -315,6 +348,7 @@ def create_app(
                 duration_ms=duration_ms,
                 request_bytes=request_bytes,
                 response_bytes=response_bytes,
+                meta={"request_id": request_id},
             )
         return response
 

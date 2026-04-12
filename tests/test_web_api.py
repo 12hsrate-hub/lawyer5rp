@@ -274,6 +274,7 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("totals", payload)
         self.assertIn("total_requests", payload["totals"])
         self.assertIn("failed_requests", payload["totals"])
+        self.assertTrue(response.headers.get("x-request-id"))
 
     def test_admin_overview_returns_partial_errors_when_exam_store_fails(self):
         self._register_verify_and_login("12345", "admin-partial@example.com")
