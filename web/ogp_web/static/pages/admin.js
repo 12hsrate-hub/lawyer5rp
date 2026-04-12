@@ -659,8 +659,22 @@ function renderAiPipeline(payload) {
   const issueCounts = quality?.issue_counts || {};
   const lawQaP95 = flowSummaries?.law_qa?.latency_ms_p95;
   const suggestP95 = flowSummaries?.suggest?.latency_ms_p95;
+  const partialErrors = Array.isArray(payload?.partial_errors) ? payload.partial_errors : [];
+  const partialErrorsSummary = partialErrors
+    .slice(0, 3)
+    .map((item) => {
+      const source = String(item?.source || "unknown").trim();
+      const message = String(item?.message || "Неизвестная ошибка").trim();
+      return `${source}: ${message}`;
+    })
+    .join("; ");
 
   aiPipelineHost.innerHTML = `
+    ${
+      partialErrors.length
+        ? `<div class="legal-alert legal-alert--warning">AI Pipeline загружен частично (${escapeHtml(String(partialErrors.length))}). ${escapeHtml(partialErrorsSummary || "Подробности доступны в server logs.")}</div>`
+        : ""
+    }
     <div class="admin-performance-grid">
       <article class="legal-status-card">
         <span class="legal-status-card__label">Recent generations</span>
@@ -1745,6 +1759,13 @@ async function loadAiPipeline({ silent = false } = {}) {
       return;
     }
     renderAiPipeline(payload);
+    const partialErrors = Array.isArray(payload?.partial_errors) ? payload.partial_errors : [];
+    if (partialErrors.length && !silent) {
+      const first = partialErrors[0] || {};
+      const source = first.source ? `[${String(first.source)}] ` : "";
+      const message = String(first.message || "").trim();
+      setStateError(errorsHost, `AI Pipeline загружен частично (${partialErrors.length}). ${source}${message}`.trim());
+    }
   } catch (error) {
     if (!silent) {
       setStateError(errorsHost, error?.message || "Не удалось загрузить AI Pipeline.");
