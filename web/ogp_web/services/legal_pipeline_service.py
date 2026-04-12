@@ -22,6 +22,7 @@ FEEDBACK_ISSUE_ALIASES: dict[str, tuple[str, ...]] = {
 
 _SOURCE_CITATION_PATTERN = re.compile(r"\[\s*Источник\s*:\s*(https?://[^\]\s]+)\s*\]", flags=re.IGNORECASE)
 _URL_PATTERN = re.compile(r"https?://[^\s)\]]+", flags=re.IGNORECASE)
+_META_SECTION_PATTERN = re.compile(r"^\s*\[[a-z_]+\]\s*$", flags=re.IGNORECASE | re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -217,6 +218,22 @@ def guard_suggest_answer(*, text: str) -> GuardResult:
                 code="source_url_leak",
                 severity="warn",
                 message="The complaint text still contains raw URLs.",
+            )
+        )
+    if _META_SECTION_PATTERN.search(normalized_text):
+        issues.append(
+            GuardIssue(
+                code="meta_section_leak",
+                severity="warn",
+                message="The answer contains service/meta sections.",
+            )
+        )
+    if "\n-" in normalized_text or "\n*" in normalized_text:
+        issues.append(
+            GuardIssue(
+                code="list_format_leak",
+                severity="warn",
+                message="The answer contains list formatting, expected one cohesive text block.",
             )
         )
     status = "pass" if not issues else "warn"

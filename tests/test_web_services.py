@@ -435,6 +435,9 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(meta["retrieval_ms"], 125)
         self.assertEqual(meta["openai_ms"], 250)
         self.assertEqual(meta["total_suggest_ms"], 1000)
+        self.assertEqual(meta["prompt_mode"], "data_driven")
+        self.assertEqual(meta["retrieval_context_mode"], "normal_context")
+        self.assertEqual(meta["selected_norms_count"], 0)
 
     def test_build_suggest_retrieval_query_light_formats_fields_in_expected_order(self):
         payload = SuggestPayload(
@@ -568,7 +571,7 @@ class WebServiceTests(unittest.TestCase):
             len(str(captured_calls[0]["law_context"] or "")),
         )
 
-    def test_build_suggest_law_context_returns_empty_when_retrieval_is_low_confidence(self):
+    def test_build_suggest_law_context_marks_low_confidence_mode(self):
         original_get_server_config = ai_service.get_server_config
         original_load_bundle = ai_service.load_law_bundle_chunks
         original_select_chunks = ai_service._select_law_qa_chunks
@@ -596,7 +599,8 @@ class WebServiceTests(unittest.TestCase):
             ai_service.load_law_bundle_chunks = original_load_bundle
             ai_service._select_law_qa_chunks = original_select_chunks
 
-        self.assertEqual(context, "")
+        self.assertEqual(context.retrieval_context_mode, "low_confidence_context")
+        self.assertEqual(context.retrieval_confidence, "low")
 
     def test_retry_invalid_batch_scores_uses_mini_batch_before_single_retry(self):
         original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -48,17 +49,49 @@ class AiCache:
         if not path.exists():
             return None
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            payload = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return None
+        if isinstance(payload, dict) and "_meta" in payload and "value" in payload:
+            meta = payload.get("_meta") if isinstance(payload.get("_meta"), dict) else {}
+            expires_at = meta.get("expires_at")
+            try:
+                expires_at_float = float(expires_at) if expires_at not in (None, "") else 0.0
+            except (TypeError, ValueError):
+                expires_at_float = 0.0
+            if expires_at_float > 0 and time.time() >= expires_at_float:
+                try:
+                    path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                return None
+            return payload.get("value")
+        return payload
 
-    def set(self, key: AiCacheKey, value: Any) -> None:
+    def set(self, key: AiCacheKey, value: Any, *, ttl_seconds: int | None = None) -> None:
         if not self.enabled:
             return
         path = self._path_for(key)
+        ttl_value = None
+        if ttl_seconds is not None:
+            try:
+                ttl_value = int(ttl_seconds)
+            except (TypeError, ValueError):
+                ttl_value = None
+        expires_at = 0.0
+        if ttl_value is not None and ttl_value > 0:
+            expires_at = time.time() + ttl_value
+        payload = {
+            "_meta": {
+                "created_at": time.time(),
+                "ttl_seconds": ttl_value or 0,
+                "expires_at": expires_at,
+            },
+            "value": value,
+        }
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+            path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
             return
 

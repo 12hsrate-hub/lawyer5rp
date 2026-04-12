@@ -718,18 +718,30 @@ class AdminMetricsStore:
         event_type: str,
         flow: str = "",
         issue_type: str = "",
+        retrieval_context_mode: str = "",
+        guard_warning: str = "",
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         with closing(self._connect()) as conn:
             events = self._load_recent_events(conn, event_type=event_type, limit=max(1, int(limit or 50)))
         normalized_flow = str(flow or "").strip().lower()
         normalized_issue_type = str(issue_type or "").strip().lower()
+        normalized_context_mode = str(retrieval_context_mode or "").strip().lower()
+        normalized_guard_warning = str(guard_warning or "").strip().lower()
         filtered: list[dict[str, Any]] = []
         for item in events:
             meta = item.get("meta") or {}
             meta_flow = str(meta.get("flow") or "").strip().lower()
             if normalized_flow and meta_flow != normalized_flow:
                 continue
+            if normalized_context_mode:
+                meta_context_mode = str(meta.get("retrieval_context_mode") or "").strip().lower()
+                if meta_context_mode != normalized_context_mode:
+                    continue
+            if normalized_guard_warning:
+                warnings = [str(value or "").strip().lower() for value in meta.get("guard_warnings") or []]
+                if normalized_guard_warning not in warnings:
+                    continue
             if normalized_issue_type:
                 issues = [str(value or "").strip().lower() for value in meta.get("issues") or []]
                 if normalized_issue_type not in issues:
@@ -737,8 +749,21 @@ class AdminMetricsStore:
             filtered.append(item)
         return filtered
 
-    def list_ai_generation_logs(self, *, flow: str = "", limit: int = 50) -> list[dict[str, Any]]:
-        return self._load_recent_ai_events(event_type="ai_generation", flow=flow, limit=limit)
+    def list_ai_generation_logs(
+        self,
+        *,
+        flow: str = "",
+        retrieval_context_mode: str = "",
+        guard_warning: str = "",
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        return self._load_recent_ai_events(
+            event_type="ai_generation",
+            flow=flow,
+            retrieval_context_mode=retrieval_context_mode,
+            guard_warning=guard_warning,
+            limit=limit,
+        )
 
     def list_ai_feedback(self, *, flow: str = "", issue_type: str = "", limit: int = 50) -> list[dict[str, Any]]:
         return self._load_recent_ai_events(
@@ -748,8 +773,20 @@ class AdminMetricsStore:
             limit=limit,
         )
 
-    def summarize_ai_generation_logs(self, *, flow: str = "", limit: int = 200) -> dict[str, Any]:
-        rows = self.list_ai_generation_logs(flow=flow, limit=limit)
+    def summarize_ai_generation_logs(
+        self,
+        *,
+        flow: str = "",
+        retrieval_context_mode: str = "",
+        guard_warning: str = "",
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        rows = self.list_ai_generation_logs(
+            flow=flow,
+            retrieval_context_mode=retrieval_context_mode,
+            guard_warning=guard_warning,
+            limit=limit,
+        )
         input_tokens: list[int] = []
         output_tokens: list[int] = []
         total_tokens: list[int] = []
@@ -761,12 +798,16 @@ class AdminMetricsStore:
         estimated_cost_count = 0
         budget_warning_count = 0
         models: dict[str, int] = {}
+        retrieval_context_mode_counts: dict[str, int] = {}
 
         for row in rows:
             meta = row.get("meta") or {}
             model = str(meta.get("model") or "").strip()
             if model:
                 models[model] = models.get(model, 0) + 1
+            context_mode = str(meta.get("retrieval_context_mode") or "").strip().lower()
+            if context_mode:
+                retrieval_context_mode_counts[context_mode] = retrieval_context_mode_counts.get(context_mode, 0) + 1
             input_value = self._safe_request_count(meta.get("input_tokens"))
             output_value = self._safe_request_count(meta.get("output_tokens"))
             total_value = self._safe_request_count(meta.get("total_tokens"))
@@ -802,6 +843,7 @@ class AdminMetricsStore:
         return {
             "total_generations": len(rows),
             "models": models,
+            "retrieval_context_mode_counts": retrieval_context_mode_counts,
             "input_tokens_total": sum(input_tokens),
             "output_tokens_total": sum(output_tokens),
             "total_tokens_total": sum(total_tokens),

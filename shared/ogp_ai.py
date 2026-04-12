@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 from contextlib import contextmanager
@@ -133,6 +134,16 @@ def _create_openai_client_compat(*, api_key: str, proxy_url: str = "", connect_t
         if "connect_timeout_seconds" not in str(exc):
             raise
         return create_openai_client(api_key=api_key, proxy_url=proxy_url)
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return int(default)
 
 
 def _normalize_route_policy(route_policy: str | None) -> str:
@@ -420,6 +431,8 @@ def _build_suggest_prompt(
     complaint_basis: str = "",
     main_focus: str = "",
     law_context: str = "",
+    prompt_mode: str = "legacy",
+    retrieval_context_mode: str = "normal_context",
 ) -> str:
     return build_suggest_prompt(
         victim_name=victim_name,
@@ -430,6 +443,8 @@ def _build_suggest_prompt(
         complaint_basis=complaint_basis,
         main_focus=main_focus,
         law_context=law_context,
+        prompt_mode=prompt_mode,
+        retrieval_context_mode=retrieval_context_mode,
     )
 
 
@@ -443,6 +458,10 @@ def suggest_description(
     complaint_basis: str = "",
     main_focus: str = "",
     law_context: str = "",
+    prompt_mode: str = "legacy",
+    retrieval_context_mode: str = "normal_context",
+    bundle_fingerprint: str = "",
+    retrieval_profile: str = "suggest",
 ) -> str:
     return suggest_description_result(
         client=client,
@@ -454,6 +473,10 @@ def suggest_description(
         complaint_basis=complaint_basis,
         main_focus=main_focus,
         law_context=law_context,
+        prompt_mode=prompt_mode,
+        retrieval_context_mode=retrieval_context_mode,
+        bundle_fingerprint=bundle_fingerprint,
+        retrieval_profile=retrieval_profile,
     ).text
 
 
@@ -467,6 +490,10 @@ def suggest_description_result(
     complaint_basis: str = "",
     main_focus: str = "",
     law_context: str = "",
+    prompt_mode: str = "legacy",
+    retrieval_context_mode: str = "normal_context",
+    bundle_fingerprint: str = "",
+    retrieval_profile: str = "suggest",
 ) -> TextGenerationResult:
     prompt = _build_suggest_prompt(
         victim_name=victim_name,
@@ -477,6 +504,8 @@ def suggest_description_result(
         complaint_basis=complaint_basis,
         main_focus=main_focus,
         law_context=law_context,
+        prompt_mode=prompt_mode,
+        retrieval_context_mode=retrieval_context_mode,
     )
     cache = get_ai_cache()
     cache_key = cache.build_key(
@@ -484,6 +513,10 @@ def suggest_description_result(
         model=OPENAI_TEXT_MODEL,
         payload={
             "prompt_version": SUGGEST_PROMPT_VERSION,
+            "prompt_mode": str(prompt_mode or "legacy").strip().lower(),
+            "retrieval_context_mode": str(retrieval_context_mode or "normal_context").strip().lower(),
+            "bundle_fingerprint": str(bundle_fingerprint or "").strip(),
+            "retrieval_profile": str(retrieval_profile or "suggest").strip().lower(),
             "victim_name": victim_name,
             "org": org,
             "subject": subject,
@@ -521,6 +554,7 @@ def suggest_description_result(
                 "total_tokens": usage.total_tokens,
             },
         },
+        ttl_seconds=_env_int("OGP_AI_SUGGEST_CACHE_TTL_SECONDS", 259200),
     )
     return TextGenerationResult(text=text, usage=usage, cache_hit=False)
 
@@ -777,6 +811,10 @@ def suggest_description_with_proxy_fallback(
     complaint_basis: str = "",
     main_focus: str = "",
     law_context: str = "",
+    prompt_mode: str = "legacy",
+    retrieval_context_mode: str = "normal_context",
+    bundle_fingerprint: str = "",
+    retrieval_profile: str = "suggest",
     *,
     route_policy: str | None = None,
     status_callback: Callable[[str], None] | None = None,
@@ -793,10 +831,14 @@ def suggest_description_with_proxy_fallback(
             subject=subject,
             event_dt=event_dt,
             raw_desc=raw_desc,
-            complaint_basis=complaint_basis,
-            main_focus=main_focus,
-            law_context=law_context,
-        ),
+                complaint_basis=complaint_basis,
+                main_focus=main_focus,
+                law_context=law_context,
+                prompt_mode=prompt_mode,
+                retrieval_context_mode=retrieval_context_mode,
+                bundle_fingerprint=bundle_fingerprint,
+                retrieval_profile=retrieval_profile,
+            ),
         route_policy=route_policy,
         status_callback=status_callback,
         direct_status="РџРѕРґРєР»СЋС‡РµРЅРёРµ Рє OpenAI Р±РµР· РїСЂРѕРєСЃРё...",
@@ -815,6 +857,10 @@ def suggest_description_with_proxy_fallback_result(
     complaint_basis: str = "",
     main_focus: str = "",
     law_context: str = "",
+    prompt_mode: str = "legacy",
+    retrieval_context_mode: str = "normal_context",
+    bundle_fingerprint: str = "",
+    retrieval_profile: str = "suggest",
     *,
     route_policy: str | None = None,
     status_callback: Callable[[str], None] | None = None,
@@ -832,10 +878,14 @@ def suggest_description_with_proxy_fallback_result(
             subject=subject,
             event_dt=event_dt,
             raw_desc=raw_desc,
-            complaint_basis=complaint_basis,
-            main_focus=main_focus,
-            law_context=law_context,
-        ),
+                complaint_basis=complaint_basis,
+                main_focus=main_focus,
+                law_context=law_context,
+                prompt_mode=prompt_mode,
+                retrieval_context_mode=retrieval_context_mode,
+                bundle_fingerprint=bundle_fingerprint,
+                retrieval_profile=retrieval_profile,
+            ),
         route_policy=route_policy,
         status_callback=status_callback,
         direct_status="Подключение к OpenAI без прокси...",

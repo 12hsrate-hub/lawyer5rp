@@ -92,6 +92,26 @@ class SuggestTextResult:
     retrieval_ms: int
     openai_ms: int
     total_suggest_ms: int
+    prompt_mode: str
+    retrieval_confidence: str
+    retrieval_context_mode: str
+    retrieval_profile: str
+    bundle_status: str
+    bundle_generated_at: str
+    bundle_fingerprint: str
+    selected_norms_count: int
+
+
+@dataclass(frozen=True)
+class SuggestContextBuildResult:
+    context_text: str
+    retrieval_confidence: str
+    retrieval_context_mode: str
+    retrieval_profile: str
+    bundle_status: str
+    bundle_generated_at: str
+    bundle_fingerprint: str
+    selected_norms_count: int
 
 
 def normalize_ai_feedback_issues(raw_issues: list[str] | tuple[str, ...]) -> tuple[str, ...]:
@@ -1190,11 +1210,25 @@ def _suggest_metrics_meta(
     result: SuggestTextResult,
     server_code: str,
 ) -> dict[str, object]:
+    prompt_mode = str(getattr(result, "prompt_mode", "legacy") or "legacy").strip().lower()
+    retrieval_confidence = str(getattr(result, "retrieval_confidence", "medium") or "medium").strip().lower()
+    retrieval_context_mode = str(getattr(result, "retrieval_context_mode", "normal_context") or "normal_context").strip()
+    retrieval_profile = str(getattr(result, "retrieval_profile", "suggest") or "suggest").strip()
+    bundle_status = str(getattr(result, "bundle_status", "unknown") or "unknown").strip()
+    bundle_generated_at = str(getattr(result, "bundle_generated_at", "") or "").strip()
+    bundle_fingerprint = str(getattr(result, "bundle_fingerprint", "") or "").strip()
+    selected_norms_count = int(getattr(result, "selected_norms_count", 0) or 0)
+    retrieval_ms = int(getattr(result, "retrieval_ms", 0) or 0)
+    openai_ms = int(getattr(result, "openai_ms", 0) or 0)
+    total_suggest_ms = int(getattr(result, "total_suggest_ms", 0) or 0)
+    telemetry = dict(getattr(result, "telemetry", {}) or {})
+    shadow = getattr(result, "shadow", {})
     return {
         "generation_id": result.generation_id,
         "flow": "suggest",
         "contract_version": result.contract_version,
         "prompt_version": SUGGEST_PROMPT_VERSION,
+        "prompt_mode": prompt_mode,
         "server_code": server_code,
         "complaint_basis": payload.complaint_basis,
         "main_focus": payload.main_focus,
@@ -1209,11 +1243,18 @@ def _suggest_metrics_meta(
         "budget_status": result.budget_status,
         "budget_warnings": list(result.budget_warnings),
         "budget_policy": result.budget_policy,
-        "retrieval_ms": int(result.retrieval_ms or 0),
-        "openai_ms": int(result.openai_ms or 0),
-        "total_suggest_ms": int(result.total_suggest_ms or 0),
-        **result.telemetry,
-        "shadow": result.shadow,
+        "retrieval_confidence": retrieval_confidence,
+        "retrieval_context_mode": retrieval_context_mode,
+        "retrieval_profile": retrieval_profile,
+        "bundle_status": bundle_status,
+        "bundle_generated_at": bundle_generated_at,
+        "bundle_fingerprint": bundle_fingerprint,
+        "selected_norms_count": selected_norms_count,
+        "retrieval_ms": retrieval_ms,
+        "openai_ms": openai_ms,
+        "total_suggest_ms": total_suggest_ms,
+        **telemetry,
+        "shadow": shadow,
     }
 
 
@@ -1225,10 +1266,19 @@ def build_suggest_metrics_meta(*, payload: SuggestPayload, result: SuggestTextRe
     return _suggest_metrics_meta(payload=payload, result=result, server_code=server_code)
 
 
-def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: int = 4) -> str:
+def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: int = 4) -> SuggestContextBuildResult:
     retrieval_query = str(question or "").strip()
     if not retrieval_query:
-        return ""
+        return SuggestContextBuildResult(
+            context_text="",
+            retrieval_confidence="low",
+            retrieval_context_mode="no_context",
+            retrieval_profile="suggest",
+            bundle_status="missing",
+            bundle_generated_at="",
+            bundle_fingerprint="",
+            selected_norms_count=0,
+        )
 
     retrieval_result = _retrieve_law_context(
         server_code=server_code,
@@ -1236,15 +1286,36 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
         excerpt_chars=900,
         profile="suggest",
     )
-    if not retrieval_result.indexed_chunk_count or retrieval_result.confidence == "low":
-        return ""
+    if not retrieval_result.indexed_chunk_count:
+        return SuggestContextBuildResult(
+            context_text="",
+            retrieval_confidence=retrieval_result.confidence,
+            retrieval_context_mode="no_context",
+            retrieval_profile=retrieval_result.profile,
+            bundle_status=retrieval_result.bundle_health.status,
+            bundle_generated_at=retrieval_result.bundle_health.generated_at,
+            bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
+            selected_norms_count=0,
+        )
 
     positive = [match for match in retrieval_result.matches if match.score > 0][:max_chunks]
-    if not positive:
-        return ""
+    selected_matches = list(positive)
+    if not selected_matches and retrieval_result.matches:
+        selected_matches = list(retrieval_result.matches[:max_chunks])
+    if not selected_matches:
+        return SuggestContextBuildResult(
+            context_text="",
+            retrieval_confidence=retrieval_result.confidence,
+            retrieval_context_mode="no_context",
+            retrieval_profile=retrieval_result.profile,
+            bundle_status=retrieval_result.bundle_health.status,
+            bundle_generated_at=retrieval_result.bundle_health.generated_at,
+            bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
+            selected_norms_count=0,
+        )
 
     parts: list[str] = []
-    for match in positive:
+    for match in selected_matches:
         excerpt = match.excerpt
         if not excerpt:
             continue
@@ -1258,7 +1329,22 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
                 )
             )
         )
-    return "\n\n".join(parts).strip()
+    context_text = "\n\n".join(parts).strip()
+    context_mode = "normal_context"
+    if retrieval_result.confidence == "low":
+        context_mode = "low_confidence_context"
+    if not context_text:
+        context_mode = "no_context"
+    return SuggestContextBuildResult(
+        context_text=context_text,
+        retrieval_confidence=retrieval_result.confidence,
+        retrieval_context_mode=context_mode,
+        retrieval_profile=retrieval_result.profile,
+        bundle_status=retrieval_result.bundle_health.status,
+        bundle_generated_at=retrieval_result.bundle_health.generated_at,
+        bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
+        selected_norms_count=len(selected_matches),
+    )
 
 
 def _normalize_suggest_retrieval_fragment(value: str, *, max_chars: int | None = None) -> str:
@@ -1518,14 +1604,47 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
     generation_id = new_generation_id()
     server_config = get_server_config(server_code or DEFAULT_SERVER_CODE)
+    suggest_prompt_mode = str(getattr(server_config, "suggest_prompt_mode", "legacy") or "legacy").strip().lower()
+    low_confidence_policy = str(
+        getattr(server_config, "suggest_low_confidence_policy", "controlled_fallback") or "controlled_fallback"
+    ).strip().lower()
     shadow = build_shadow_comparison(enabled=False, profile="", primary_matches=(), shadow_matches=())
     suggest_query = build_suggest_retrieval_query_light(payload)
     retrieval_started_at = monotonic()
-    law_context = _build_suggest_law_context(
+    suggest_context_raw = _build_suggest_law_context(
         server_code=server_code,
         question=suggest_query,
     )
+    if isinstance(suggest_context_raw, SuggestContextBuildResult):
+        suggest_context = suggest_context_raw
+    else:
+        suggest_context = SuggestContextBuildResult(
+            context_text=str(suggest_context_raw or "").strip(),
+            retrieval_confidence="medium",
+            retrieval_context_mode="normal_context" if str(suggest_context_raw or "").strip() else "no_context",
+            retrieval_profile="suggest",
+            bundle_status="unknown",
+            bundle_generated_at="",
+            bundle_fingerprint="",
+            selected_norms_count=0,
+        )
     retrieval_ms = int((monotonic() - retrieval_started_at) * 1000)
+    law_context = suggest_context.context_text
+    if suggest_context.retrieval_context_mode == "low_confidence_context" and low_confidence_policy == "controlled_fallback":
+        law_context = "\n".join(
+            (
+                "Статус retrieval: low_confidence_context",
+                "Важно: используй только явно подтвержденные нормы из блока ниже. Если прямой нормы нет, не выдумывай ее.",
+                law_context,
+            )
+        ).strip()
+    if suggest_context.retrieval_context_mode == "no_context" and low_confidence_policy == "controlled_fallback":
+        law_context = "\n".join(
+            (
+                "Статус retrieval: no_context",
+                "Важно: надежный правовой контекст не найден. Пиши только факты из черновика и не выдумывай нормы.",
+            )
+        )
     if _server_feature_enabled(server_config, "legal_pipeline_shadow"):
         shadow_profile = str(getattr(server_config, "shadow_suggest_profile", "") or "").strip()
         if shadow_profile and shadow_profile != "suggest":
@@ -1555,6 +1674,13 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
     complaint_basis = payload.complaint_basis.strip()
     main_focus = payload.main_focus.strip()
     raw_desc = payload.raw_desc.strip()
+    if low_confidence_policy == "soft_fail" and suggest_context.retrieval_context_mode in {"low_confidence_context", "no_context"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[
+                "Недостаточно надежного правового контекста для генерации. Уточните факты и повторите запрос.",
+            ],
+        )
     suggest_attempts = (
         (raw_desc, law_context),
         (raw_desc, _truncate_suggest_value(law_context, max_chars=2600)),
@@ -1579,6 +1705,8 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
                 complaint_basis=complaint_basis,
                 main_focus=main_focus,
                 law_context=attempt_law_context,
+                prompt_mode=suggest_prompt_mode,
+                retrieval_context_mode=suggest_context.retrieval_context_mode,
             )
             try:
                 generation_result = suggest_description_with_proxy_fallback_result(
@@ -1592,6 +1720,10 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
                     complaint_basis=complaint_basis,
                     main_focus=main_focus,
                     law_context=attempt_law_context,
+                    prompt_mode=suggest_prompt_mode,
+                    retrieval_context_mode=suggest_context.retrieval_context_mode,
+                    bundle_fingerprint=suggest_context.bundle_fingerprint,
+                    retrieval_profile=suggest_context.retrieval_profile,
                 )
                 suggest_compaction_level = attempt_index
                 break
@@ -1643,6 +1775,7 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
             "route_policy": generation_result.route_policy,
             "context_compaction_level": suggest_compaction_level,
             "context_compacted": bool(suggest_compaction_level > 0),
+            "retrieval_context_mode": suggest_context.retrieval_context_mode,
         }
     )
     return SuggestTextResult(
@@ -1654,6 +1787,12 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
             dict.fromkeys(
                 list(guard_result.warning_codes)
                 + list(budget_assessment.warnings)
+                + (
+                    ["suggest_low_confidence_context"]
+                    if suggest_context.retrieval_context_mode == "low_confidence_context"
+                    else []
+                )
+                + (["suggest_no_context"] if suggest_context.retrieval_context_mode == "no_context" else [])
                 + (["suggest_context_compacted"] if suggest_compaction_level > 0 else [])
             )
         ),
@@ -1665,6 +1804,14 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
         retrieval_ms=retrieval_ms,
         openai_ms=openai_ms,
         total_suggest_ms=total_suggest_ms,
+        prompt_mode=suggest_prompt_mode,
+        retrieval_confidence=suggest_context.retrieval_confidence,
+        retrieval_context_mode=suggest_context.retrieval_context_mode,
+        retrieval_profile=suggest_context.retrieval_profile,
+        bundle_status=suggest_context.bundle_status,
+        bundle_generated_at=suggest_context.bundle_generated_at,
+        bundle_fingerprint=suggest_context.bundle_fingerprint,
+        selected_norms_count=suggest_context.selected_norms_count,
     )
 
 
