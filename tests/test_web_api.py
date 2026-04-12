@@ -458,6 +458,42 @@ class WebApiTests(unittest.TestCase):
         second = self.client.get("/api/profile")
         self.assertEqual(second.status_code, 429)
 
+    def test_admin_overview_is_not_blocked_by_user_daily_quota(self):
+        self._register_verify_and_login("12345", "admin-quota@example.com")
+        self.store.admin_set_daily_quota("12345", 1)
+
+        first = self.client.get("/api/profile")
+        self.assertEqual(first.status_code, 200)
+
+        admin_overview = self.client.get("/api/admin/overview")
+        self.assertEqual(admin_overview.status_code, 200)
+
+    def test_admin_quota_429_event_contains_policy_meta(self):
+        previous_admin_quota = os.environ.get("OGP_WEB_ADMIN_API_QUOTA_DAILY")
+        os.environ["OGP_WEB_ADMIN_API_QUOTA_DAILY"] = "1"
+        try:
+            self._register_verify_and_login("12345", "admin-policy@example.com")
+
+            first = self.client.get("/api/admin/overview")
+            self.assertEqual(first.status_code, 200)
+
+            second = self.client.get("/api/admin/overview")
+            self.assertEqual(second.status_code, 429)
+
+            last_event = self.admin_store.backend._state["metric_events"][-1]
+            self.assertEqual(last_event["status_code"], 429)
+            self.assertEqual(last_event["path"], "/api/admin/overview")
+            self.assertEqual(last_event["username"], "12345")
+            meta = last_event["meta_json"]
+            self.assertEqual(meta["policy_name"], "admin_quota_daily")
+            self.assertEqual(meta["username"], "12345")
+            self.assertTrue(meta["request_id"])
+        finally:
+            if previous_admin_quota is None:
+                os.environ.pop("OGP_WEB_ADMIN_API_QUOTA_DAILY", None)
+            else:
+                os.environ["OGP_WEB_ADMIN_API_QUOTA_DAILY"] = previous_admin_quota
+
     def test_blocked_user_cannot_use_existing_session(self):
         self._register_verify_and_login("sessionuser", "sessionuser@example.com")
         session_client = self.client

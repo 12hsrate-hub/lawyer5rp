@@ -32,7 +32,7 @@ from ogp_web.routes.exam_import import router as exam_import_router
 from ogp_web.routes.pages import router as pages_router
 from ogp_web.routes.profile import router as profile_router
 from ogp_web.server_config import get_server_config
-from ogp_web.services.auth_service import _get_secret_key, get_current_user
+from ogp_web.services.auth_service import _get_secret_key, get_current_user, is_admin_user
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore, get_default_admin_metrics_store
 from ogp_web.storage.exam_answers_store import ExamAnswersStore, get_default_exam_answers_store
@@ -280,10 +280,18 @@ def create_app(
         request_id = getattr(request.state, "request_id", "")
         user = get_current_user(request) if request.url.path.startswith("/api/") else None
         if request.url.path.startswith("/api/") and user and not request.url.path.startswith("/api/auth/"):
-            try:
-                quota_daily = app.state.user_store.get_api_quota_daily(user.username)
-            except Exception:
-                quota_daily = 0
+            policy_name = "user_quota_daily"
+            if request.url.path.startswith("/api/admin/") and is_admin_user(user.username):
+                policy_name = "admin_quota_daily"
+                try:
+                    quota_daily = int(os.getenv("OGP_WEB_ADMIN_API_QUOTA_DAILY", "0") or "0")
+                except Exception:
+                    quota_daily = 0
+            else:
+                try:
+                    quota_daily = app.state.user_store.get_api_quota_daily(user.username)
+                except Exception:
+                    quota_daily = 0
             if quota_daily > 0:
                 used_last_24h = app.state.admin_metrics_store.count_user_api_requests_last_24h(user.username)
                 if used_last_24h >= quota_daily:
@@ -305,7 +313,13 @@ def create_app(
                         duration_ms=0,
                         request_bytes=int(request.headers.get("content-length") or 0),
                         response_bytes=len(response.body or b""),
-                        meta={"quota_daily": quota_daily, "used_last_24h": used_last_24h, "request_id": request_id},
+                        meta={
+                            "quota_daily": quota_daily,
+                            "used_last_24h": used_last_24h,
+                            "request_id": request_id,
+                            "username": user.username,
+                            "policy_name": policy_name,
+                        },
                     )
                     return response
         try:
