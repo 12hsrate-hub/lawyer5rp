@@ -60,6 +60,13 @@ def _store_performance_payload(cache_key: str, payload: dict[str, Any]) -> None:
         _PERFORMANCE_CACHE[cache_key] = (monotonic(), deepcopy(payload))
 
 
+def _normalize_api_error(exc: Exception, *, source: str) -> dict[str, str]:
+    return {
+        "source": source,
+        "message": str(exc) or f"{source}_error",
+    }
+
+
 def _save_admin_tasks_to_disk() -> None:
     try:
         _ADMIN_TASKS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -564,6 +571,7 @@ async def admin_overview(
     user_sort: str = "complaints",
 ):
     _ = user
+    partial_errors: list[dict[str, str]] = []
     safe_user_limit = None
     try:
         safe_user_limit = int(users_limit)
@@ -571,24 +579,74 @@ async def admin_overview(
             safe_user_limit = None
     except (TypeError, ValueError):
         safe_user_limit = None
-    payload = metrics_store.get_overview(
-        users=user_store.list_users(limit=safe_user_limit),
-        search=search,
-        blocked_only=blocked_only,
-        tester_only=tester_only,
-        gka_only=gka_only,
-        unverified_only=unverified_only,
-        event_search=event_search,
-        event_type=event_type,
-        failed_events_only=failed_events_only,
-        user_sort=user_sort,
-    )
-    exam_import = metrics_store.get_exam_import_summary(
-        pending_scores=exam_store.count_entries_needing_scores()
-    )
-    exam_import["recent_entries"] = exam_store.list_entries(limit=8)
-    exam_import["failed_entries"] = exam_store.list_entries_with_failed_scores(limit=5)
+    payload: dict[str, Any] = {
+        "totals": {},
+        "users": [],
+        "users_filtered_total": 0,
+        "top_endpoints": [],
+        "recent_events": [],
+        "recent_events_filtered_total": 0,
+        "filters": {"user_sort": user_sort},
+    }
+
+    users: list[dict[str, Any]] = []
+    try:
+        users = user_store.list_users(limit=safe_user_limit)
+    except Exception as exc:  # noqa: BLE001
+        partial_errors.append(_normalize_api_error(exc, source="users"))
+
+    if users:
+        try:
+            payload = metrics_store.get_overview(
+                users=users,
+                search=search,
+                blocked_only=blocked_only,
+                tester_only=tester_only,
+                gka_only=gka_only,
+                unverified_only=unverified_only,
+                event_search=event_search,
+                event_type=event_type,
+                failed_events_only=failed_events_only,
+                user_sort=user_sort,
+            )
+        except Exception as exc:  # noqa: BLE001
+            partial_errors.append(_normalize_api_error(exc, source="overview"))
+            payload["totals"] = {"users_total": len(users)}
+    else:
+        payload["totals"] = {"users_total": 0}
+
+    exam_import: dict[str, Any] = {
+        "pending_scores": 0,
+        "last_sync": None,
+        "last_score": None,
+        "recent_failures": [],
+        "recent_row_failures": [],
+        "recent_entries": [],
+        "failed_entries": [],
+    }
+    pending_scores = 0
+    try:
+        pending_scores = int(exam_store.count_entries_needing_scores() or 0)
+    except Exception as exc:  # noqa: BLE001
+        partial_errors.append(_normalize_api_error(exc, source="exam_pending_scores"))
+    try:
+        exam_import = metrics_store.get_exam_import_summary(pending_scores=pending_scores)
+    except Exception as exc:  # noqa: BLE001
+        partial_errors.append(_normalize_api_error(exc, source="exam_summary"))
+        exam_import["pending_scores"] = pending_scores
+    try:
+        exam_import["recent_entries"] = exam_store.list_entries(limit=8)
+    except Exception as exc:  # noqa: BLE001
+        partial_errors.append(_normalize_api_error(exc, source="exam_recent_entries"))
+    try:
+        exam_import["failed_entries"] = exam_store.list_entries_with_failed_scores(limit=5)
+    except Exception as exc:  # noqa: BLE001
+        partial_errors.append(_normalize_api_error(exc, source="exam_failed_entries"))
+    exam_import.setdefault("recent_entries", [])
+    exam_import.setdefault("failed_entries", [])
+
     payload["exam_import"] = exam_import
+    payload["partial_errors"] = partial_errors
     return payload
 
 
@@ -611,6 +669,27 @@ async def admin_performance(
         window_minutes=safe_window,
         top_endpoints=safe_endpoints,
     )
+    total_requests = int(payload.get("total_api_requests") or 0)
+    failed_requests = int(payload.get("error_count") or 0)
+    throughput_rps = float(payload.get("throughput_rps") or 0.0)
+    p50_ms = payload.get("p50_ms")
+    p95_ms = payload.get("p95_ms")
+    avg_ms = payload.get("avg_ms")
+    payload["latency"] = {
+        "p50_ms": p50_ms,
+        "p95_ms": p95_ms,
+        "avg_ms": avg_ms,
+    }
+    payload["rates"] = {
+        "requests_per_second": round(throughput_rps, 4),
+        "error_rate": float(payload.get("error_rate") or 0.0),
+    }
+    payload["top_endpoints"] = list(payload.get("endpoint_overview") or [])
+    payload["totals"] = {
+        **dict(payload.get("totals") or {}),
+        "total_requests": total_requests,
+        "failed_requests": failed_requests,
+    }
     payload["window_minutes"] = safe_window
     payload["top_endpoints_limit"] = safe_endpoints
     payload["snapshot_at"] = datetime.now(timezone.utc).isoformat()

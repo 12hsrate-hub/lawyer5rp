@@ -262,6 +262,46 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("text/csv", events_csv.headers["content-type"])
         self.assertIn("created_at,username,event_type,path", events_csv.text)
 
+    def test_admin_performance_response_includes_legacy_compatible_fields(self):
+        self._register_verify_and_login("12345", "admin-perf@example.com")
+
+        response = self.client.get("/api/admin/performance?window_minutes=30&top_endpoints=6")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("latency", payload)
+        self.assertIn("rates", payload)
+        self.assertIn("top_endpoints", payload)
+        self.assertIn("totals", payload)
+        self.assertIn("total_requests", payload["totals"])
+        self.assertIn("failed_requests", payload["totals"])
+
+    def test_admin_overview_returns_partial_errors_when_exam_store_fails(self):
+        self._register_verify_and_login("12345", "admin-partial@example.com")
+
+        class BrokenExamStore:
+            def count_entries_needing_scores(self):
+                raise RuntimeError("broken_count")
+
+            def list_entries(self, limit: int = 8):
+                raise RuntimeError("broken_list_entries")
+
+            def list_entries_with_failed_scores(self, limit: int = 5):
+                raise RuntimeError("broken_failed_entries")
+
+        original_exam_store = self.client.app.state.exam_answers_store
+        self.client.app.state.exam_answers_store = BrokenExamStore()
+        try:
+            response = self.client.get("/api/admin/overview")
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertIn("partial_errors", payload)
+            self.assertGreaterEqual(len(payload["partial_errors"]), 1)
+            self.assertIn("exam_import", payload)
+            self.assertIsInstance(payload["exam_import"].get("recent_entries"), list)
+            self.assertIsInstance(payload["exam_import"].get("failed_entries"), list)
+        finally:
+            self.client.app.state.exam_answers_store = original_exam_store
+
     def test_admin_overview_forbidden_for_non_admin(self):
         self._register_verify_and_login("tester", "tester@example.com")
         response = self.client.get("/api/admin/overview")

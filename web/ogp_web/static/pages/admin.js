@@ -384,11 +384,26 @@ function renderPerformance(payload) {
     return;
   }
   const isCached = Boolean(payload?.cached);
-  const totals = payload?.totals || {};
-  const latency = payload?.latency || {};
-  const rates = payload?.rates || {};
-  const top = Array.isArray(payload?.top_endpoints) ? payload.top_endpoints : [];
-  const snapshotAt = String(payload?.snapshot_at || "—");
+  const totals = {
+    ...(payload?.totals || {}),
+    total_requests: (payload?.totals || {}).total_requests ?? payload?.total_api_requests ?? 0,
+    failed_requests: (payload?.totals || {}).failed_requests ?? payload?.error_count ?? 0,
+  };
+  const latency = {
+    ...(payload?.latency || {}),
+    p95_ms: (payload?.latency || {}).p95_ms ?? payload?.p95_ms ?? "-",
+    p50_ms: (payload?.latency || {}).p50_ms ?? payload?.p50_ms ?? "-",
+  };
+  const rates = {
+    ...(payload?.rates || {}),
+    requests_per_second: (payload?.rates || {}).requests_per_second ?? payload?.throughput_rps ?? "-",
+  };
+  const top = Array.isArray(payload?.top_endpoints)
+    ? payload.top_endpoints
+    : Array.isArray(payload?.endpoint_overview)
+      ? payload.endpoint_overview
+      : [];
+  const snapshotAt = String(payload?.snapshot_at || payload?.generated_at || "-");
 
   performanceHost.innerHTML = `
     <article class="legal-status-card">
@@ -412,6 +427,20 @@ function renderPerformance(payload) {
       <span class="admin-user-cell__secondary">Запросов: ${escapeHtml(String(top[0]?.count || 0))}</span>
     </article>
   `;
+}
+
+function extractErrorMessage(payload, fallback) {
+  const detail = payload?.detail;
+  if (Array.isArray(detail) && detail.length) {
+    return detail.map((item) => String(item || "").trim()).filter(Boolean).join(" ");
+  }
+  if (typeof detail === "string" && detail.trim()) {
+    return detail.trim();
+  }
+  if (typeof payload?.message === "string" && payload.message.trim()) {
+    return payload.message.trim();
+  }
+  return fallback;
 }
 
 function renderTopEndpoints(items) {
@@ -1195,7 +1224,7 @@ async function loadAdminOverview({ silent = false } = {}) {
     if (!response.ok) {
       const payload = await parsePayload(response);
       if (!silent) {
-        setStateError(errorsHost, payload.detail || "Не удалось загрузить данные админ-панели.");
+        setStateError(errorsHost, extractErrorMessage(payload, "Не удалось загрузить данные админ-панели."));
       } else {
         setLiveStatus("Live: ошибка обновления", "danger");
       }
@@ -1210,6 +1239,13 @@ async function loadAdminOverview({ silent = false } = {}) {
     renderUsers(payload.users || [], payload.filters?.user_sort || "complaints");
     renderAdminAudit(payload.recent_events || []);
     renderEvents(payload.recent_events || []);
+    const partialErrors = Array.isArray(payload.partial_errors) ? payload.partial_errors : [];
+    if (partialErrors.length && !silent) {
+      const first = partialErrors[0] || {};
+      const source = first.source ? `[${String(first.source)}] ` : "";
+      const message = String(first.message || "").trim();
+      setStateError(errorsHost, `Панель загружена частично (${partialErrors.length}). ${source}${message}`.trim());
+    }
 
     if (selectedUser && userIndex.has(String(selectedUser).toLowerCase())) {
       renderUserModal(userIndex.get(String(selectedUser).toLowerCase()));
