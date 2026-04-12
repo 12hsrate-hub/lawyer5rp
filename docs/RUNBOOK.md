@@ -24,3 +24,9 @@
 - no rollback trigger currently active
 - documented root cause
 - documented mitigation
+
+## Operational Cadence
+1. **Before Sprint 1**: capture baseline for login success rate, `/health`, and key endpoint latency.
+2. **After each sprint**: run regression on registration/login, complaint generation, admin review, and exam import.
+3. **Before cutover**: confirm rollback procedure and set rollback validity window to 7 days after release.
+4. **Governance**: ensure owners are fixed for DB migrations, runtime stores, scripts, tests, and release.
