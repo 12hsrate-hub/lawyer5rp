@@ -1,0 +1,39 @@
+gates:
+  factual_integrity:
+    target: 1.00
+    comparator: ">="
+    on_fail: fallback_factual_only
+    retry_allowed: false
+    max_retries: 0
+  style_contract:
+    target: 0.995
+    comparator: ">="
+    on_fail: warn
+    retry_allowed: true
+    max_retries: 1
+  legal_linkage_high_relevance:
+    target: 0.85
+    comparator: ">="
+    on_fail: fallback_factual_only
+    retry_allowed: true
+    max_retries: 1
+  retry_rate:
+    target: 0.12
+    comparator: "<="
+    on_fail: rollback_factual_only
+    retry_allowed: false
+    max_retries: 0
+  cost_uplift:
+    target: 0.35
+    comparator: "<="
+    on_fail: rollback_factual_only
+    retry_allowed: false
+    max_retries: 0
+
+fallbacks:
+  fallback_factual_only:
+    force_mode: factual_only
+    emergency_off: false
+  rollback_factual_only:
+    force_mode: factual_only
+    emergency_off: true

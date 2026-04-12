@@ -1,0 +1,14 @@
+retry_policy:
+  max_retries: 1
+  retry_backoff_seconds: 0
+
+non_retryable_failures:
+  - factual_integrity_fail
+
+retryable_failures:
+  - transient_model_error
+  - timeout
+  - upstream_5xx
+
+fallbacks:
+  factual_integrity_fail: factual_only

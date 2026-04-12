@@ -1,0 +1,3 @@
+{"case_id":"high_relevance_001","relevance_score":0.93,"expected_mode":"factual_plus_legal","context_strength":"high"}
+{"case_id":"low_relevance_001","relevance_score":0.44,"expected_mode":"factual_only","context_strength":"weak"}
+{"case_id":"integrity_fail_001","validator_result":"factual_integrity_fail","expected_retry":0,"expected_fallback":"factual_only"}

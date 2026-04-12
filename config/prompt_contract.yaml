@@ -1,0 +1,33 @@
+modes:
+  - factual_only
+  - factual_plus_legal
+
+global_rules:
+  response_format: one_paragraph
+  style: neutral_business
+  do_not_invent:
+    - facts
+    - dates
+    - documents
+    - numbers
+    - links
+  weak_context_mode: factual_only
+
+mode_contracts:
+  factual_only:
+    use_legal_links: false
+    allow_inference_beyond_context: false
+    fallback_on_low_confidence: factual_only
+  factual_plus_legal:
+    use_legal_links: true
+    allow_inference_beyond_context: false
+    fallback_on_low_confidence: factual_only
+
+retry_contract:
+  max_retries: 1
+  retryable_failures:
+    - transient_model_error
+    - timeout
+  non_retryable_failures:
+    - factual_integrity_fail
+

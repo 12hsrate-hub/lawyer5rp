@@ -1,0 +1,134 @@
+version: 1
+project: point3_legal_mode_rollout
+owner: legal-ai
+
+global_rules:
+  - "Не добавлять новые факты, даты, документы, номера и ссылки."
+  - "Формат ответа: один абзац, нейтрально-деловой стиль."
+  - "При слабом контексте — только factual_only."
+  - "Максимум 1 retry."
+  - "При деградации метрик — rollback в factual_only."
+
+acceptance_targets:
+  factual_integrity: 1.00
+  style_contract: 0.995
+  legal_linkage_high_relevance: 0.85
+  max_retry_rate: 0.12
+  max_cost_uplift: 0.35
+
+execution_contract_for_codex:
+  - "Идти строго по phase -> priority -> depends_on."
+  - "После каждой задачи показывать diff."
+  - "После каждой задачи запускать: bash scripts/codex_run_checks.sh"
+  - "Не переходить дальше, пока проверки не зелёные или нет явного waiver."
+
+tasks:
+  - id: T01_baseline_contracts
+    title: "Зафиксировать контракт и quality gates"
+    phase: 1
+    priority: P0
+    files:
+      - "config/prompt_contract.yaml"
+      - "config/quality_gates.yaml"
+      - "docs/IMPLEMENTATION_PLAN.md"
+      - "docs/ACCEPTANCE_CHECKLIST.md"
+    done_when:
+      - "Контракт содержит modes: factual_only и factual_plus_legal"
+      - "Есть factual_integrity gate с fallback_factual_only"
+
+  - id: T02_mode_routing
+    title: "Включить режимы и роутинг по релевантности"
+    phase: 1
+    priority: P0
+    depends_on: ["T01_baseline_contracts"]
+    files:
+      - "config/relevance_thresholds.yaml"
+      - "config/feature_flags.yaml"
+      - "config/model_routing.yaml"
+      - "config/token_limits.yaml"
+    done_when:
+      - "Пороговый роутинг определен (T1/T2)"
+      - "Флаг rollout_legal_mode активен, есть force_mode/emergency_off"
+
+  - id: T03_retry_and_limits
+    title: "Ограничить retry и закрепить безопасное поведение"
+    phase: 1
+    priority: P0
+    depends_on: ["T02_mode_routing"]
+    files:
+      - "config/retry_policy.yaml"
+      - "config/quality_gates.yaml"
+    done_when:
+      - "max_retries = 1"
+      - "factual_integrity_fail не ретраится"
+
+  - id: T04_checks_entrypoint
+    title: "Единая точка запуска проверок"
+    phase: 1
+    priority: P0
+    depends_on: ["T03_retry_and_limits"]
+    files:
+      - "scripts/codex_run_checks.sh"
+      - "docs/CODEX_RUN_GUIDE.md"
+    done_when:
+      - "bash scripts/codex_run_checks.sh выполняется без ошибок"
+      - "При отсутствии optional deps есть понятный skip/hint"
+
+  - id: T05_tests_point3
+    title: "Базовые автопроверки point3"
+    phase: 1
+    priority: P0
+    depends_on: ["T04_checks_entrypoint"]
+    files:
+      - "tests/test_point3_contract.py"
+      - "tests/test_mode_router.py"
+      - "tests/test_validator_retry.py"
+      - "tests/fixtures/point3_cases.jsonl"
+    done_when:
+      - "pytest -q tests/test_point3_contract.py tests/test_mode_router.py tests/test_validator_retry.py -> pass"
+
+  - id: T06_ops_docs
+    title: "Rollout и incident runbook"
+    phase: 1
+    priority: P1
+    depends_on: ["T05_tests_point3"]
+    files:
+      - "docs/ROLL_OUT.md"
+      - "docs/RUNBOOK.md"
+    done_when:
+      - "Есть этапы 10% -> 25% -> 50% -> 100%"
+      - "Есть auto-rollback условия"
+
+  - id: T07_rollout_stage_10
+    title: "Запуск 10% трафика"
+    phase: 2
+    priority: P0
+    depends_on: ["T06_ops_docs"]
+    done_when:
+      - "24 часа без нарушения acceptance_targets"
+
+  - id: T08_rollout_stage_25_50
+    title: "Поднять до 25% и 50%"
+    phase: 2
+    priority: P0
+    depends_on: ["T07_rollout_stage_10"]
+    done_when:
+      - "Стабильность на каждом этапе >=24ч"
+
+  - id: T09_rollout_100
+    title: "Полный rollout 100%"
+    phase: 3
+    priority: P0
+    depends_on: ["T08_rollout_stage_25_50"]
+    done_when:
+      - "2 суток стабильности до включения 100%"
+      - "Emergency rollback проверен"
+
+rollback_policy:
+  triggers:
+    - "retry_rate > 0.12"
+    - "cost_uplift > 0.35"
+    - "любое падение factual_integrity"
+  actions:
+    - "rollout_legal_mode.emergency_off=true"
+    - "rollout_legal_mode.force_mode=factual_only"

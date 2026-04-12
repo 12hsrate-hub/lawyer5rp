@@ -1,0 +1,8 @@
+flags:
+  rollout_legal_mode:
+    enabled: true
+    default_mode: factual_only
+    force_mode: ""
+    emergency_off: false
+    rollout_percent: 0
+

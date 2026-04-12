@@ -1,0 +1,15 @@
+limits:
+  factual_only:
+    input_tokens_max: 4000
+    output_tokens_max: 700
+    total_budget_tokens: 4700
+  factual_plus_legal:
+    input_tokens_max: 6000
+    output_tokens_max: 900
+    total_budget_tokens: 6900
+
+policies:
+  on_input_over_budget: trim_context
+  on_output_over_budget: clamp_output
+  on_total_over_budget: fallback_factual_only
+

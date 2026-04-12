@@ -1,0 +1,14 @@
+routing:
+  factual_only:
+    primary_model: gpt-5.4-mini
+    fallback_model: gpt-5.4-mini
+  factual_plus_legal:
+    primary_model: gpt-5.4
+    fallback_model: gpt-5.4-mini
+
+selection_order:
+  - check_emergency_off
+  - check_force_mode
+  - evaluate_relevance_threshold
+  - select_model_by_mode
+
