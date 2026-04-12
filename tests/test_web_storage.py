@@ -698,7 +698,7 @@ class FakeExamAnswersConnection:
             rows.sort(key=lambda item: item["source_row"])
             rows = rows[: int(params[0])]
             return FakeCursor(rowcount=len(rows), rows=[self._summary_row(row) for row in rows])
-        if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, average_score, COALESCE(average_score_answer_count, 0) AS average_score_answer_count, needs_rescore, imported_at, exam_scores_json FROM exam_answers WHERE source_row > 0 AND exam_scores_json IS NOT NULL AND exam_scores_json <> '' ORDER BY source_row ASC LIMIT %s"):
+        if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, average_score, COALESCE(average_score_answer_count, 0) AS average_score_answer_count, needs_rescore, imported_at, exam_scores_json FROM exam_answers WHERE source_row > 0 AND exam_scores_json IS NOT NULL"):
             rows = [row for row in self.state["rows"] if row["source_row"] > 0 and row["exam_scores_json"] not in (None, "")]
             rows.sort(key=lambda item: item["source_row"])
             rows = rows[: int(params[0])]

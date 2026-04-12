@@ -91,6 +91,11 @@ class ExamAnswersStore:
     def _needs_rescore_predicate(self) -> str:
         return "needs_rescore IS TRUE" if self.is_postgres_backend else "needs_rescore = 1"
 
+    def _json_present_predicate(self, column_name: str) -> str:
+        if self.is_postgres_backend:
+            return f"{column_name} IS NOT NULL AND {column_name}::text <> 'null'"
+        return f"{column_name} IS NOT NULL AND TRIM({column_name}) <> ''"
+
     def _bool_true_value(self) -> bool | int:
         return True if self.is_postgres_backend else 1
 
@@ -591,7 +596,7 @@ class ExamAnswersStore:
                     imported_at,
                     exam_scores_json
                 FROM exam_answers
-                WHERE source_row > 0 AND exam_scores_json IS NOT NULL AND exam_scores_json <> ''
+                WHERE source_row > 0 AND {self._json_present_predicate('exam_scores_json')}
                 ORDER BY source_row ASC
                 LIMIT {self._placeholder()}
                 """,
