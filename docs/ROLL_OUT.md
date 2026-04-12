@@ -24,3 +24,13 @@ Advance only after at least 24 hours of stable behavior on each stage, except th
 - set `rollout_legal_mode.emergency_off=true`
 - set `rollout_legal_mode.force_mode=factual_only`
 
+## Cutover Rollback Window
+- Rollback procedure must be prepared and validated before production cutover.
+- Rollback window remains active for **7 calendar days after release**.
+- During rollback window, each production issue in critical flows is assessed against rollback triggers before applying forward fixes.
+
+## Required Regression After Every Sprint
+- registration/login
+- complaint generation
+- admin review
+- exam import
