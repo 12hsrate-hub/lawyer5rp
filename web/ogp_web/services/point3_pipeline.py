@@ -45,6 +45,69 @@ _STOPWORDS = {
     "with",
 }
 
+_INPUT_STATEMENT_MARKERS = (
+    "по словам",
+    "со слов",
+    "как утверждает",
+    "как указал",
+    "заявил",
+    "заявила",
+    "заявили",
+    "утверждает",
+    "утверждают",
+)
+_INPUT_ASSUMPTION_MARKERS = (
+    "возможно",
+    "предположительно",
+    "вероятно",
+    "скорее всего",
+    "может быть",
+    "полагаю",
+    "думаю",
+    "мне кажется",
+)
+_INPUT_ACTION_TERMS = (
+    "задерж",
+    "арест",
+    "достав",
+    "обыск",
+    "досмотр",
+    "процессуальн",
+    "запрос",
+    "допрос",
+    "штраф",
+    "тикет",
+    "наручник",
+)
+_INPUT_EVIDENCE_TERMS = (
+    "договор",
+    "запрос",
+    "ответ",
+    "видео",
+    "видеозап",
+    "запись",
+    "материал",
+    "доказатель",
+    "ссылка",
+    "скрин",
+    "рапорт",
+    "протокол",
+)
+_VIDEO_TERMS = ("видео", "видеозап", "видеофиксац", "запись", "bodycam", "бодикам")
+_VIDEO_ABSENCE_MARKERS = ("отсутств", "не предостав", "не поступ", "нет", "не было")
+_VIDEO_PRESENCE_MARKERS = ("предостав", "прилож", "имеется", "есть", "ссылка", "bodycam", "бодикам")
+_GENERIC_ACTOR_MARKERS = ("человек", "лицо", "гражданин", "он", "она", "они")
+_PROTECTED_TERM_GROUPS: dict[str, tuple[str, ...]] = {
+    "detention": ("задержан", "задержание", "задержали"),
+    "arrest": ("арест", "арестован", "арестовали"),
+    "delivery": ("доставлен", "доставление", "доставили"),
+    "search": ("обыск", "обыскали"),
+    "inspection": ("досмотр", "досматрив"),
+    "advocate_request": ("адвокатский запрос",),
+    "video_recording": ("видеозапись", "видеофиксация", "видео", "запись"),
+    "procedural_actions": ("процессуальные действия", "процессуального порядка"),
+}
+
 
 @dataclass(frozen=True)
 class SelectedNorm:
@@ -153,6 +216,34 @@ class PolicyDecision:
 
 
 @dataclass(frozen=True)
+class InputAuditIssue:
+    code: str
+    message: str
+
+    def as_contract(self) -> dict[str, object]:
+        return {
+            "code": self.code,
+            "message": self.message,
+        }
+
+
+@dataclass(frozen=True)
+class InputAuditResult:
+    warnings: tuple[InputAuditIssue, ...]
+    protected_terms: tuple[str, ...]
+
+    @property
+    def warning_codes(self) -> tuple[str, ...]:
+        return tuple(item.code for item in self.warnings)
+
+    def as_contract(self) -> dict[str, object]:
+        return {
+            "warnings": [item.as_contract() for item in self.warnings],
+            "protected_terms": list(self.protected_terms),
+        }
+
+
+@dataclass(frozen=True)
 class ValidationIssue:
     code: str
     severity: str
@@ -194,6 +285,7 @@ class RemediationOutcome:
 @dataclass(frozen=True)
 class Point3PipelineContext:
     normalized_input: NormalizedSuggestInput
+    input_audit: InputAuditResult
     facts: tuple[ExtractedFact, ...]
     triggers: tuple[NormTrigger, ...]
     policy_decision: PolicyDecision
@@ -208,6 +300,7 @@ class Point3PipelineContext:
         )
         payload = {
             "normalized_input": normalized_payload,
+            "input_audit": self.input_audit.as_contract(),
             "facts": [item.as_contract() for item in self.facts],
             "triggers": [item.as_contract() for item in self.triggers],
             **self.policy_decision.as_contract(),
@@ -242,6 +335,7 @@ def build_point3_pipeline_context(
         retrieved_law_context=retrieved_law_context,
         selected_norms=selected_norms,
     )
+    input_audit = audit_input(normalized_input)
     facts = extract_atomic_facts(normalized_input)
     triggers = match_norm_triggers(normalized_input=normalized_input, facts=facts)
     avg_confidence, risk_level = score_policy_risk(normalized_input=normalized_input, triggers=triggers)
@@ -252,6 +346,7 @@ def build_point3_pipeline_context(
     )
     return Point3PipelineContext(
         normalized_input=normalized_input,
+        input_audit=input_audit,
         facts=facts,
         triggers=triggers,
         policy_decision=decision,
@@ -298,6 +393,89 @@ def normalize_suggest_input(
         retrieved_law_context=_normalize_multiline(retrieved_law_context),
         retrieval_confidence=_normalize_inline(retrieval_confidence) or "low",
         selected_norms=normalized_norms,
+    )
+
+
+def audit_input(normalized_input: NormalizedSuggestInput) -> InputAuditResult:
+    warnings: list[InputAuditIssue] = []
+    draft_text = normalized_input.draft_text
+    lowered_draft = draft_text.lower()
+    event_dt = normalized_input.event_datetime.strip()
+
+    if event_dt and not _DATE_PATTERN.search(event_dt):
+        warnings.append(
+            InputAuditIssue(
+                code="input_partial_datetime",
+                message="Event date/time looks incomplete or non-standard.",
+            )
+        )
+    if not _contains_any_substring(lowered_draft, _INPUT_ACTION_TERMS):
+        warnings.append(
+            InputAuditIssue(
+                code="input_missing_action_reference",
+                message="The draft may be missing a clear reference to the underlying procedural action.",
+            )
+        )
+    if not _contains_any_substring(lowered_draft, _INPUT_EVIDENCE_TERMS):
+        warnings.append(
+            InputAuditIssue(
+                code="input_missing_evidence_reference",
+                message="The draft may be missing an explicit evidence or document reference.",
+            )
+        )
+    if _contains_any_substring(lowered_draft, _INPUT_STATEMENT_MARKERS):
+        warnings.append(
+            InputAuditIssue(
+                code="input_reported_speech_detected",
+                message="The draft contains reported speech markers and should preserve that uncertainty.",
+            )
+        )
+    if _contains_any_substring(lowered_draft, _INPUT_ASSUMPTION_MARKERS):
+        warnings.append(
+            InputAuditIssue(
+                code="input_assumption_language_detected",
+                message="The draft contains assumption markers and should remain cautious.",
+            )
+        )
+    if _has_conflicting_date_mentions(normalized_input):
+        warnings.append(
+            InputAuditIssue(
+                code="input_conflicting_dates",
+                message="The draft may contain conflicting date or time references.",
+            )
+        )
+    if _has_video_status_conflict(lowered_draft):
+        warnings.append(
+            InputAuditIssue(
+                code="input_conflicting_video_status",
+                message="The draft may simultaneously imply both missing and available video evidence.",
+            )
+        )
+    if _has_role_ambiguity(lowered_draft, normalized_input.target_person):
+        warnings.append(
+            InputAuditIssue(
+                code="input_ambiguous_actor_reference",
+                message="The acting person may be ambiguous in the draft.",
+            )
+        )
+    if _has_protected_term_collision(lowered_draft, "detention", "arrest"):
+        warnings.append(
+            InputAuditIssue(
+                code="input_term_collision_detention_arrest",
+                message="The draft uses both detention and arrest terminology and may need manual review.",
+            )
+        )
+    if _has_protected_term_collision(lowered_draft, "search", "inspection"):
+        warnings.append(
+            InputAuditIssue(
+                code="input_term_collision_search_inspection",
+                message="The draft uses both search and inspection terminology and may need manual review.",
+            )
+        )
+
+    return InputAuditResult(
+        warnings=tuple(_dedupe_input_issues(warnings)),
+        protected_terms=tuple(_extract_protected_terms(lowered_draft)),
     )
 
 
@@ -845,6 +1023,59 @@ def _contains_any_substring(text: str, values: Iterable[str]) -> bool:
     if not normalized_text:
         return False
     return any(str(value or "").strip().lower() in normalized_text for value in values if str(value or "").strip())
+
+
+def _has_conflicting_date_mentions(normalized_input: NormalizedSuggestInput) -> bool:
+    draft_dates = {item for item in _DATE_PATTERN.findall(normalized_input.draft_text) if item}
+    event_dt = normalized_input.event_datetime.strip()
+    if not draft_dates or not event_dt:
+        return len(draft_dates) > 1
+    return len(draft_dates) > 1 or any(item != event_dt for item in draft_dates)
+
+
+def _has_video_status_conflict(lowered_draft: str) -> bool:
+    if not _contains_any_substring(lowered_draft, _VIDEO_TERMS):
+        return False
+    return _contains_any_substring(lowered_draft, _VIDEO_ABSENCE_MARKERS) and _contains_any_substring(
+        lowered_draft,
+        _VIDEO_PRESENCE_MARKERS,
+    )
+
+
+def _has_role_ambiguity(lowered_draft: str, target_person: str) -> bool:
+    normalized_target = _normalize_inline(target_person).lower()
+    if normalized_target and normalized_target in lowered_draft:
+        return False
+    has_generic_actor = any(
+        re.search(rf"\b{re.escape(marker)}\b", lowered_draft, flags=re.IGNORECASE)
+        for marker in _GENERIC_ACTOR_MARKERS
+    )
+    return has_generic_actor and _contains_any_substring(lowered_draft, _INPUT_ACTION_TERMS)
+
+
+def _has_protected_term_collision(lowered_draft: str, left_group: str, right_group: str) -> bool:
+    left_terms = _PROTECTED_TERM_GROUPS.get(left_group, ())
+    right_terms = _PROTECTED_TERM_GROUPS.get(right_group, ())
+    return _contains_any_substring(lowered_draft, left_terms) and _contains_any_substring(lowered_draft, right_terms)
+
+
+def _extract_protected_terms(lowered_draft: str) -> list[str]:
+    protected_terms: list[str] = []
+    for canonical_name, variants in _PROTECTED_TERM_GROUPS.items():
+        if _contains_any_substring(lowered_draft, variants):
+            protected_terms.append(canonical_name)
+    return protected_terms
+
+
+def _dedupe_input_issues(issues: Sequence[InputAuditIssue]) -> list[InputAuditIssue]:
+    deduped: list[InputAuditIssue] = []
+    seen: set[str] = set()
+    for issue in issues:
+        if issue.code in seen:
+            continue
+        seen.add(issue.code)
+        deduped.append(issue)
+    return deduped
 
 
 def _extract_allowed_numbers(context: Point3PipelineContext) -> set[str]:

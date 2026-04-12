@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-SUGGEST_PROMPT_VERSION = "suggest.v28"
+SUGGEST_PROMPT_VERSION = "suggest.v29"
 PRINCIPAL_SCAN_PROMPT_VERSION = "principal_scan.v2"
 EXAM_SCORING_PROMPT_MODE_FULL = "full"
 EXAM_SCORING_PROMPT_MODE_COMPACT = "compact"
@@ -331,6 +331,8 @@ Never invent facts, dates, documents, numbers, URLs, or legal references not con
 Return one cohesive paragraph for complaint point 3.
 Use only draft facts plus the explicit policy and trigger data from pipeline_context.
 If confidence is weak, prefer cautious procedural language over hard legal conclusions.
+If pipeline_context shows input uncertainty markers, preserve that uncertainty instead of turning it into an established fact.
+Do not replace protected legal terms from pipeline_context with nearby but different procedural terms.
 """,
             ),
             ("generation_mode", mode_rules),
@@ -349,6 +351,7 @@ If confidence is weak, prefer cautious procedural language over hard legal concl
 - No lists, markdown, BBCode, or service notes.
 - No categorical accusations if support is weak.
 - Preserve a restrained, procedural, legal-business tone.
+- If pipeline_context contains input conflicts or ambiguity warnings, do not resolve them on your own; keep wording cautious.
 """,
             ),
             (

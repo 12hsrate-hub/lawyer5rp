@@ -112,6 +112,8 @@ class SuggestTextResult:
     avg_trigger_confidence: float = 0.0
     remediation_retries: int = 0
     safe_fallback_used: bool = False
+    input_warning_codes: tuple[str, ...] = ()
+    protected_terms: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1239,6 +1241,8 @@ def _suggest_metrics_meta(
     avg_trigger_confidence = float(getattr(result, "avg_trigger_confidence", 0.0) or 0.0)
     remediation_retries = int(getattr(result, "remediation_retries", 0) or 0)
     safe_fallback_used = bool(getattr(result, "safe_fallback_used", False))
+    input_warning_codes = tuple(str(item or "").strip() for item in (getattr(result, "input_warning_codes", ()) or ()) if str(item or "").strip())
+    protected_terms = tuple(str(item or "").strip() for item in (getattr(result, "protected_terms", ()) or ()) if str(item or "").strip())
     retrieval_ms = int(getattr(result, "retrieval_ms", 0) or 0)
     openai_ms = int(getattr(result, "openai_ms", 0) or 0)
     total_suggest_ms = int(getattr(result, "total_suggest_ms", 0) or 0)
@@ -1277,6 +1281,8 @@ def _suggest_metrics_meta(
         "avg_trigger_confidence": avg_trigger_confidence,
         "remediation_retries": remediation_retries,
         "safe_fallback_used": safe_fallback_used,
+        "input_warning_codes": list(input_warning_codes),
+        "protected_terms": list(protected_terms),
         "retrieval_ms": retrieval_ms,
         "openai_ms": openai_ms,
         "total_suggest_ms": total_suggest_ms,
@@ -1906,6 +1912,8 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
             "avg_trigger_confidence": point3_context.policy_decision.avg_confidence,
             "validator_warning_codes": list(validation_result.warning_codes),
             "validator_info_codes": list(validation_result.info_codes),
+            "input_warning_codes": list(point3_context.input_audit.warning_codes),
+            "protected_terms": list(point3_context.input_audit.protected_terms),
             "remediation_retries": remediation.retries_used,
             "safe_fallback_used": remediation.safe_fallback_used,
         }
@@ -1920,6 +1928,7 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
                 list(guard_result.warning_codes)
                 + list(validation_result.warning_codes)
                 + list(budget_assessment.warnings)
+                + list(point3_context.input_audit.warning_codes)
                 + (
                     ["suggest_low_confidence_context"]
                     if suggest_context.retrieval_context_mode == "low_confidence_context"
@@ -1958,6 +1967,8 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
         avg_trigger_confidence=point3_context.policy_decision.avg_confidence,
         remediation_retries=remediation.retries_used,
         safe_fallback_used=remediation.safe_fallback_used,
+        input_warning_codes=point3_context.input_audit.warning_codes,
+        protected_terms=point3_context.input_audit.protected_terms,
     )
 
 
