@@ -1101,6 +1101,22 @@ class AdminMetricsStore:
             )
         return output.getvalue()
 
+    def list_error_events(
+        self,
+        *,
+        event_search: str = "",
+        event_type: str = "",
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        with closing(self._connect()) as conn:
+            return self._load_recent_events(
+                conn,
+                event_search=event_search,
+                event_type=event_type,
+                failed_events_only=True,
+                limit=max(1, int(limit or 100)),
+            )
+
 
 _DEFAULT_ADMIN_METRICS_STORE: AdminMetricsStore | None = None
 

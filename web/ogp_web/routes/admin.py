@@ -587,6 +587,12 @@ async def admin_overview(
         "recent_events": [],
         "recent_events_filtered_total": 0,
         "filters": {"user_sort": user_sort},
+        "error_explorer": {
+            "items": [],
+            "total": 0,
+            "by_event_type": [],
+            "by_path": [],
+        },
     }
 
     users: list[dict[str, Any]] = []
@@ -646,6 +652,34 @@ async def admin_overview(
     exam_import.setdefault("failed_entries", [])
 
     payload["exam_import"] = exam_import
+    try:
+        error_items = metrics_store.list_error_events(
+            event_search=event_search,
+            event_type=event_type,
+            limit=120,
+        )
+        by_event_type: dict[str, int] = {}
+        by_path: dict[str, int] = {}
+        for item in error_items:
+            event_key = str(item.get("event_type") or "unknown")
+            path_key = str(item.get("path") or "-")
+            by_event_type[event_key] = by_event_type.get(event_key, 0) + 1
+            by_path[path_key] = by_path.get(path_key, 0) + 1
+        payload["error_explorer"] = {
+            "items": error_items,
+            "total": len(error_items),
+            "by_event_type": [
+                {"event_type": key, "count": value}
+                for key, value in sorted(by_event_type.items(), key=lambda pair: (-pair[1], pair[0]))[:10]
+            ],
+            "by_path": [
+                {"path": key, "count": value}
+                for key, value in sorted(by_path.items(), key=lambda pair: (-pair[1], pair[0]))[:10]
+            ],
+        }
+    except Exception as exc:  # noqa: BLE001
+        partial_errors.append(_normalize_api_error(exc, source="error_explorer"))
+
     payload["partial_errors"] = partial_errors
     return payload
 

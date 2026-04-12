@@ -6,6 +6,7 @@ const performanceHost = document.getElementById("admin-performance");
 const usersHost = document.getElementById("admin-users");
 const eventsHost = document.getElementById("admin-events");
 const adminEventsHost = document.getElementById("admin-admin-events");
+const errorExplorerHost = document.getElementById("admin-errors-explorer");
 const endpointsHost = document.getElementById("admin-top-endpoints");
 const activeFiltersHost = document.getElementById("admin-active-filters");
 const userSearchField = document.getElementById("admin-user-search");
@@ -329,6 +330,7 @@ function showOverviewLoading() {
   renderLoadingState(examImportHost, { count: 3 });
   renderLoadingState(endpointsHost, { count: 3, compact: true });
   renderLoadingState(usersHost, { count: 4, compact: true });
+  renderLoadingState(errorExplorerHost, { count: 3, compact: true });
   renderLoadingState(adminEventsHost, { count: 3, compact: true });
   renderLoadingState(eventsHost, { count: 3, compact: true });
 }
@@ -908,6 +910,70 @@ function renderEvents(events) {
   `;
 }
 
+function renderErrorExplorer(payload) {
+  if (!errorExplorerHost) {
+    return;
+  }
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  const byType = Array.isArray(payload?.by_event_type) ? payload.by_event_type : [];
+  const byPath = Array.isArray(payload?.by_path) ? payload.by_path : [];
+
+  if (!items.length) {
+    errorExplorerHost.innerHTML = '<p class="legal-section__description">Ошибок по текущему фильтру не найдено.</p>';
+    return;
+  }
+
+  const topTypeText = byType.slice(0, 3).map((item) => `${item.event_type}: ${item.count}`).join(" · ");
+  const topPathText = byPath.slice(0, 3).map((item) => `${item.path}: ${item.count}`).join(" · ");
+
+  errorExplorerHost.innerHTML = `
+    <div class="admin-section-toolbar">
+      <p class="legal-section__description">
+        Ошибок: ${escapeHtml(String(payload?.total || items.length))}
+      </p>
+      <p class="legal-section__description">
+        Топ типов: ${escapeHtml(topTypeText || "—")}
+      </p>
+      <p class="legal-section__description">
+        Топ endpoint: ${escapeHtml(topPathText || "—")}
+      </p>
+    </div>
+    <div class="legal-table-shell">
+      <table class="legal-table admin-table admin-table--compact">
+        <thead>
+          <tr>
+            <th>Время</th>
+            <th>Тип</th>
+            <th>Endpoint</th>
+            <th>HTTP</th>
+            <th>Ошибка</th>
+            <th>request_id</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items
+            .map((event) => {
+              const meta = event.meta || {};
+              const errorText = String(meta.error_message || meta.error_type || "-");
+              const requestId = String(meta.request_id || "-");
+              return `
+                <tr>
+                  <td>${escapeHtml(event.created_at || "-")}</td>
+                  <td>${renderBadge(event.event_type || "-", "danger")}</td>
+                  <td class="admin-table__path" title="${escapeHtml(event.path || "-")}">${escapeHtml(event.path || "-")}</td>
+                  <td>${renderBadge(String(event.status_code ?? "-"), "danger")}</td>
+                  <td title="${escapeHtml(errorText)}">${escapeHtml(errorText)}</td>
+                  <td title="${escapeHtml(requestId)}">${escapeHtml(requestId)}</td>
+                </tr>
+              `;
+            })
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function renderAdminAudit(events) {
   if (!adminEventsHost) {
     return;
@@ -1272,6 +1338,7 @@ async function loadAdminOverview({ silent = false } = {}) {
     renderExamImport(payload.exam_import || null);
     renderTopEndpoints(payload.top_endpoints || []);
     renderUsers(payload.users || [], payload.filters?.user_sort || "complaints");
+    renderErrorExplorer(payload.error_explorer || null);
     renderAdminAudit(payload.recent_events || []);
     renderEvents(payload.recent_events || []);
     const partialErrors = Array.isArray(payload.partial_errors) ? payload.partial_errors : [];

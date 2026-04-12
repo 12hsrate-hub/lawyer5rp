@@ -199,6 +199,10 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("failed_entries", payload["exam_import"])
         self.assertIsInstance(payload["exam_import"]["recent_entries"], list)
         self.assertIsInstance(payload["exam_import"]["failed_entries"], list)
+        self.assertIn("error_explorer", payload)
+        self.assertIn("items", payload["error_explorer"])
+        self.assertIn("by_event_type", payload["error_explorer"])
+        self.assertIn("by_path", payload["error_explorer"])
 
     def test_admin_overview_supports_user_sort_and_csv_exports(self):
         self._register_verify_and_login("alpha", "alpha@example.com")
@@ -300,6 +304,7 @@ class WebApiTests(unittest.TestCase):
             self.assertIn("exam_import", payload)
             self.assertIsInstance(payload["exam_import"].get("recent_entries"), list)
             self.assertIsInstance(payload["exam_import"].get("failed_entries"), list)
+            self.assertIn("error_explorer", payload)
         finally:
             self.client.app.state.exam_answers_store = original_exam_store
 

@@ -43,6 +43,7 @@
       {% endif %}
       {% if admin_focus == "users" %}
       <a class="legal-section-jump__link" href="#admin-section-users">Пользователи</a>
+      <a class="legal-section-jump__link" href="#admin-errors-explorer-content">Error Explorer</a>
       <a class="legal-section-jump__link" href="#admin-section-events">События</a>
       {% endif %}
     </nav>
@@ -247,6 +248,30 @@
         </div>
         <div id="admin-users-content" class="admin-collapsible__content">
           <div id="admin-users"></div>
+        </div>
+      </section>
+
+      <section class="legal-subcard admin-collapsible" data-collapsible-section="error-explorer">
+        <div class="legal-subcard__header admin-collapsible__header">
+          <div>
+            <span class="legal-field__label">Error Explorer</span>
+            <p class="legal-section__description">
+              Быстрый срез последних ошибок API: статус, тип события, endpoint и request id для трассировки.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="ghost-button admin-collapsible__toggle"
+            data-collapsible-target="admin-errors-explorer-content"
+            data-expanded-default="false"
+            aria-expanded="false"
+            aria-controls="admin-errors-explorer-content"
+          >
+            Показать
+          </button>
+        </div>
+        <div id="admin-errors-explorer-content" class="admin-collapsible__content" hidden>
+          <div id="admin-errors-explorer"></div>
         </div>
       </section>
 
