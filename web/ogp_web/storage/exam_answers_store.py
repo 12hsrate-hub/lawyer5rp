@@ -110,6 +110,103 @@ class ExamAnswersStore:
             return default
         return value
 
+    def _encode_json_value(self, value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+    @staticmethod
+    def _row_value(row: Any, key: str, default: Any = None) -> Any:
+        if isinstance(row, dict):
+            return row.get(key, default)
+        try:
+            return row[key]
+        except (KeyError, TypeError, IndexError):
+            return default
+
+    def _build_existing_import_snapshot(self, row: Any) -> dict[str, object]:
+        payload = self._decode_json_value(self._row_value(row, "payload_json"), {})
+        if not isinstance(payload, dict):
+            payload = {}
+        exam_scores = self._decode_json_value(self._row_value(row, "exam_scores_json"), [])
+        if not isinstance(exam_scores, list):
+            exam_scores = []
+        source_row = int(self._row_value(row, "source_row") or 0)
+        submitted_at = str(self._row_value(row, "submitted_at") or "")
+        return {
+            "id": int(self._row_value(row, "id") or 0),
+            "source_row": source_row,
+            "submitted_at": submitted_at,
+            "full_name": str(self._row_value(row, "full_name") or ""),
+            "discord_tag": str(self._row_value(row, "discord_tag") or ""),
+            "passport": str(self._row_value(row, "passport") or ""),
+            "exam_format": str(self._row_value(row, "exam_format") or ""),
+            "payload_json": self._encode_json_value(payload),
+            "answer_count": int(self._row_value(row, "answer_count") or 0),
+            "import_key": str(self._row_value(row, "import_key") or ""),
+            "score_signature": self._build_score_signature(
+                payload=payload,
+                exam_format=str(self._row_value(row, "exam_format") or ""),
+            ),
+            "has_scores": bool(exam_scores)
+            or self._row_value(row, "average_score") is not None
+            or self._row_value(row, "question_g_score") is not None,
+        }
+
+    @staticmethod
+    def _import_match_sort_key(item: dict[str, object], *, source_row: int, submitted_at: str) -> tuple[int, int, int, int, int, int]:
+        item_source_row = int(item.get("source_row") or 0)
+        return (
+            1 if item_source_row > 0 else 0,
+            1 if item_source_row == source_row else 0,
+            1 if str(item.get("submitted_at") or "") == submitted_at else 0,
+            1 if bool(item.get("has_scores")) else 0,
+            -abs(item_source_row - source_row),
+            int(item.get("id") or 0),
+        )
+
+    def _select_import_match(
+        self,
+        *,
+        row: dict[str, object],
+        existing_rows: list[dict[str, object]],
+        matched_ids: set[int],
+    ) -> dict[str, object] | None:
+        import_key = str(row["import_key"])
+        source_row = int(row["source_row"])
+        submitted_at = str(row["submitted_at"])
+        score_signature = str(row["score_signature"])
+
+        exact_matches = [
+            item
+            for item in existing_rows
+            if int(item["id"]) not in matched_ids and str(item.get("import_key") or "") == import_key
+        ]
+        if exact_matches:
+            return max(
+                exact_matches,
+                key=lambda item: self._import_match_sort_key(
+                    item,
+                    source_row=source_row,
+                    submitted_at=submitted_at,
+                ),
+            )
+
+        signature_matches = [
+            item
+            for item in existing_rows
+            if int(item["id"]) not in matched_ids and str(item.get("score_signature") or "") == score_signature
+        ]
+        if not signature_matches:
+            return None
+
+        return max(
+            signature_matches,
+            key=lambda item: self._import_match_sort_key(
+                item,
+                source_row=source_row,
+                submitted_at=submitted_at,
+            ),
+        )
+
     def healthcheck(self) -> dict[str, object]:
         return self.backend.healthcheck()
 
@@ -321,8 +418,7 @@ class ExamAnswersStore:
                     "score_signature": self._build_score_signature(payload=payload, exam_format=exam_format),
                 }
             )
-
-        incoming_by_key = {str(row["import_key"]): row for row in normalized_rows}
+        normalized_rows = list({str(row["import_key"]): row for row in normalized_rows}.values())
 
         with closing(self._connect()) as conn:
             if not self.is_postgres_backend:
@@ -332,96 +428,59 @@ class ExamAnswersStore:
                 SELECT
                     id,
                     source_row,
-                    import_key
+                    submitted_at,
+                    full_name,
+                    discord_tag,
+                    passport,
+                    exam_format,
+                    payload_json,
+                    answer_count,
+                    import_key,
+                    question_g_score,
+                    exam_scores_json,
+                    average_score
                 FROM exam_answers
                 """
             ).fetchall()
+            existing_snapshots = [self._build_existing_import_snapshot(row) for row in existing_rows]
+            matched_ids: set[int] = set()
+            matched_rows: list[dict[str, object] | None] = []
+            for row in normalized_rows:
+                match = self._select_import_match(
+                    row=row,
+                    existing_rows=existing_snapshots,
+                    matched_ids=matched_ids,
+                )
+                if match is not None:
+                    matched_ids.add(int(match["id"]))
+                matched_rows.append(match)
 
             archived_source_row = self._next_archived_source_row(conn)
-            for existing in existing_rows:
-                import_key = str(existing["import_key"] or "")
-                target_row = incoming_by_key.get(import_key)
-                should_archive = target_row is None or int(existing["source_row"] or 0) != int(target_row["source_row"])
-                if should_archive and int(existing["source_row"] or 0) > 0:
-                    conn.execute(
-                        f"UPDATE exam_answers SET source_row = {placeholder} WHERE id = {placeholder}",
-                        (archived_source_row, existing["id"]),
-                    )
-                    archived_source_row -= 1
+            for existing in existing_snapshots:
+                if int(existing["id"]) in matched_ids or int(existing["source_row"] or 0) <= 0:
+                    continue
+                conn.execute(
+                    f"UPDATE exam_answers SET import_key = NULL, source_row = {placeholder} WHERE id = {placeholder}",
+                    (archived_source_row, existing["id"]),
+                )
+                archived_source_row -= 1
 
-            for row in normalized_rows:
+            for row, existing in zip(normalized_rows, matched_rows):
                 source_row = int(row["source_row"])
                 submitted_at = str(row["submitted_at"])
                 full_name = str(row["full_name"])
                 discord_tag = str(row["discord_tag"])
                 passport = str(row["passport"])
                 exam_format = str(row["exam_format"])
-                payload_json = json.dumps(row["payload"], ensure_ascii=False)
+                payload_json = self._encode_json_value(row["payload"])
                 answer_count = int(row.get("answer_count", 0) or 0)
                 import_key = str(row["import_key"])
-                existing = conn.execute(
-                    f"""
-                    SELECT
-                        id,
-                        source_row,
-                        submitted_at,
-                        full_name,
-                        discord_tag,
-                        passport,
-                        exam_format,
-                        payload_json,
-                        answer_count
-                    FROM exam_answers
-                    WHERE import_key = {placeholder}
-                    """,
-                    (import_key,),
-                ).fetchone()
 
-                if existing is None:
-                    candidates = conn.execute(
-                        f"""
-                        SELECT
-                            id,
-                            source_row,
-                            submitted_at,
-                            full_name,
-                            discord_tag,
-                            passport,
-                            exam_format,
-                            payload_json,
-                            answer_count,
-                            import_key
-                        FROM exam_answers
-                        WHERE submitted_at = {placeholder}
-                        """,
-                        (submitted_at,),
-                    ).fetchall()
-                    matching_candidates: list[sqlite3.Row] = []
-                    for candidate in candidates:
-                        candidate_payload = self._decode_json_value(candidate["payload_json"], {})
-                        if not isinstance(candidate_payload, dict):
-                            candidate_payload = {}
-                        candidate_signature = self._build_score_signature(
-                            payload=candidate_payload,
-                            exam_format=str(candidate["exam_format"] or ""),
-                        )
-                        if candidate_signature == str(row["score_signature"]):
-                            matching_candidates.append(candidate)
-                    if matching_candidates:
-                        matching_candidates.sort(
-                            key=lambda item: (
-                                1 if int(item["source_row"] or 0) > 0 else 0,
-                                -abs(int(item["source_row"] or 0) - source_row),
-                                -(int(item["id"] or 0)),
-                            ),
-                            reverse=True,
-                        )
-                        existing = matching_candidates[0]
-                        if str(existing["import_key"] or "") != import_key:
-                            conn.execute(
-                                f"UPDATE exam_answers SET import_key = {placeholder} WHERE id = {placeholder}",
-                                (import_key, existing["id"]),
-                            )
+                if existing is not None and str(existing.get("import_key") or "") != import_key:
+                    conn.execute(
+                        f"UPDATE exam_answers SET import_key = {placeholder} WHERE id = {placeholder}",
+                        (import_key, existing["id"]),
+                    )
 
                 if existing is None:
                     conn.execute(
@@ -458,25 +517,18 @@ class ExamAnswersStore:
                 else:
                     has_changes = any(
                         [
-                            int(existing["source_row"] or 0) != source_row,
-                            str(existing["submitted_at"] or "") != submitted_at,
-                            str(existing["full_name"] or "") != full_name,
-                            str(existing["discord_tag"] or "") != discord_tag,
-                            str(existing["passport"] or "") != passport,
-                            str(existing["exam_format"] or "") != exam_format,
-                            str(existing["payload_json"] or "") != payload_json,
-                            int(existing["answer_count"] or 0) != answer_count,
+                            int(existing.get("source_row") or 0) != source_row,
+                            str(existing.get("submitted_at") or "") != submitted_at,
+                            str(existing.get("full_name") or "") != full_name,
+                            str(existing.get("discord_tag") or "") != discord_tag,
+                            str(existing.get("passport") or "") != passport,
+                            str(existing.get("exam_format") or "") != exam_format,
+                            str(existing.get("payload_json") or "") != payload_json,
+                            int(existing.get("answer_count") or 0) != answer_count,
                         ]
                     )
                     if has_changes:
-                        existing_payload = self._decode_json_value(existing["payload_json"], {})
-                        if not isinstance(existing_payload, dict):
-                            existing_payload = {}
-                        existing_score_signature = self._build_score_signature(
-                            payload=existing_payload,
-                            exam_format=str(existing["exam_format"] or ""),
-                        )
-                        if existing_score_signature == str(row["score_signature"]):
+                        if str(existing.get("score_signature") or "") == str(row["score_signature"]):
                             conn.execute(
                                 f"""
                                 UPDATE exam_answers

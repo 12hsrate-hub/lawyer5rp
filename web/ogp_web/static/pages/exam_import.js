@@ -162,6 +162,9 @@ function formatErrorMessage(error, fallbackText) {
   if (lowered.includes(TASK_INTERRUPTION_MARKER)) {
     return "\u041f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0430\u044f \u0444\u043e\u043d\u043e\u0432\u0430\u044f \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u043f\u0440\u0435\u0440\u0432\u0430\u043b\u0430\u0441\u044c \u043f\u043e\u0441\u043b\u0435 \u043f\u0435\u0440\u0435\u0437\u0430\u043f\u0443\u0441\u043a\u0430 \u0441\u0435\u0440\u0432\u0438\u0441\u0430. \u0414\u0430\u043d\u043d\u044b\u0435 \u0438\u043c\u043f\u043e\u0440\u0442\u0430 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u044b, \u043c\u043e\u0436\u043d\u043e \u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0443 \u0435\u0449\u0435 \u0440\u0430\u0437.";
   }
+  if (lowered.includes("\u043b\u0438\u043c\u0438\u0442 \u043e\u0434\u043d\u043e\u0432\u0440\u0435\u043c\u0435\u043d\u043d\u044b\u0445") || lowered.includes("too many requests") || lowered.includes("429")) {
+    return "\u0421\u0435\u0439\u0447\u0430\u0441 \u0443\u0436\u0435 \u0438\u0434\u0435\u0442 \u0434\u0440\u0443\u0433\u0430\u044f \u0444\u043e\u043d\u043e\u0432\u0430\u044f \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0430. \u0414\u043e\u0436\u0434\u0438\u0442\u0435\u0441\u044c \u0435\u0435 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u0438\u044f \u0438 \u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u0435 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0443 \u0441\u043d\u043e\u0432\u0430.";
+  }
   return raw;
 }
 
@@ -397,12 +400,41 @@ function updateRowAverage(sourceRow, averageText) {
   renderCurrentRows();
 }
 
+function extractPayloadErrorText(payload, fallbackText) {
+  const detail = payload?.detail;
+  if (Array.isArray(detail)) {
+    const normalized = detail.map((item) => String(item || "").trim()).filter(Boolean);
+    if (normalized.length) {
+      return normalized.join("\n");
+    }
+  }
+  if (typeof detail === "string" && detail.trim()) {
+    return detail.trim();
+  }
+  if (typeof payload?.error === "string" && payload.error.trim()) {
+    return payload.error.trim();
+  }
+  return fallbackText;
+}
+
+function extractTaskErrorText(task, fallbackText) {
+  const taskError = String(task?.error || "").trim();
+  if (taskError) {
+    return taskError;
+  }
+  const currentSourceRow = Number(task?.progress?.current_source_row || task?.source_row || 0);
+  if (Number.isFinite(currentSourceRow) && currentSourceRow > 0) {
+    return `\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u043e\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u043b\u0430\u0441\u044c \u043d\u0430 \u0441\u0442\u0440\u043e\u043a\u0435 ${currentSourceRow}.`;
+  }
+  return fallbackText;
+}
+
 async function requestJson(url, errorText, options = { method: "GET" }) {
   const response = await apiFetch(url, options);
   const payload = await parsePayload(response);
   if (!response.ok) {
     redirectIfUnauthorized(response.status);
-    throw new Error(payload.detail || errorText);
+    throw new Error(extractPayloadErrorText(payload, errorText));
   }
   return payload;
 }
@@ -460,7 +492,7 @@ async function pollTaskUntilFinished(taskId, errorText) {
     }
     if (task.status === "failed") {
       clearActiveTask();
-      throw new Error(task.error || errorText);
+      throw new Error(extractTaskErrorText(task, errorText));
     }
     await new Promise((resolve) => window.setTimeout(resolve, 1500));
   }

@@ -622,6 +622,26 @@ class FakeExamAnswersConnection:
                 for row in sorted(self.state["rows"], key=lambda item: item["id"])
             ]
             return FakeCursor(rowcount=len(rows), rows=rows)
+        if normalized.startswith("SELECT id, source_row, submitted_at, full_name, discord_tag, passport, exam_format, payload_json, answer_count, import_key, question_g_score, exam_scores_json, average_score FROM exam_answers"):
+            rows = [
+                {
+                    "id": row["id"],
+                    "source_row": row["source_row"],
+                    "submitted_at": row["submitted_at"],
+                    "full_name": row["full_name"],
+                    "discord_tag": row["discord_tag"],
+                    "passport": row["passport"],
+                    "exam_format": row["exam_format"],
+                    "payload_json": row["payload_json"],
+                    "answer_count": row["answer_count"],
+                    "import_key": row["import_key"],
+                    "question_g_score": row["question_g_score"],
+                    "exam_scores_json": row["exam_scores_json"],
+                    "average_score": row["average_score"],
+                }
+                for row in sorted(self.state["rows"], key=lambda item: item["id"])
+            ]
+            return FakeCursor(rowcount=len(rows), rows=rows)
         if normalized == "SELECT MIN(source_row) AS min_source_row FROM exam_answers":
             values = [row["source_row"] for row in self.state["rows"]]
             return FakeCursor(rowcount=1, one={"min_source_row": min(values) if values else None})
@@ -1217,6 +1237,73 @@ class WebStorageTests(unittest.TestCase):
             gc.collect()
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_exam_answers_store_preserves_scores_when_timestamp_changes_but_answers_match(self):
+        tmpdir = make_temp_dir()
+        try:
+            root = Path(tmpdir)
+            store = ExamAnswersStore(root / "exam_answers.db", backend=SQLiteBackend(root / "exam_answers.db"))
+            original = {
+                "source_row": 2,
+                "submitted_at": "2026-04-08 12:00:00",
+                "full_name": "Student One",
+                "discord_tag": "student1",
+                "passport": "111111",
+                "exam_format": "remote",
+                "payload": {
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "full_name": "Student One",
+                    "discord_tag": "student1",
+                    "passport": "111111",
+                    "exam_format": "remote",
+                    "Question F": "Answer F",
+                    "Question G": "Answer G",
+                },
+                "answer_count": 2,
+            }
+            updated = {
+                "source_row": 5,
+                "submitted_at": "2026-04-08 12:05:00",
+                "full_name": "Student One Updated",
+                "discord_tag": "student1_new",
+                "passport": "999999",
+                "exam_format": "remote",
+                "payload": {
+                    "submitted_at": "2026-04-08 12:05:00",
+                    "full_name": "Student One Updated",
+                    "discord_tag": "student1_new",
+                    "passport": "999999",
+                    "exam_format": "remote",
+                    "Question F": "Answer F",
+                    "Question G": "Answer G",
+                },
+                "answer_count": 2,
+            }
+
+            store.import_rows([original])
+            store.save_exam_scores(
+                2,
+                [
+                    {"column": "F", "score": 80},
+                    {"column": "G", "score": 100},
+                ],
+            )
+
+            result = store.import_rows([updated])
+            rescored = store.get_entry(5)
+
+            self.assertEqual(result["inserted_count"], 0)
+            self.assertEqual(result["updated_count"], 1)
+            self.assertIsNone(store.get_entry(2))
+            self.assertIsNotNone(rescored)
+            self.assertEqual(rescored["full_name"], "Student One Updated")
+            self.assertEqual(rescored["average_score"], 90.0)
+            self.assertEqual(rescored["average_score_answer_count"], 2)
+            self.assertEqual(rescored["needs_rescore"], 0)
+        finally:
+            del store
+            gc.collect()
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
 
 class PostgresUserStoreTests(unittest.TestCase):
     def make_store(self) -> UserStore:
@@ -1630,8 +1717,8 @@ class PostgresExamAnswersStoreTests(unittest.TestCase):
         first_result = store.import_rows([first])
         updated_result = store.import_rows([updated])
         self.assertEqual(first_result["inserted_count"], 1)
-        self.assertEqual(updated_result["inserted_count"], 1)
-        self.assertEqual(updated_result["updated_count"], 0)
+        self.assertEqual(updated_result["inserted_count"], 0)
+        self.assertEqual(updated_result["updated_count"], 1)
         self.assertEqual(store.count(), 1)
         self.assertEqual(store.get_entry(2)["full_name"], "Updated User")
 
@@ -1710,6 +1797,66 @@ class PostgresExamAnswersStoreTests(unittest.TestCase):
         self.assertEqual(rescored["average_score_answer_count"], 2)
         self.assertEqual(rescored["needs_rescore"], 0)
         self.assertEqual(len(store.list_entries_needing_scores(limit=10)), 0)
+
+    def test_postgres_exam_answers_store_preserves_scores_when_timestamp_changes_but_answers_match(self):
+        store = self.make_store()
+
+        original = {
+            "source_row": 2,
+            "submitted_at": "2026-04-08 12:00:00",
+            "full_name": "Student One",
+            "discord_tag": "student1",
+            "passport": "111111",
+            "exam_format": "remote",
+            "payload": {
+                "submitted_at": "2026-04-08 12:00:00",
+                "full_name": "Student One",
+                "discord_tag": "student1",
+                "passport": "111111",
+                "exam_format": "remote",
+                "Question F": "Answer F",
+                "Question G": "Answer G",
+            },
+            "answer_count": 2,
+        }
+        updated = {
+            "source_row": 5,
+            "submitted_at": "2026-04-08 12:05:00",
+            "full_name": "Student One Updated",
+            "discord_tag": "student1_new",
+            "passport": "999999",
+            "exam_format": "remote",
+            "payload": {
+                "submitted_at": "2026-04-08 12:05:00",
+                "full_name": "Student One Updated",
+                "discord_tag": "student1_new",
+                "passport": "999999",
+                "exam_format": "remote",
+                "Question F": "Answer F",
+                "Question G": "Answer G",
+            },
+            "answer_count": 2,
+        }
+
+        store.import_rows([original])
+        store.save_exam_scores(
+            2,
+            [
+                {"column": "F", "score": 80},
+                {"column": "G", "score": 100},
+            ],
+        )
+
+        result = store.import_rows([updated])
+        rescored = store.get_entry(5)
+
+        self.assertEqual(result["inserted_count"], 0)
+        self.assertEqual(result["updated_count"], 1)
+        self.assertIsNone(store.get_entry(2))
+        self.assertIsNotNone(rescored)
+        self.assertEqual(rescored["average_score"], 90.0)
+        self.assertEqual(rescored["average_score_answer_count"], 2)
+        self.assertEqual(rescored["needs_rescore"], 0)
 
 
 class PostgresExamImportTaskRegistryTests(unittest.TestCase):

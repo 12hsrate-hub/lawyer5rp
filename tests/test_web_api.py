@@ -1399,6 +1399,54 @@ class WebApiTests(unittest.TestCase):
         finally:
             local_tmpdir.cleanup()
 
+    def test_exam_import_background_task_returns_readable_error_details(self):
+        self._register_verify_and_login("tester", "tester-task-error@example.com")
+        self.exam_store.import_rows(
+            [
+                {
+                    "source_row": 2,
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "full_name": "Student One",
+                    "discord_tag": "student1",
+                    "passport": "111111",
+                    "exam_format": "РћС‡РЅo",
+                    "payload": {
+                        "Р’РѕРїСЂРѕСЃ F": "РћС‚РІРµС‚ F",
+                        "Р’РѕРїСЂРѕСЃ G": "РћС‚РІРµС‚ G",
+                    },
+                    "answer_count": 2,
+                }
+            ]
+        )
+
+        original_bulk_score = exam_import_route._build_bulk_scoring_result
+
+        def failing_bulk_score(*, user, store, metrics_store, progress_callback=None):
+            _ = (user, store, metrics_store, progress_callback)
+            raise RuntimeError("Проверка ответов превысила время ожидания. Строка импорта: 2")
+
+        exam_import_route._build_bulk_scoring_result = failing_bulk_score
+        try:
+            task_response = self.client.post("/api/exam-import/score/tasks")
+            self.assertEqual(task_response.status_code, 200)
+            task_id = task_response.json()["task_id"]
+
+            final_status = None
+            for _ in range(20):
+                poll = self.client.get(f"/api/exam-import/tasks/{task_id}")
+                self.assertEqual(poll.status_code, 200)
+                final_status = poll.json()
+                if final_status["status"] in {"completed", "failed"}:
+                    break
+                time.sleep(0.05)
+
+            self.assertIsNotNone(final_status)
+            self.assertEqual(final_status["status"], "failed")
+            self.assertIn("Строка импорта: 2", final_status["error"])
+            self.assertIn("время ожидания", final_status["error"])
+        finally:
+            exam_import_route._build_bulk_scoring_result = original_bulk_score
+
     def test_exam_import_score_returns_readable_error_when_batch_fails(self):
         self._register_verify_and_login("tester", "tester12@example.com")
         self.exam_store.import_rows(
