@@ -16,12 +16,11 @@ for candidate in (ROOT_DIR, WEB_DIR):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-os.environ.setdefault("OGP_DB_BACKEND", "sqlite")
+os.environ.setdefault("OGP_DB_BACKEND", "postgres")
 
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
 from ogp_web.storage.user_repository import UserRepository
-from ogp_web.db.backends.sqlite import SQLiteBackend
 from ogp_web.rate_limit import PersistentRateLimiter
 from ogp_web.services.auth_service import AuthError
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
@@ -969,7 +968,7 @@ class WebStorageTests(unittest.TestCase):
         tmpdir = make_temp_dir()
         try:
             root = Path(tmpdir)
-            store = UserStore(root / "app.db", root / "users.json", repository=UserRepository(SQLiteBackend(root / "app.db")))
+            store = UserStore(root / "app.db", root / "users.json", repository=UserRepository(PostgresBackend()))
 
             user, token = store.register("tester", "tester@example.com", "Password123!")
             self.assertEqual(user.username, "tester")
@@ -1006,7 +1005,7 @@ class WebStorageTests(unittest.TestCase):
         tmpdir = make_temp_dir()
         try:
             root = Path(tmpdir)
-            store = UserStore(root / "custom.db", root / "users.json", repository=UserRepository(SQLiteBackend(root / "custom.db")))
+            store = UserStore(root / "custom.db", root / "users.json", repository=UserRepository(PostgresBackend()))
             user, _ = store.register("tester2", "tester2@example.com", "Password123!")
             self.assertEqual(user.username, "tester2")
 
@@ -1022,7 +1021,7 @@ class WebStorageTests(unittest.TestCase):
         tmpdir = make_temp_dir()
         try:
             root = Path(tmpdir)
-            store = UserStore(root / "reset.db", root / "users.json", repository=UserRepository(SQLiteBackend(root / "reset.db")))
+            store = UserStore(root / "reset.db", root / "users.json", repository=UserRepository(PostgresBackend()))
             _, verify_token = store.register("resetuser", "reset@example.com", "Password123!")
             store.confirm_email(verify_token)
 
@@ -1042,7 +1041,7 @@ class WebStorageTests(unittest.TestCase):
         tmpdir = make_temp_dir()
         try:
             root = Path(tmpdir)
-            store = ExamAnswersStore(root / "exam_answers.db", backend=SQLiteBackend(root / "exam_answers.db"))
+            store = ExamAnswersStore(root / "exam_answers.db", backend=FakeExamAnswersPostgresBackend())
             first = {
                 "source_row": 2,
                 "submitted_at": "2026-04-08 12:00:00",
@@ -1115,7 +1114,7 @@ class WebStorageTests(unittest.TestCase):
         tmpdir = make_temp_dir()
         try:
             root = Path(tmpdir)
-            store = ExamAnswersStore(root / "exam_answers.db", backend=SQLiteBackend(root / "exam_answers.db"))
+            store = ExamAnswersStore(root / "exam_answers.db", backend=FakeExamAnswersPostgresBackend())
             old_rows = [
                 {
                     "source_row": 14,
@@ -1172,7 +1171,7 @@ class WebStorageTests(unittest.TestCase):
         tmpdir = make_temp_dir()
         try:
             root = Path(tmpdir)
-            store = ExamAnswersStore(root / "exam_answers.db", backend=SQLiteBackend(root / "exam_answers.db"))
+            store = ExamAnswersStore(root / "exam_answers.db", backend=FakeExamAnswersPostgresBackend())
             original = {
                 "source_row": 2,
                 "submitted_at": "2026-04-08 12:00:00",
@@ -1241,7 +1240,7 @@ class WebStorageTests(unittest.TestCase):
         tmpdir = make_temp_dir()
         try:
             root = Path(tmpdir)
-            store = ExamAnswersStore(root / "exam_answers.db", backend=SQLiteBackend(root / "exam_answers.db"))
+            store = ExamAnswersStore(root / "exam_answers.db", backend=FakeExamAnswersPostgresBackend())
             original = {
                 "source_row": 2,
                 "submitted_at": "2026-04-08 12:00:00",
@@ -1460,7 +1459,7 @@ class PostgresAdminMetricsStoreTests(unittest.TestCase):
         tmpdir = make_temp_dir()
         self.addCleanup(shutil.rmtree, tmpdir, True)
         root = Path(tmpdir)
-        store = AdminMetricsStore(root / "admin_metrics.db", backend=SQLiteBackend(root / "admin_metrics.db"))
+        store = AdminMetricsStore(root / "admin_metrics.db", backend=FakeAdminMetricsPostgresBackend())
 
         self.assertTrue(
             store.log_ai_generation(
@@ -1520,7 +1519,7 @@ class PostgresAdminMetricsStoreTests(unittest.TestCase):
         tmpdir = make_temp_dir()
         self.addCleanup(shutil.rmtree, tmpdir, True)
         root = Path(tmpdir)
-        store = AdminMetricsStore(root / "admin_metrics.db", backend=SQLiteBackend(root / "admin_metrics.db"))
+        store = AdminMetricsStore(root / "admin_metrics.db", backend=FakeAdminMetricsPostgresBackend())
 
         store.log_ai_generation(
             username="alpha",

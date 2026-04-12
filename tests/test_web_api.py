@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sqlite3
 import threading
 import sys
 import time
@@ -16,12 +15,11 @@ for candidate in (ROOT_DIR, WEB_DIR):
         sys.path.insert(0, str(candidate))
 
 os.environ.setdefault("OGP_WEB_SECRET", "test-secret")
-os.environ.setdefault("OGP_DB_BACKEND", "sqlite")
+os.environ.setdefault("OGP_DB_BACKEND", "postgres")
 
 from fastapi.testclient import TestClient
 
 from ogp_web.app import create_app
-from ogp_web.db.backends.sqlite import SQLiteBackend
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
 from ogp_web.routes import complaint as complaint_route
@@ -32,6 +30,12 @@ from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
 from tests.temp_helpers import make_temporary_directory
+from tests.test_web_storage import (
+    FakeAdminMetricsPostgresBackend,
+    FakeExamAnswersPostgresBackend,
+    FakeExamImportTasksPostgresBackend,
+    PostgresBackend,
+)
 
 
 class WebApiTests(unittest.TestCase):
@@ -43,10 +47,10 @@ class WebApiTests(unittest.TestCase):
         self.store = UserStore(
             root / "app.db",
             root / "users.json",
-            repository=UserRepository(SQLiteBackend(root / "app.db")),
+            repository=UserRepository(PostgresBackend()),
         )
-        self.exam_store = ExamAnswersStore(root / "exam_answers.db", backend=SQLiteBackend(root / "exam_answers.db"))
-        self.admin_store = AdminMetricsStore(root / "admin_metrics.db", backend=SQLiteBackend(root / "admin_metrics.db"))
+        self.exam_store = ExamAnswersStore(root / "exam_answers.db", backend=FakeExamAnswersPostgresBackend())
+        self.admin_store = AdminMetricsStore(root / "admin_metrics.db", backend=FakeAdminMetricsPostgresBackend())
         self.client = TestClient(create_app(self.store, self.exam_store, self.admin_store), base_url="https://testserver")
         reset_rate_limit(self.client.app.state.rate_limiter)
 
@@ -339,7 +343,7 @@ class WebApiTests(unittest.TestCase):
                 self.db_path = tmp_path / "unhealthy_admin_metrics.db"
 
             def healthcheck(self) -> dict[str, object]:
-                return {"backend": "sqlite", "ok": False, "error": "forced_failure"}
+                return {"backend": "postgres", "ok": False, "error": "forced_failure"}
 
             def log_event(self, *args, **kwargs) -> bool:
                 return False
@@ -523,7 +527,7 @@ class WebApiTests(unittest.TestCase):
                 self.db_path = tmp_path / "broken_admin_metrics.db"
 
             def _connect(self):
-                raise sqlite3.OperationalError("attempt to write a readonly database")
+                raise RuntimeError("attempt to write a readonly database")
 
         broken_admin_store = BrokenAdminMetricsStore()
         client = TestClient(create_app(self.store, self.exam_store, broken_admin_store), base_url="https://testserver")
@@ -1351,7 +1355,8 @@ class WebApiTests(unittest.TestCase):
         local_tmpdir = make_temporary_directory()
         try:
             db_path = Path(local_tmpdir.name) / "exam_import_tasks.db"
-            registry = ExamImportTaskRegistry(db_path, backend=SQLiteBackend(db_path))
+            backend = FakeExamImportTasksPostgresBackend()
+            registry = ExamImportTaskRegistry(db_path, backend=backend)
             task = registry.create_task(task_type="bulk_score", runner=lambda: {"ok": True})
 
             record = None
@@ -1364,32 +1369,20 @@ class WebApiTests(unittest.TestCase):
             self.assertEqual(record.status, "completed")
             self.assertEqual(record.result, {"ok": True})
 
-            conn = sqlite3.connect(db_path)
-            try:
-                conn.execute(
-                    """
-                    INSERT INTO exam_import_tasks (
-                        id, task_type, source_row, status, created_at, started_at, finished_at, error, result_json
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        "interrupted-task",
-                        "row_score",
-                        14,
-                        "running",
-                        "2026-04-09T10:00:00+00:00",
-                        "2026-04-09T10:00:01+00:00",
-                        "",
-                        "",
-                        "",
-                    ),
-                )
-                conn.commit()
-            finally:
-                conn.close()
+            backend._state["rows"]["interrupted-task"] = {
+                "id": "interrupted-task",
+                "task_type": "row_score",
+                "source_row": 14,
+                "status": "running",
+                "created_at": "2026-04-09T10:00:00+00:00",
+                "started_at": "2026-04-09T10:00:01+00:00",
+                "finished_at": "",
+                "error": "",
+                "progress_json": {},
+                "result_json": {},
+            }
 
-            reopened = ExamImportTaskRegistry(db_path, backend=SQLiteBackend(db_path))
+            reopened = ExamImportTaskRegistry(db_path, backend=backend)
             interrupted = reopened.get_task("interrupted-task")
             self.assertIsNotNone(interrupted)
             self.assertEqual(interrupted.status, "failed")
