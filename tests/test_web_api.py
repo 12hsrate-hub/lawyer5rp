@@ -203,6 +203,9 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("items", payload["error_explorer"])
         self.assertIn("by_event_type", payload["error_explorer"])
         self.assertIn("by_path", payload["error_explorer"])
+        self.assertIn("ai_estimated_cost_total_usd", payload["totals"])
+        self.assertIn("ai_total_tokens_total", payload["totals"])
+        self.assertIn("ai_generation_total", payload["totals"])
 
     def test_admin_overview_supports_user_sort_and_csv_exports(self):
         self._register_verify_and_login("alpha", "alpha@example.com")

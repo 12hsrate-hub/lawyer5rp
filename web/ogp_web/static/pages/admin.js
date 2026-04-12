@@ -279,6 +279,14 @@ function formatNumber(value) {
   return new Intl.NumberFormat("ru-RU").format(Number(value || 0));
 }
 
+function formatUsd(value) {
+  const amount = Number(value || 0);
+  return amount.toLocaleString("en-US", {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 6,
+  });
+}
+
 function renderBadge(text, tone = "neutral") {
   return `<span class="admin-badge admin-badge--${tone}">${escapeHtml(text)}</span>`;
 }
@@ -365,6 +373,8 @@ function renderTotals(totals) {
     ["Входящий трафик", `${formatNumber(totals.request_bytes_total)} B`, "Суммарный размер запросов"],
     ["Исходящий трафик", `${formatNumber(totals.response_bytes_total)} B`, "Суммарный размер ответов"],
     ["Ресурсные единицы", formatNumber(totals.resource_units_total), "Условная нагрузка"],
+    ["AI cost (USD)", `$${formatUsd(totals.ai_estimated_cost_total_usd || 0)}`, `Оценка по ${formatNumber(totals.ai_estimated_cost_samples || 0)} вызовам`],
+    ["AI токены (in/out/total)", `${formatNumber(totals.ai_input_tokens_total || 0)} / ${formatNumber(totals.ai_output_tokens_total || 0)} / ${formatNumber(totals.ai_total_tokens_total || 0)}`, `Сумма по ${formatNumber(totals.ai_generation_total || 0)} генерациям`],
     ["Средний API ответ", `${formatNumber(totals.avg_api_duration_ms)} ms`, "Средняя длительность API"],
     ["События за 24 часа", totals.events_last_24h, "Последняя суточная активность"],
   ];

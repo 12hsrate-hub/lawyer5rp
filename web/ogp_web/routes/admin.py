@@ -653,6 +653,18 @@ async def admin_overview(
 
     payload["exam_import"] = exam_import
     try:
+        ai_summary = metrics_store.summarize_ai_generation_logs(limit=300)
+        totals = payload.setdefault("totals", {})
+        totals["ai_generation_total"] = int(ai_summary.get("total_generations") or 0)
+        totals["ai_input_tokens_total"] = int(ai_summary.get("input_tokens_total") or 0)
+        totals["ai_output_tokens_total"] = int(ai_summary.get("output_tokens_total") or 0)
+        totals["ai_total_tokens_total"] = int(ai_summary.get("total_tokens_total") or 0)
+        totals["ai_estimated_cost_total_usd"] = round(float(ai_summary.get("estimated_cost_total_usd") or 0.0), 6)
+        totals["ai_estimated_cost_samples"] = int(ai_summary.get("estimated_cost_samples") or 0)
+    except Exception as exc:  # noqa: BLE001
+        partial_errors.append(_normalize_api_error(exc, source="ai_costs"))
+
+    try:
         error_items = metrics_store.list_error_events(
             event_search=event_search,
             event_type=event_type,
