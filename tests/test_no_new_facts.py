@@ -199,3 +199,40 @@ def test_remediation_normalizes_incomplete_article_reference_and_phrase_artifact
     assert "положениями процессуального кодекса штата сан-андреас" in lowered
     assert "на требует правовой оценки" not in lowered
     assert "служебное материалов" not in lowered
+
+
+def test_remediation_normalizes_question_about_legal_evaluation_artifact() -> None:
+    context = build_point3_pipeline_context(
+        complainant="Test Principal",
+        organization="LSPD",
+        target_person="Test Officer",
+        event_datetime="12.04.2026 18:10",
+        draft_text="На территории Maze Bank Arena человека задержали из-за ношения маски.",
+        retrieval_status="normal_context",
+        retrieval_confidence="high",
+        retrieved_law_context="Источник: https://laws.example/admin\nНорма: Статья 18",
+        selected_norms=(
+            {
+                "source_url": "https://laws.example/admin",
+                "document_title": "Административный кодекс штата Сан-Андреас",
+                "article_label": "Статья 18",
+                "excerpt": "Исключение по ношению маски на территории Maze Bank Arena.",
+                "score": 95,
+                "qualifiers": (
+                    {
+                        "kind": "exception",
+                        "text": "Ношение маски на территории Maze Bank Arena допускается как исключение.",
+                    },
+                ),
+            },
+        ),
+    )
+
+    outcome = apply_validation_remediation(
+        "По жалобе ставится вопрос о требует правовой оценкисти самих процессуальных действий.",
+        context,
+    )
+
+    lowered = outcome.text.lower()
+    assert "о требует правовой оценкисти" not in lowered
+    assert "о правовой оценке самих процессуальных действий" in lowered

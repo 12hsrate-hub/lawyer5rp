@@ -1526,9 +1526,11 @@ def _normalize_after_rewrite(text: str) -> str:
     )
     normalized = re.sub(r"\bположениями Закон\b", "положениями Закона", normalized, flags=re.IGNORECASE)
     normalized = re.sub(r"\bна требует правовой оценки\b", "и требует правовой оценки", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\b(?:о|об)\s+требует правовой оценки(?:сти)?\b", "о правовой оценке", normalized, flags=re.IGNORECASE)
     normalized = re.sub(r"\bслужебное материалов\b", "служебное поведение", normalized, flags=re.IGNORECASE)
     normalized = re.sub(r"\b(сотрудника|сотрудник)\s+\1\b", r"\1", normalized, flags=re.IGNORECASE)
     normalized = normalized.replace("материалова", "материалов")
+    normalized = normalized.replace("правовой оценкисти", "правовой оценки")
     normalized = normalized.replace("оценкисть", "оценки")
     return normalized.strip(" ,;")
 
