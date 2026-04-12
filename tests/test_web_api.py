@@ -963,7 +963,9 @@ class WebApiTests(unittest.TestCase):
         response = self.client.get("/law-qa-test")
         self.assertEqual(response.status_code, 200)
         self.assertIn("law-server-code", response.text)
-        self.assertIn("law-model", response.text)
+        self.assertIn("gpt-5.4-mini", response.text)
+        self.assertIn("Ручной выбор отключен", response.text)
+        self.assertNotIn("law-model", response.text)
         self.assertNotIn("laws-root-url", response.text)
 
     def test_law_qa_test_endpoint_forbidden_for_user_without_tester_access(self):

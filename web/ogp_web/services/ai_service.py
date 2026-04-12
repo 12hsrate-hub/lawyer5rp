@@ -358,11 +358,11 @@ def get_law_qa_model_choices() -> tuple[str, ...]:
         values = tuple(dict.fromkeys(part.strip() for part in raw.split(",") if part.strip()))
         if values:
             return values
-    return ("gpt-5.4", "gpt-5-mini", "gpt-4.1-mini")
+    return ("gpt-5.4-mini",)
 
 
 def get_default_law_qa_model() -> str:
-    configured = os.getenv("OPENAI_TEXT_MODEL", "gpt-5.4").strip() or "gpt-5.4"
+    configured = os.getenv("OPENAI_TEXT_MODEL", "gpt-5.4-mini").strip() or "gpt-5.4-mini"
     choices = get_law_qa_model_choices()
     if configured in choices:
         return configured
@@ -370,6 +370,8 @@ def get_default_law_qa_model() -> str:
 
 
 def resolve_law_qa_model(requested_model: str) -> str:
+    _ = requested_model
+    return get_default_law_qa_model()
     normalized = str(requested_model or "").strip()
     if not normalized:
         return get_default_law_qa_model()

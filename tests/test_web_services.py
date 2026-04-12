@@ -1037,12 +1037,10 @@ https://laws.example/article
         self.assertNotIn("XF.ready", cleaned)
         self.assertNotIn("short_date_x_minutes", cleaned)
 
-    def test_law_qa_rejects_unsupported_model(self):
-        with self.assertRaises(HTTPException) as ctx:
-            ai_service.resolve_law_qa_model("unsupported-model")
-        self.assertEqual(ctx.exception.status_code, 400)
+    def test_law_qa_ignores_unsupported_model_and_uses_default(self):
+        self.assertEqual(ai_service.resolve_law_qa_model("unsupported-model"), ai_service.get_default_law_qa_model())
 
-    def test_law_qa_uses_selected_model(self):
+    def test_law_qa_uses_default_model(self):
         original_get_server_config = ai_service.get_server_config
         original_build_index = ai_service._build_law_chunk_index_cached
         original_create_client = ai_service.create_openai_client
@@ -1089,7 +1087,7 @@ https://laws.example/article
         self.assertEqual(text, "Ответ по закону.")
         self.assertEqual(sources, ["https://laws.example/base"])
         self.assertEqual(count, 1)
-        self.assertEqual(captured["model"], "gpt-5.4")
+        self.assertEqual(captured["model"], ai_service.get_default_law_qa_model())
         self.assertIn("Не используй реальные законы", captured["input"])
         self.assertIn("Право на защиту", captured["input"])
 

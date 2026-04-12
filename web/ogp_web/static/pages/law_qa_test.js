@@ -97,7 +97,6 @@ form?.addEventListener("submit", async (event) => {
   try {
     const payload = {
       server_code: document.getElementById("law-server-code")?.value?.trim() || "",
-      model: document.getElementById("law-model")?.value?.trim() || "",
       question: document.getElementById("law-question")?.value?.trim() || "",
       max_answer_chars: Number(document.getElementById("max-answer-chars")?.value || 2200),
     };
