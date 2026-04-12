@@ -625,6 +625,131 @@ class WebServiceTests(unittest.TestCase):
         self.assertNotIn("тикет", captured["provider_law_context"].lower())
         self.assertNotIn("штраф", captured["provider_law_context"].lower())
 
+    def test_build_suggest_law_context_extracts_qualifiers_and_cross_refs(self):
+        original_get_server_config = ai_service.get_server_config
+        original_load_bundle = ai_service.load_law_bundle_chunks
+        original_select_chunks = ai_service._select_law_qa_chunks
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ()
+            law_qa_bundle_path = "bundle.json"
+
+        chunk = ai_service._LawChunk(
+            url="https://laws.example/admin",
+            document_title="Административный кодекс",
+            article_label="Статья 22 ч. 2",
+            text=(
+                "Статья 22 ч. 2. Основное правило. "
+                "Исключение: допускается иной порядок при наличии отдельного основания. "
+                "Примечание: оценка производится с учетом фактических обстоятельств. "
+                "Комментарий II. Дополнительно применяется подход, описанный в статье 33 Процессуального кодекса."
+            ),
+        )
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service.load_law_bundle_chunks = lambda server_code, bundle_path: [chunk]
+        ai_service._select_law_qa_chunks = lambda chunks, question, profile="suggest": (list(chunks), "high")
+        try:
+            context = ai_service._build_suggest_law_context(
+                server_code="blackberry",
+                question="разъяснения по статье 22 части 2",
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service.load_law_bundle_chunks = original_load_bundle
+            ai_service._select_law_qa_chunks = original_select_chunks
+
+        qualifiers = context.selected_norms[0]["qualifiers"]
+        qualifier_kinds = {item["kind"] for item in qualifiers}
+        self.assertTrue({"exception", "note", "comment"}.issubset(qualifier_kinds))
+        self.assertTrue(any("33" in ref for ref in context.selected_norms[0]["cross_refs"]))
+
+    def test_filtered_prompt_law_context_limits_grounded_norms_to_two_and_keeps_qualifiers(self):
+        selected_norms = (
+            {
+                "source_url": "https://laws.example/admin",
+                "document_title": "Административный кодекс",
+                "article_label": "Статья 18",
+                "excerpt": "Ношение маски на территории Maze Bank Arena подлежит оценке по статье 18.",
+                "score": 96,
+                "qualifiers": (
+                    {
+                        "kind": "exception",
+                        "text": "Исключение: ношение маски допускается на территории Maze Bank Arena.",
+                        "related_refs": (),
+                    },
+                ),
+                "cross_refs": (),
+            },
+            {
+                "source_url": "https://laws.example/advocate",
+                "document_title": "Закон об адвокатуре",
+                "article_label": "Статья 5",
+                "excerpt": "Адвокатский запрос подлежит рассмотрению в установленном порядке.",
+                "score": 88,
+                "qualifiers": (
+                    {
+                        "kind": "note",
+                        "text": "Примечание: ответ на адвокатский запрос оценивается вместе с материалами проверки.",
+                        "related_refs": ("статье 33",),
+                    },
+                ),
+                "cross_refs": ("статье 33",),
+            },
+            {
+                "source_url": "https://laws.example/processual",
+                "document_title": "Процессуальный кодекс",
+                "article_label": "Статья 33",
+                "excerpt": "Видеозапись процессуальных действий хранится в пределах установленного срока.",
+                "score": 12,
+                "qualifiers": (
+                    {
+                        "kind": "comment",
+                        "text": "Комментарий: видеозапись относится к материалам процессуальной проверки.",
+                        "related_refs": (),
+                    },
+                ),
+                "cross_refs": (),
+            },
+        )
+        point3_context = ai_service.build_point3_pipeline_context(
+            complainant="Victim",
+            organization="LSPD",
+            target_person="Officer",
+            event_datetime="08.04.2026 14:30",
+            draft_text=(
+                "Человека задержали на территории Maze Bank Arena из-за маски, после чего был направлен "
+                "адвокатский запрос, а запись процессуальных действий так и не была предоставлена."
+            ),
+            retrieval_status="normal_context",
+            retrieval_confidence="high",
+            retrieved_law_context="law context",
+            selected_norms=selected_norms,
+        )
+        prompt_law_context = ai_service._build_filtered_prompt_law_context(
+            point3_context=point3_context,
+            suggest_context=ai_service.SuggestContextBuildResult(
+                context_text="law context",
+                retrieval_confidence="high",
+                retrieval_context_mode="normal_context",
+                retrieval_profile="suggest",
+                bundle_status="ready",
+                bundle_generated_at="2026-04-12T00:00:00Z",
+                bundle_fingerprint="bundle-qualifier-test",
+                selected_norms_count=3,
+                selected_norms=selected_norms,
+            ),
+            fallback_law_context="fallback",
+        )
+
+        self.assertEqual(prompt_law_context.count("Норма:"), 2)
+        self.assertIn("Исключение: ношение маски допускается", prompt_law_context)
+        self.assertIn("Примечание: ответ на адвокатский запрос", prompt_law_context)
+        self.assertIn("supporting only", prompt_law_context)
+        self.assertNotIn("Статья 33\nФрагмент", prompt_law_context)
+
     def test_suggest_text_retries_with_compacted_context_on_context_window_error(self):
         captured_calls: list[dict[str, object]] = []
         original = ai_service.suggest_description_with_proxy_fallback_result

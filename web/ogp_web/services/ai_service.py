@@ -1316,6 +1316,116 @@ _SUGGEST_ENTERTAINMENT_TERMS = (
 _SUGGEST_TICKET_SANCTION_TERMS = ("штраф", "тикет")
 
 
+_SUGGEST_QUALIFIER_PATTERNS = (
+    ("exception", re.compile(r"\bИсключени(?:е|я)\s*:?", flags=re.IGNORECASE)),
+    ("note", re.compile(r"\bПримечани(?:е|я)(?:\s+к\s+(?:ч\.?|част[ьи])\s*\d+)?\s*:?", flags=re.IGNORECASE)),
+    ("comment", re.compile(r"\bКомментар(?:ий|ии)(?:\s+[IVXLC\d]+)?\s*:?", flags=re.IGNORECASE)),
+    ("clarification", re.compile(r"\b(?:Пояснение|Разъяснение)\s*:?", flags=re.IGNORECASE)),
+)
+_SUGGEST_CROSS_REF_PATTERN = re.compile(
+    r"\b(?:ст\.?|стат(?:ья|ьи|ье|ею))\s*\d+(?:\.\d+)?(?:\s*(?:ч\.?|част[ьи])\s*\d+)?(?:\s*(?:п\.?|пункт)\s*[\"«]?[a-zа-яё0-9-]+[\"»]?)?",
+    flags=re.IGNORECASE,
+)
+
+
+def _extract_suggest_norm_cross_refs(
+    text: str,
+    *,
+    article_label: str = "",
+    max_items: int = 6,
+) -> tuple[str, ...]:
+    normalized_text = _normalize_suggest_inline(text)
+    normalized_article = _normalize_suggest_inline(article_label).lower()
+    refs: list[str] = []
+    seen: set[str] = set()
+    for match in _SUGGEST_CROSS_REF_PATTERN.finditer(normalized_text):
+        ref_text = _normalize_suggest_inline(match.group(0))
+        ref_key = ref_text.lower()
+        if not ref_text or ref_key == normalized_article or ref_key in seen:
+            continue
+        seen.add(ref_key)
+        refs.append(ref_text)
+        if len(refs) >= max_items:
+            break
+    return tuple(refs)
+
+
+def _extract_suggest_norm_qualifiers(
+    text: str,
+    *,
+    article_label: str = "",
+    max_items: int = 6,
+    max_chars: int = 360,
+) -> tuple[dict[str, object], ...]:
+    normalized_text = _normalize_suggest_inline(text)
+    if not normalized_text:
+        return ()
+
+    matches: list[tuple[int, int, str]] = []
+    for kind, pattern in _SUGGEST_QUALIFIER_PATTERNS:
+        for match in pattern.finditer(normalized_text):
+            matches.append((match.start(), match.end(), kind))
+    if not matches:
+        return ()
+
+    matches.sort(key=lambda item: item[0])
+    qualifiers: list[dict[str, object]] = []
+    seen_sections: set[tuple[str, str]] = set()
+    for index, (start, _, kind) in enumerate(matches):
+        end = matches[index + 1][0] if index + 1 < len(matches) else len(normalized_text)
+        section_text = _truncate_suggest_value(normalized_text[start:end].strip(" ,;"), max_chars=max_chars)
+        if not section_text:
+            continue
+        section_key = (kind, section_text.lower())
+        if section_key in seen_sections:
+            continue
+        seen_sections.add(section_key)
+        qualifiers.append(
+            {
+                "kind": kind,
+                "text": section_text,
+                "related_refs": list(_extract_suggest_norm_cross_refs(section_text, article_label=article_label, max_items=4)),
+            }
+        )
+        if len(qualifiers) >= max_items:
+            break
+    return tuple(qualifiers)
+
+
+def _format_suggest_norm_sections(
+    *,
+    qualifiers: tuple[dict[str, object], ...] | list[dict[str, object]],
+    cross_refs: tuple[str, ...] | list[str],
+) -> tuple[str, ...]:
+    lines: list[str] = []
+    for qualifier in qualifiers:
+        kind = str(qualifier.get("kind", "") or "").strip()
+        text = str(qualifier.get("text", "") or "").strip()
+        related_refs = tuple(
+            str(ref or "").strip()
+            for ref in (qualifier.get("related_refs", ()) or ())
+            if str(ref or "").strip()
+        )
+        if not text:
+            continue
+        label = {
+            "exception": "Исключение",
+            "note": "Примечание",
+            "comment": "Комментарий",
+            "clarification": "Разъяснение",
+        }.get(kind, "Квалифицирующий фрагмент")
+        if text.lower().startswith(label.lower()):
+            lines.append(text)
+        else:
+            lines.append(f"{label}: {text}")
+        if related_refs:
+            lines.append(f"Связанные нормы: {', '.join(related_refs)}")
+    normalized_cross_refs = tuple(str(ref or "").strip() for ref in cross_refs if str(ref or "").strip())
+    if normalized_cross_refs:
+        lines.append(f"Перекрестные ссылки (supporting only): {', '.join(normalized_cross_refs)}")
+    return tuple(lines)
+
+
 def _suggest_document_priority_weight(document_title: str) -> int:
     thresholds = load_policy_thresholds()
     priority_config = thresholds.get("document_priority", {})
@@ -1450,6 +1560,9 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
         excerpt = match.excerpt
         if not excerpt:
             continue
+        chunk_text = str(getattr(match.chunk, "text", "") or excerpt)
+        qualifiers = _extract_suggest_norm_qualifiers(chunk_text, article_label=str(match.chunk.article_label or ""))
+        cross_refs = _extract_suggest_norm_cross_refs(chunk_text, article_label=str(match.chunk.article_label or ""))
         selected_norms.append(
             {
                 "source_url": match.chunk.url,
@@ -1457,6 +1570,8 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
                 "article_label": match.chunk.article_label,
                 "excerpt": excerpt,
                 "score": match.score,
+                "qualifiers": list(qualifiers),
+                "cross_refs": list(cross_refs),
             }
         )
         parts.append(
@@ -1466,6 +1581,7 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
                     f"\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442: {match.chunk.document_title}",
                     f"\u041d\u043e\u0440\u043c\u0430: {match.chunk.article_label}",
                     f"\u0424\u0440\u0430\u0433\u043c\u0435\u043d\u0442: {excerpt}",
+                    *_format_suggest_norm_sections(qualifiers=qualifiers, cross_refs=cross_refs),
                 )
             )
         )
@@ -1526,6 +1642,34 @@ def build_suggest_retrieval_query_light(payload: SuggestPayload, *, raw_desc_lim
     )
 
 
+def _select_prompt_valid_triggers(valid_triggers, *, max_items: int = 2):
+    ranked = sorted(
+        valid_triggers,
+        key=lambda item: (
+            1 if getattr(item, "matched_in_input", False) else 0,
+            1 if getattr(item, "qualifiers", ()) else 0,
+            float(getattr(item, "trigger_confidence", 0.0) or 0.0),
+            _suggest_document_priority_weight(str(getattr(item, "document_title", "") or "")),
+        ),
+        reverse=True,
+    )
+    selected = []
+    seen: set[tuple[str, str, str]] = set()
+    for trigger in ranked:
+        key = (
+            str(getattr(trigger, "source_url", "") or "").strip(),
+            str(getattr(trigger, "document_title", "") or "").strip(),
+            str(getattr(trigger, "norm_ref", "") or "").strip(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        selected.append(trigger)
+        if len(selected) >= max_items:
+            break
+    return tuple(selected)
+
+
 def _build_filtered_prompt_law_context(
     *,
     point3_context,
@@ -1552,6 +1696,46 @@ def _build_filtered_prompt_law_context(
                         f"Документ: {trigger.document_title}",
                         f"Норма: {trigger.norm_ref}",
                         f"Фрагмент: {trigger.excerpt}",
+                    )
+                ).strip()
+            )
+        filtered = "\n\n".join(part for part in parts if part).strip()
+        if filtered:
+            return filtered
+
+    if suggest_context.selected_norms and point3_context.policy_decision.mode == MODE_FACTUAL_FALLBACK_EXPANDED:
+        return ""
+    return fallback_law_context
+
+
+def _build_filtered_prompt_law_context(
+    *,
+    point3_context,
+    suggest_context: SuggestContextBuildResult,
+    fallback_law_context: str,
+) -> str:
+    valid_triggers = [item for item in point3_context.triggers if item.is_valid]
+    if valid_triggers:
+        parts: list[str] = []
+        for trigger in _select_prompt_valid_triggers(valid_triggers, max_items=2):
+            parts.append(
+                "\n".join(
+                    (
+                        f"Источник: {trigger.source_url}",
+                        f"Документ: {trigger.document_title}",
+                        f"Норма: {trigger.norm_ref}",
+                        f"Фрагмент: {trigger.excerpt}",
+                        *_format_suggest_norm_sections(
+                            qualifiers=tuple(
+                                {
+                                    "kind": getattr(item, "kind", ""),
+                                    "text": getattr(item, "text", ""),
+                                    "related_refs": list(getattr(item, "related_refs", ()) or ()),
+                                }
+                                for item in (getattr(trigger, "qualifiers", ()) or ())
+                            ),
+                            cross_refs=getattr(trigger, "cross_refs", ()) or (),
+                        ),
                     )
                 ).strip()
             )

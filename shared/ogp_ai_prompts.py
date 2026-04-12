@@ -333,7 +333,8 @@ Use only draft facts plus the explicit policy and trigger data from pipeline_con
 If confidence is weak, prefer cautious procedural language over hard legal conclusions.
 If pipeline_context shows input uncertainty markers, preserve that uncertainty instead of turning it into an established fact.
 Do not replace protected legal terms from pipeline_context with nearby but different procedural terms.
-If a validated norm contains a direct exception matching the facts, describe that exception instead of drifting into sanctions or procedures not stated in the draft.
+If applicability depends on an exception, note, comment, or clarification attached to a validated norm, treat that qualifier as part of the norm itself.
+Use no more than two directly validated norms in the final paragraph, and treat cross-references as supporting context only unless they are independently validated.
 """,
             ),
             ("generation_mode", mode_rules),

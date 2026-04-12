@@ -120,12 +120,28 @@ _PROTECTED_TERM_GROUPS: dict[str, tuple[str, ...]] = {
 
 
 @dataclass(frozen=True)
+class NormQualifier:
+    kind: str
+    text: str
+    related_refs: tuple[str, ...] = ()
+
+    def as_contract(self) -> dict[str, object]:
+        return {
+            "kind": self.kind,
+            "text": self.text,
+            "related_refs": list(self.related_refs),
+        }
+
+
+@dataclass(frozen=True)
 class SelectedNorm:
     source_url: str
     document_title: str
     article_label: str
     excerpt: str
     score: int = 0
+    qualifiers: tuple[NormQualifier, ...] = ()
+    cross_refs: tuple[str, ...] = ()
 
     def as_contract(self) -> dict[str, object]:
         return {
@@ -134,7 +150,23 @@ class SelectedNorm:
             "article_label": self.article_label,
             "excerpt": self.excerpt,
             "score": self.score,
+            "qualifiers": [item.as_contract() for item in self.qualifiers],
+            "cross_refs": list(self.cross_refs),
         }
+
+    @property
+    def search_text(self) -> str:
+        return " ".join(
+            part
+            for part in (
+                self.document_title,
+                self.article_label,
+                self.excerpt,
+                *(item.text for item in self.qualifiers),
+                *self.cross_refs,
+            )
+            if part
+        )
 
 
 @dataclass(frozen=True)
@@ -196,6 +228,8 @@ class NormTrigger:
     source_url: str = ""
     document_title: str = ""
     excerpt: str = ""
+    qualifiers: tuple[NormQualifier, ...] = ()
+    cross_refs: tuple[str, ...] = ()
 
     def as_contract(self) -> dict[str, object]:
         return {
@@ -204,6 +238,9 @@ class NormTrigger:
             "matched_in_input": self.matched_in_input,
             "matched_in_retrieval": self.matched_in_retrieval,
             "is_valid": self.is_valid,
+            "trigger_confidence": round(self.trigger_confidence, 2),
+            "qualifier_kinds": [item.kind for item in self.qualifiers],
+            "cross_refs": list(self.cross_refs),
         }
 
 
@@ -388,6 +425,28 @@ def normalize_suggest_input(
             article_label=_normalize_inline(item.get("article_label", "")),
             excerpt=_normalize_inline(item.get("excerpt", "")),
             score=int(item.get("score", 0) or 0),
+            qualifiers=tuple(
+                NormQualifier(
+                    kind=_normalize_inline(qualifier.get("kind", "")),
+                    text=_normalize_inline(qualifier.get("text", "")),
+                    related_refs=tuple(
+                        _normalize_inline(ref)
+                        for ref in (qualifier.get("related_refs", ()) or ())
+                        if _normalize_inline(ref)
+                    ),
+                )
+                for qualifier in (item.get("qualifiers", ()) or ())
+                if isinstance(qualifier, dict)
+                and (
+                    _normalize_inline(qualifier.get("kind", ""))
+                    or _normalize_inline(qualifier.get("text", ""))
+                )
+            ),
+            cross_refs=tuple(
+                _normalize_inline(ref)
+                for ref in (item.get("cross_refs", ()) or ())
+                if _normalize_inline(ref)
+            ),
         )
         for item in selected_norms
     )
@@ -548,7 +607,7 @@ def match_norm_triggers(
     for norm in normalized_input.selected_norms:
         best_fact = facts[0] if facts else ExtractedFact("F1", "", "draft", 0.0, "low", True)
         best_overlap = -1
-        norm_text = " ".join((norm.document_title, norm.article_label, norm.excerpt))
+        norm_text = norm.search_text
         norm_roots = _token_roots(norm_text)
         for fact in facts:
             overlap = len(set(_token_roots(fact.text)) & set(norm_roots))
@@ -556,7 +615,7 @@ def match_norm_triggers(
                 best_fact = fact
                 best_overlap = overlap
         matched_in_input = _norm_ref_mentioned_in_text(norm.article_label, draft_text)
-        matched_in_retrieval = bool(norm.article_label or norm.document_title or norm.excerpt)
+        matched_in_retrieval = bool(norm.article_label or norm.document_title or norm.excerpt or norm.qualifiers or norm.cross_refs)
         direct_fact_trigger = _has_direct_fact_trigger(
             normalized_input=normalized_input,
             fact_text=best_fact.text,
@@ -582,6 +641,8 @@ def match_norm_triggers(
                 source_url=norm.source_url,
                 document_title=norm.document_title,
                 excerpt=norm.excerpt,
+                qualifiers=norm.qualifiers,
+                cross_refs=norm.cross_refs,
             )
         )
     return tuple(triggers)
@@ -1015,7 +1076,7 @@ def _has_direct_fact_trigger(
 
     if group_key == "advocate_law":
         return _contains_any_substring(
-            " ".join((fact_text, norm.excerpt, norm.article_label)),
+            " ".join((fact_text, norm.search_text)),
             ("адвокат", "запрос", "защит", "юридическ"),
         )
 
@@ -1038,7 +1099,7 @@ def _is_mask_exception_trigger(
     if not _contains_any_substring(case_text, _ENTERTAINMENT_LOCATION_TERMS):
         return False
 
-    norm_text = " ".join((norm.document_title, norm.article_label, norm.excerpt))
+    norm_text = norm.search_text
     normalized_norm_text = _normalize_inline(norm_text).lower()
     if "статья 18" not in normalized_norm_text:
         return False
