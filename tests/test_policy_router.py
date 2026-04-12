@@ -211,3 +211,54 @@ def test_policy_router_falls_back_for_personal_conflict_with_only_generic_proces
 
     assert context.policy_decision.mode == MODE_FACTUAL_FALLBACK_EXPANDED
     assert context.policy_decision.reason == "personal_conflict_requires_factual_fallback"
+
+
+def test_policy_router_ignores_advocate_and_precedent_noise_in_personal_conflict_case() -> None:
+    context = build_point3_pipeline_context(
+        complainant="Test Principal 3",
+        organization="LSPD",
+        target_person="Test Officer 3",
+        event_datetime="12.04.2026 18:30",
+        draft_text=(
+            "Между человеком и сотрудником сначала произошёл личный конфликт, "
+            "а спустя короткое время тот же сотрудник уже в служебном статусе вернулся и оформил задержание."
+        ),
+        complaint_basis="abuse_of_authority",
+        main_focus="Сомнения в объективности последующих действий сотрудника",
+        retrieval_status="normal_context",
+        retrieval_confidence="high",
+        retrieved_law_context=(
+            "Источник: https://laws.example/processual\nНорма: Статья 17\n"
+            "Источник: https://laws.example/advocate\nНорма: Статья 4\n"
+            "Источник: https://laws.example/precedent\nНорма: Общий раздел"
+        ),
+        selected_norms=(
+            {
+                "source_url": "https://laws.example/processual",
+                "document_title": "Процессуальный кодекс штата Сан-Андреас",
+                "article_label": "Статья 17",
+                "excerpt": "Общий порядок задержания и разъяснения оснований задержания.",
+                "score": 92,
+            },
+            {
+                "source_url": "https://laws.example/advocate",
+                "document_title": "Закон об адвокатуре и адвокатской деятельности",
+                "article_label": "Статья 4",
+                "excerpt": "Гарантии оказания юридической помощи и защиты доверителя.",
+                "score": 88,
+            },
+            {
+                "source_url": "https://laws.example/precedent",
+                "document_title": "Судебные прецеденты",
+                "article_label": "Общий раздел",
+                "excerpt": "Разъяснения по вопросам судебного контроля и судебных процедур.",
+                "score": 84,
+            },
+        ),
+    )
+
+    valid_refs = {item.norm_ref for item in context.triggers if item.is_valid}
+    assert "Статья 4" not in valid_refs
+    assert "Общий раздел" not in valid_refs
+    assert context.policy_decision.mode == MODE_FACTUAL_FALLBACK_EXPANDED
+    assert context.policy_decision.reason == "personal_conflict_requires_factual_fallback"

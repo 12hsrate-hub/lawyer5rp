@@ -156,7 +156,7 @@ def test_remediation_explicitly_states_mask_exception_rule() -> None:
     )
 
     outcome = apply_validation_remediation(
-        "Требуется проверить действия сотрудника на соответствие статье 18.",
+        "Требуется проверить действия сотрудника на соответствие статье 18 с учетом указанного исключения.",
         context,
     )
 

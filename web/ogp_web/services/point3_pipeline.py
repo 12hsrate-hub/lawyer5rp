@@ -915,7 +915,7 @@ def validate_generated_paragraph(text: str, context: Point3PipelineContext) -> S
                     message="The output lost the key mask exception anchor from the draft facts.",
                 )
             )
-        if not _contains_any_substring(normalized_text, ("допуска", "разреш", "исключени")):
+        if not _contains_any_substring(normalized_text, ("допуска", "разреш")):
             warnings.append(
                 ValidationIssue(
                     code="missing_mask_exception_rule",
@@ -1139,7 +1139,18 @@ def _has_direct_fact_trigger(
             (
                 normalized_input.draft_text,
                 normalized_input.applicability_notes,
-                normalized_input.retrieved_law_context,
+                fact_text,
+            )
+        )
+        court_terms = thresholds.get("document_priority", {}).get("court_proceedings_terms", ())
+        return _contains_any_substring(combined_text, court_terms)
+
+    if "прецедент" in _normalize_inline(norm.document_title).lower():
+        combined_text = " ".join(
+            (
+                normalized_input.draft_text,
+                normalized_input.applicability_notes,
+                fact_text,
             )
         )
         court_terms = thresholds.get("document_priority", {}).get("court_proceedings_terms", ())
@@ -1155,10 +1166,8 @@ def _has_direct_fact_trigger(
         return _contains_any_substring(combined_text, _SEARCH_ACTION_TERMS)
 
     if group_key == "advocate_law":
-        return _contains_any_substring(
-            " ".join((fact_text, norm.search_text)),
-            ("адвокат", "запрос", "защит", "юридическ"),
-        )
+        combined_text = " ".join((normalized_input.draft_text, normalized_input.applicability_notes, fact_text))
+        return _contains_any_substring(combined_text, ("адвокат", "запрос", "защит", "юридическ"))
 
     return True
 
@@ -1423,7 +1432,7 @@ def _mask_case_location_phrase(draft_text: str) -> str:
 def _apply_mask_exception_rule(text: str, context: Point3PipelineContext) -> str:
     if not _is_mask_exception_case(context.normalized_input.draft_text):
         return text
-    if _contains_any_substring(text, ("допуска", "разреш", "исключени")):
+    if _contains_any_substring(text, ("допуска", "разреш")):
         return text
 
     article_18_trigger = next(
