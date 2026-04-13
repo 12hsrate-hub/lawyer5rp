@@ -19,7 +19,7 @@ for candidate in (ROOT_DIR, WEB_DIR):
 
 os.environ.setdefault("OGP_DB_BACKEND", "postgres")
 
-from ogp_web.storage.exam_answers_store import ExamAnswersStore
+from ogp_web.storage.exam_answers_store import ExamAnswersStore, INVALID_BATCH_RATIONALE
 from ogp_web.storage.user_store import UserStore
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.rate_limit import PersistentRateLimiter
@@ -917,11 +917,26 @@ class FakeExamAnswersConnection:
             return FakeCursor(rowcount=1, one={"total": total})
         if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, average_score, COALESCE(average_score_answer_count, 0) AS average_score_answer_count, needs_rescore, imported_at FROM exam_answers WHERE source_row > 0 ORDER BY source_row DESC LIMIT %s"):
             return self._list_entries(int(params[0]))
+        if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, average_score, average_score_answer_count, imported_at FROM exam_answers WHERE source_row > 0 AND average_score IS NULL ORDER BY source_row ASC LIMIT %s"):
+            rows = [row for row in self.state["rows"] if row["source_row"] > 0 and row["average_score"] is None]
+            rows.sort(key=lambda item: item["source_row"])
+            rows = rows[: int(params[0])]
+            return FakeCursor(rowcount=len(rows), rows=[self._summary_row(row) for row in rows])
         if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, average_score, average_score_answer_count, imported_at FROM exam_answers WHERE source_row > 0 AND (average_score IS NULL OR needs_rescore = 1) ORDER BY source_row ASC LIMIT %s") or normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, average_score, average_score_answer_count, imported_at FROM exam_answers WHERE source_row > 0 AND (average_score IS NULL OR needs_rescore IS TRUE) ORDER BY source_row ASC LIMIT %s"):
             rows = [row for row in self.state["rows"] if row["source_row"] > 0 and (row["average_score"] is None or bool(row["needs_rescore"]))]
             rows.sort(key=lambda item: item["source_row"])
             rows = rows[: int(params[0])]
             return FakeCursor(rowcount=len(rows), rows=[self._summary_row(row) for row in rows])
+        if normalized.startswith("SELECT COUNT(*) AS total FROM exam_answers WHERE source_row > 0 AND average_score IS NULL"):
+            total = sum(1 for row in self.state["rows"] if row["source_row"] > 0 and row["average_score"] is None)
+            return FakeCursor(rowcount=1, one={"total": total})
+        if normalized.startswith("SELECT COUNT(*) AS total FROM exam_answers WHERE source_row > 0 AND (average_score IS NULL OR needs_rescore = 1)") or normalized.startswith("SELECT COUNT(*) AS total FROM exam_answers WHERE source_row > 0 AND (average_score IS NULL OR needs_rescore IS TRUE)"):
+            total = sum(
+                1
+                for row in self.state["rows"]
+                if row["source_row"] > 0 and (row["average_score"] is None or bool(row["needs_rescore"]))
+            )
+            return FakeCursor(rowcount=1, one={"total": total})
         if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, average_score, COALESCE(average_score_answer_count, 0) AS average_score_answer_count, needs_rescore, imported_at, exam_scores_json FROM exam_answers WHERE source_row > 0 AND exam_scores_json IS NOT NULL"):
             rows = [row for row in self.state["rows"] if row["source_row"] > 0 and row["exam_scores_json"] not in (None, "")]
             rows.sort(key=lambda item: item["source_row"])
@@ -940,6 +955,8 @@ class FakeExamAnswersConnection:
             return FakeCursor(rowcount=1 if row else 0)
         if normalized.startswith("UPDATE exam_answers SET exam_scores_json = %s::jsonb, exam_scores_scored_at = NOW(), average_score = %s, average_score_answer_count = %s, average_score_scored_at = NOW(), needs_rescore = %s WHERE source_row = %s"):
             return self._save_scores(params)
+        if normalized.startswith("UPDATE exam_answers SET question_g_score = NULL, question_g_rationale = NULL, question_g_scored_at = NULL, exam_scores_json = NULL, exam_scores_scored_at = NULL, average_score = NULL, average_score_answer_count = NULL, average_score_scored_at = NULL, needs_rescore = %s, updated_at = NOW() WHERE source_row > 0 AND "):
+            return self._reset_scores_by_user(normalized, params)
 
         raise AssertionError(f"Unsupported fake exam answers query: {normalized}")
 
@@ -1096,6 +1113,44 @@ class FakeExamAnswersConnection:
         row["average_score_scored_at"] = self._now()
         row["needs_rescore"] = bool(needs_rescore)
         return FakeCursor(rowcount=1)
+
+    def _reset_scores_by_user(self, normalized_query: str, params):
+        if not params:
+            return FakeCursor(rowcount=0)
+        needs_rescore = bool(params[-1])
+        filter_values = list(params[:-1])
+        where_part = normalized_query.split("WHERE source_row > 0 AND ", 1)[1]
+        filter_clauses = [part.strip() for part in where_part.split(" AND ") if part.strip()]
+        matched_rows = []
+        for row in self.state["rows"]:
+            if row["source_row"] <= 0:
+                continue
+            value_index = 0
+            is_match = True
+            for clause in filter_clauses:
+                if clause == "full_name = %s":
+                    is_match = is_match and str(row["full_name"]) == str(filter_values[value_index])
+                    value_index += 1
+                elif clause == "discord_tag = %s":
+                    is_match = is_match and str(row["discord_tag"]) == str(filter_values[value_index])
+                    value_index += 1
+                elif clause == "passport = %s":
+                    is_match = is_match and str(row["passport"]) == str(filter_values[value_index])
+                    value_index += 1
+            if is_match:
+                matched_rows.append(row)
+        for row in matched_rows:
+            row["question_g_score"] = None
+            row["question_g_rationale"] = None
+            row["question_g_scored_at"] = None
+            row["exam_scores_json"] = None
+            row["exam_scores_scored_at"] = None
+            row["average_score"] = None
+            row["average_score_answer_count"] = None
+            row["average_score_scored_at"] = None
+            row["needs_rescore"] = needs_rescore
+            row["updated_at"] = self._now()
+        return FakeCursor(rowcount=len(matched_rows))
 
 
 class FakeExamImportTasksPostgresBackend:
@@ -2362,6 +2417,70 @@ class PostgresExamAnswersStoreTests(unittest.TestCase):
 
         pending = store.list_entries_needing_scores(limit=10)
         self.assertEqual(pending, [])
+
+    def test_postgres_exam_answers_store_needs_scores_targets_new_rows_only_by_default(self):
+        store = self.make_store()
+        store.import_rows(
+            [
+                {
+                    "source_row": 2,
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "full_name": "Needs Score",
+                    "discord_tag": "needs-score",
+                    "passport": "123123",
+                    "exam_format": "remote",
+                    "payload": {"Question F": "Answer"},
+                    "answer_count": 1,
+                }
+            ]
+        )
+        store.save_exam_scores(2, [{"column": "F", "score": 1, "rationale": INVALID_BATCH_RATIONALE}])
+
+        self.assertEqual(store.count_entries_needing_scores(), 0)
+        self.assertEqual(len(store.list_entries_needing_scores(limit=10)), 0)
+        self.assertEqual(store.count_entries_needing_scores(include_rescore=True), 1)
+        self.assertEqual(len(store.list_entries_needing_scores(limit=10, include_rescore=True)), 1)
+
+    def test_postgres_exam_answers_store_can_reset_scores_for_specific_user(self):
+        store = self.make_store()
+        store.import_rows(
+            [
+                {
+                    "source_row": 2,
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "full_name": "Target User",
+                    "discord_tag": "target#1",
+                    "passport": "456456",
+                    "exam_format": "remote",
+                    "payload": {"Question F": "Answer A"},
+                    "answer_count": 1,
+                },
+                {
+                    "source_row": 3,
+                    "submitted_at": "2026-04-08 12:05:00",
+                    "full_name": "Other User",
+                    "discord_tag": "other#1",
+                    "passport": "789789",
+                    "exam_format": "remote",
+                    "payload": {"Question F": "Answer B"},
+                    "answer_count": 1,
+                },
+            ]
+        )
+        store.save_exam_scores(2, [{"column": "F", "score": 91, "rationale": "ok"}])
+        store.save_exam_scores(3, [{"column": "F", "score": 93, "rationale": "ok"}])
+
+        reset_count = store.reset_scores_for_user(discord_tag="target#1")
+        self.assertEqual(reset_count, 1)
+
+        target = store.get_entry(2)
+        other = store.get_entry(3)
+        self.assertIsNotNone(target)
+        self.assertIsNone(target["average_score"])
+        self.assertEqual(target["exam_scores"], [])
+        self.assertTrue(bool(target["needs_rescore"]))
+        self.assertIsNotNone(other)
+        self.assertEqual(other["average_score"], 93.0)
 
     def test_postgres_exam_answers_store_inserts_new_attempt_when_same_row_is_reused_later(self):
         store = self.make_store()

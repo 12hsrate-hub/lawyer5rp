@@ -284,6 +284,17 @@ class AdminBulkActionPayload(BaseModel):
     run_async: bool = True
 
 
+class AdminExamScoreResetPayload(BaseModel):
+    full_name: str = ""
+    discord_tag: str = ""
+    passport: str = ""
+
+    @field_validator("full_name", "discord_tag", "passport")
+    @classmethod
+    def validate_trimmed(cls, value: str) -> str:
+        return str(value or "").strip()
+
+
 class ProfileResponse(BaseModel):
     representative: RepresentativePayload
     server_code: str = ""

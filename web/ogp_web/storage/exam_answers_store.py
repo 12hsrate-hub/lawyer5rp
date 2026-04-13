@@ -760,7 +760,10 @@ class ExamAnswersStore:
             "changed_rows": changed_rows,
         }
 
-    def list_entries_needing_scores(self, limit: int = 500) -> list[dict[str, object]]:
+    def list_entries_needing_scores(self, limit: int = 500, *, include_rescore: bool = False) -> list[dict[str, object]]:
+        needs_scores_filter = "average_score IS NULL"
+        if include_rescore:
+            needs_scores_filter = f"(average_score IS NULL OR {self._needs_rescore_predicate()})"
         with closing(self._connect()) as conn:
             rows = conn.execute(
                 f"""
@@ -776,7 +779,7 @@ class ExamAnswersStore:
                     average_score_answer_count,
                     imported_at
                 FROM exam_answers
-                WHERE source_row > 0 AND (average_score IS NULL OR {self._needs_rescore_predicate()})
+                WHERE source_row > 0 AND {needs_scores_filter}
                 ORDER BY source_row ASC
                 LIMIT {self._placeholder()}
                 """,
@@ -825,16 +828,66 @@ class ExamAnswersStore:
             row = conn.execute("SELECT COUNT(*) AS total FROM exam_answers WHERE source_row > 0").fetchone()
         return int(row["total"] if row else 0)
 
-    def count_entries_needing_scores(self) -> int:
+    def count_entries_needing_scores(self, *, include_rescore: bool = False) -> int:
+        needs_scores_filter = "average_score IS NULL"
+        if include_rescore:
+            needs_scores_filter = f"(average_score IS NULL OR {self._needs_rescore_predicate()})"
         with closing(self._connect()) as conn:
             row = conn.execute(
                 f"""
                 SELECT COUNT(*) AS total
                 FROM exam_answers
-                WHERE source_row > 0 AND (average_score IS NULL OR {self._needs_rescore_predicate()})
+                WHERE source_row > 0 AND {needs_scores_filter}
                 """
             ).fetchone()
         return int(row["total"] if row else 0)
+
+    def reset_scores_for_user(
+        self,
+        *,
+        full_name: str = "",
+        discord_tag: str = "",
+        passport: str = "",
+    ) -> int:
+        normalized_full_name = str(full_name or "").strip()
+        normalized_discord_tag = str(discord_tag or "").strip()
+        normalized_passport = str(passport or "").strip()
+        filters: list[str] = []
+        values: list[object] = []
+        if normalized_full_name:
+            filters.append(f"full_name = {self._placeholder()}")
+            values.append(normalized_full_name)
+        if normalized_discord_tag:
+            filters.append(f"discord_tag = {self._placeholder()}")
+            values.append(normalized_discord_tag)
+        if normalized_passport:
+            filters.append(f"passport = {self._placeholder()}")
+            values.append(normalized_passport)
+        if not filters:
+            return 0
+
+        values.append(self._bool_true_value())
+        where_clause = " AND ".join(filters)
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                f"""
+                UPDATE exam_answers
+                SET question_g_score = NULL,
+                    question_g_rationale = NULL,
+                    question_g_scored_at = NULL,
+                    exam_scores_json = NULL,
+                    exam_scores_scored_at = NULL,
+                    average_score = NULL,
+                    average_score_answer_count = NULL,
+                    average_score_scored_at = NULL,
+                    needs_rescore = {self._placeholder()},
+                    updated_at = {self._current_timestamp_sql()}
+                WHERE source_row > 0 AND {where_clause}
+                """,
+                tuple(values),
+            )
+            conn.commit()
+        return int(getattr(row, "rowcount", 0) or 0)
 
     def list_entries(self, limit: int = 20) -> list[dict[str, object]]:
         with closing(self._connect()) as conn:
