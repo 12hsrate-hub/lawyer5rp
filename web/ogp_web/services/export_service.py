@@ -160,11 +160,8 @@ class ExportService:
         if execution_mode == "sync":
             return self._complete_sync_export(export_id, version_row, export_format, None)
 
-        def _run_async() -> None:
-            self._complete_sync_export(export_id, version_row, export_format, export_payload.get("job_run_id"))
-
-        job_run_id = self.job_layer.submit(job_name="export", run=_run_async)
-        updated = self.repository.update_export(
+        job_run_id = f"export:{uuid.uuid4().hex}"
+        self.repository.update_export(
             export_id=export_id,
             status="pending",
             storage_key="",
@@ -174,7 +171,15 @@ class ExportService:
             job_run_id=job_run_id,
             metadata_json={"gate_mode": gate.mode, "gate_reason": gate.reason, "execution_mode": execution_mode},
         )
-        return self._deserialize(updated)
+
+        def _run_async() -> None:
+            self._complete_sync_export(export_id, version_row, export_format, job_run_id)
+
+        self.job_layer.submit(job_name="export", run=_run_async)
+        refreshed = self.repository.get_export(export_id=export_id)
+        if refreshed is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Export не найден."])
+        return self._deserialize(refreshed)
 
     def list_exports(self, *, user_server_id: str, document_version_id: int):
         self._get_version_or_404(version_id=document_version_id, user_server_id=user_server_id)
