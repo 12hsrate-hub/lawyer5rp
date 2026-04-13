@@ -45,7 +45,7 @@ class ContentWorkflowRepository:
                        created_at, updated_at
                 FROM content_items
                 WHERE server_scope = %s
-                  AND ((%s IS NULL AND server_id IS NULL) OR server_id = %s)
+                  AND (((%s)::text IS NULL AND server_id IS NULL) OR server_id = (%s)::text)
                   AND (%s = '' OR content_type = %s)
                 ORDER BY updated_at DESC, id DESC
                 """,
@@ -96,7 +96,7 @@ class ContentWorkflowRepository:
                        created_at, updated_at
                 FROM content_items
                 WHERE server_scope = %s
-                  AND ((%s IS NULL AND server_id IS NULL) OR server_id = %s)
+                  AND (((%s)::text IS NULL AND server_id IS NULL) OR server_id = (%s)::text)
                   AND content_type = %s
                   AND content_key = %s
                 LIMIT 1
@@ -544,7 +544,7 @@ class ContentWorkflowRepository:
                        CAST(metadata_json AS TEXT) AS metadata_json,
                        created_at
                 FROM audit_logs
-                WHERE ((%s IS NULL AND server_id IS NULL) OR server_id = %s)
+                WHERE (((%s)::text IS NULL AND server_id IS NULL) OR server_id = (%s)::text)
                   AND (%s = '' OR entity_type = %s)
                   AND (%s = '' OR entity_id = %s)
                 ORDER BY created_at DESC, id DESC
