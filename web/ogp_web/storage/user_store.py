@@ -160,7 +160,12 @@ class UserStore:
             "users",
             "servers",
             "user_server_roles",
+            "roles",
+            "permissions",
+            "role_permissions",
+            "user_roles",
             "complaint_drafts",
+            "generated_documents",
         )
         conn = self._connect()
         missing: list[str] = []
@@ -630,6 +635,110 @@ class UserStore:
         if rowcount <= 0:
             raise AuthError("Пользователь не найден.")
 
+    def save_generated_document(
+        self,
+        *,
+        username: str,
+        server_code: str,
+        document_kind: str,
+        payload: dict[str, Any],
+        result_text: str,
+        context_snapshot: dict[str, Any],
+    ) -> int:
+        normalized_username = _normalize_username(username)
+        normalized_server_code = str(server_code or DEFAULT_SERVER_CODE).strip().lower() or DEFAULT_SERVER_CODE
+        normalized_kind = str(document_kind or "").strip().lower() or "complaint"
+        row = self._pg_fetchone(
+            """
+            INSERT INTO generated_documents (
+                user_id,
+                server_code,
+                document_kind,
+                payload_json,
+                result_text,
+                context_snapshot_json
+            )
+            SELECT
+                u.id,
+                %s,
+                %s,
+                %s::jsonb,
+                %s,
+                %s::jsonb
+            FROM users u
+            WHERE u.username = %s
+            RETURNING id
+            """,
+            (
+                normalized_server_code,
+                normalized_kind,
+                json.dumps(payload or {}, ensure_ascii=False),
+                str(result_text or ""),
+                json.dumps(context_snapshot or {}, ensure_ascii=False),
+                normalized_username,
+            ),
+        )
+        if row is None:
+            raise AuthError("Пользователь не найден.")
+        return int(row["id"])
+
+    def list_generated_documents(self, username: str, *, limit: int = 30) -> list[dict[str, Any]]:
+        normalized_username = _normalize_username(username)
+        safe_limit = max(1, min(200, int(limit or 30)))
+        rows = self._pg_fetchall(
+            """
+            SELECT
+                gd.id AS id,
+                gd.server_code AS server_code,
+                gd.document_kind AS document_kind,
+                gd.created_at AS created_at
+            FROM generated_documents gd
+            JOIN users u ON u.id = gd.user_id
+            WHERE u.username = %s
+            ORDER BY gd.created_at DESC, gd.id DESC
+            LIMIT %s
+            """,
+            (normalized_username, safe_limit),
+        )
+        return [dict(row) for row in rows]
+
+    def get_generated_document_snapshot(self, username: str, document_id: int) -> dict[str, Any] | None:
+        normalized_username = _normalize_username(username)
+        normalized_document_id = int(document_id or 0)
+        if normalized_document_id <= 0:
+            return None
+        row = self._pg_fetchone(
+            """
+            SELECT
+                gd.id AS id,
+                gd.server_code AS server_code,
+                gd.document_kind AS document_kind,
+                gd.created_at AS created_at,
+                CAST(gd.context_snapshot_json AS TEXT) AS context_snapshot_json
+            FROM generated_documents gd
+            JOIN users u ON u.id = gd.user_id
+            WHERE u.username = %s
+              AND gd.id = %s
+            LIMIT 1
+            """,
+            (normalized_username, normalized_document_id),
+        )
+        if row is None:
+            return None
+        try:
+            snapshot = json.loads(str(row["context_snapshot_json"] or "{}"))
+        except json.JSONDecodeError:
+            snapshot = {}
+        if not isinstance(snapshot, dict):
+            snapshot = {}
+        return {
+            "id": int(row["id"]),
+            "server_code": str(row["server_code"] or ""),
+            "document_kind": str(row["document_kind"] or ""),
+            "created_at": str(row["created_at"] or ""),
+            "context_snapshot": snapshot,
+        }
+
     def list_users(self, *, limit: int | None = None) -> list[dict[str, Any]]:
         safe_limit = None
         if limit is not None:
@@ -724,6 +833,36 @@ class UserStore:
         from ogp_web.services.user_admin_store_service import is_gka_user
 
         return is_gka_user(self, username, server_code=server_code)
+
+    def get_permission_codes(self, username: str, *, server_code: str | None = None) -> frozenset[str]:
+        normalized = _normalize_username(username)
+        resolved_server = str(server_code or DEFAULT_SERVER_CODE).strip().lower() or DEFAULT_SERVER_CODE
+        rows = self._pg_fetchall(
+            """
+            SELECT DISTINCT p.code AS code
+            FROM users u
+            JOIN user_roles ur
+              ON ur.user_id = u.id
+            JOIN role_permissions rp
+              ON rp.role_id = ur.role_id
+            JOIN permissions p
+              ON p.id = rp.permission_id
+            WHERE u.username = %s
+              AND (ur.server_id IS NULL OR ur.server_id = %s)
+            """,
+            (normalized, resolved_server),
+        )
+        return frozenset(
+            str(row["code"]).strip().lower()
+            for row in rows
+            if str(row.get("code") or "").strip()
+        )
+
+    def has_permission(self, username: str, permission_code: str, *, server_code: str | None = None) -> bool:
+        normalized_permission = str(permission_code or "").strip().lower()
+        if not normalized_permission:
+            return True
+        return normalized_permission in self.get_permission_codes(username, server_code=server_code)
 
     def get_server_code(self, username: str) -> str:
         return self._resolve_user_server_code(username)

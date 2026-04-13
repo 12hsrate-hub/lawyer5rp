@@ -14,44 +14,50 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class PermissionSet:
-    is_admin: bool
-    is_tester: bool
-    is_gka: bool
+    codes: frozenset[str]
     server_code: str
+
+    def has(self, permission: str) -> bool:
+        normalized = str(permission or "").strip().lower()
+        if not normalized:
+            return True
+        return normalized in self.codes
+
+    @property
+    def is_admin(self) -> bool:
+        return self.has("manage_servers")
+
+    @property
+    def is_tester(self) -> bool:
+        return self.has("court_claims")
+
+    @property
+    def is_gka(self) -> bool:
+        return self.has("exam_import")
 
     @property
     def can_access_exam_import(self) -> bool:
-        return self.is_gka
+        return self.has("exam_import")
 
     @property
     def can_access_complaint_presets(self) -> bool:
-        return self.is_gka
+        return self.has("complaint_presets")
 
     @property
     def can_access_court_claims(self) -> bool:
-        return self.is_tester
+        return self.has("court_claims")
 
     def allows(self, permission: str) -> bool:
-        if not permission:
-            return True
-        if permission == "admin":
-            return self.is_admin
-        if permission == "exam_import":
-            return self.can_access_exam_import
-        if permission == "court_claims":
-            return self.can_access_court_claims
-        return False
+        return self.has(permission)
 
 
 def build_permission_set(store: UserStore, username: str, server_config: ServerConfig) -> PermissionSet:
     normalized_username = str(username or "").strip().lower()
-    is_admin = is_admin_user(normalized_username)
-    test_user = is_test_user(normalized_username)
-    is_gka = test_user or store.is_gka_user(normalized_username, server_code=server_config.code)
-    is_tester = test_user or store.is_tester_user(normalized_username, server_code=server_config.code)
-    return PermissionSet(
-        is_admin=is_admin,
-        is_tester=is_tester,
-        is_gka=is_gka,
-        server_code=server_config.code,
-    )
+    codes = set(store.get_permission_codes(normalized_username, server_code=server_config.code))
+
+    if is_admin_user(normalized_username):
+        codes.update({"manage_servers", "manage_laws", "view_analytics"})
+    if is_test_user(normalized_username):
+        codes.update({"court_claims", "exam_import", "complaint_presets"})
+
+    return PermissionSet(codes=frozenset(codes), server_code=server_config.code)

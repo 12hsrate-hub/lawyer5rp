@@ -7,11 +7,10 @@ from threading import Lock
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 
-from ogp_web.dependencies import get_admin_metrics_store, get_exam_answers_store, get_exam_import_task_registry
-from ogp_web.env import is_test_user
+from ogp_web.dependencies import get_admin_metrics_store, get_exam_answers_store, get_exam_import_task_registry, requires_permission
 from ogp_web.schemas import ExamAnswerScore, ExamImportDetail, ExamImportResponse, ExamImportTaskStatus
 from ogp_web.services import exam_import_service
-from ogp_web.services.auth_service import AuthUser, require_user
+from ogp_web.services.auth_service import AuthUser
 from ogp_web.services.exam_import_tasks import (
     ExamImportTaskCapacityError,
     ExamImportTaskRegistry,
@@ -179,12 +178,10 @@ def _build_failed_rescoring_result(
 
 @router.post("/api/exam-import/sync", response_model=ExamImportResponse)
 async def sync_exam_import(
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission("exam_import")),
     store: ExamAnswersStore = Depends(get_exam_answers_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ExamImportResponse:
-    if not is_test_user(user.username):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
     try:
         rows = await _run_sync_io(fetch_exam_sheet_rows, force_refresh=True)
@@ -222,12 +219,10 @@ async def sync_exam_import(
 
 @router.post("/api/exam-import/score", response_model=ExamImportResponse)
 async def score_exam_import(
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission("exam_import")),
     store: ExamAnswersStore = Depends(get_exam_answers_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ExamImportResponse:
-    if not is_test_user(user.username):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
     try:
         payload = await _run_sync_io(_build_bulk_scoring_result, user=user, store=store, metrics_store=metrics_store)
@@ -239,12 +234,10 @@ async def score_exam_import(
 @router.post("/api/exam-import/rows/{source_row}/score", response_model=ExamImportDetail)
 async def score_exam_import_row(
     source_row: int,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission("exam_import")),
     store: ExamAnswersStore = Depends(get_exam_answers_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ExamImportDetail:
-    if not is_test_user(user.username):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
     try:
         payload = await _run_sync_io(
@@ -263,13 +256,11 @@ async def score_exam_import_row(
 
 @router.post("/api/exam-import/score/tasks", response_model=ExamImportTaskStatus)
 async def create_exam_import_score_task(
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission("exam_import")),
     store: ExamAnswersStore = Depends(get_exam_answers_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     task_registry: ExamImportTaskRegistry = Depends(get_exam_import_task_registry),
 ) -> ExamImportTaskStatus:
-    if not is_test_user(user.username):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
     try:
         record = task_registry.create_task(
@@ -288,13 +279,11 @@ async def create_exam_import_score_task(
 
 @router.post("/api/exam-import/rescore-failed/tasks", response_model=ExamImportTaskStatus)
 async def create_exam_import_failed_rescore_task(
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission("exam_import")),
     store: ExamAnswersStore = Depends(get_exam_answers_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     task_registry: ExamImportTaskRegistry = Depends(get_exam_import_task_registry),
 ) -> ExamImportTaskStatus:
-    if not is_test_user(user.username):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
     try:
         record = task_registry.create_task(
@@ -314,13 +303,11 @@ async def create_exam_import_failed_rescore_task(
 @router.post("/api/exam-import/rows/{source_row}/score/tasks", response_model=ExamImportTaskStatus)
 async def create_exam_import_row_score_task(
     source_row: int,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission("exam_import")),
     store: ExamAnswersStore = Depends(get_exam_answers_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     task_registry: ExamImportTaskRegistry = Depends(get_exam_import_task_registry),
 ) -> ExamImportTaskStatus:
-    if not is_test_user(user.username):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
     if await _run_sync_io(store.get_entry, source_row) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Строка не найдена в базе импорта."])
@@ -344,11 +331,9 @@ async def create_exam_import_row_score_task(
 @router.get("/api/exam-import/tasks/{task_id}", response_model=ExamImportTaskStatus)
 async def get_exam_import_task(
     task_id: str,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission("exam_import")),
     task_registry: ExamImportTaskRegistry = Depends(get_exam_import_task_registry),
 ) -> ExamImportTaskStatus:
-    if not is_test_user(user.username):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
     record = task_registry.get_task(task_id)
     if record is None:
@@ -359,11 +344,9 @@ async def get_exam_import_task(
 @router.get("/api/exam-import/rows/{source_row}", response_model=ExamImportDetail)
 async def exam_import_detail(
     source_row: int,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission("exam_import")),
     store: ExamAnswersStore = Depends(get_exam_answers_store),
 ) -> ExamImportDetail:
-    if not is_test_user(user.username):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
     entry = await _run_sync_io(store.get_entry, source_row)
     if entry is None:
@@ -377,11 +360,9 @@ async def exam_import_detail(
 @router.delete("/api/exam-import/rows/{source_row}/scores", response_model=ExamImportDetail)
 async def clear_exam_import_row_scores(
     source_row: int,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission("exam_import")),
     store: ExamAnswersStore = Depends(get_exam_answers_store),
 ) -> ExamImportDetail:
-    if not is_test_user(user.username):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
     entry = await _run_sync_io(store.get_entry, source_row)
     if entry is None:

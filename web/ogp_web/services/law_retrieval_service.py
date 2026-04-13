@@ -26,6 +26,7 @@ class LawRetrievalResult:
     confidence: str
     is_configured: bool
     bundle_path: str
+    law_version_id: int | None
     configured_sources: tuple[str, ...]
     indexed_chunk_count: int
     bundle_health: BundleHealth
@@ -56,6 +57,7 @@ def retrieve_law_context(
     score_chunk_func: ScoreLawChunk,
     extract_excerpt_func: ExtractExcerpt,
     default_server_code: str = DEFAULT_SERVER_CODE,
+    law_version_id: int | None = None,
 ) -> LawRetrievalResult:
     normalized_server_code = str(server_code or default_server_code).strip() or default_server_code
     retrieval_query = str(query or "").strip()
@@ -65,9 +67,14 @@ def retrieve_law_context(
     )
     bundle_path = str(getattr(server_config, "law_qa_bundle_path", "") or "").strip()
     bundle_max_age_hours = int(getattr(server_config, "law_qa_bundle_max_age_hours", 168) or 168)
-    bundle_meta = load_law_bundle_meta(normalized_server_code, bundle_path) if bundle_path else None
+    bundle_meta = load_law_bundle_meta(normalized_server_code, bundle_path, requested_version_id=law_version_id)
 
-    chunks = list(load_law_bundle_chunks_func(normalized_server_code, bundle_path)) if bundle_path else []
+    chunks: list[LawChunk] = []
+    if bundle_path:
+        try:
+            chunks = list(load_law_bundle_chunks_func(normalized_server_code, bundle_path, law_version_id))
+        except TypeError:
+            chunks = list(load_law_bundle_chunks_func(normalized_server_code, bundle_path))
     if not chunks and configured_sources:
         chunks = list(build_law_chunk_index_func(configured_sources))
 
@@ -113,6 +120,7 @@ def retrieve_law_context(
         confidence=confidence,
         is_configured=bool(bundle_path or configured_sources),
         bundle_path=bundle_path,
+        law_version_id=getattr(bundle_meta, "law_version_id", None) if bundle_meta else None,
         configured_sources=configured_sources,
         indexed_chunk_count=len(chunks),
         bundle_health=bundle_health,

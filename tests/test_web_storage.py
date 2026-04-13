@@ -50,11 +50,13 @@ class PostgresBackend:
     def __init__(self, *, missing_tables: set[str] | None = None):
         self._state = {
             "next_user_id": 1,
+            "next_generated_document_id": 1,
             "servers": {},
             "users": {},
             "roles": {},
             "selected_servers": {},
             "drafts": {},
+            "generated_documents": [],
             "auth_rate_limit_events": [],
             "clock": 0,
             "missing_tables": set(missing_tables or set()),
@@ -124,6 +126,8 @@ class FakePostgresConnection:
             return self._insert_draft(params)
         if normalized.startswith("INSERT INTO complaint_drafts (user_id, server_code, draft_json, updated_at) SELECT"):
             return self._save_draft(params)
+        if normalized.startswith("INSERT INTO generated_documents ("):
+            return self._insert_generated_document(params)
         if (
             (
                 "FROM users u LEFT JOIN user_server_roles usr" in normalized
@@ -165,6 +169,12 @@ class FakePostgresConnection:
             return self._reactivate_user(params[0])
         if normalized.startswith("UPDATE users SET api_quota_daily = %s WHERE username = %s"):
             return self._set_daily_quota(params)
+        if normalized.startswith("SELECT DISTINCT p.code AS code FROM users u JOIN user_roles ur"):
+            return self._list_permission_codes(params)
+        if normalized.startswith("SELECT gd.id AS id, gd.server_code AS server_code, gd.document_kind AS document_kind, gd.created_at AS created_at FROM generated_documents gd JOIN users u ON u.id = gd.user_id WHERE u.username = %s ORDER BY gd.created_at DESC, gd.id DESC LIMIT %s"):
+            return self._list_generated_documents(params)
+        if normalized.startswith("SELECT gd.id AS id, gd.server_code AS server_code, gd.document_kind AS document_kind, gd.created_at AS created_at, CAST(gd.context_snapshot_json AS TEXT) AS context_snapshot_json FROM generated_documents gd JOIN users u ON u.id = gd.user_id WHERE u.username = %s AND gd.id = %s LIMIT 1"):
+            return self._fetch_generated_document_snapshot(params)
 
         raise AssertionError(f"Unsupported fake postgres query: {normalized}")
 
@@ -246,6 +256,26 @@ class FakePostgresConnection:
             "updated_at": self._now(),
         }
         return FakeCursor(rowcount=1)
+
+    def _insert_generated_document(self, params):
+        server_code, document_kind, payload_json, result_text, context_snapshot_json, username = params
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0)
+        document_id = self.state["next_generated_document_id"]
+        self.state["next_generated_document_id"] += 1
+        row = {
+            "id": document_id,
+            "user_id": user["id"],
+            "server_code": str(server_code),
+            "document_kind": str(document_kind),
+            "payload_json": json.loads(payload_json),
+            "result_text": str(result_text),
+            "context_snapshot_json": json.loads(context_snapshot_json),
+            "created_at": self._now(),
+        }
+        self.state["generated_documents"].append(row)
+        return FakeCursor(rowcount=1, one={"id": document_id})
 
     def _find_by(self, field: str, value: str):
         for user in self.state["users"].values():
@@ -334,6 +364,30 @@ class FakePostgresConnection:
         ]
         if safe_limit:
             rows = rows[:safe_limit]
+        return FakeCursor(rowcount=len(rows), rows=rows)
+
+    def _list_permission_codes(self, params):
+        username, server_code = params
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0, rows=[])
+
+        role = self.state["roles"].get((user["id"], server_code))
+        permission_codes: list[str] = []
+        if role:
+            if role.get("is_tester"):
+                permission_codes.append("court_claims")
+            if role.get("is_gka"):
+                permission_codes.extend(("exam_import", "complaint_presets"))
+
+        rows = []
+        seen_codes = set()
+        for code in permission_codes:
+            normalized = str(code or "").strip().lower()
+            if not normalized or normalized in seen_codes:
+                continue
+            seen_codes.add(normalized)
+            rows.append({"code": normalized})
         return FakeCursor(rowcount=len(rows), rows=rows)
 
     def _mark_email_verified(self, username: str, *, preserve_existing: bool = False):
@@ -453,6 +507,46 @@ class FakePostgresConnection:
             return FakeCursor(rowcount=0)
         user["api_quota_daily"] = int(daily_limit or 0)
         return FakeCursor(rowcount=1)
+
+    def _list_generated_documents(self, params):
+        username, limit = params
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0, rows=[])
+        rows = [
+            {
+                "id": item["id"],
+                "server_code": item["server_code"],
+                "document_kind": item["document_kind"],
+                "created_at": item["created_at"],
+            }
+            for item in sorted(
+                self.state["generated_documents"],
+                key=lambda item: (item["created_at"], item["id"]),
+                reverse=True,
+            )
+            if item["user_id"] == user["id"]
+        ][: int(limit)]
+        return FakeCursor(rowcount=len(rows), rows=rows)
+
+    def _fetch_generated_document_snapshot(self, params):
+        username, document_id = params
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0)
+        for item in self.state["generated_documents"]:
+            if item["user_id"] == user["id"] and item["id"] == int(document_id):
+                return FakeCursor(
+                    rowcount=1,
+                    one={
+                        "id": item["id"],
+                        "server_code": item["server_code"],
+                        "document_kind": item["document_kind"],
+                        "created_at": item["created_at"],
+                        "context_snapshot_json": json.dumps(item["context_snapshot_json"], ensure_ascii=False),
+                    },
+                )
+        return FakeCursor(rowcount=0)
 
     def _insert_rate_limit_event(self, params):
         action, subject_key = params

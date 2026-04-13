@@ -82,6 +82,7 @@ class ComplaintPayload(BaseModel):
 
 class GenerateResponse(BaseModel):
     bbcode: str
+    generated_document_id: int | None = None
 
 
 class ComplaintDraftPayload(BaseModel):
@@ -92,6 +93,25 @@ class ComplaintDraftResponse(BaseModel):
     draft: dict = Field(default_factory=dict)
     updated_at: str = ""
     message: str = ""
+
+
+class GeneratedDocumentHistoryItem(BaseModel):
+    id: int
+    server_code: str = ""
+    document_kind: str = ""
+    created_at: str = ""
+
+
+class GeneratedDocumentHistoryResponse(BaseModel):
+    items: List[GeneratedDocumentHistoryItem] = Field(default_factory=list)
+
+
+class GeneratedDocumentSnapshotResponse(BaseModel):
+    id: int
+    server_code: str = ""
+    document_kind: str = ""
+    created_at: str = ""
+    context_snapshot: dict[str, Any] = Field(default_factory=dict)
 
 
 class RehabPayload(BaseModel):
@@ -116,6 +136,8 @@ class SuggestPayload(BaseModel):
     raw_desc: str = ""
     complaint_basis: str = ""
     main_focus: str = ""
+    law_version_id: int | None = None
+    template_version_id: int | None = None
 
     @field_validator("complaint_basis")
     @classmethod
@@ -136,6 +158,7 @@ class LawQaPayload(BaseModel):
     model: str = ""
     question: str = ""
     max_answer_chars: int = 2200
+    law_version_id: int | None = None
 
     @field_validator("server_code")
     @classmethod
@@ -170,6 +193,7 @@ class LawQaResponse(BaseModel):
     bundle_status: str = ""
     bundle_generated_at: str = ""
     bundle_fingerprint: str = ""
+    law_version_id: int | None = None
     warnings: List[str] = Field(default_factory=list)
     shadow: dict[str, Any] = Field(default_factory=dict)
     selected_norms: List[dict[str, Any]] = Field(default_factory=list)
@@ -373,3 +397,16 @@ class ExamImportTaskStatus(BaseModel):
     error: str = ""
     progress: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
+
+
+class AdminCatalogItemPayload(BaseModel):
+    title: str = ""
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminCatalogWorkflowPayload(BaseModel):
+    target_state: str = ""
+
+
+class AdminCatalogRollbackPayload(BaseModel):
+    version: int = 0

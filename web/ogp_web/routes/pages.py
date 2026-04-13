@@ -5,10 +5,11 @@ import json
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ogp_web.dependencies import get_exam_answers_store, get_user_store
+from ogp_web.dependencies import get_exam_answers_store, get_user_store, requires_permission
+from ogp_web.env import is_test_user
 from ogp_web.server_config import PermissionSet, ServerConfig, build_permission_set, get_server_config, list_server_configs
 from ogp_web.services.ai_service import get_default_law_qa_model
-from ogp_web.services.auth_service import AuthError, AuthUser, get_current_user, require_user
+from ogp_web.services.auth_service import AuthError, AuthUser, get_current_user
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
 from ogp_web.web import page_context, templates
@@ -145,7 +146,7 @@ async def reset_password_page(request: Request, token: str = ""):
 @router.get("/complaint", response_class=HTMLResponse)
 async def complaint_page(
     request: Request,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ):
     server_config, permissions = _server_context(store, user.username)
@@ -166,12 +167,10 @@ async def complaint_page(
 @router.get("/complaint-test", response_class=HTMLResponse)
 async def complaint_test_page(
     request: Request,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission("court_claims")),
     store: UserStore = Depends(get_user_store),
 ):
     server_config, permissions = _server_context(store, user.username)
-    if not permissions.can_access_complaint_presets:
-        return RedirectResponse(url="/complaint", status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse(
         request,
         "complaint.html",
@@ -181,7 +180,11 @@ async def complaint_test_page(
             permissions=permissions,
             nav_active="complaint_test",
             complaint_mode="test",
-            preset_payload_json=json.dumps(server_config.complaint_test_preset, ensure_ascii=False),
+            preset_payload_json=(
+                json.dumps(server_config.complaint_test_preset, ensure_ascii=False)
+                if is_test_user(user.username)
+                else ""
+            ),
         ),
     )
 
@@ -189,13 +192,11 @@ async def complaint_test_page(
 @router.get("/exam-import-test", response_class=HTMLResponse)
 async def exam_import_page(
     request: Request,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission("exam_import")),
     user_store: UserStore = Depends(get_user_store),
     store: ExamAnswersStore = Depends(get_exam_answers_store),
 ):
     server_config, permissions = _server_context(user_store, user.username)
-    if not permissions.can_access_exam_import:
-        return RedirectResponse(url="/complaint", status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse(
         request,
         "exam_import.html",
@@ -214,12 +215,10 @@ async def exam_import_page(
 @router.get("/court-claim-test", response_class=HTMLResponse)
 async def court_claim_test_page(
     request: Request,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission("court_claims")),
     store: UserStore = Depends(get_user_store),
 ):
     server_config, permissions = _server_context(store, user.username)
-    if not permissions.can_access_court_claims:
-        return RedirectResponse(url="/complaint", status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse(
         request,
         "court_claim_test.html",
@@ -235,12 +234,10 @@ async def court_claim_test_page(
 @router.get("/law-qa-test", response_class=HTMLResponse)
 async def law_qa_test_page(
     request: Request,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission("court_claims")),
     store: UserStore = Depends(get_user_store),
 ):
     server_config, permissions = _server_context(store, user.username)
-    if not permissions.can_access_court_claims:
-        return RedirectResponse(url="/complaint", status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse(
         request,
         "law_qa_test.html",
@@ -263,7 +260,7 @@ async def law_qa_test_page(
 @router.get("/rehab", response_class=HTMLResponse)
 async def rehab_page(
     request: Request,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ):
     server_config, permissions = _server_context(store, user.username)
@@ -280,7 +277,7 @@ async def rehab_page(
 
 
 @router.get("/rehab-test", response_class=HTMLResponse)
-async def rehab_test_redirect(user: AuthUser = Depends(require_user)):
+async def rehab_test_redirect(user: AuthUser = Depends(requires_permission())):
     _ = user
     return RedirectResponse(url="/rehab", status_code=status.HTTP_302_FOUND)
 
@@ -288,7 +285,7 @@ async def rehab_test_redirect(user: AuthUser = Depends(require_user)):
 @router.get("/profile", response_class=HTMLResponse)
 async def profile_page(
     request: Request,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ):
     server_config, permissions = _server_context(store, user.username)
