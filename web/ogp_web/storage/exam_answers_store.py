@@ -866,7 +866,7 @@ class ExamAnswersStore:
         if not filters:
             return 0
 
-        values.append(self._bool_true_value())
+        values = [self._bool_true_value(), *values]
         where_clause = " AND ".join(filters)
         with closing(self._connect()) as conn:
             row = conn.execute(

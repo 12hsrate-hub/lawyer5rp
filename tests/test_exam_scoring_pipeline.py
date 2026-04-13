@@ -25,6 +25,10 @@ def test_precheck_marks_empty_and_fatal_only():
     assert empty["auto_decision"] == "empty"
     assert int(empty["result"]["score"]) == 1
 
+    na_item = ogp_ai._canonicalize_exam_item({"column": "A2", "user_answer": "N/A"})
+    na_result = ogp_ai._precheck_exam_item(na_item)
+    assert na_result["auto_decision"] == "empty"
+
     fatal_item = ogp_ai._canonicalize_exam_item(
         {
             "column": "B",
@@ -46,6 +50,16 @@ def test_precheck_marks_empty_and_fatal_only():
     negated = ogp_ai._precheck_exam_item(negated_item)
     assert negated["auto_decision"] == "llm"
 
+    broader_negation_item = ogp_ai._canonicalize_exam_item(
+        {
+            "column": "D",
+            "user_answer": "Нельзя нарушить ст. 7 ни при каких условиях.",
+            "fatal_errors": ["нарушить ст. 7"],
+        }
+    )
+    broader_negation = ogp_ai._precheck_exam_item(broader_negation_item)
+    assert broader_negation["auto_decision"] == "llm"
+
 
 def test_build_exam_batches_by_budget_separates_long_cases():
     short_item = ogp_ai._canonicalize_exam_item(
@@ -59,3 +73,35 @@ def test_build_exam_batches_by_budget_separates_long_cases():
     assert len(batches) >= 2
     assert any(batch[0]["column"] == "F" for batch in batches)
     assert any(batch[0]["column"] == "G" for batch in batches)
+
+
+def test_exam_score_cache_key_changes_with_rubric_metadata():
+    cache = ogp_ai.get_ai_cache()
+    base_key = ogp_ai._build_exam_score_cache_key(
+        cache,
+        user_answer="alpha",
+        correct_answer="beta",
+        column="F",
+        question="question",
+        exam_type="remote",
+        question_type="standard",
+        rubric_version="gta5rp_legal_v3",
+        key_points=["k1"],
+        must_not_include=[],
+        fatal_errors=[],
+    )
+    changed_key = ogp_ai._build_exam_score_cache_key(
+        cache,
+        user_answer="alpha",
+        correct_answer="beta",
+        column="F",
+        question="question",
+        exam_type="remote",
+        question_type="exact_ref",
+        rubric_version="gta5rp_legal_v4",
+        key_points=["k1"],
+        must_not_include=["wrong ref"],
+        fatal_errors=["fatal"],
+    )
+
+    assert base_key != changed_key

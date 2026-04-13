@@ -859,12 +859,22 @@ def build_exam_scoring_prompt_spec(
     column: str = "",
     question: str = "",
     exam_type: str = "",
+    question_type: str = "standard",
+    rubric_version: str = "",
     key_points: list[str] | None = None,
+    must_not_include: list[str] | None = None,
+    fatal_errors: list[str] | None = None,
     mode: str = EXAM_SCORING_PROMPT_MODE_FULL,
 ) -> PromptSpec:
     prompt_mode = normalize_exam_scoring_prompt_mode(mode)
     normalized_key_points = [str(item).strip() for item in (key_points or []) if str(item).strip()]
+    normalized_must_not_include = [str(item).strip() for item in (must_not_include or []) if str(item).strip()]
+    normalized_fatal_errors = [str(item).strip() for item in (fatal_errors or []) if str(item).strip()]
     key_points_text = "\n".join(f"- {item}" for item in normalized_key_points) or "- not provided"
+    must_not_include_text = "\n".join(f"- {item}" for item in normalized_must_not_include) or "- not provided"
+    fatal_errors_text = "\n".join(f"- {item}" for item in normalized_fatal_errors) or "- not provided"
+    normalized_question_type = str(question_type or "standard").strip().lower() or "standard"
+    normalized_rubric_version = str(rubric_version or "").strip() or "not provided"
     if prompt_mode == EXAM_SCORING_PROMPT_MODE_COMPACT:
         return PromptSpec(
             name="exam_scoring",
@@ -885,8 +895,14 @@ Exam type: {exam_type}
 Question: {question}
 Draft reference answer: {correct_answer}
 Student answer: {user_answer}
+Question type: {normalized_question_type}
+Rubric version: {normalized_rubric_version}
 Minimal required points:
 {key_points_text}
+must_not_include:
+{must_not_include_text}
+fatal_errors:
+{fatal_errors_text}
 """,
                 ),
                 (
@@ -947,17 +963,20 @@ Draft reference answer:
 Student answer:
 {user_answer}
 
+Rubric version:
+{normalized_rubric_version}
+
 Minimal required points:
 {key_points_text}
 
 must_not_include:
-- not provided
+{must_not_include_text}
 
 fatal_errors:
-- not provided
+{fatal_errors_text}
 
 question_type:
-standard
+{normalized_question_type}
 """,
             ),
             ("scoring_rules", _build_exam_scoring_rules()),
@@ -1001,7 +1020,11 @@ def build_exam_scoring_prompt(
     column: str = "",
     question: str = "",
     exam_type: str = "",
+    question_type: str = "standard",
+    rubric_version: str = "",
     key_points: list[str] | None = None,
+    must_not_include: list[str] | None = None,
+    fatal_errors: list[str] | None = None,
     mode: str = EXAM_SCORING_PROMPT_MODE_FULL,
 ) -> str:
     return build_exam_scoring_prompt_spec(
@@ -1010,7 +1033,11 @@ def build_exam_scoring_prompt(
         column=column,
         question=question,
         exam_type=exam_type,
+        question_type=question_type,
+        rubric_version=rubric_version,
         key_points=key_points,
+        must_not_include=must_not_include,
+        fatal_errors=fatal_errors,
         mode=mode,
     ).text
 

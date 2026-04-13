@@ -194,7 +194,11 @@ def retry_invalid_batch_scores(
                 column=str(item.get("column") or ""),
                 question=str(item.get("question") or item.get("header") or ""),
                 exam_type=str(item.get("exam_type") or ""),
+                question_type=str(item.get("question_type") or "standard"),
+                rubric_version=str(item.get("rubric_version") or ""),
                 key_points=[str(point).strip() for point in (item.get("key_points") or []) if str(point).strip()],
+                must_not_include=[str(point).strip() for point in (item.get("must_not_include") or []) if str(point).strip()],
+                fatal_errors=[str(point).strip() for point in (item.get("fatal_errors") or []) if str(point).strip()],
             )
             stats["retry_single_items"] += 1
             stats["retry_single_calls"] += 1

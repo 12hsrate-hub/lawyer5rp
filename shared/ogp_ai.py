@@ -43,7 +43,10 @@ _BATCH_SCORING_CHUNK_SIZE = 12
 _RETRY_BATCH_SCORING_CHUNK_SIZE = 4
 _EXAM_RUBRIC_VERSION = "gta5rp_legal_v3"
 _EXAM_EMPTY_MARKERS = {"", "-", "—", "нет ответа", "n/a", "none", "null"}
-_NEGATION_WINDOW_PATTERN = re.compile(r"(?:\bне\b|\bnot\b)[\s:,-]{0,6}$", flags=re.IGNORECASE)
+_NEGATION_WINDOW_PATTERN = re.compile(
+    r"(?:\bне\b(?:\s+\w+){0,2}|\bnot\b(?:\s+\w+){0,2}|\bнельзя\b|\bзапрещено\b|\bнедопустимо\b)[\s:,-]{0,6}$",
+    flags=re.IGNORECASE,
+)
 _PRECHECK_MIN_MARKER_HITS = 2
 _BATCH_TARGET_OCCUPANCY = 0.60
 _BATCH_CONTEXT_BUDGET_TOKENS = 6000
@@ -662,7 +665,11 @@ def _build_exam_score_cache_key(
     column: str = "",
     question: str = "",
     exam_type: str = "",
+    question_type: str = "standard",
+    rubric_version: str = "",
     key_points: list[str] | None = None,
+    must_not_include: list[str] | None = None,
+    fatal_errors: list[str] | None = None,
 ) :
     return cache.build_key(
         operation="score_exam_answer",
@@ -672,7 +679,11 @@ def _build_exam_score_cache_key(
             "column": column,
             "question": question,
             "exam_type": exam_type,
+            "question_type": str(question_type or "standard").strip().lower() or "standard",
+            "rubric_version": str(rubric_version or _EXAM_RUBRIC_VERSION).strip() or _EXAM_RUBRIC_VERSION,
             "key_points": [str(item).strip() for item in (key_points or []) if str(item).strip()],
+            "must_not_include": [str(item).strip() for item in (must_not_include or []) if str(item).strip()],
+            "fatal_errors": [str(item).strip() for item in (fatal_errors or []) if str(item).strip()],
             "user_answer": user_answer,
             "correct_answer": correct_answer,
             "normalized_user_answer": _normalize_exam_answer(user_answer),
@@ -689,7 +700,7 @@ def _estimate_prompt_tokens(value: str) -> int:
 
 
 def _contains_explicit_negative_context(*, text: str, term_start: int) -> bool:
-    left = text[max(0, term_start - 12) : term_start]
+    left = text[max(0, term_start - 24) : term_start]
     return bool(_NEGATION_WINDOW_PATTERN.search(left))
 
 
@@ -716,6 +727,7 @@ def _canonicalize_exam_item(item: dict[str, object]) -> dict[str, object]:
         "rubric_version": str(item.get("rubric_version") or _EXAM_RUBRIC_VERSION).strip() or _EXAM_RUBRIC_VERSION,
         "exam_type": _normalize_exam_text_soft(str(item.get("exam_type") or "")),
         "question_type": question_type,
+        "question_raw": str(item.get("question") or ""),
         "question": _normalize_exam_text_soft(str(item.get("question") or item.get("header") or "")),
         "header": _normalize_exam_text_soft(str(item.get("header") or item.get("question") or "")),
         "candidate_raw": str(item.get("user_answer") or ""),
@@ -730,10 +742,20 @@ def _canonicalize_exam_item(item: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _is_empty_exam_answer(value: str) -> bool:
+    soft_candidate = _normalize_exam_text_soft(value).lower()
+    if soft_candidate in _EXAM_EMPTY_MARKERS:
+        return True
+    normalized_candidate = _normalize_exam_answer(value)
+    if not normalized_candidate:
+        return True
+    normalized_markers = {_normalize_exam_answer(marker) for marker in _EXAM_EMPTY_MARKERS if str(marker).strip()}
+    return normalized_candidate in normalized_markers
+
+
 def _precheck_exam_item(item: dict[str, object]) -> dict[str, object]:
     candidate = str(item.get("candidate") or "")
-    normalized_candidate = _normalize_exam_answer(candidate)
-    if normalized_candidate in _EXAM_EMPTY_MARKERS:
+    if _is_empty_exam_answer(candidate):
         return {
             "auto_decision": "empty",
             "result": {
@@ -858,7 +880,11 @@ def _score_exam_answer_cached_or_estimated(
     column: str = "",
     question: str = "",
     exam_type: str = "",
+    question_type: str = "standard",
+    rubric_version: str = "",
     key_points: list[str] | None = None,
+    must_not_include: list[str] | None = None,
+    fatal_errors: list[str] | None = None,
 ) -> tuple[dict[str, object], bool]:
     use_heuristic = not (str(question).strip() or str(exam_type).strip() or list(key_points or []))
     heuristic = _estimate_exam_score_without_llm(user_answer=user_answer, correct_answer=correct_answer) if use_heuristic else None
@@ -872,7 +898,11 @@ def _score_exam_answer_cached_or_estimated(
         column=column,
         question=question,
         exam_type=exam_type,
+        question_type=question_type,
+        rubric_version=rubric_version,
         key_points=key_points,
+        must_not_include=must_not_include,
+        fatal_errors=fatal_errors,
     )
     cached = cache.get(cache_key)
     if isinstance(cached, dict):
@@ -886,7 +916,11 @@ def _score_exam_answer_cached_or_estimated(
             column=column,
             question=question,
             exam_type=exam_type,
+            question_type=question_type,
+            rubric_version=rubric_version,
             key_points=key_points,
+            must_not_include=must_not_include,
+            fatal_errors=fatal_errors,
             mode=_current_exam_prompt_mode(),
         ),
     )
@@ -922,7 +956,11 @@ def score_exam_answer(
     column: str = "",
     question: str = "",
     exam_type: str = "",
+    question_type: str = "standard",
+    rubric_version: str = "",
     key_points: list[str] | None = None,
+    must_not_include: list[str] | None = None,
+    fatal_errors: list[str] | None = None,
 ) -> dict[str, object]:
     cache = get_ai_cache()
     result, _ = _score_exam_answer_cached_or_estimated(
@@ -933,7 +971,11 @@ def score_exam_answer(
         column=column,
         question=question,
         exam_type=exam_type,
+        question_type=question_type,
+        rubric_version=rubric_version,
         key_points=key_points,
+        must_not_include=must_not_include,
+        fatal_errors=fatal_errors,
     )
     return result
 
@@ -1078,7 +1120,11 @@ def score_exam_answer_with_proxy_fallback(
     column: str = "",
     question: str = "",
     exam_type: str = "",
+    question_type: str = "standard",
+    rubric_version: str = "",
     key_points: list[str] | None = None,
+    must_not_include: list[str] | None = None,
+    fatal_errors: list[str] | None = None,
 ) -> dict[str, object]:
     return _run_with_proxy_fallback(
         api_key=api_key,
@@ -1092,7 +1138,11 @@ def score_exam_answer_with_proxy_fallback(
             column=column,
             question=question,
             exam_type=exam_type,
+            question_type=question_type,
+            rubric_version=rubric_version,
             key_points=key_points,
+            must_not_include=must_not_include,
+            fatal_errors=fatal_errors,
         ),
     )
 
@@ -1130,7 +1180,7 @@ def score_exam_answers_batch_with_proxy_fallback(
             continue
 
         use_heuristic = not (
-            str(canonical_item.get("question") or "").strip()
+            str(canonical_item.get("question_raw") or "").strip()
             or str(canonical_item.get("exam_type") or "").strip()
             or list(canonical_item.get("key_points") or [])
         )
@@ -1140,7 +1190,21 @@ def score_exam_answers_batch_with_proxy_fallback(
             stats["heuristic_count"] += 1
             continue
 
-        cache_key = _build_exam_score_cache_key(cache, user_answer=user_answer, correct_answer=correct_answer)
+        cache_key = _build_exam_score_cache_key(
+            cache,
+            user_answer=user_answer,
+            correct_answer=correct_answer,
+            column=column,
+            question=str(canonical_item.get("question") or canonical_item.get("header") or ""),
+            exam_type=str(canonical_item.get("exam_type") or ""),
+            question_type=str(canonical_item.get("question_type") or "standard"),
+            rubric_version=str(canonical_item.get("rubric_version") or _EXAM_RUBRIC_VERSION),
+            key_points=[str(point).strip() for point in (canonical_item.get("key_points") or []) if str(point).strip()],
+            must_not_include=[
+                str(point).strip() for point in (canonical_item.get("must_not_include") or []) if str(point).strip()
+            ],
+            fatal_errors=[str(point).strip() for point in (canonical_item.get("fatal_errors") or []) if str(point).strip()],
+        )
         cached = cache.get(cache_key)
         if isinstance(cached, dict):
             exact_results[column] = _normalize_exam_result(cached, fallback_rationale=DEFAULT_EXAM_RATIONALE)
@@ -1188,6 +1252,10 @@ def score_exam_answers_batch_with_proxy_fallback(
                             "question_type": item.get("question_type", "standard"),
                             "rubric_version": item.get("rubric_version", _EXAM_RUBRIC_VERSION),
                             "key_points": [str(point).strip() for point in (item.get("key_points") or []) if str(point).strip()],
+                            "must_not_include": [
+                                str(point).strip() for point in (item.get("must_not_include") or []) if str(point).strip()
+                            ],
+                            "fatal_errors": [str(point).strip() for point in (item.get("fatal_errors") or []) if str(point).strip()],
                             "normalized_user_answer": _normalize_exam_answer(str(item.get("candidate") or "")),
                             "normalized_correct_answer": _normalize_exam_answer(str(item.get("reference") or "")),
                         }
@@ -1223,7 +1291,11 @@ def score_exam_answers_batch_with_proxy_fallback(
                     column=str(item.get("column") or ""),
                     question=str(item.get("question") or item.get("header") or ""),
                     exam_type=str(item.get("exam_type") or ""),
+                    question_type=str(item.get("question_type") or "standard"),
+                    rubric_version=str(item.get("rubric_version") or _EXAM_RUBRIC_VERSION),
                     key_points=[str(point).strip() for point in (item.get("key_points") or []) if str(point).strip()],
+                    must_not_include=[str(point).strip() for point in (item.get("must_not_include") or []) if str(point).strip()],
+                    fatal_errors=[str(point).strip() for point in (item.get("fatal_errors") or []) if str(point).strip()],
                 )
                 cache.set(per_item_cache_key, normalized_result)
             cache.set(cache_key, chunk_results)
