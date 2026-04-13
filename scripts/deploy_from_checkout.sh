@@ -128,3 +128,11 @@ echo
 if [[ -x "${APP_ROOT}/scripts/smoke_web.sh" ]]; then
   "${APP_ROOT}/scripts/smoke_web.sh"
 fi
+
+if [[ -f "${APP_ROOT}/scripts/run_synthetic_suite.py" ]]; then
+  echo "Running synthetic smoke suite..."
+  python3 "${APP_ROOT}/scripts/run_synthetic_suite.py" --suite smoke --trigger post_deploy || {
+    echo "Synthetic smoke suite failed" >&2
+    exit 1
+  }
+fi
