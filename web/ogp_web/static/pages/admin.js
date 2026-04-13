@@ -66,7 +66,7 @@ let selectedUser = null;
 let pendingAction = null;
 let selectedBulkUsers = new Set();
 const userIndex = new Map();
-let activeCatalogEntity = "servers";
+let activeCatalogEntity = String(catalogHost?.dataset.catalogEntity || "servers");
 
 function catalogEndpoint(entityType, itemId = "") {
   const suffix = itemId ? `/${encodeURIComponent(itemId)}` : "";
