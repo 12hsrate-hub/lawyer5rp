@@ -34,6 +34,7 @@ from ogp_web.services.legal_pipeline_service import (
     new_generation_id,
     normalize_feedback_issues,
     short_text_hash,
+    normalize_law_qa_text_formatting,
     strip_law_qa_source_urls,
 )
 from ogp_web.services.point3_pipeline import (
@@ -1200,9 +1201,9 @@ def _build_law_qa_prompt(
         "rights_only": "Если вопрос задан только о правах или полномочиях, не добавляй обязанности, запреты и соседние нормы, если они прямо не нужны для ответа.",
         "duties_only": "Если вопрос задан только об обязанностях, не добавляй права и иные соседние нормы, если они прямо не нужны для ответа.",
     }.get(_detect_law_qa_focus(question), "")
-    focus_guidance_block = f"9. {focus_guidance}\n\n" if focus_guidance else "\n"
+    focus_guidance_block = f"10. {focus_guidance}\n\n" if focus_guidance else "\n"
     ambiguity_guidance = (
-        "10. Вопрос содержит потенциально неоднозначный процессуальный термин. "
+        "11. Вопрос содержит потенциально неоднозначный процессуальный термин. "
         "Начни ответ с оговорки о том, какой именно контекст прямо подтверждается нормами, либо прямо скажи, что вопрос требует уточнения. "
         "Не отвечай безусловным 'да' или 'нет', "
         "если для ответа пришлось бы додумывать недостающий процессуальный контекст."
@@ -1221,7 +1222,9 @@ def _build_law_qa_prompt(
         "5. Если вопрос требует перечисления, перечисляй только прямо подтвержденные элементы.\n"
         "6. Не добавляй в ответ URL, [Источник: ...] и любые ссылки на форум. Достаточно указывать статью и название кодекса или закона.\n"
         "7. Ответ должен быть точным, прикладным, без воды и не длиннее заданного лимита.\n"
-        f"8. {confidence_guidance}\n"
+        "8. Не используй markdown, выделение **, списки с маркерами и иное служебное форматирование. "
+        "Если перечисление необходимо, оформляй его plain text в одной или нескольких простых фразах.\n"
+        f"9. {confidence_guidance}\n"
         + focus_guidance_block
         + ambiguity_guidance_block
         + "Формат ответа:\n"
@@ -2285,6 +2288,7 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
 
     sanitized_text = strip_law_qa_source_urls(text)
+    sanitized_text = normalize_law_qa_text_formatting(sanitized_text)
     limited = sanitized_text[: payload.max_answer_chars].strip()
     latency_ms = int((monotonic() - request_started_at) * 1000)
     telemetry = build_ai_telemetry(

@@ -22,6 +22,7 @@ from fastapi import HTTPException
 from ogp_web.schemas import ComplaintPayload, LawQaPayload, PrincipalScanPayload, RehabPayload, SuggestPayload, VictimPayload
 from ogp_web.services import ai_service, auth_service, complaint_service, email_service, exam_import_service, exam_sheet_service
 from ogp_web.services.auth_service import AuthUser
+from ogp_web.services.legal_pipeline_service import normalize_law_qa_text_formatting
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.storage.user_store import UserStore
 from tests.temp_helpers import make_temp_dir
@@ -2112,6 +2113,7 @@ https://laws.example/article
         self.assertIn("потенциально неоднозначный процессуальный термин", prompt)
         self.assertIn("Не отвечай безусловным 'да' или 'нет'", prompt)
         self.assertIn("вопрос требует уточнения", prompt)
+        self.assertIn("Не используй markdown", prompt)
 
     def test_law_qa_ambiguous_dopros_focus_stays_on_advocacy_law(self):
         focus_groups = ai_service._detect_law_qa_document_focus("Может ли адвокат присутствовать на допросе?")
@@ -2125,6 +2127,21 @@ https://laws.example/article
         )
 
         self.assertEqual(confidence, "medium")
+
+    def test_normalize_law_qa_text_formatting_strips_markdown_and_list_markers(self):
+        text = (
+            "Итог: **прямого основания нет**.\n"
+            "Правовое основание:\n"
+            "- **статья 4 (Закон об адвокатуре)** — допускает конфиденциальную встречу.\n"
+            "- `статья 1` — говорит только о наблюдении.\n"
+        )
+
+        normalized = normalize_law_qa_text_formatting(text)
+
+        self.assertNotIn("**", normalized)
+        self.assertNotIn("`", normalized)
+        self.assertNotIn("\n-", normalized)
+        self.assertIn("статья 4 (Закон об адвокатуре) — допускает конфиденциальную встречу.; статья 1 — говорит только о наблюдении.", normalized)
 
     def test_law_qa_prompt_warns_about_false_premise_on_low_confidence(self):
         prompt = ai_service._build_law_qa_prompt(
