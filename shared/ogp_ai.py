@@ -875,6 +875,27 @@ def _estimate_exam_score_without_llm(*, user_answer: str, correct_answer: str) -
     return None
 
 
+def _should_try_exam_heuristic(
+    *,
+    user_answer: str,
+    correct_answer: str,
+    question: str = "",
+    exam_type: str = "",
+    key_points: list[str] | None = None,
+    must_not_include: list[str] | None = None,
+    fatal_errors: list[str] | None = None,
+) -> bool:
+    if _normalize_exam_answer(user_answer) == _normalize_exam_answer(correct_answer):
+        return True
+    return not (
+        str(question).strip()
+        or str(exam_type).strip()
+        or list(key_points or [])
+        or list(must_not_include or [])
+        or list(fatal_errors or [])
+    )
+
+
 def _score_exam_answer_cached_or_estimated(
     client,
     *,
@@ -890,7 +911,15 @@ def _score_exam_answer_cached_or_estimated(
     must_not_include: list[str] | None = None,
     fatal_errors: list[str] | None = None,
 ) -> tuple[dict[str, object], bool]:
-    use_heuristic = not (str(question).strip() or str(exam_type).strip() or list(key_points or []))
+    use_heuristic = _should_try_exam_heuristic(
+        user_answer=user_answer,
+        correct_answer=correct_answer,
+        question=question,
+        exam_type=exam_type,
+        key_points=key_points,
+        must_not_include=must_not_include,
+        fatal_errors=fatal_errors,
+    )
     heuristic = _estimate_exam_score_without_llm(user_answer=user_answer, correct_answer=correct_answer) if use_heuristic else None
     if heuristic is not None:
         return heuristic, False
@@ -1187,10 +1216,14 @@ def score_exam_answers_batch_with_proxy_fallback(
             )
             continue
 
-        use_heuristic = not (
-            str(canonical_item.get("question_raw") or "").strip()
-            or str(canonical_item.get("exam_type") or "").strip()
-            or list(canonical_item.get("key_points") or [])
+        use_heuristic = _should_try_exam_heuristic(
+            user_answer=user_answer,
+            correct_answer=correct_answer,
+            question=str(canonical_item.get("question_raw") or ""),
+            exam_type=str(canonical_item.get("exam_type") or ""),
+            key_points=list(canonical_item.get("key_points") or []),
+            must_not_include=list(canonical_item.get("must_not_include") or []),
+            fatal_errors=list(canonical_item.get("fatal_errors") or []),
         )
         heuristic = _estimate_exam_score_without_llm(user_answer=user_answer, correct_answer=correct_answer) if use_heuristic else None
         if heuristic is not None:

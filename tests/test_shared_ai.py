@@ -205,6 +205,30 @@ class SharedAiTests(unittest.TestCase):
 
         self.assertEqual(payload["score"], 100)
 
+    def test_exam_scoring_rubric_exact_match_skips_model_call(self):
+        class DummyClient:
+            def __init__(self):
+                self.responses = self
+
+            def create(self, **kwargs):
+                raise AssertionError(f"model should not be called: {kwargs}")
+
+        payload = ogp_ai.score_exam_answer(
+            DummyClient(),
+            user_answer="Статья 7 АК",
+            correct_answer="Статья 7 АК",
+            column="H",
+            question="Назовите нужную норму",
+            exam_type="legal",
+            question_type="exact_ref",
+            rubric_version="gta5rp_legal_v3",
+            key_points=["статья 7 ак"],
+            must_not_include=["статья 8 ак"],
+            fatal_errors=["статья 8 ак"],
+        )
+
+        self.assertEqual(payload["score"], 100)
+
     def test_exam_scoring_batch_returns_exact_match_without_model_call(self):
         class DummyClient:
             def __init__(self):
@@ -232,6 +256,45 @@ class SharedAiTests(unittest.TestCase):
             ogp_ai.create_openai_client = original_create
 
         self.assertEqual(payload["G"]["score"], 100)
+
+    def test_exam_scoring_batch_rubric_exact_match_skips_model_call(self):
+        class DummyClient:
+            def __init__(self):
+                self.responses = self
+
+            def create(self, **kwargs):
+                raise AssertionError(f"model should not be called: {kwargs}")
+
+        original_create = ogp_ai.create_openai_client
+        ogp_ai.create_openai_client = lambda api_key, proxy_url="": DummyClient()
+        try:
+            payload, stats = ogp_ai.score_exam_answers_batch_with_proxy_fallback(
+                api_key="key",
+                proxy_url="",
+                items=[
+                    {
+                        "column": "G",
+                        "header": "question",
+                        "question": "Назовите нужную норму",
+                        "exam_type": "legal",
+                        "question_type": "exact_ref",
+                        "rubric_version": "gta5rp_legal_v3",
+                        "user_answer": "Статья 7 АК",
+                        "correct_answer": "Статья 7 АК",
+                        "key_points": ["статья 7 ак"],
+                        "must_not_include": ["статья 8 ак"],
+                        "fatal_errors": ["статья 8 ак"],
+                    }
+                ],
+                return_stats=True,
+            )
+        finally:
+            ogp_ai.create_openai_client = original_create
+
+        self.assertEqual(payload["G"]["score"], 100)
+        self.assertEqual(stats["heuristic_count"], 1)
+        self.assertEqual(stats["llm_count"], 0)
+        self.assertEqual(stats["llm_calls"], 0)
 
     def test_exam_scoring_batch_can_return_stats(self):
         class DummyClient:
