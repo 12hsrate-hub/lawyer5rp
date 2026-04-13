@@ -1,5 +1,21 @@
 # Acceptance Checklist
 
+## Rollout Control Layer (Feature Flags + Cohorts + Metrics + Rollback)
+- [ ] Созданы флаги: `cases_v1`, `documents_v2`, `citations_required`, `validation_gate_v1`, `async_jobs_v1`.
+- [ ] Для каждого флага поддерживаются режимы: `off` / `internal` / `beta` / `all`.
+- [ ] Серверный cohort-resolution различает `internal`, `beta`, `default`.
+- [ ] Rollout может изменяться без деплоя (env / central JSON config).
+- [ ] Legacy fallback подтверждён для каждого флага.
+- [ ] Подключены regression-метрики:
+  - [ ] `error_rate`
+  - [ ] `generation_latency`
+  - [ ] `validation_fail_rate`
+  - [ ] `async_queue_lag`
+- [ ] Метрики имеют labels: `feature_flag`, `rollout_mode`, `rollout_cohort`, `server_id`, `flow_type`, `status`.
+- [ ] Подготовлен `docs/ROLLBACK_PLAYBOOK.md` с отдельным playbook для каждого флага.
+- [ ] Для `citations_required` и `validation_gate_v1` подтверждён быстрый переход в `warn/off`.
+- [ ] Rollback не требует schema rollback и не удаляет уже записанные данные.
+
 ## T01 Baseline Contracts
 - [x] Prompt contract defines `factual_only`.
 - [x] Prompt contract defines `factual_plus_legal`.

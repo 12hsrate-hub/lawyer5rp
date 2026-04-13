@@ -8,6 +8,7 @@ from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore, get_default_admin_metrics_store
 from ogp_web.storage.admin_catalog_store import AdminCatalogStore, get_default_admin_catalog_store
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
+from ogp_web.services.feature_flags import FeatureFlagService
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore, get_default_exam_answers_store
 from ogp_web.storage.user_store import UserStore, get_default_user_store
@@ -87,3 +88,7 @@ def requires_permission(permission_code: str = ""):
         return user
 
     return _guard
+
+
+def get_feature_flag_service(_: Request) -> FeatureFlagService:
+    return FeatureFlagService()

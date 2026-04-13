@@ -5,3 +5,20 @@ flags:
     force_mode: ""
     emergency_off: false
     rollout_percent: 0
+  cases_v1:
+    mode: off
+    owner: backend_platform
+  documents_v2:
+    mode: off
+    owner: backend_platform
+  citations_required:
+    mode: off
+    enforcement: warn
+    owner: legal_ai
+  validation_gate_v1:
+    mode: off
+    enforcement: warn
+    owner: quality
+  async_jobs_v1:
+    mode: off
+    owner: platform_ops

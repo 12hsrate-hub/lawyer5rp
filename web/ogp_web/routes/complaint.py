@@ -10,7 +10,7 @@ from time import monotonic
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 
-from ogp_web.dependencies import get_admin_metrics_store, get_user_store, requires_permission
+from ogp_web.dependencies import get_admin_metrics_store, get_feature_flag_service, get_user_store, requires_permission
 from ogp_web.schemas import (
     AiFeedbackPayload,
     AiFeedbackResponse,
@@ -36,7 +36,15 @@ from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
 from ogp_web.services.complaint_service import build_generation_context_snapshot
 from ogp_web.services.citation_service import save_answer_citations
+from ogp_web.services.feature_flags import FeatureFlagService, RolloutContext
 from ogp_web.services.generation_orchestrator import GenerationOrchestrator
+from ogp_web.services.regression_metrics import (
+    build_rollout_labels,
+    record_async_queue_lag,
+    record_generation_latency,
+    record_validation_fail_rate,
+    start_timer,
+)
 from ogp_web.services.validation_service import ValidationService
 from ogp_web.services.retrieval_service import run_retrieval
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -161,6 +169,21 @@ async def _run_ai_task(
             "run_ms": round(run_ms, 2),
         },
     )
+    record_async_queue_lag(
+        metrics_store,
+        username=user.username,
+        path=path,
+        method="POST",
+        labels=build_rollout_labels(
+            flag="async_jobs_v1",
+            rollout_mode="all" if executor is not None else "off",
+            cohort="default",
+            server_id=user.server_code,
+            flow_type=operation,
+            status="success",
+        ),
+        lag_ms=int(wait_ms),
+    )
     return result
 
 
@@ -250,7 +273,15 @@ async def generate(
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    flag_service: FeatureFlagService = Depends(get_feature_flag_service),
 ) -> GenerateResponse:
+    started_at = start_timer()
+    cases_flag = flag_service.evaluate(flag="cases_v1", context=RolloutContext(username=user.username, server_id=user.server_code))
+    docs_flag = flag_service.evaluate(flag="documents_v2", context=RolloutContext(username=user.username, server_id=user.server_code))
+    validation_flag = flag_service.evaluate(
+        flag="validation_gate_v1",
+        context=RolloutContext(username=user.username, server_id=user.server_code),
+    )
     _validate_server_payload(store, user, org=payload.org)
     context_snapshot = build_generation_context_snapshot(store, user, document_kind="complaint")
     context_snapshot["citations_policy_gate"] = {"mode": "shadow", "status": "flagged_no_citations"}
@@ -265,7 +296,7 @@ async def generate(
     )
     orchestrator = GenerationOrchestrator(store)
     bridge_result = None
-    if orchestrator.bridge_mode() != "off":
+    if orchestrator.bridge_mode() != "off" and cases_flag.use_new_flow and docs_flag.use_new_flow:
         try:
             bridge_result = orchestrator.write_generation_bridge(
                 username=user.username,
@@ -279,12 +310,43 @@ async def generate(
         except Exception:
             if orchestrator.bridge_mode() == "strict":
                 raise
+    else:
+        metrics_store.log_event(
+            event_type="rollout_fallback_to_legacy",
+            username=user.username,
+            path="/api/generate",
+            method="POST",
+            status_code=200,
+            meta={
+                "server_id": user.server_code,
+                "flow_type": "generate",
+                "feature_flag": "documents_v2",
+                "rollout_mode": docs_flag.mode.value,
+                "rollout_cohort": docs_flag.cohort.value,
+            },
+        )
     if bridge_result is not None:
         try:
-            _validation_service(store).run_validation(
-                target_type="document_version",
-                target_id=int(bridge_result.document_version_id),
-            )
+            if validation_flag.use_new_flow:
+                result = _validation_service(store).run_validation(
+                    target_type="document_version",
+                    target_id=int(bridge_result.document_version_id),
+                )
+                record_validation_fail_rate(
+                    metrics_store,
+                    username=user.username,
+                    path="/api/generate",
+                    method="POST",
+                    labels=build_rollout_labels(
+                        flag="validation_gate_v1",
+                        rollout_mode=validation_flag.mode.value,
+                        cohort=validation_flag.cohort.value,
+                        server_id=user.server_code,
+                        flow_type="generate",
+                        status="fail" if result.run.get("status") == "fail" else "success",
+                    ),
+                    failed=result.run.get("status") == "fail",
+                )
         except Exception:
             if str(os.getenv("OGP_VALIDATION_GENERATION_STRICT", "0") or "").strip() in {"1", "true", "yes", "on"}:
                 raise
@@ -303,6 +365,21 @@ async def generate(
             "result_chars": len(bbcode),
             "description_chars": len(payload.situation_description or ""),
         },
+    )
+    record_generation_latency(
+        metrics_store,
+        username=user.username,
+        path="/api/generate",
+        method="POST",
+        labels=build_rollout_labels(
+            flag="documents_v2",
+            rollout_mode=docs_flag.mode.value,
+            cohort=docs_flag.cohort.value,
+            server_id=user.server_code,
+            flow_type="generate",
+            status="success",
+        ),
+        started_at=started_at,
     )
     return GenerateResponse(bbcode=bbcode, generated_document_id=document_id)
 
@@ -538,7 +615,9 @@ async def law_qa_test(
     user: AuthUser = Depends(requires_permission("court_claims")),
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    flag_service: FeatureFlagService = Depends(get_feature_flag_service),
 ) -> LawQaResponse:
+    started_at = start_timer()
     effective_server_code = payload.server_code or user.server_code
     if not str(effective_server_code or "").strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["server_code is required."])
@@ -562,6 +641,17 @@ async def law_qa_test(
         law_version_id=payload.law_version_id,
         selected_norms=selected_norms,
     )
+    citations_flag = flag_service.evaluate(
+        flag="citations_required",
+        context=RolloutContext(username=user.username, server_id=effective_server_code),
+    )
+    if citations_flag.use_new_flow and not raw_citations:
+        if citations_flag.enforcement.value == "hard":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=["citations_required policy blocked the response due to missing citations."],
+            )
+        result.warnings = [*list(result.warnings or []), "citations_required_warn:missing_citations"]
     retrieval = run_retrieval(
         store=store,
         actor_username=user.username,
@@ -621,6 +711,10 @@ async def law_qa_test(
         meta=ai_service.build_law_qa_metrics_meta(payload=payload, result=result, used_sources=result.used_sources),
     )
     try:
+        validation_flag = flag_service.evaluate(
+            flag="validation_gate_v1",
+            context=RolloutContext(username=user.username, server_id=effective_server_code),
+        )
         validation_repo = ValidationRepository(store.backend)
         conn = store.backend.connect()
         user_row = conn.execute("SELECT id FROM users WHERE username = %s", (user.username,)).fetchone()
@@ -635,10 +729,44 @@ async def law_qa_test(
                 selected_norms=list(result.selected_norms),
                 metadata={"generation_id": result.generation_id, "legacy_endpoint": "/api/ai/law-qa-test"},
             )
-            ValidationService(validation_repo).run_validation(target_type="law_qa_run", target_id=int(qa_run["id"]))
+            if validation_flag.use_new_flow:
+                validation_result = ValidationService(validation_repo).run_validation(
+                    target_type="law_qa_run",
+                    target_id=int(qa_run["id"]),
+                )
+                record_validation_fail_rate(
+                    metrics_store,
+                    username=user.username,
+                    path="/api/ai/law-qa-test",
+                    method="POST",
+                    labels=build_rollout_labels(
+                        flag="validation_gate_v1",
+                        rollout_mode=validation_flag.mode.value,
+                        cohort=validation_flag.cohort.value,
+                        server_id=effective_server_code,
+                        flow_type="law_qa",
+                        status="fail" if validation_result.run.get("status") == "fail" else "success",
+                    ),
+                    failed=validation_result.run.get("status") == "fail",
+                )
     except Exception:
         if str(os.getenv("OGP_VALIDATION_LAW_QA_STRICT", "0") or "").strip() in {"1", "true", "yes", "on"}:
             raise
+    record_generation_latency(
+        metrics_store,
+        username=user.username,
+        path="/api/ai/law-qa-test",
+        method="POST",
+        labels=build_rollout_labels(
+            flag="citations_required",
+            rollout_mode=citations_flag.mode.value,
+            cohort=citations_flag.cohort.value,
+            server_id=effective_server_code,
+            flow_type="law_qa",
+            status="success",
+        ),
+        started_at=started_at,
+    )
 
     return LawQaResponse(
         text=result.text,
