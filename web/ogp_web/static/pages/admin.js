@@ -12,6 +12,7 @@ const modelPolicyHost = document.getElementById("admin-model-policy");
 const aiPipelineHost = document.getElementById("admin-ai-pipeline");
 const roleHistoryHost = document.getElementById("admin-role-history");
 const endpointsHost = document.getElementById("admin-top-endpoints");
+const syntheticHost = document.getElementById("admin-synthetic");
 const activeFiltersHost = document.getElementById("admin-active-filters");
 const userSearchField = document.getElementById("admin-user-search");
 const userSortField = document.getElementById("admin-user-sort");
@@ -418,6 +419,7 @@ function showOverviewLoading() {
   renderLoadingState(performanceHost, { count: 4, compact: true });
   renderLoadingState(examImportHost, { count: 3 });
   renderLoadingState(endpointsHost, { count: 3, compact: true });
+  renderLoadingState(syntheticHost, { count: 3, compact: true });
   renderLoadingState(usersHost, { count: 4, compact: true });
   renderLoadingState(errorExplorerHost, { count: 3, compact: true });
   renderLoadingState(adminEventsHost, { count: 3, compact: true });
@@ -523,6 +525,42 @@ function renderPerformance(payload) {
       <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(top[0]?.path || "—"))}</strong>
       <span class="admin-user-cell__secondary">Запросов: ${escapeHtml(String(top[0]?.count || 0))}</span>
     </article>
+  `;
+}
+
+function renderSynthetic(summary) {
+  if (!syntheticHost) {
+    return;
+  }
+  const bySuite = summary?.by_suite || {};
+  const suites = ["smoke", "nightly", "load", "fault"];
+  const cards = suites.map((suite) => {
+    const row = bySuite[suite] || {};
+    const latest = String(row.latest_status || "unknown");
+    const tone = latest === "pass" ? "success-soft" : latest === "fail" ? "danger-soft" : "muted";
+    return `
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">${escapeHtml(suite)}</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${renderBadge(latest, tone)}</strong>
+        <span class="admin-user-cell__secondary">runs: ${escapeHtml(String(row.runs_total || 0))}, failed: ${escapeHtml(String(row.failed_total || 0))}</span>
+      </article>
+    `;
+  });
+  const failedRuns = Array.isArray(summary?.runs)
+    ? summary.runs.filter((item) => String(item?.status || "") !== "pass").slice(0, 5)
+    : [];
+  const failedHtml = failedRuns.length
+    ? `<div class="legal-table-wrap"><table class="legal-table"><thead><tr><th>Suite</th><th>Run</th><th>Status</th><th>When</th></tr></thead><tbody>
+      ${failedRuns
+        .map(
+          (item) => `<tr><td>${escapeHtml(String(item.suite || "-"))}</td><td>${escapeHtml(String(item.run_id || "-"))}</td><td>${escapeHtml(String(item.status || "-"))}</td><td>${escapeHtml(String(item.created_at || "-"))}</td></tr>`,
+        )
+        .join("")}
+    </tbody></table></div>`
+    : '<p class="legal-section__description">Падений synthetic suite не обнаружено.</p>';
+  syntheticHost.innerHTML = `
+    <div class="admin-performance-grid">${cards.join("")}</div>
+    ${failedHtml}
   `;
 }
 
@@ -1932,6 +1970,7 @@ async function loadAdminOverview({ silent = false } = {}) {
     renderCostSummary(payload.totals || {});
     renderExamImport(payload.exam_import || null);
     renderTopEndpoints(payload.top_endpoints || []);
+    renderSynthetic(payload.synthetic || {});
     renderUsers(payload.users || [], payload.filters?.user_sort || "complaints");
     renderErrorExplorer(payload.error_explorer || null);
     renderAdminAudit(payload.recent_events || []);

@@ -239,6 +239,28 @@
           <div id="admin-top-endpoints"></div>
         </div>
       </section>
+
+      <section class="legal-subcard admin-collapsible" data-collapsible-section="synthetic">
+        <div class="legal-subcard__header admin-collapsible__header">
+          <div>
+            <span class="legal-field__label">Synthetic monitoring</span>
+            <p class="legal-section__description">Smoke/Nightly/Load/Fault прогоны, статусы и последние падения.</p>
+          </div>
+          <button
+            type="button"
+            class="ghost-button admin-collapsible__toggle"
+            data-collapsible-target="admin-synthetic-content"
+            data-expanded-default="true"
+            aria-expanded="true"
+            aria-controls="admin-synthetic-content"
+          >
+            Скрыть
+          </button>
+        </div>
+        <div id="admin-synthetic-content" class="admin-collapsible__content">
+          <div id="admin-synthetic" class="admin-performance-grid"></div>
+        </div>
+      </section>
       {% endif %}
 
       {% if admin_focus == "users" %}

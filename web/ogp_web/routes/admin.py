@@ -33,6 +33,7 @@ from ogp_web.services.point3_policy_service import load_point3_eval_thresholds
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.admin_dashboard_service import AdminDashboardService
+from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
 from ogp_web.web import page_context, templates
@@ -166,6 +167,49 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _build_synthetic_summary(recent_events: list[dict[str, Any]]) -> dict[str, Any]:
+    run_events: list[dict[str, Any]] = []
+    for event in recent_events:
+        if str(event.get("event_type") or "") != "synthetic_run":
+            continue
+        raw_meta = event.get("meta_json") or event.get("meta") or {}
+        if isinstance(raw_meta, str):
+            try:
+                raw_meta = json.loads(raw_meta)
+            except Exception:  # noqa: BLE001
+                raw_meta = {}
+        if not isinstance(raw_meta, dict):
+            raw_meta = {}
+        run_events.append(
+            {
+                "run_id": str(raw_meta.get("run_id") or ""),
+                "suite": str(raw_meta.get("suite") or ""),
+                "status": str(raw_meta.get("run_status") or ""),
+                "trigger": str(raw_meta.get("trigger") or ""),
+                "created_at": event.get("created_at"),
+                "steps_total": int(raw_meta.get("steps_total") or 0),
+                "steps_failed": int(raw_meta.get("steps_failed") or 0),
+            }
+        )
+    runs_by_suite: dict[str, dict[str, Any]] = {}
+    for run in run_events:
+        suite = run.get("suite") or "unknown"
+        runs_by_suite.setdefault(suite, {"latest_status": "unknown", "last_run_at": None, "runs_total": 0, "failed_total": 0})
+        bucket = runs_by_suite[suite]
+        bucket["runs_total"] += 1
+        if run.get("status") != "pass":
+            bucket["failed_total"] += 1
+        if bucket["last_run_at"] is None:
+            bucket["last_run_at"] = run.get("created_at")
+            bucket["latest_status"] = run.get("status") or "unknown"
+    return {
+        "runs": run_events[:20],
+        "by_suite": runs_by_suite,
+        "total_runs": len(run_events),
+        "failed_runs": sum(1 for item in run_events if item.get("status") != "pass"),
+    }
 
 
 def _is_generation_fallback(meta: dict[str, Any]) -> bool:
@@ -1630,8 +1674,26 @@ async def admin_overview(
     except Exception as exc:  # noqa: BLE001
         partial_errors.append(_normalize_api_error(exc, source="error_explorer"))
 
+    payload["synthetic"] = _build_synthetic_summary(payload.get("recent_events", []))
     payload["partial_errors"] = partial_errors
     return payload
+
+
+@router.post("/api/admin/synthetic/run")
+async def run_synthetic_suite(
+    request: Request,
+    user: AuthUser = Depends(requires_permission("manage_servers")),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    _ = user
+    body = await request.json()
+    suite = str((body or {}).get("suite") or "").strip().lower()
+    trigger = str((body or {}).get("trigger") or "manual").strip().lower() or "manual"
+    server_code = str((body or {}).get("server_code") or user.server_code or "blackberry").strip().lower() or "blackberry"
+    if suite not in {"smoke", "nightly", "load", "fault"}:
+        raise HTTPException(status_code=400, detail=["suite must be one of smoke|nightly|load|fault"])
+    runner = SyntheticRunnerService(metrics_store)
+    return runner.run_suite(suite=suite, server_code=server_code, trigger=trigger)
 
 
 @router.get("/api/admin/performance")
