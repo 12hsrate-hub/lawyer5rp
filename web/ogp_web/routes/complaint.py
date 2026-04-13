@@ -33,6 +33,7 @@ from ogp_web.services import ai_service
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
 from ogp_web.services.complaint_service import build_generation_context_snapshot
+from ogp_web.services.generation_orchestrator import GenerationOrchestrator
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.user_store import UserStore
 
@@ -251,6 +252,21 @@ async def generate(
         result_text=bbcode,
         context_snapshot=context_snapshot,
     )
+    orchestrator = GenerationOrchestrator(store)
+    if orchestrator.bridge_mode() != "off":
+        try:
+            orchestrator.write_generation_bridge(
+                username=user.username,
+                server_code=user.server_code,
+                document_kind="complaint",
+                payload=payload.model_dump(),
+                result_text=bbcode,
+                context_snapshot=context_snapshot,
+                legacy_generated_document_id=document_id,
+            )
+        except Exception:
+            if orchestrator.bridge_mode() == "strict":
+                raise
     metrics_store.log_event(
         event_type="complaint_generated",
         username=user.username,
@@ -310,7 +326,18 @@ async def generated_documents_history(
     user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ) -> GeneratedDocumentHistoryResponse:
-    items = store.list_generated_documents(user.username, limit=limit)
+    orchestrator = GenerationOrchestrator(store)
+    try:
+        new_domain_items = orchestrator.list_history(username=user.username, limit=limit)
+    except Exception:  # noqa: BLE001
+        new_domain_items = []
+    bridged_legacy_ids = {int(item.get("id") or 0) for item in new_domain_items}
+    fallback_items = [
+        item
+        for item in store.list_generated_documents(user.username, limit=limit)
+        if int(item.get("id") or 0) not in bridged_legacy_ids
+    ]
+    items = (new_domain_items + fallback_items)[: max(1, min(200, int(limit or 30)))]
     return GeneratedDocumentHistoryResponse(items=items)
 
 
@@ -321,6 +348,14 @@ async def generated_document_snapshot(
     store: UserStore = Depends(get_user_store),
 ) -> GeneratedDocumentSnapshotResponse:
     snapshot = store.get_generated_document_snapshot(user.username, document_id)
+    if snapshot is None:
+        try:
+            snapshot = GenerationOrchestrator(store).get_snapshot_by_legacy_id(
+                username=user.username,
+                legacy_generated_document_id=document_id,
+            )
+        except Exception:  # noqa: BLE001
+            snapshot = None
     if snapshot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Документ не найден."])
     return GeneratedDocumentSnapshotResponse(**snapshot)

@@ -55,6 +55,7 @@ class PostgresBackend:
             "next_case_event_id": 1,
             "next_case_document_id": 1,
             "next_document_version_id": 1,
+            "next_generation_snapshot_id": 1,
             "servers": {},
             "users": {},
             "roles": {},
@@ -65,6 +66,7 @@ class PostgresBackend:
             "case_events": [],
             "case_documents": {},
             "document_versions": {},
+            "generation_snapshots": {},
             "auth_rate_limit_events": [],
             "clock": 0,
             "missing_tables": set(missing_tables or set()),
@@ -136,6 +138,8 @@ class FakePostgresConnection:
             return self._save_draft(params)
         if normalized.startswith("INSERT INTO generated_documents ("):
             return self._insert_generated_document(params)
+        if normalized.startswith("SELECT cd.id AS document_id, cd.case_id AS case_id FROM case_documents cd JOIN cases c ON c.id = cd.case_id WHERE c.owner_user_id = %s AND c.server_id = %s AND c.case_type = %s AND cd.document_type = %s ORDER BY cd.id DESC LIMIT 1"):
+            return self._find_generated_bridge_document(params)
         if normalized.startswith("INSERT INTO cases (server_id, owner_user_id, title, case_type, status, metadata_json)"):
             return self._insert_case(params)
         if normalized.startswith("SELECT id, server_id, owner_user_id, title, case_type, status, CAST(metadata_json AS TEXT) AS metadata_json, created_at, updated_at FROM cases WHERE id = %s LIMIT 1"):
@@ -144,17 +148,25 @@ class FakePostgresConnection:
             return self._insert_case_event(params)
         if normalized.startswith("INSERT INTO case_documents (case_id, server_id, document_type, status, created_by, metadata_json)"):
             return self._insert_case_document(params)
+        if normalized.startswith("INSERT INTO generation_snapshots ("):
+            return self._insert_generation_snapshot(params)
         if normalized.startswith("SELECT id, case_id, server_id, document_type, status, created_by, latest_version_id, CAST(metadata_json AS TEXT) AS metadata_json, created_at, updated_at FROM case_documents WHERE case_id = %s ORDER BY created_at DESC, id DESC"):
             return self._list_case_documents(params[0])
         if normalized.startswith("SELECT id, case_id, server_id, document_type, status, created_by, latest_version_id, CAST(metadata_json AS TEXT) AS metadata_json, created_at, updated_at FROM case_documents WHERE id = %s LIMIT 1"):
             return self._fetch_case_document(params[0])
         if normalized.startswith("SELECT version_number FROM document_versions WHERE document_id = %s ORDER BY version_number DESC LIMIT 1"):
             return self._last_document_version(params[0])
+        if normalized.startswith("INSERT INTO document_versions (document_id, version_number, content_json, created_by, generation_snapshot_id)"):
+            return self._insert_document_version(params)
         if normalized.startswith("INSERT INTO document_versions (document_id, version_number, content_json, created_by)"):
             return self._insert_document_version(params)
+        if normalized.startswith("INSERT INTO document_versions ( document_id, version_number, content_json, created_by, generation_snapshot_id ) SELECT"):
+            return self._insert_document_version_bridge(params)
         if normalized.startswith("UPDATE case_documents SET latest_version_id = %s, updated_at = NOW() WHERE id = %s"):
             return self._update_case_document_latest_version(params)
-        if normalized.startswith("SELECT id, document_id, version_number, CAST(content_json AS TEXT) AS content_json, created_by, created_at FROM document_versions WHERE document_id = %s ORDER BY version_number ASC"):
+        if normalized.startswith("UPDATE case_documents SET latest_version_id = %s, updated_at = NOW(), metadata_json = jsonb_set("):
+            return self._update_case_document_bridge_metadata(params)
+        if normalized.startswith("SELECT id, document_id, version_number, CAST(content_json AS TEXT) AS content_json, created_by, generation_snapshot_id, created_at FROM document_versions WHERE document_id = %s ORDER BY version_number ASC"):
             return self._list_document_versions(params[0])
         if (
             (
@@ -203,6 +215,10 @@ class FakePostgresConnection:
             return self._list_generated_documents(params)
         if normalized.startswith("SELECT gd.id AS id, gd.server_code AS server_code, gd.document_kind AS document_kind, gd.created_at AS created_at, CAST(gd.context_snapshot_json AS TEXT) AS context_snapshot_json FROM generated_documents gd JOIN users u ON u.id = gd.user_id WHERE u.username = %s AND gd.id = %s LIMIT 1"):
             return self._fetch_generated_document_snapshot(params)
+        if normalized.startswith("SELECT gs.legacy_generated_document_id AS id, gs.server_id AS server_code, gs.document_kind AS document_kind, gs.created_at AS created_at FROM generation_snapshots gs JOIN users u ON u.id = gs.user_id WHERE u.username = %s ORDER BY gs.created_at DESC, gs.id DESC LIMIT %s"):
+            return self._list_generation_snapshots_history(params)
+        if normalized.startswith("SELECT gs.legacy_generated_document_id AS id, gs.server_id AS server_code, gs.document_kind AS document_kind, gs.created_at AS created_at, CAST(gs.context_snapshot_json AS TEXT) AS context_snapshot_json FROM generation_snapshots gs JOIN users u ON u.id = gs.user_id WHERE u.username = %s AND gs.legacy_generated_document_id = %s ORDER BY gs.id DESC LIMIT 1"):
+            return self._fetch_generation_snapshot_by_legacy(params)
 
         raise AssertionError(f"Unsupported fake postgres query: {normalized}")
 
@@ -365,6 +381,46 @@ class FakePostgresConnection:
         self.state["case_documents"][document_id] = row
         return FakeCursor(rowcount=1, one={**row, "metadata_json": "{}"})
 
+    def _find_generated_bridge_document(self, params):
+        owner_user_id, server_id, case_type, document_type = params
+        matched = []
+        for row in self.state["case_documents"].values():
+            case = self.state["cases"].get(int(row["case_id"]))
+            if case is None:
+                continue
+            if int(case["owner_user_id"]) != int(owner_user_id):
+                continue
+            if str(case["server_id"]) != str(server_id):
+                continue
+            if str(case["case_type"]) != str(case_type):
+                continue
+            if str(row["document_type"]) != str(document_type):
+                continue
+            matched.append(row)
+        if not matched:
+            return FakeCursor(rowcount=0, one=None)
+        matched.sort(key=lambda item: int(item["id"]), reverse=True)
+        top = matched[0]
+        return FakeCursor(rowcount=1, one={"document_id": top["id"], "case_id": top["case_id"]})
+
+    def _insert_generation_snapshot(self, params):
+        server_id, user_id, document_kind, payload_json, result_text, context_snapshot_json, legacy_id = params
+        snapshot_id = self.state["next_generation_snapshot_id"]
+        self.state["next_generation_snapshot_id"] += 1
+        row = {
+            "id": snapshot_id,
+            "server_id": str(server_id),
+            "user_id": int(user_id),
+            "document_kind": str(document_kind),
+            "payload_json": json.loads(payload_json),
+            "result_text": str(result_text),
+            "context_snapshot_json": json.loads(context_snapshot_json),
+            "legacy_generated_document_id": int(legacy_id),
+            "created_at": self._now(),
+        }
+        self.state["generation_snapshots"][snapshot_id] = row
+        return FakeCursor(rowcount=1, one={"id": snapshot_id})
+
     def _list_case_documents(self, case_id: int):
         rows = [
             row for row in self.state["case_documents"].values()
@@ -391,7 +447,11 @@ class FakePostgresConnection:
         return FakeCursor(rowcount=1, one={"version_number": int(versions[0]["version_number"])})
 
     def _insert_document_version(self, params):
-        document_id, version_number, content_json, created_by = params
+        if len(params) == 5:
+            document_id, version_number, content_json, created_by, generation_snapshot_id = params
+        else:
+            document_id, version_number, content_json, created_by = params
+            generation_snapshot_id = None
         existing = [
             row for row in self.state["document_versions"].values()
             if int(row["document_id"]) == int(document_id) and int(row["version_number"]) == int(version_number)
@@ -406,6 +466,7 @@ class FakePostgresConnection:
             "version_number": int(version_number),
             "content_json": json.loads(content_json),
             "created_by": int(created_by),
+            "generation_snapshot_id": int(generation_snapshot_id) if generation_snapshot_id is not None else None,
             "created_at": self._now(),
         }
         self.state["document_versions"][version_id] = row
@@ -414,12 +475,35 @@ class FakePostgresConnection:
             one={**row, "content_json": json.dumps(row["content_json"], ensure_ascii=False)},
         )
 
+    def _insert_document_version_bridge(self, params):
+        document_id, content_json, created_by, generation_snapshot_id, same_document_id = params
+        assert int(document_id) == int(same_document_id)
+        versions = [
+            row for row in self.state["document_versions"].values()
+            if int(row["document_id"]) == int(document_id)
+        ]
+        next_version = (max((int(item["version_number"]) for item in versions), default=0) + 1)
+        return self._insert_document_version((document_id, next_version, content_json, created_by, generation_snapshot_id))
+
     def _update_case_document_latest_version(self, params):
         latest_version_id, document_id = params
         row = self.state["case_documents"].get(int(document_id))
         if row is None:
             return FakeCursor(rowcount=0)
         row["latest_version_id"] = int(latest_version_id)
+        row["updated_at"] = self._now()
+        return FakeCursor(rowcount=1)
+
+    def _update_case_document_bridge_metadata(self, params):
+        latest_version_id, legacy_generated_document_id, document_id = params
+        row = self.state["case_documents"].get(int(document_id))
+        if row is None:
+            return FakeCursor(rowcount=0)
+        row["latest_version_id"] = int(latest_version_id)
+        bridge = dict((row.get("metadata_json") or {}).get("bridge") or {})
+        bridge["legacy_generated_document_id"] = int(legacy_generated_document_id)
+        row["metadata_json"] = dict(row.get("metadata_json") or {})
+        row["metadata_json"]["bridge"] = bridge
         row["updated_at"] = self._now()
         return FakeCursor(rowcount=1)
 
@@ -702,6 +786,51 @@ class FakePostgresConnection:
                     },
                 )
         return FakeCursor(rowcount=0)
+
+    def _list_generation_snapshots_history(self, params):
+        username, limit = params
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0, rows=[])
+        rows = [
+            {
+                "id": row["legacy_generated_document_id"],
+                "server_code": row["server_id"],
+                "document_kind": row["document_kind"],
+                "created_at": row["created_at"],
+            }
+            for row in sorted(
+                self.state["generation_snapshots"].values(),
+                key=lambda item: (item["created_at"], item["id"]),
+                reverse=True,
+            )
+            if int(row["user_id"]) == int(user["id"])
+        ][: int(limit)]
+        return FakeCursor(rowcount=len(rows), rows=rows)
+
+    def _fetch_generation_snapshot_by_legacy(self, params):
+        username, legacy_id = params
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0, one=None)
+        matched = [
+            row for row in self.state["generation_snapshots"].values()
+            if int(row["user_id"]) == int(user["id"]) and int(row["legacy_generated_document_id"]) == int(legacy_id)
+        ]
+        if not matched:
+            return FakeCursor(rowcount=0, one=None)
+        matched.sort(key=lambda item: int(item["id"]), reverse=True)
+        row = matched[0]
+        return FakeCursor(
+            rowcount=1,
+            one={
+                "id": row["legacy_generated_document_id"],
+                "server_code": row["server_id"],
+                "document_kind": row["document_kind"],
+                "created_at": row["created_at"],
+                "context_snapshot_json": json.dumps(row["context_snapshot_json"], ensure_ascii=False),
+            },
+        )
 
     def _insert_rate_limit_event(self, params):
         action, subject_key = params

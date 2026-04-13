@@ -29,6 +29,7 @@ from ogp_web.routes import admin as admin_route
 from ogp_web.routes import exam_import as exam_import_route
 from ogp_web.services import ai_service
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
+from ogp_web.services.generation_orchestrator import GenerationOrchestrator
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
@@ -46,7 +47,9 @@ class WebApiTests(unittest.TestCase):
         self.tmpdir = make_temporary_directory()
         root = Path(self.tmpdir.name)
         self.prev_test_users = os.environ.get("OGP_WEB_TEST_USERS")
+        self.prev_bridge_mode = os.environ.get("OGP_GENERATION_BRIDGE_MODE")
         os.environ["OGP_WEB_TEST_USERS"] = "tester"
+        os.environ["OGP_GENERATION_BRIDGE_MODE"] = "shadow_write"
         self.store = UserStore(
             root / "app.db",
             root / "users.json",
@@ -74,6 +77,10 @@ class WebApiTests(unittest.TestCase):
             os.environ.pop("OGP_WEB_TEST_USERS", None)
         else:
             os.environ["OGP_WEB_TEST_USERS"] = self.prev_test_users
+        if self.prev_bridge_mode is None:
+            os.environ.pop("OGP_GENERATION_BRIDGE_MODE", None)
+        else:
+            os.environ["OGP_GENERATION_BRIDGE_MODE"] = self.prev_bridge_mode
         self.tmpdir.cleanup()
 
     def _extract_token(self, url: str) -> str:
@@ -216,6 +223,158 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("law_version_set", snapshot)
         self.assertIn("validation_rules_version", snapshot)
         self.assertIn("feature_flags", snapshot)
+
+        backend_state = self.store.repository.backend._state
+        self.assertGreaterEqual(len(backend_state["document_versions"]), 1)
+        bridged_versions = list(backend_state["document_versions"].values())
+        self.assertIsNotNone(bridged_versions[-1].get("generation_snapshot_id"))
+
+    def test_generate_creates_case_and_versions_append_only_in_bridge(self):
+        self._register_verify_and_login("bridge_user", "bridge_user@example.com")
+        self.client.put(
+            "/api/profile",
+            json={
+                "name": "Rep",
+                "passport": "AA",
+                "address": "Addr",
+                "phone": "1234567",
+                "discord": "disc",
+                "passport_scan_url": "https://example.com/rep",
+            },
+        )
+        payload = {
+            "appeal_no": "1234",
+            "org": "LSPD",
+            "subject_names": "John Doe",
+            "situation_description": "Описание",
+            "violation_short": "Нарушение",
+            "event_dt": "08.04.2026 14:30",
+            "today_date": "08.04.2026",
+            "victim": {
+                "name": "Victim",
+                "passport": "BB",
+                "address": "Addr",
+                "phone": "7654321",
+                "discord": "victim",
+                "passport_scan_url": "https://example.com/victim",
+            },
+            "contract_url": "https://example.com/contract",
+            "bar_request_url": "",
+            "official_answer_url": "",
+            "mail_notice_url": "",
+            "arrest_record_url": "",
+            "personnel_file_url": "",
+            "video_fix_urls": [],
+            "provided_video_urls": [],
+        }
+        first = self.client.post("/api/generate", json=payload)
+        second = self.client.post("/api/generate", json=payload)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        state = self.store.repository.backend._state
+        self.assertEqual(len(state["cases"]), 1)
+        case = next(iter(state["cases"].values()))
+        self.assertEqual(case["server_id"], "blackberry")
+        self.assertEqual(len(state["case_documents"]), 1)
+        versions = sorted(state["document_versions"].values(), key=lambda item: item["version_number"])
+        self.assertEqual([item["version_number"] for item in versions], [1, 2])
+        self.assertTrue(all(item.get("generation_snapshot_id") for item in versions))
+
+    def test_generate_shadow_write_failure_keeps_legacy_response(self):
+        self._register_verify_and_login("shadow_user", "shadow_user@example.com")
+        self.client.put(
+            "/api/profile",
+            json={
+                "name": "Rep",
+                "passport": "AA",
+                "address": "Addr",
+                "phone": "1234567",
+                "discord": "disc",
+                "passport_scan_url": "https://example.com/rep",
+            },
+        )
+        original = GenerationOrchestrator.write_generation_bridge
+        try:
+            GenerationOrchestrator.write_generation_bridge = lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
+            response = self.client.post(
+                "/api/generate",
+                json={
+                    "appeal_no": "1234",
+                    "org": "LSPD",
+                    "subject_names": "John Doe",
+                    "situation_description": "Описание",
+                    "violation_short": "Нарушение",
+                    "event_dt": "08.04.2026 14:30",
+                    "today_date": "08.04.2026",
+                    "victim": {
+                        "name": "Victim",
+                        "passport": "BB",
+                        "address": "Addr",
+                        "phone": "7654321",
+                        "discord": "victim",
+                        "passport_scan_url": "https://example.com/victim",
+                    },
+                    "contract_url": "https://example.com/contract",
+                    "bar_request_url": "",
+                    "official_answer_url": "",
+                    "mail_notice_url": "",
+                    "arrest_record_url": "",
+                    "personnel_file_url": "",
+                    "video_fix_urls": [],
+                    "provided_video_urls": [],
+                },
+            )
+        finally:
+            GenerationOrchestrator.write_generation_bridge = original
+        self.assertEqual(response.status_code, 200)
+        self.assertIsInstance(response.json().get("generated_document_id"), int)
+
+    def test_history_prefers_new_domain_and_deduplicates_legacy(self):
+        self._register_verify_and_login("history_bridge_user", "history_bridge_user@example.com")
+        self.client.put(
+            "/api/profile",
+            json={
+                "name": "Rep",
+                "passport": "AA",
+                "address": "Addr",
+                "phone": "1234567",
+                "discord": "disc",
+                "passport_scan_url": "https://example.com/rep",
+            },
+        )
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "appeal_no": "1234",
+                "org": "LSPD",
+                "subject_names": "John Doe",
+                "situation_description": "Описание",
+                "violation_short": "Нарушение",
+                "event_dt": "08.04.2026 14:30",
+                "today_date": "08.04.2026",
+                "victim": {
+                    "name": "Victim",
+                    "passport": "BB",
+                    "address": "Addr",
+                    "phone": "7654321",
+                    "discord": "victim",
+                    "passport_scan_url": "https://example.com/victim",
+                },
+                "contract_url": "https://example.com/contract",
+                "bar_request_url": "",
+                "official_answer_url": "",
+                "mail_notice_url": "",
+                "arrest_record_url": "",
+                "personnel_file_url": "",
+                "video_fix_urls": [],
+                "provided_video_urls": [],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        history = self.client.get("/api/generated-documents/history")
+        self.assertEqual(history.status_code, 200)
+        ids = [int(item["id"]) for item in history.json()["items"]]
+        self.assertEqual(len(ids), len(set(ids)))
 
     def test_cases_flow_creates_events_and_append_only_versions(self):
         self._register_verify_and_login("cases_user", "cases_user@example.com")
