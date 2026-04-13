@@ -48,8 +48,14 @@ class WebApiTests(unittest.TestCase):
         root = Path(self.tmpdir.name)
         self.prev_test_users = os.environ.get("OGP_WEB_TEST_USERS")
         self.prev_bridge_mode = os.environ.get("OGP_GENERATION_BRIDGE_MODE")
+        self.prev_cases_flag_mode = os.environ.get("OGP_FEATURE_FLAG_CASES_V1_MODE")
+        self.prev_documents_flag_mode = os.environ.get("OGP_FEATURE_FLAG_DOCUMENTS_V2_MODE")
+        self.prev_validation_flag_mode = os.environ.get("OGP_FEATURE_FLAG_VALIDATION_GATE_V1_MODE")
         os.environ["OGP_WEB_TEST_USERS"] = "tester"
         os.environ["OGP_GENERATION_BRIDGE_MODE"] = "shadow_write"
+        os.environ["OGP_FEATURE_FLAG_CASES_V1_MODE"] = "all"
+        os.environ["OGP_FEATURE_FLAG_DOCUMENTS_V2_MODE"] = "all"
+        os.environ["OGP_FEATURE_FLAG_VALIDATION_GATE_V1_MODE"] = "all"
         self.store = UserStore(
             root / "app.db",
             root / "users.json",
@@ -81,6 +87,18 @@ class WebApiTests(unittest.TestCase):
             os.environ.pop("OGP_GENERATION_BRIDGE_MODE", None)
         else:
             os.environ["OGP_GENERATION_BRIDGE_MODE"] = self.prev_bridge_mode
+        if self.prev_cases_flag_mode is None:
+            os.environ.pop("OGP_FEATURE_FLAG_CASES_V1_MODE", None)
+        else:
+            os.environ["OGP_FEATURE_FLAG_CASES_V1_MODE"] = self.prev_cases_flag_mode
+        if self.prev_documents_flag_mode is None:
+            os.environ.pop("OGP_FEATURE_FLAG_DOCUMENTS_V2_MODE", None)
+        else:
+            os.environ["OGP_FEATURE_FLAG_DOCUMENTS_V2_MODE"] = self.prev_documents_flag_mode
+        if self.prev_validation_flag_mode is None:
+            os.environ.pop("OGP_FEATURE_FLAG_VALIDATION_GATE_V1_MODE", None)
+        else:
+            os.environ["OGP_FEATURE_FLAG_VALIDATION_GATE_V1_MODE"] = self.prev_validation_flag_mode
         self.tmpdir.cleanup()
 
     def _extract_token(self, url: str) -> str:
