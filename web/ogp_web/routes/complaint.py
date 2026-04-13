@@ -207,6 +207,10 @@ def _validation_service(store: UserStore) -> ValidationService:
     return ValidationService(ValidationRepository(store.backend))
 
 
+def _legacy_generation_write_enabled() -> bool:
+    return str(os.getenv("OGP_GENERATION_LEGACY_WRITE", "1") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _validate_server_payload(store: UserStore, user: AuthUser, *, org: str = "", complaint_basis: str = "") -> None:
     server_config = _server_config_for_user(store, user)
     normalized_org = str(org or "").strip()
@@ -298,17 +302,22 @@ async def generate(
     context_snapshot = build_generation_context_snapshot(store, user, document_kind="complaint")
     context_snapshot["citations_policy_gate"] = {"mode": "shadow", "status": "flagged_no_citations"}
     bbcode = generate_bbcode_text(store, payload, user)
-    document_id = store.save_generated_document(
-        username=user.username,
-        server_code=user.server_code,
-        document_kind="complaint",
-        payload=payload.model_dump(),
-        result_text=bbcode,
-        context_snapshot=context_snapshot,
-    )
     orchestrator = GenerationOrchestrator(store)
+    use_new_flow = orchestrator.bridge_mode() != "off" and cases_flag.use_new_flow and docs_flag.use_new_flow
+    should_write_legacy = _legacy_generation_write_enabled() or not use_new_flow
+    legacy_document_id: int | None = None
+    if should_write_legacy:
+        legacy_document_id = store.save_generated_document(
+            username=user.username,
+            server_code=user.server_code,
+            document_kind="complaint",
+            payload=payload.model_dump(),
+            result_text=bbcode,
+            context_snapshot=context_snapshot,
+        )
+    document_id = int(legacy_document_id or 0) or None
     bridge_result = None
-    if orchestrator.bridge_mode() != "off" and cases_flag.use_new_flow and docs_flag.use_new_flow:
+    if use_new_flow:
         try:
             bridge_result = orchestrator.write_generation_bridge(
                 username=user.username,
@@ -317,10 +326,12 @@ async def generate(
                 payload=payload.model_dump(),
                 result_text=bbcode,
                 context_snapshot=context_snapshot,
-                legacy_generated_document_id=document_id,
+                legacy_generated_document_id=legacy_document_id,
             )
+            if legacy_document_id is None:
+                document_id = int(bridge_result.generated_document_id)
         except Exception:
-            if orchestrator.bridge_mode() == "strict":
+            if orchestrator.bridge_mode() == "strict" or legacy_document_id is None:
                 raise
     else:
         metrics_store.log_event(

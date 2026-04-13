@@ -160,6 +160,8 @@ class FakePostgresConnection:
             return self._insert_case_document(params)
         if normalized.startswith("INSERT INTO generation_snapshots ("):
             return self._insert_generation_snapshot(params)
+        if normalized.startswith("UPDATE generation_snapshots SET legacy_generated_document_id = %s WHERE id = %s"):
+            return self._update_generation_snapshot_generated_id(params)
         if normalized.startswith("SELECT id, case_id, server_id, document_type, status, created_by, latest_version_id, CAST(metadata_json AS TEXT) AS metadata_json, created_at, updated_at FROM case_documents WHERE case_id = %s ORDER BY created_at DESC, id DESC"):
             return self._list_case_documents(params[0])
         if normalized.startswith("SELECT id, case_id, server_id, document_type, status, created_by, latest_version_id, CAST(metadata_json AS TEXT) AS metadata_json, created_at, updated_at FROM case_documents WHERE id = %s LIMIT 1"):
@@ -447,11 +449,19 @@ class FakePostgresConnection:
             "payload_json": json.loads(payload_json),
             "result_text": str(result_text),
             "context_snapshot_json": json.loads(context_snapshot_json),
-            "legacy_generated_document_id": int(legacy_id),
+            "legacy_generated_document_id": int(legacy_id) if legacy_id is not None else None,
             "created_at": self._now(),
         }
         self.state["generation_snapshots"][snapshot_id] = row
         return FakeCursor(rowcount=1, one={"id": snapshot_id})
+
+    def _update_generation_snapshot_generated_id(self, params):
+        generated_document_id, snapshot_id = params
+        row = self.state["generation_snapshots"].get(int(snapshot_id))
+        if row is None:
+            return FakeCursor(rowcount=0)
+        row["legacy_generated_document_id"] = int(generated_document_id)
+        return FakeCursor(rowcount=1)
 
     def _list_case_documents(self, case_id: int):
         rows = [
