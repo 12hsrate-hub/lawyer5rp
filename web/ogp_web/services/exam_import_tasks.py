@@ -42,6 +42,20 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def execute_transitional_runner(
+    runner: Callable[[Callable[[dict[str, Any]], None]], dict[str, Any]],
+    *,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Compatibility adapter for legacy exam-import runner contract."""
+    callback = progress_callback or (lambda _payload: None)
+    try:
+        result = runner(callback)
+    except TypeError:
+        result = runner()  # type: ignore[misc]
+    return result or {}
+
+
 @dataclass
 class ExamTaskRecord:
     id: str
