@@ -362,7 +362,13 @@ function renderDetail(entry) {
     ExamView.renderStatusCard("Средний балл", ExamView.formatAverage(entry), escapeHtml),
   ].join("");
 
-  ExamView.renderScoreTable(detailScore, entry.exam_scores || [], ExamView.formatAverage(entry), escapeHtml);
+  ExamView.renderScoreTable(
+    detailScore,
+    entry.exam_scores || [],
+    ExamView.formatAverage(entry),
+    escapeHtml,
+    { sourceRow: entry.source_row, allowDelete: true },
+  );
   ExamView.renderPayloadTable(detailBody, entry.payload || {}, escapeHtml);
 }
 
@@ -547,6 +553,38 @@ async function runRowScoring(sourceRow) {
   }
 }
 
+async function deleteScore(sourceRow, column) {
+  const normalizedSourceRow = Number(sourceRow);
+  const normalizedColumn = String(column || "").trim().toUpperCase();
+  if (!Number.isFinite(normalizedSourceRow) || normalizedSourceRow <= 0 || !normalizedColumn) {
+    showErrors("Не удалось определить оценку для удаления.");
+    return;
+  }
+
+  const shouldDelete = window.confirm(`Удалить оценку по столбцу ${normalizedColumn} в строке ${normalizedSourceRow}?`);
+  if (!shouldDelete) {
+    return;
+  }
+
+  clearErrors();
+  showMessage("");
+  setBusy(true, `Удаляю оценку ${normalizedColumn} в строке ${normalizedSourceRow}...`);
+  try {
+    const payload = await requestJson(
+      `/api/exam-import/rows/${normalizedSourceRow}/scores/${encodeURIComponent(normalizedColumn)}`,
+      "Не удалось удалить выбранную оценку.",
+      { method: "DELETE" },
+    );
+    updateRowAverage(normalizedSourceRow, ExamView.formatAverage(payload));
+    renderDetail(payload);
+    showMessage(`Оценка ${normalizedColumn} в строке ${normalizedSourceRow} удалена.`);
+  } catch (error) {
+    showErrors(formatErrorMessage(error, "Не удалось удалить выбранную оценку."));
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function runImport() {
   clearErrors();
   showMessage("");
@@ -687,6 +725,18 @@ rowsHost?.addEventListener("click", (event) => {
   if (detailButton) {
     openDetail(detailButton.dataset.sourceRow);
   }
+});
+
+detailScore?.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) {
+    return;
+  }
+  const deleteButton = target.closest(".exam-score-delete-btn");
+  if (!deleteButton) {
+    return;
+  }
+  deleteScore(deleteButton.dataset.sourceRow, deleteButton.dataset.column);
 });
 
 detailModal.bind(document.getElementById("exam-detail-close"), document.getElementById("exam-detail-ok"));
