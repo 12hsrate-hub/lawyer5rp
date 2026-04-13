@@ -137,6 +137,7 @@ function renderCatalog(payload) {
                 <td>${escapeHtml(author)}</td>
                 <td>
                   <button type="button" class="ghost-button" data-catalog-edit="${escapeHtml(String(item.id || ""))}">Изменить</button>
+                  <button type="button" class="ghost-button" data-catalog-preview="${escapeHtml(String(item.id || ""))}">Предпросмотр</button>
                   <button type="button" class="ghost-button" data-catalog-next="${escapeHtml(String(item.id || ""))}">Далее</button>
                   <button type="button" class="ghost-button" data-catalog-rollback="${escapeHtml(String(item.id || ""))}">Откат</button>
                   <button type="button" class="ghost-button" data-catalog-delete="${escapeHtml(String(item.id || ""))}">Удалить</button>
@@ -149,9 +150,89 @@ function renderCatalog(payload) {
         </tbody>
       </table>
     </div>
+    <section id="catalog-preview-panel" class="admin-catalog-preview" hidden>
+      <div class="admin-catalog-preview__header">
+        <h4 class="admin-catalog-preview__title">Предпросмотр</h4>
+        <button type="button" id="catalog-preview-copy" class="ghost-button">Копировать JSON</button>
+      </div>
+      <div id="catalog-preview-summary" class="admin-catalog-preview__summary"></div>
+      <p class="legal-section__description">Связанные версии и последний change request:</p>
+      <pre id="catalog-preview-meta" class="admin-catalog-preview__meta"></pre>
+      <p class="legal-section__description">Effective/current payload:</p>
+      <pre id="catalog-preview-json" class="admin-catalog-preview__json"></pre>
+    </section>
     <p class="legal-section__description">Журнал изменений (автор и diff):</p>
     <pre class="legal-field__hint">${escapeHtml(audit.slice(0, 8).map((row) => `${row.created_at} ${row.author} ${row.action} ${row.workflow_from || ""}->${row.workflow_to || ""}\n${row.diff || ""}`).join("\n\n"))}</pre>
   `;
+}
+
+function renderCatalogPreviewSummary(entityType, item, effectivePayload) {
+  const keyOrder = ["key", "name", "title", "status", "enabled", "code", "version", "updated_at"];
+  const rows = [];
+  keyOrder.forEach((field) => {
+    const value = field in effectivePayload ? effectivePayload[field] : item?.[field];
+    if (value !== undefined && value !== null && value !== "") {
+      rows.push({ field, value });
+    }
+  });
+  if (!rows.length) {
+    rows.push({ field: "entity_type", value: entityType });
+    rows.push({ field: "item_id", value: item?.id ?? "—" });
+  }
+  return rows
+    .slice(0, 10)
+    .map(
+      (entry) => `<div class="admin-catalog-preview__summary-row"><span>${escapeHtml(entry.field)}</span><strong>${escapeHtml(String(entry.value))}</strong></div>`
+    )
+    .join("");
+}
+
+function renderCatalogPreview(payload, itemId) {
+  const previewPanel = document.getElementById("catalog-preview-panel");
+  const summaryHost = document.getElementById("catalog-preview-summary");
+  const metaHost = document.getElementById("catalog-preview-meta");
+  const jsonHost = document.getElementById("catalog-preview-json");
+  if (!previewPanel || !summaryHost || !metaHost || !jsonHost) return;
+  const item = payload?.item || {};
+  const effectivePayload = payload?.effective_payload && typeof payload.effective_payload === "object" ? payload.effective_payload : {};
+  const versions = Array.isArray(payload?.versions) ? payload.versions : [];
+  const latestChangeRequest = payload?.latest_change_request || (Array.isArray(payload?.change_requests) ? payload.change_requests[0] : null);
+  const effectiveVersion = payload?.effective_version || null;
+  summaryHost.innerHTML = renderCatalogPreviewSummary(activeCatalogEntity, item, effectivePayload);
+  const metaPayload = {
+    item_id: item?.id ?? itemId,
+    content_key: item?.content_key || "",
+    status: item?.status || "",
+    effective_version: effectiveVersion
+      ? {
+        id: effectiveVersion.id,
+        version_number: effectiveVersion.version_number,
+        created_by: effectiveVersion.created_by,
+        created_at: effectiveVersion.created_at,
+      }
+      : null,
+    versions: versions.map((version) => ({
+      id: version.id,
+      version_number: version.version_number,
+      schema_version: version.schema_version,
+      created_by: version.created_by,
+      created_at: version.created_at,
+    })),
+    latest_change_request: latestChangeRequest,
+  };
+  metaHost.textContent = JSON.stringify(metaPayload, null, 2);
+  jsonHost.textContent = JSON.stringify(effectivePayload, null, 2);
+  previewPanel.hidden = false;
+}
+
+async function loadCatalogPreview(itemId) {
+  const response = await apiFetch(catalogEndpoint(activeCatalogEntity, itemId));
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить предпросмотр catalog."));
+    return;
+  }
+  renderCatalogPreview(payload, itemId);
 }
 
 async function loadCatalog(entityType = activeCatalogEntity) {
@@ -2515,6 +2596,23 @@ catalogHost?.addEventListener("click", async (event) => {
     });
     if (response.ok) showMessage("Элемент обновлен.");
     await loadCatalog(activeCatalogEntity);
+    return;
+  }
+  if (target.id === "catalog-preview-copy") {
+    const jsonHost = document.getElementById("catalog-preview-json");
+    const text = String(jsonHost?.textContent || "").trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      showMessage("JSON скопирован.");
+    } catch {
+      showMessage("Не удалось скопировать JSON.");
+    }
+    return;
+  }
+  const previewId = target.getAttribute("data-catalog-preview");
+  if (previewId) {
+    await loadCatalogPreview(previewId);
     return;
   }
   const nextId = target.getAttribute("data-catalog-next");

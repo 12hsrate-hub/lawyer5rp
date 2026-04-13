@@ -923,7 +923,40 @@ async def admin_catalog_get_item(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     except (KeyError, PermissionError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
-    return {"item": item, "versions": versions, "change_requests": change_requests}
+    versions_by_id = {
+        int(version.get("id")): version
+        for version in versions
+        if isinstance(version, dict) and version.get("id") is not None
+    }
+    latest_change_request = change_requests[0] if change_requests else None
+    effective_version = None
+    effective_payload: dict[str, Any] = {}
+
+    published_version_id = item.get("current_published_version_id")
+    if published_version_id is not None:
+        effective_version = versions_by_id.get(int(published_version_id))
+
+    if not effective_version and latest_change_request:
+        candidate_version_id = latest_change_request.get("candidate_version_id")
+        if candidate_version_id is not None:
+            effective_version = versions_by_id.get(int(candidate_version_id))
+
+    if not effective_version and versions:
+        effective_version = versions[-1]
+
+    if effective_version:
+        payload_candidate = effective_version.get("payload_json")
+        if isinstance(payload_candidate, dict):
+            effective_payload = payload_candidate
+
+    return {
+        "item": item,
+        "versions": versions,
+        "change_requests": change_requests,
+        "effective_version": effective_version,
+        "effective_payload": effective_payload,
+        "latest_change_request": latest_change_request,
+    }
 
 
 @router.get("/api/admin/catalog/{entity_type}/{item_id}/versions")
