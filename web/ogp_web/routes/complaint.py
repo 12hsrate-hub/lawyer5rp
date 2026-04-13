@@ -127,12 +127,15 @@ async def _run_ai_task(
 
     loop = asyncio.get_running_loop()
     if executor is None:
-        result, wait_ms, run_ms = await run_in_threadpool(_invoke)
+        started_at = monotonic()
+        result = await run_in_threadpool(func, **kwargs)
+        finished_at = monotonic()
+        wait_ms = 0.0
+        run_ms = (finished_at - started_at) * 1000.0
     else:
         result, wait_ms, run_ms = await loop.run_in_executor(executor, _invoke)
 
-    await _run_sync_io(
-        metrics_store.log_event,
+    metrics_store.log_event(
         event_type="threadpool_wait",
         username=user.username,
         server_code=user.server_code,

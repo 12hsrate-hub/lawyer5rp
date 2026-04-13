@@ -41,9 +41,12 @@ from ogp_web.services.legal_pipeline_service import (
 )
 from ogp_web.services.point3_pipeline import (
     MODE_FACTUAL_FALLBACK_EXPANDED,
+    RemediationOutcome,
     apply_validation_remediation,
+    build_safe_fallback_paragraph,
     build_point3_pipeline_context,
     load_policy_thresholds,
+    validate_generated_paragraph,
 )
 from ogp_web.services.law_retrieval_service import retrieve_law_context, unique_sources
 from ogp_web.services.ai_pipeline.guardrails import clean_suggest_text as _pipeline_clean_suggest_text, truncate_suggest_value as _pipeline_truncate_suggest_value
@@ -369,6 +372,18 @@ def _ai_exception_details(exc: Exception) -> list[str]:
     if raw != details[0]:
         details.append(f"Полная ошибка OpenAI: {raw}")
     return details
+
+
+def _legacy_validation_error_codes(raw_codes: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    normalized = [str(code or "").strip() for code in raw_codes if str(code or "").strip()]
+    expanded = list(normalized)
+    if any(code in {"new_date", "new_number", "new_entity", "new_document"} for code in normalized):
+        expanded.append("new_fact_detected")
+    if "article_without_valid_trigger" in normalized:
+        expanded.append("unsupported_article_reference")
+    if any(code in {"new_url", "format_violation"} for code in normalized):
+        expanded.append("format_violation")
+    return tuple(dict.fromkeys(expanded))
 
 
 def get_law_qa_model_choices() -> tuple[str, ...]:
@@ -1931,6 +1946,9 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
             bundle_generated_at="",
             bundle_fingerprint="",
             selected_norms_count=0,
+            applicability_mode="",
+            applicability_notes="",
+            allowed_article_numbers=(),
             selected_norms=(),
         )
 
@@ -1950,6 +1968,9 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
             bundle_generated_at=retrieval_result.bundle_health.generated_at,
             bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
             selected_norms_count=0,
+            applicability_mode="",
+            applicability_notes="",
+            allowed_article_numbers=(),
             selected_norms=(),
         )
 
@@ -1968,6 +1989,9 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
             bundle_generated_at=retrieval_result.bundle_health.generated_at,
             bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
             selected_norms_count=0,
+            applicability_mode="",
+            applicability_notes="",
+            allowed_article_numbers=(),
             selected_norms=(),
         )
 
@@ -2050,6 +2074,9 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
         bundle_generated_at=retrieval_result.bundle_health.generated_at,
         bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
         selected_norms_count=len(selected_norms),
+        applicability_mode="",
+        applicability_notes="",
+        allowed_article_numbers=(),
         selected_norms=tuple(selected_norms),
     )
 
@@ -2459,6 +2486,9 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
             bundle_generated_at="",
             bundle_fingerprint="",
             selected_norms_count=0,
+            applicability_mode="",
+            applicability_notes="",
+            allowed_article_numbers=(),
             selected_norms=(),
         )
     retrieval_ms = int((monotonic() - retrieval_started_at) * 1000)
@@ -2554,6 +2584,8 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
     generation_result: TextGenerationResult | None = None
     openai_ms = 0
     suggest_compaction_level = 0
+    validation_retry_count = 0
+    validation_errors: tuple[str, ...] = ()
     request_started_at = monotonic()
     try:
         for attempt_index, (attempt_raw_desc, attempt_law_context) in enumerate(suggest_attempts):
@@ -2625,7 +2657,49 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=["Модель вернула некорректный формат ответа. Попробуйте еще раз."],
         )
-    remediation = apply_validation_remediation(cleaned, point3_context)
+    initial_validation = validate_generated_paragraph(cleaned, point3_context)
+    if initial_validation.blocker_codes:
+        validation_errors = _legacy_validation_error_codes(tuple(initial_validation.blocker_codes))
+        try:
+            retry_generation = suggest_description_with_proxy_fallback_result(
+                api_key=api_key,
+                proxy_url=proxy_url,
+                model_name=selected_model,
+                victim_name=victim_name,
+                org=org,
+                subject=subject,
+                event_dt=event_dt,
+                raw_desc=raw_desc,
+                complaint_basis=complaint_basis,
+                main_focus=main_focus,
+                law_context=prompt_law_context,
+                prompt_mode=suggest_prompt_mode,
+                policy_mode=policy_mode,
+                pipeline_context=pipeline_context_payload,
+                retrieval_context_mode=suggest_context.retrieval_context_mode,
+                bundle_fingerprint=suggest_context.bundle_fingerprint,
+                retrieval_profile=suggest_context.retrieval_profile,
+                validation_error=", ".join(validation_errors),
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
+        retry_text = _clean_suggest_text(retry_generation.text)
+        if retry_text:
+            generation_result = retry_generation
+            cleaned = retry_text
+            validation_retry_count = 1
+    post_retry_validation = validate_generated_paragraph(cleaned, point3_context)
+    if validation_retry_count > 0 and post_retry_validation.blocker_codes:
+        fallback_text = build_safe_fallback_paragraph(point3_context)
+        fallback_validation = validate_generated_paragraph(fallback_text, point3_context)
+        remediation = RemediationOutcome(
+            text=fallback_text,
+            validation=fallback_validation,
+            retries_used=0,
+            safe_fallback_used=True,
+        )
+    else:
+        remediation = apply_validation_remediation(cleaned, point3_context)
     final_text = remediation.text
     if not final_text:
         raise HTTPException(
@@ -2647,6 +2721,13 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
     combined_guard_status = "fail" if validation_result.blockers else "warn" if (
         guard_result.status == "warn" or validation_result.status == "warn"
     ) else "pass"
+    if not validation_errors:
+        validation_errors = _legacy_validation_error_codes(tuple(validation_result.blocker_codes))
+    validation_status = validation_result.status
+    if remediation.safe_fallback_used:
+        validation_status = "fallback"
+    elif validation_retry_count > 0:
+        validation_status = "pass_after_retry"
     telemetry_meta = telemetry_to_meta(telemetry)
     telemetry_meta.update(
         {
@@ -2664,6 +2745,9 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
             "avg_trigger_confidence": point3_context.policy_decision.avg_confidence,
             "validator_warning_codes": list(validation_result.warning_codes),
             "validator_info_codes": list(validation_result.info_codes),
+            "validation_errors": list(validation_errors),
+            "validation_retry_count": validation_retry_count,
+            "validation_status": validation_status,
             "input_warning_codes": list(point3_context.input_audit.warning_codes),
             "protected_terms": list(point3_context.input_audit.protected_terms),
             "remediation_retries": remediation.retries_used,
@@ -2690,6 +2774,8 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
                 + (["suggest_context_compacted"] if suggest_compaction_level > 0 else [])
                 + (["suggest_output_remediated"] if remediation.retries_used > 0 else [])
                 + (["suggest_safe_fallback_template"] if remediation.safe_fallback_used else [])
+                + (["suggest_safe_factual_fallback"] if remediation.safe_fallback_used else [])
+                + (["suggest_validation_retry"] if validation_retry_count > 0 else [])
                 + (
                     ["suggest_factual_fallback_expanded"]
                     if policy_mode == MODE_FACTUAL_FALLBACK_EXPANDED
@@ -2719,6 +2805,9 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
         avg_trigger_confidence=point3_context.policy_decision.avg_confidence,
         remediation_retries=remediation.retries_used,
         safe_fallback_used=remediation.safe_fallback_used,
+        validation_status=validation_status,
+        validation_retry_count=validation_retry_count,
+        validation_errors=validation_errors,
         input_warning_codes=point3_context.input_audit.warning_codes,
         protected_terms=point3_context.input_audit.protected_terms,
         selected_model=selected_model,

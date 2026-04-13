@@ -289,6 +289,8 @@ def _build_suggest_prompt_spec_data_driven(
     policy_mode: str = "",
     pipeline_context: str = "",
     retrieval_context_mode: str = "normal_context",
+    applicability_notes: str = "",
+    force_factual_only: bool = False,
 ) -> PromptSpec:
     focus_input = _build_focus_input_section(complaint_basis=complaint_basis, main_focus=main_focus)
     normalized_policy_mode = str(policy_mode or "").strip().lower()
@@ -313,6 +315,14 @@ Mode: factual_fallback_expanded
 """
     )
     pipeline_payload = str(pipeline_context or "").strip() or "{}"
+    normalized_applicability_notes = str(applicability_notes or "").strip()
+    force_factual_only_block = ""
+    if force_factual_only:
+        force_factual_only_block = """
+- упоминать статью можно только при прямом факт-триггере.
+- если прямых триггеров нет, пиши один абзац без ссылок на статьи.
+- режим factual_only обязателен.
+"""
     return PromptSpec(
         name="suggest",
         version=SUGGEST_PROMPT_VERSION,
@@ -343,6 +353,7 @@ Do not introduce hypothetical sub-cases or extra conditions, such as a special p
 """,
             ),
             ("generation_mode", mode_rules),
+            ("applicability_notes", normalized_applicability_notes),
             ("retrieval_status", f"[mode={retrieval_mode_value}] " + {
                 "normal_context": "retrieval context is available and may support grounded legal references.",
                 "low_confidence_context": "retrieval context is low confidence; avoid categorical legal conclusions.",
@@ -351,6 +362,7 @@ Do not introduce hypothetical sub-cases or extra conditions, such as a special p
             ("focus_input", focus_input),
             ("pipeline_context", pipeline_payload),
             ("retrieved_law_context", law_context),
+            ("factual_only_contract", force_factual_only_block),
             (
                 "rules",
                 """
@@ -459,6 +471,8 @@ def build_suggest_prompt_spec(
     policy_mode: str = "",
     pipeline_context: str = "",
     retrieval_context_mode: str = "normal_context",
+    applicability_notes: str = "",
+    force_factual_only: bool = False,
 ) -> PromptSpec:
     normalized_mode = normalize_suggest_prompt_mode(prompt_mode)
     if normalized_mode == SUGGEST_PROMPT_MODE_DATA_DRIVEN:
@@ -474,6 +488,8 @@ def build_suggest_prompt_spec(
             policy_mode=policy_mode,
             pipeline_context=pipeline_context,
             retrieval_context_mode=retrieval_context_mode,
+            applicability_notes=applicability_notes,
+            force_factual_only=force_factual_only,
         )
     article_anchors, basis_strategy = _build_selected_basis_sections(complaint_basis=complaint_basis)
     return PromptSpec(

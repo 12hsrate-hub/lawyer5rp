@@ -86,6 +86,9 @@ class SuggestTextResult:
     avg_trigger_confidence: float = 0.0
     remediation_retries: int = 0
     safe_fallback_used: bool = False
+    validation_status: str = ""
+    validation_retry_count: int = 0
+    validation_errors: tuple[str, ...] = ()
     input_warning_codes: tuple[str, ...] = ()
     protected_terms: tuple[str, ...] = ()
     selected_model: str = ""
@@ -102,4 +105,7 @@ class SuggestContextBuildResult:
     bundle_generated_at: str
     bundle_fingerprint: str
     selected_norms_count: int
+    applicability_mode: str = ""
+    applicability_notes: str = ""
+    allowed_article_numbers: tuple[str, ...] = ()
     selected_norms: tuple[dict[str, object], ...] = ()
