@@ -13,8 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, Response
 from datetime import datetime, timezone
 
-from ogp_web.dependencies import get_admin_metrics_store, get_exam_answers_store, get_user_store
 from ogp_web.dependencies import get_admin_catalog_store
+from ogp_web.dependencies import get_admin_metrics_store, get_exam_answers_store, get_user_store, requires_permission
 from ogp_web.server_config import build_permission_set, get_server_config
 from ogp_web.schemas import (
     AdminBlockPayload,
@@ -745,7 +745,7 @@ def _admin_template_payload(request: Request, user: AuthUser, *, admin_focus: st
 
 
 @router.get("/admin", response_class=HTMLResponse)
-async def admin_page(request: Request, user: AuthUser = Depends(require_admin_user)):
+async def admin_page(request: Request, user: AuthUser = Depends(requires_permission("manage_servers"))):
     return templates.TemplateResponse(
         request,
         "admin.html",
@@ -754,7 +754,7 @@ async def admin_page(request: Request, user: AuthUser = Depends(require_admin_us
 
 
 @router.get("/admin/dashboard", response_class=HTMLResponse)
-async def admin_dashboard_page(request: Request, user: AuthUser = Depends(require_admin_user)):
+async def admin_dashboard_page(request: Request, user: AuthUser = Depends(requires_permission("view_analytics"))):
     return templates.TemplateResponse(
         request,
         "admin.html",
@@ -763,7 +763,7 @@ async def admin_dashboard_page(request: Request, user: AuthUser = Depends(requir
 
 
 @router.get("/admin/users", response_class=HTMLResponse)
-async def admin_users_page(request: Request, user: AuthUser = Depends(require_admin_user)):
+async def admin_users_page(request: Request, user: AuthUser = Depends(requires_permission("manage_servers"))):
     return templates.TemplateResponse(
         request,
         "admin.html",
@@ -963,7 +963,7 @@ async def admin_catalog_rollback(
 
 @router.get("/api/admin/dashboard")
 async def admin_dashboard_data(
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("view_analytics")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     exam_store: ExamAnswersStore = Depends(get_exam_answers_store),
     user_store: UserStore = Depends(get_user_store),
@@ -1090,7 +1090,7 @@ async def admin_ai_pipeline_data(
     retrieval_context_mode: str = Query(default="", max_length=64),
     guard_warning: str = Query(default="", max_length=64),
     limit: int = Query(default=50, ge=1, le=200),
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("view_analytics")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     _ = user
@@ -1225,7 +1225,7 @@ async def admin_ai_pipeline_data(
 
 @router.get("/api/admin/users")
 async def admin_users_data(
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
     search: str = "",
@@ -1269,7 +1269,7 @@ async def admin_users_data(
 @router.get("/api/admin/users/{username}")
 async def admin_user_details(
     username: str,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
 ):
@@ -1288,12 +1288,14 @@ async def admin_user_details(
         or str((event.get("meta") or {}).get("target_username", "")).strip().lower() == normalized
     ][:20]
 
+    permission_codes = user_store.get_permission_codes(normalized, server_code=target.get("server_code"))
     effective_permissions = {
-        "can_access_admin": bool(target.get("is_admin")),
-        "can_access_exam_import": bool(target.get("is_admin") or target.get("is_tester")),
-        "can_access_test_pages": bool(target.get("is_tester")),
-        "is_gka": bool(target.get("is_gka")),
-        "is_tester": bool(target.get("is_tester")),
+        "manage_servers": "manage_servers" in permission_codes,
+        "manage_laws": "manage_laws" in permission_codes,
+        "view_analytics": "view_analytics" in permission_codes,
+        "exam_import": "exam_import" in permission_codes,
+        "court_claims": "court_claims" in permission_codes,
+        "complaint_presets": "complaint_presets" in permission_codes,
     }
 
     recent_events = [event for event in overview.get("recent_events", []) if str(event.get("username", "")).strip().lower() == normalized][:20]
@@ -1323,7 +1325,7 @@ async def admin_user_details(
 
 @router.get("/api/admin/role-history")
 async def admin_role_history(
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
     limit: int = Query(default=100, ge=1, le=1000),
@@ -1345,7 +1347,7 @@ async def admin_role_history(
 
 @router.get("/api/admin/overview")
 async def admin_overview(
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("view_analytics")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     exam_store: ExamAnswersStore = Depends(get_exam_answers_store),
     user_store: UserStore = Depends(get_user_store),
@@ -1494,7 +1496,7 @@ async def admin_overview(
 
 @router.get("/api/admin/performance")
 async def admin_performance(
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("view_analytics")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     window_minutes: int = 15,
     top_endpoints: int = 10,
@@ -1542,7 +1544,7 @@ async def admin_performance(
 
 @router.get("/api/admin/users.csv")
 async def admin_users_csv(
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
     search: str = "",
@@ -1579,7 +1581,7 @@ async def admin_users_csv(
 
 @router.get("/api/admin/events.csv")
 async def admin_events_csv(
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     event_search: str = "",
     event_type: str = "",
@@ -1601,7 +1603,7 @@ async def admin_events_csv(
 @router.post("/api/admin/users/{username}/verify-email")
 async def admin_verify_email(
     username: str,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
 ):
@@ -1625,7 +1627,7 @@ async def admin_verify_email(
 async def admin_block_user(
     username: str,
     payload: AdminBlockPayload,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
 ):
@@ -1648,7 +1650,7 @@ async def admin_block_user(
 @router.post("/api/admin/users/{username}/unblock")
 async def admin_unblock_user(
     username: str,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
 ):
@@ -1671,7 +1673,7 @@ async def admin_unblock_user(
 @router.post("/api/admin/users/{username}/grant-tester")
 async def admin_grant_tester(
     username: str,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
 ):
@@ -1694,7 +1696,7 @@ async def admin_grant_tester(
 @router.post("/api/admin/users/{username}/revoke-tester")
 async def admin_revoke_tester(
     username: str,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
 ):
@@ -1717,7 +1719,7 @@ async def admin_revoke_tester(
 @router.post("/api/admin/users/{username}/grant-gka")
 async def admin_grant_gka(
     username: str,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
 ):
@@ -1740,7 +1742,7 @@ async def admin_grant_gka(
 @router.post("/api/admin/users/{username}/revoke-gka")
 async def admin_revoke_gka(
     username: str,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
 ):
@@ -1764,7 +1766,7 @@ async def admin_revoke_gka(
 async def admin_update_email(
     username: str,
     payload: AdminEmailUpdatePayload,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
 ):
@@ -1788,7 +1790,7 @@ async def admin_update_email(
 async def admin_reset_password(
     username: str,
     payload: AdminPasswordResetPayload,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
 ):
@@ -1812,7 +1814,7 @@ async def admin_reset_password(
 async def admin_deactivate_user(
     username: str,
     payload: AdminDeactivatePayload,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
 ):
@@ -1835,7 +1837,7 @@ async def admin_deactivate_user(
 @router.post("/api/admin/users/{username}/reactivate")
 async def admin_reactivate_user(
     username: str,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
 ):
@@ -1859,7 +1861,7 @@ async def admin_reactivate_user(
 async def admin_set_daily_quota(
     username: str,
     payload: AdminQuotaPayload,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
 ):
@@ -1882,7 +1884,7 @@ async def admin_set_daily_quota(
 @router.post("/api/admin/exam-import/reset-scores")
 async def admin_reset_exam_scores_for_user(
     payload: AdminExamScoreResetPayload,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_laws")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     exam_store: ExamAnswersStore = Depends(get_exam_answers_store),
 ):
@@ -1916,7 +1918,7 @@ async def admin_reset_exam_scores_for_user(
 @router.post("/api/admin/users/bulk-actions")
 async def admin_bulk_actions(
     payload: AdminBulkActionPayload,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
 ):
@@ -1968,7 +1970,7 @@ async def admin_bulk_actions(
 
 
 @router.get("/api/admin/tasks/{task_id}")
-async def admin_task_status(task_id: str, _: AuthUser = Depends(require_admin_user)):
+async def admin_task_status(task_id: str, _: AuthUser = Depends(requires_permission("manage_servers"))):
     task = _load_admin_task(task_id)
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Задача не найдена."])

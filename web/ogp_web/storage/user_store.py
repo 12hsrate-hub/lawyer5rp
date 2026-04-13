@@ -130,6 +130,10 @@ class UserStore:
             "users",
             "servers",
             "user_server_roles",
+            "roles",
+            "permissions",
+            "role_permissions",
+            "user_roles",
             "complaint_drafts",
             "generated_documents",
         )
@@ -765,6 +769,36 @@ class UserStore:
         from ogp_web.services.user_admin_store_service import is_gka_user
 
         return is_gka_user(self, username, server_code=server_code)
+
+    def get_permission_codes(self, username: str, *, server_code: str | None = None) -> frozenset[str]:
+        normalized = _normalize_username(username)
+        resolved_server = str(server_code or DEFAULT_SERVER_CODE).strip().lower() or DEFAULT_SERVER_CODE
+        rows = self._pg_fetchall(
+            """
+            SELECT DISTINCT p.code AS code
+            FROM users u
+            JOIN user_roles ur
+              ON ur.user_id = u.id
+            JOIN role_permissions rp
+              ON rp.role_id = ur.role_id
+            JOIN permissions p
+              ON p.id = rp.permission_id
+            WHERE u.username = %s
+              AND (ur.server_id IS NULL OR ur.server_id = %s)
+            """,
+            (normalized, resolved_server),
+        )
+        return frozenset(
+            str(row["code"]).strip().lower()
+            for row in rows
+            if str(row.get("code") or "").strip()
+        )
+
+    def has_permission(self, username: str, permission_code: str, *, server_code: str | None = None) -> bool:
+        normalized_permission = str(permission_code or "").strip().lower()
+        if not normalized_permission:
+            return True
+        return normalized_permission in self.get_permission_codes(username, server_code=server_code)
 
     def get_server_code(self, username: str) -> str:
         row = self._fetch_user_by_username(username, "server_code")

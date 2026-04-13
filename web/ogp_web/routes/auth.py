@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.concurrency import run_in_threadpool
 
-from ogp_web.dependencies import get_user_store
+from ogp_web.dependencies import get_user_store, requires_permission
 from ogp_web.rate_limit import RateLimitExceeded, auth_rate_limit
 from ogp_web.schemas import AuthPayload, AuthResponse, EmailPayload, PasswordChangePayload, PasswordResetPayload
 from ogp_web.services.auth_service import AuthError, clear_auth_cookie, require_user, set_auth_cookie
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.get("/me", response_model=AuthResponse)
-async def auth_me(user=Depends(require_user)) -> AuthResponse:
+async def auth_me(user=Depends(requires_permission())) -> AuthResponse:
     return AuthResponse(username=user.username, server_code=user.server_code, message="Сессия активна.")
 
 
@@ -181,7 +181,7 @@ async def auth_reset_password(
 async def auth_change_password(
     payload: PasswordChangePayload,
     response: Response,
-    user=Depends(require_user),
+    user=Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ) -> AuthResponse:
     try:
