@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
 from typing import Any
 
 from ogp_web.db.types import DatabaseBackend, DbConnectionLike
@@ -26,7 +27,16 @@ class ContentWorkflowRepository:
 
     @staticmethod
     def _json_dump(value: Any) -> str:
-        return json.dumps(value if value is not None else {}, ensure_ascii=False)
+        def _default_serializer(obj: Any) -> str:
+            if isinstance(obj, (datetime, date)):
+                return obj.isoformat()
+            return str(obj)
+
+        return json.dumps(
+            value if value is not None else {},
+            ensure_ascii=False,
+            default=_default_serializer,
+        )
 
     def _fetchone(self, conn: DbConnectionLike, query: str, params: tuple[Any, ...]):
         return conn.execute(query, params).fetchone()

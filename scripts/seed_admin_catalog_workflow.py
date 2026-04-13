@@ -163,7 +163,13 @@ def seed(*, server_scope: str = "server", server_id: str = "blackberry", safe_re
                 content_type=entity_type,
                 content_key=content_key,
             )
-            if existing and safe_rerun:
+            existing_versions = (
+                repository.list_content_versions(content_item_id=int(existing["id"]))
+                if existing
+                else []
+            )
+            is_fully_seeded = bool(existing and existing.get("current_published_version_id") and existing_versions)
+            if existing and safe_rerun and is_fully_seeded:
                 skipped.append({"entity_type": entity_type, "key": content_key, "id": existing.get("id")})
                 continue
 
