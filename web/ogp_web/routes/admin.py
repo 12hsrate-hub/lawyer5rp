@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, Response
 from datetime import datetime, timezone
 
 from ogp_web.dependencies import get_content_workflow_service
-from ogp_web.dependencies import get_admin_metrics_store, get_exam_answers_store, get_user_store, requires_permission
+from ogp_web.dependencies import get_admin_dashboard_service, get_admin_metrics_store, get_exam_answers_store, get_user_store, requires_permission
 from ogp_web.server_config import build_permission_set, get_server_config
 from ogp_web.schemas import (
     AdminBlockPayload,
@@ -32,6 +32,7 @@ from ogp_web.services.auth_service import AuthError, AuthUser, require_admin_use
 from ogp_web.services.point3_policy_service import load_point3_eval_thresholds
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.services.content_workflow_service import ContentWorkflowService
+from ogp_web.services.admin_dashboard_service import AdminDashboardService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
 from ogp_web.web import page_context, templates
@@ -1198,6 +1199,28 @@ async def admin_dashboard_data(
         "top_endpoints": performance.get("endpoint_overview", []),
         "generated_at": performance.get("generated_at"),
     }
+
+
+@router.get("/api/admin/dashboard/sections/{section}")
+async def admin_dashboard_section_data(
+    section: str,
+    user: AuthUser = Depends(requires_permission("view_analytics")),
+    dashboard_service: AdminDashboardService = Depends(get_admin_dashboard_service),
+):
+    normalized = str(section or "").strip().lower()
+    try:
+        payload = dashboard_service.get_section(section=normalized, username=user.username, server_id=user.server_code)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=[f"Unknown dashboard section: {normalized}"]) from exc
+    return {"section": normalized, "data": payload}
+
+
+@router.get("/api/admin/dashboard/v2")
+async def admin_dashboard_v2_data(
+    user: AuthUser = Depends(requires_permission("view_analytics")),
+    dashboard_service: AdminDashboardService = Depends(get_admin_dashboard_service),
+):
+    return dashboard_service.get_dashboard(username=user.username, server_id=user.server_code)
 
 
 @router.get("/api/admin/ai-pipeline")
