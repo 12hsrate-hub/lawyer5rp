@@ -154,6 +154,68 @@ class WebApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("Обращение", response.json()["bbcode"])
+        self.assertIsInstance(response.json().get("generated_document_id"), int)
+
+    def test_generated_document_snapshot_history_endpoint(self):
+        self._register_verify_and_login("snapshot_user", "snapshot@example.com")
+
+        response = self.client.put(
+            "/api/profile",
+            json={
+                "name": "Rep",
+                "passport": "AA",
+                "address": "Addr",
+                "phone": "1234567",
+                "discord": "disc",
+                "passport_scan_url": "https://example.com/rep",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "appeal_no": "1234",
+                "org": "LSPD",
+                "subject_names": "John Doe",
+                "situation_description": "Описание",
+                "violation_short": "Нарушение",
+                "event_dt": "08.04.2026 14:30",
+                "today_date": "08.04.2026",
+                "victim": {
+                    "name": "Victim",
+                    "passport": "BB",
+                    "address": "Addr",
+                    "phone": "7654321",
+                    "discord": "victim",
+                    "passport_scan_url": "https://example.com/victim",
+                },
+                "contract_url": "https://example.com/contract",
+                "bar_request_url": "",
+                "official_answer_url": "",
+                "mail_notice_url": "",
+                "arrest_record_url": "",
+                "personnel_file_url": "",
+                "video_fix_urls": [],
+                "provided_video_urls": [],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        document_id = int(response.json()["generated_document_id"])
+
+        response = self.client.get("/api/generated-documents/history")
+        self.assertEqual(response.status_code, 200)
+        history_items = response.json()["items"]
+        self.assertTrue(any(int(item["id"]) == document_id for item in history_items))
+
+        response = self.client.get(f"/api/generated-documents/{document_id}/snapshot")
+        self.assertEqual(response.status_code, 200)
+        snapshot = response.json()["context_snapshot"]
+        self.assertIn("server", snapshot)
+        self.assertIn("template_version", snapshot)
+        self.assertIn("law_version_set", snapshot)
+        self.assertIn("validation_rules_version", snapshot)
+        self.assertIn("feature_flags", snapshot)
 
     def test_admin_overview_returns_metrics_for_admin_user(self):
         self._register_verify_and_login("12345", "admin@example.com")

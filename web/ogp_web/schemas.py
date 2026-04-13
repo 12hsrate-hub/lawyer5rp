@@ -82,6 +82,7 @@ class ComplaintPayload(BaseModel):
 
 class GenerateResponse(BaseModel):
     bbcode: str
+    generated_document_id: int | None = None
 
 
 class ComplaintDraftPayload(BaseModel):
@@ -92,6 +93,25 @@ class ComplaintDraftResponse(BaseModel):
     draft: dict = Field(default_factory=dict)
     updated_at: str = ""
     message: str = ""
+
+
+class GeneratedDocumentHistoryItem(BaseModel):
+    id: int
+    server_code: str = ""
+    document_kind: str = ""
+    created_at: str = ""
+
+
+class GeneratedDocumentHistoryResponse(BaseModel):
+    items: List[GeneratedDocumentHistoryItem] = Field(default_factory=list)
+
+
+class GeneratedDocumentSnapshotResponse(BaseModel):
+    id: int
+    server_code: str = ""
+    document_kind: str = ""
+    created_at: str = ""
+    context_snapshot: dict[str, Any] = Field(default_factory=dict)
 
 
 class RehabPayload(BaseModel):
