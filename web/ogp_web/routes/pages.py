@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from functools import partial
 
 from fastapi import APIRouter, Depends, Request, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ogp_web.dependencies import get_exam_answers_store, get_user_store
@@ -15,6 +17,10 @@ from ogp_web.web import page_context, templates
 
 
 router = APIRouter()
+
+
+async def _run_sync_io(func, /, *args, **kwargs):
+    return await run_in_threadpool(partial(func, *args, **kwargs))
 
 
 def _page_nav_items(server_config: ServerConfig, permissions: PermissionSet) -> list[dict[str, str]]:
@@ -101,13 +107,17 @@ async def verify_email_page(
     username = ""
     if token:
         try:
-            user = store.confirm_email(token)
+            user = await _run_sync_io(store.confirm_email, token)
             success = True
             username = user.username
             message = "Email подтвержден. Теперь можно войти в аккаунт."
         except AuthError as exc:
             message = str(exc)
-    server_code = store.get_server_code(username) if username else getattr(request.app.state.server_config, "code", "blackberry")
+    server_code = (
+        await _run_sync_io(store.get_server_code, username)
+        if username
+        else getattr(request.app.state.server_config, "code", "blackberry")
+    )
     server_config = get_server_config(server_code)
     return templates.TemplateResponse(
         request,
@@ -144,7 +154,7 @@ async def complaint_page(
     user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ):
-    server_config, permissions = _server_context(store, user.username)
+    server_config, permissions = await _run_sync_io(_server_context, store, user.username)
     return templates.TemplateResponse(
         request,
         "complaint.html",
@@ -165,7 +175,7 @@ async def complaint_test_page(
     user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ):
-    server_config, permissions = _server_context(store, user.username)
+    server_config, permissions = await _run_sync_io(_server_context, store, user.username)
     if not permissions.can_access_complaint_presets:
         return RedirectResponse(url="/complaint", status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse(
@@ -189,7 +199,7 @@ async def exam_import_page(
     user_store: UserStore = Depends(get_user_store),
     store: ExamAnswersStore = Depends(get_exam_answers_store),
 ):
-    server_config, permissions = _server_context(user_store, user.username)
+    server_config, permissions = await _run_sync_io(_server_context, user_store, user.username)
     if not permissions.can_access_exam_import:
         return RedirectResponse(url="/complaint", status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse(
@@ -201,8 +211,8 @@ async def exam_import_page(
             permissions=permissions,
             nav_active="exam_import",
             exam_sheet_url=server_config.exam_sheet_url,
-            exam_entries=store.list_entries(),
-            exam_total_rows=store.count(),
+            exam_entries=await _run_sync_io(store.list_entries),
+            exam_total_rows=await _run_sync_io(store.count),
         ),
     )
 
@@ -213,7 +223,7 @@ async def court_claim_test_page(
     user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ):
-    server_config, permissions = _server_context(store, user.username)
+    server_config, permissions = await _run_sync_io(_server_context, store, user.username)
     if not permissions.can_access_court_claims:
         return RedirectResponse(url="/complaint", status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse(
@@ -234,7 +244,7 @@ async def law_qa_test_page(
     user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ):
-    server_config, permissions = _server_context(store, user.username)
+    server_config, permissions = await _run_sync_io(_server_context, store, user.username)
     if not permissions.can_access_court_claims:
         return RedirectResponse(url="/complaint", status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse(
@@ -262,7 +272,7 @@ async def rehab_page(
     user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ):
-    server_config, permissions = _server_context(store, user.username)
+    server_config, permissions = await _run_sync_io(_server_context, store, user.username)
     return templates.TemplateResponse(
         request,
         "rehab.html",
@@ -287,7 +297,7 @@ async def profile_page(
     user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ):
-    server_config, permissions = _server_context(store, user.username)
+    server_config, permissions = await _run_sync_io(_server_context, store, user.username)
     return templates.TemplateResponse(
         request,
         "profile.html",
