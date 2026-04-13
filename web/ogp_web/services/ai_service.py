@@ -1918,7 +1918,10 @@ def _build_suggest_forced_norms(
         bundle_path = str(getattr(server_config, "law_qa_bundle_path", "") or "").strip()
         if not bundle_path:
             return ()
-        chunks = load_law_bundle_chunks(server_code, bundle_path, law_version_id)
+        if law_version_id is None:
+            chunks = load_law_bundle_chunks(server_code, bundle_path)
+        else:
+            chunks = load_law_bundle_chunks(server_code, bundle_path, law_version_id)
     except Exception:
         return ()
 

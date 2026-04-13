@@ -13,6 +13,7 @@ from typing import Iterable
 from urllib.parse import urljoin, urlparse
 
 import httpx
+from ogp_web.db.errors import DatabaseError
 from ogp_web.services.law_version_service import load_law_chunks_by_version, resolve_active_law_version
 
 
@@ -335,7 +336,10 @@ def write_law_bundle(bundle: dict[str, object], destination: Path) -> Path:
 
 
 def load_law_bundle_meta(server_code: str, bundle_path: str = "", requested_version_id: int | None = None) -> LawBundleMeta | None:
-    resolved_version = resolve_active_law_version(server_code=server_code, requested_version_id=requested_version_id)
+    resolved_version = _resolve_active_law_version_safe(
+        server_code=server_code,
+        requested_version_id=requested_version_id,
+    )
     if resolved_version:
         return LawBundleMeta(
             law_version_id=resolved_version.id,
@@ -357,7 +361,10 @@ def load_law_bundle_chunks(
     bundle_path: str = "",
     requested_version_id: int | None = None,
 ) -> tuple[LawChunk, ...]:
-    resolved_version = resolve_active_law_version(server_code=server_code, requested_version_id=requested_version_id)
+    resolved_version = _resolve_active_law_version_safe(
+        server_code=server_code,
+        requested_version_id=requested_version_id,
+    )
     if resolved_version:
         return load_law_chunks_by_version(server_code, resolved_version.id)
     path = resolve_law_bundle_path(server_code, bundle_path)
@@ -422,3 +429,14 @@ def _payload_to_law_chunks(payload: dict[str, object]) -> tuple[LawChunk, ...]:
             )
         )
     return tuple(items)
+
+
+def _resolve_active_law_version_safe(
+    *,
+    server_code: str,
+    requested_version_id: int | None = None,
+):
+    try:
+        return resolve_active_law_version(server_code=server_code, requested_version_id=requested_version_id)
+    except (ValueError, DatabaseError):
+        return None
