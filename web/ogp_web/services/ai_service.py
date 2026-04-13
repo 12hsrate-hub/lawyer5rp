@@ -5,6 +5,7 @@ from difflib import SequenceMatcher
 from functools import lru_cache
 import logging
 import os
+from pathlib import Path
 import re
 import socket
 from time import monotonic
@@ -13,6 +14,7 @@ from ipaddress import ip_address
 from urllib.parse import urlparse
 
 import httpx
+import yaml
 from fastapi import HTTPException, status
 
 from ogp_web.schemas import LawQaPayload, PrincipalScanPayload, PrincipalScanResult, SuggestPayload
@@ -58,6 +60,22 @@ from shared.ogp_ai_prompts import SUGGEST_PROMPT_VERSION, build_suggest_prompt
 
 LOGGER = logging.getLogger(__name__)
 LAW_QA_PROMPT_VERSION = "law_qa.v5"
+_ROOT_DIR = Path(__file__).resolve().parents[3]
+_MODEL_POLICY_PATH = _ROOT_DIR / "config" / "model_policy.yaml"
+_LAW_QA_SHORT_QUESTION_MAX_CHARS = 180
+_LAW_QA_SHORT_QUESTION_MAX_KEYWORDS = 6
+_SUGGEST_EDITORIAL_MAX_CHARS = 500
+_SUGGEST_EDITORIAL_MARKERS = (
+    "исправь",
+    "отредактируй",
+    "перепиши",
+    "перефразируй",
+    "сделай грамотно",
+    "приведи в порядок",
+    "сократи",
+    "убери ошибки",
+    "почисти текст",
+)
 
 
 _LawChunk = LawChunk
@@ -83,6 +101,9 @@ class LawQaAnswerResult:
     budget_status: str
     budget_warnings: list[str]
     budget_policy: dict[str, object]
+    selected_model: str = ""
+    selection_reason: str = ""
+    requested_model: str = ""
 
 
 @dataclass(frozen=True)
@@ -116,6 +137,14 @@ class SuggestTextResult:
     safe_fallback_used: bool = False
     input_warning_codes: tuple[str, ...] = ()
     protected_terms: tuple[str, ...] = ()
+    selected_model: str = ""
+    selection_reason: str = ""
+
+
+@dataclass(frozen=True)
+class ModelSelectionDecision:
+    model_name: str
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -407,11 +436,21 @@ def get_law_qa_model_choices() -> tuple[str, ...]:
         values = tuple(dict.fromkeys(part.strip() for part in raw.split(",") if part.strip()))
         if values:
             return values
+    flow_policy = _get_model_routing_policy("law_qa")
+    configured = tuple(
+        dict.fromkeys(
+            str(flow_policy.get(key) or "").strip()
+            for key in ("default_model", "low_confidence_model", "high_confidence_short_question_model")
+            if str(flow_policy.get(key) or "").strip()
+        )
+    )
+    if configured:
+        return configured
     return ("gpt-5.4-mini",)
 
 
 def get_default_law_qa_model() -> str:
-    configured = os.getenv("OPENAI_TEXT_MODEL", "gpt-5.4-mini").strip() or "gpt-5.4-mini"
+    configured = _get_flow_model("law_qa", "default_model", os.getenv("OPENAI_TEXT_MODEL", "gpt-5.4-mini"))
     choices = get_law_qa_model_choices()
     if configured in choices:
         return configured
@@ -419,18 +458,105 @@ def get_default_law_qa_model() -> str:
 
 
 def resolve_law_qa_model(requested_model: str) -> str:
-    _ = requested_model
-    return get_default_law_qa_model()
     normalized = str(requested_model or "").strip()
     if not normalized:
         return get_default_law_qa_model()
     allowed = set(get_law_qa_model_choices())
-    if normalized not in allowed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=["Выбрана неподдерживаемая модель для поиска по законодательной базе."],
-        )
-    return normalized
+    return normalized if normalized in allowed else get_default_law_qa_model()
+
+
+@lru_cache(maxsize=1)
+def _load_model_policy() -> dict[str, object]:
+    if not _MODEL_POLICY_PATH.exists():
+        return {}
+    try:
+        payload = yaml.safe_load(_MODEL_POLICY_PATH.read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("Failed to load model policy config from %s: %s", _MODEL_POLICY_PATH, exc)
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _get_model_routing_policy(flow: str) -> dict[str, object]:
+    payload = _load_model_policy()
+    routing = payload.get("model_routing") if isinstance(payload, dict) else {}
+    if not isinstance(routing, dict):
+        return {}
+    flow_payload = routing.get(str(flow or "").strip())
+    return flow_payload if isinstance(flow_payload, dict) else {}
+
+
+def _get_flow_model(flow: str, key: str, fallback: str) -> str:
+    flow_policy = _get_model_routing_policy(flow)
+    value = str(flow_policy.get(key) or "").strip()
+    return value or str(fallback or "").strip()
+
+
+def _get_flow_flag(flow: str, key: str, fallback: str = "") -> str:
+    flow_policy = _get_model_routing_policy(flow)
+    value = str(flow_policy.get(key) or "").strip()
+    return value or str(fallback or "").strip()
+
+
+def _is_short_law_qa_question(question: str) -> bool:
+    normalized = str(question or "").strip()
+    if not normalized or len(normalized) > _LAW_QA_SHORT_QUESTION_MAX_CHARS:
+        return False
+    return len(_extract_keywords(normalized)) <= _LAW_QA_SHORT_QUESTION_MAX_KEYWORDS
+
+
+def _is_short_editorial_suggest_request(payload: SuggestPayload) -> bool:
+    raw_desc = _normalize_suggest_inline(payload.raw_desc).lower()
+    if not raw_desc or len(raw_desc) > _SUGGEST_EDITORIAL_MAX_CHARS:
+        return False
+    return any(marker in raw_desc for marker in _SUGGEST_EDITORIAL_MARKERS)
+
+
+def _select_law_qa_model(
+    *,
+    question: str,
+    retrieval_confidence: str,
+    server_config: object,
+) -> ModelSelectionDecision:
+    default_model = get_default_law_qa_model()
+    low_confidence_model = _get_flow_model("law_qa", "low_confidence_model", "gpt-5.4")
+    nano_model = _get_flow_model("law_qa", "high_confidence_short_question_model", "gpt-5.4-nano")
+    nano_flag = _get_flow_flag("law_qa", "high_confidence_short_question_flag", "law_qa_nano_enabled")
+    normalized_confidence = str(retrieval_confidence or "").strip().lower()
+    if normalized_confidence == "low" and low_confidence_model:
+        return ModelSelectionDecision(model_name=low_confidence_model, reason="law_qa_low_confidence")
+    if (
+        nano_model
+        and nano_flag
+        and normalized_confidence == "high"
+        and _is_short_law_qa_question(question)
+        and _server_feature_enabled(server_config, nano_flag)
+    ):
+        return ModelSelectionDecision(model_name=nano_model, reason="law_qa_high_confidence_short_question")
+    return ModelSelectionDecision(model_name=default_model, reason="law_qa_default")
+
+
+def _select_suggest_model(
+    *,
+    payload: SuggestPayload,
+    retrieval_context_mode: str,
+    server_config: object,
+) -> ModelSelectionDecision:
+    default_model = _get_flow_model("suggest", "default_model", OPENAI_TEXT_MODEL)
+    low_confidence_model = _get_flow_model("suggest", "low_confidence_model", "gpt-5.4")
+    short_editorial_model = _get_flow_model("suggest", "short_editorial_model", "gpt-5.4-nano")
+    short_editorial_flag = _get_flow_flag("suggest", "short_editorial_flag", "suggest_nano_enabled")
+    normalized_context_mode = str(retrieval_context_mode or "").strip().lower()
+    if normalized_context_mode in {"low_confidence_context", "no_context"} and low_confidence_model:
+        return ModelSelectionDecision(model_name=low_confidence_model, reason=f"suggest_{normalized_context_mode}")
+    if (
+        short_editorial_model
+        and short_editorial_flag
+        and _server_feature_enabled(server_config, short_editorial_flag)
+        and _is_short_editorial_suggest_request(payload)
+    ):
+        return ModelSelectionDecision(model_name=short_editorial_model, reason="suggest_short_editorial")
+    return ModelSelectionDecision(model_name=default_model, reason="suggest_default")
 
 
 class _LawHtmlParser(HTMLParser):
@@ -1445,13 +1571,19 @@ def _law_qa_metrics_meta(
     result: LawQaAnswerResult,
     used_sources: list[str],
 ) -> dict[str, object]:
+    selected_model = str(getattr(result, "selected_model", "") or "").strip()
+    selection_reason = str(getattr(result, "selection_reason", "") or "").strip()
+    requested_model = str(getattr(result, "requested_model", "") or payload.model or "").strip()
     return {
         "generation_id": result.generation_id,
         "flow": "law_qa",
         "contract_version": result.contract_version,
         "prompt_version": LAW_QA_PROMPT_VERSION,
         "server_code": payload.server_code,
-        "model": payload.model,
+        "model": selected_model or payload.model,
+        "selected_model": selected_model,
+        "selection_reason": selection_reason,
+        "requested_model": requested_model,
         "input_chars": len(payload.question or ""),
         "input_hash": short_text_hash(payload.question or ""),
         "input_preview": mask_text_preview(payload.question or "", max_chars=180),
@@ -1502,6 +1634,8 @@ def _suggest_metrics_meta(
     total_suggest_ms = int(getattr(result, "total_suggest_ms", 0) or 0)
     telemetry = dict(getattr(result, "telemetry", {}) or {})
     shadow = getattr(result, "shadow", {})
+    selected_model = str(getattr(result, "selected_model", "") or telemetry.get("model") or "").strip()
+    selection_reason = str(getattr(result, "selection_reason", "") or "").strip()
     return {
         "generation_id": result.generation_id,
         "flow": "suggest",
@@ -1517,6 +1651,9 @@ def _suggest_metrics_meta(
         "output_chars": len(result.text or ""),
         "output_hash": short_text_hash(result.text or ""),
         "output_preview": mask_text_preview(result.text or "", max_chars=220),
+        "model": selected_model,
+        "selected_model": selected_model,
+        "selection_reason": selection_reason,
         "guard_status": result.guard_status,
         "guard_warnings": list(result.warnings),
         "budget_status": result.budget_status,
@@ -2185,7 +2322,7 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
             detail=["\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0432\u043e\u043f\u0440\u043e\u0441 \u0434\u043b\u044f \u0430\u043d\u0430\u043b\u0438\u0437\u0430."],
         )
 
-    model_name = resolve_law_qa_model(payload.model)
+    requested_model = str(payload.model or "").strip()
     generation_id = new_generation_id()
     retrieval_result = _retrieve_law_context(
         server_code=payload.server_code or DEFAULT_SERVER_CODE,
@@ -2214,6 +2351,14 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
         )
 
     server_config = get_server_config(retrieval_result.server_code)
+    selection = _select_law_qa_model(
+        question=question,
+        retrieval_confidence=retrieval_result.confidence,
+        server_config=server_config,
+    )
+    model_name = selection.model_name
+    selection_reason = selection.reason
+    low_confidence_model = _get_flow_model("law_qa", "low_confidence_model", "gpt-5.4")
     shadow = build_shadow_comparison(enabled=False, profile="", primary_matches=retrieval_result.matches, shadow_matches=())
     if _server_feature_enabled(server_config, "legal_pipeline_shadow"):
         shadow_profile = str(getattr(server_config, "shadow_law_qa_profile", "") or "").strip()
@@ -2273,6 +2418,9 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
                 raise
             except Exception as exc:
                 if _is_context_window_error(exc) and attempt_index < len(context_attempts) - 1:
+                    if low_confidence_model and model_name != low_confidence_model:
+                        model_name = low_confidence_model
+                        selection_reason = "law_qa_context_compacted"
                     LOGGER.warning(
                         "Law QA prompt exceeded context window for model %s; retrying with compact context level=%s",
                         model_name,
@@ -2309,6 +2457,9 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
     telemetry_meta = telemetry_to_meta(telemetry)
     telemetry_meta.update(
         {
+            "selected_model": model_name,
+            "selection_reason": selection_reason,
+            "requested_model": requested_model,
             "context_compaction_level": compaction_level,
             "context_compacted": bool(compaction_level > 0),
         }
@@ -2339,6 +2490,9 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
         budget_status=budget_assessment.status,
         budget_warnings=list(budget_assessment.warnings),
         budget_policy=policy_to_meta(budget_assessment.policy),
+        selected_model=model_name,
+        selection_reason=selection_reason,
+        requested_model=requested_model,
     )
 
 
@@ -2435,6 +2589,14 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
     complaint_basis = payload.complaint_basis.strip()
     main_focus = payload.main_focus.strip()
     raw_desc = payload.raw_desc.strip()
+    selection = _select_suggest_model(
+        payload=payload,
+        retrieval_context_mode=suggest_context.retrieval_context_mode,
+        server_config=server_config,
+    )
+    selected_model = selection.model_name
+    selection_reason = selection.reason
+    low_confidence_model = _get_flow_model("suggest", "low_confidence_model", "gpt-5.4")
     if low_confidence_policy == "soft_fail" and suggest_context.retrieval_context_mode in {"low_confidence_context", "no_context"}:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -2495,6 +2657,7 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
                 generation_result = suggest_description_with_proxy_fallback_result(
                     api_key=api_key,
                     proxy_url=proxy_url,
+                    model_name=selected_model,
                     victim_name=victim_name,
                     org=org,
                     subject=subject,
@@ -2514,6 +2677,9 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
                 break
             except Exception as exc:
                 if _is_context_window_error(exc) and attempt_index < len(suggest_attempts) - 1:
+                    if low_confidence_model and selected_model != low_confidence_model:
+                        selected_model = low_confidence_model
+                        selection_reason = "suggest_context_compacted"
                     LOGGER.warning(
                         "Suggest prompt exceeded context window; retrying with compact context level=%s",
                         attempt_index + 1,
@@ -2550,7 +2716,7 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
         )
     total_suggest_ms = int((monotonic() - total_started_at) * 1000)
     telemetry = build_ai_telemetry(
-        model_name=OPENAI_TEXT_MODEL,
+        model_name=selected_model,
         prompt_text=prompt_text,
         output_text=final_text,
         usage=generation_result.usage,
@@ -2569,6 +2735,8 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
             "attempt_path": generation_result.attempt_path,
             "attempt_duration_ms": generation_result.attempt_duration_ms,
             "route_policy": generation_result.route_policy,
+            "selected_model": selected_model,
+            "selection_reason": selection_reason,
             "context_compaction_level": suggest_compaction_level,
             "context_compacted": bool(suggest_compaction_level > 0),
             "retrieval_context_mode": suggest_context.retrieval_context_mode,
@@ -2635,6 +2803,8 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
         safe_fallback_used=remediation.safe_fallback_used,
         input_warning_codes=point3_context.input_audit.warning_codes,
         protected_terms=point3_context.input_audit.protected_terms,
+        selected_model=selected_model,
+        selection_reason=selection_reason,
     )
 
 

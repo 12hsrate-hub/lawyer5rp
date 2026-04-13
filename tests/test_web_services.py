@@ -6,6 +6,7 @@ import shutil
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 WEB_DIR = ROOT_DIR / "web"
@@ -457,6 +458,91 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(meta["prompt_mode"], "data_driven")
         self.assertEqual(meta["retrieval_context_mode"], "normal_context")
         self.assertEqual(meta["selected_norms_count"], 0)
+
+    def test_suggest_text_details_selects_low_confidence_model(self):
+        original_get_server_config = ai_service.get_server_config
+        original_build_context = ai_service._build_suggest_law_context
+        original_suggest = ai_service.suggest_description_with_proxy_fallback_result
+
+        class DummyServerConfig:
+            feature_flags = frozenset()
+            suggest_low_confidence_policy = "controlled_fallback"
+
+        captured: dict[str, str] = {}
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service._build_suggest_law_context = lambda **kwargs: ai_service.SuggestContextBuildResult(
+            context_text="Источник: https://laws.example\nНорма: Статья 20\nФрагмент: Проверка оснований задержания.",
+            retrieval_confidence="low",
+            retrieval_context_mode="low_confidence_context",
+            retrieval_profile="suggest",
+            bundle_status="ready",
+            bundle_generated_at="2026-04-13T00:00:00Z",
+            bundle_fingerprint="bundle-low-confidence",
+            selected_norms_count=0,
+            selected_norms=(),
+        )
+
+        def fake_suggest(**kwargs):
+            captured["model_name"] = kwargs["model_name"]
+            return ai_service.TextGenerationResult(
+                text=(
+                    "Заявитель описывает задержание и указывает на спорность его оснований. "
+                    "В правовом контексте не хватает надежной привязки к конкретной норме. "
+                    "Требуется проверка фактических обстоятельств и процессуальных действий сотрудника. "
+                    "Окончательная квалификация возможна только после дополнительной проверки материалов."
+                ),
+                usage=ai_service.AiUsageSummary(),
+                cache_hit=False,
+                attempt_path="proxy",
+                attempt_duration_ms=180,
+                route_policy="proxy_first",
+            )
+
+        ai_service.suggest_description_with_proxy_fallback_result = fake_suggest
+        payload = SuggestPayload(
+            victim_name="Victim",
+            org="LSPD",
+            subject="Officer",
+            event_dt="08.04.2026 14:30",
+            raw_desc="Сотрудник задержал меня, но законность основания неясна.",
+            complaint_basis="procedural_violation",
+            main_focus="Проверка законности задержания",
+        )
+        try:
+            result = ai_service.suggest_text_details(payload, server_code="blackberry")
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service._build_suggest_law_context = original_build_context
+            ai_service.suggest_description_with_proxy_fallback_result = original_suggest
+
+        meta = ai_service.build_suggest_metrics_meta(payload=payload, result=result, server_code="blackberry")
+        self.assertEqual(captured["model_name"], "gpt-5.4")
+        self.assertEqual(result.selected_model, "gpt-5.4")
+        self.assertEqual(result.selection_reason, "suggest_low_confidence_context")
+        self.assertEqual(result.telemetry["selected_model"], "gpt-5.4")
+        self.assertEqual(meta["model"], "gpt-5.4")
+        self.assertEqual(meta["selected_model"], "gpt-5.4")
+        self.assertEqual(meta["selection_reason"], "suggest_low_confidence_context")
+
+    def test_select_suggest_model_uses_nano_for_short_editorial_request_when_flag_enabled(self):
+        payload = SuggestPayload(
+            victim_name="Victim",
+            org="LSPD",
+            subject="Officer",
+            event_dt="08.04.2026 14:30",
+            raw_desc="Исправь текст жалобы и убери ошибки, не меняя факты.",
+        )
+        server_config = SimpleNamespace(feature_flags=frozenset({"suggest_nano_enabled"}))
+
+        selection = ai_service._select_suggest_model(
+            payload=payload,
+            retrieval_context_mode="normal_context",
+            server_config=server_config,
+        )
+
+        self.assertEqual(selection.model_name, "gpt-5.4-nano")
+        self.assertEqual(selection.reason, "suggest_short_editorial")
 
     def test_build_suggest_retrieval_query_light_formats_fields_in_expected_order(self):
         payload = SuggestPayload(
@@ -1591,47 +1677,62 @@ https://laws.example/article
 
     def test_law_qa_uses_default_model(self):
         original_get_server_config = ai_service.get_server_config
-        original_build_index = ai_service._build_law_chunk_index_cached
+        original_retrieve = ai_service._retrieve_law_context
         original_create_client = ai_service.create_openai_client
+        original_request = ai_service._request_law_qa_text
 
         class DummyServerConfig:
             code = "blackberry"
             name = "BlackBerry"
-            law_qa_sources = ("https://laws.example/base",)
+            feature_flags = frozenset()
 
-        captured = {}
-
-        class DummyResponses:
-            def create(self, **kwargs):
-                captured.update(kwargs)
-                return type("DummyResponse", (), {"output_text": "Ответ по закону."})()
-
-        class DummyClient:
-            responses = DummyResponses()
-
-        ai_service.get_server_config = lambda server_code: DummyServerConfig()
-        ai_service._build_law_chunk_index_cached = lambda source_urls: (
-            ai_service._LawChunk(
-                url="https://laws.example/base",
-                document_title="Процессуальный кодекс",
-                article_label="Статья 1. Право на защиту",
-                text="Статья 1. Право на защиту. Каждый имеет право на защиту.",
+        chunk = ai_service._LawChunk(
+            url="https://laws.example/base",
+            document_title="Процессуальный кодекс",
+            article_label="Статья 1. Право на защиту",
+            text="Статья 1. Право на защиту. Каждый имеет право на защиту.",
+        )
+        retrieval_result = SimpleNamespace(
+            is_configured=True,
+            server_code="blackberry",
+            server_name="BlackBerry",
+            indexed_chunk_count=1,
+            confidence="high",
+            profile="law_qa",
+            matches=[SimpleNamespace(score=91, excerpt="Каждый имеет право на защиту.", chunk=chunk)],
+            bundle_health=SimpleNamespace(
+                status="fresh",
+                generated_at="2026-04-13T00:00:00Z",
+                fingerprint="bundle-default",
+                warnings=(),
             ),
         )
-        ai_service.create_openai_client = lambda **kwargs: DummyClient()
+        captured: dict[str, str] = {}
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service._retrieve_law_context = lambda **kwargs: retrieval_result
+        ai_service.create_openai_client = lambda **kwargs: object()
+
+        def fake_request(**kwargs):
+            captured["model"] = kwargs["model_name"]
+            captured["input"] = kwargs["prompt"]
+            return "Ответ по закону.", ai_service.AiUsageSummary()
+
+        ai_service._request_law_qa_text = fake_request
         try:
             text, sources, count = ai_service.answer_law_question(
                 LawQaPayload(
                     server_code="blackberry",
                     model="gpt-5.4",
-                    question="Какая статья дает право на защиту?",
+                    question="Какая норма регулирует право на защиту при задержании и какие гарантии она дает?",
                     max_answer_chars=2000,
                 )
             )
         finally:
             ai_service.get_server_config = original_get_server_config
-            ai_service._build_law_chunk_index_cached = original_build_index
+            ai_service._retrieve_law_context = original_retrieve
             ai_service.create_openai_client = original_create_client
+            ai_service._request_law_qa_text = original_request
 
         self.assertEqual(text, "Ответ по закону.")
         self.assertEqual(sources, ["https://laws.example/base"])
@@ -1639,6 +1740,80 @@ https://laws.example/article
         self.assertEqual(captured["model"], ai_service.get_default_law_qa_model())
         self.assertIn("Не используй реальные законы", captured["input"])
         self.assertIn("Право на защиту", captured["input"])
+
+    def test_law_qa_details_selects_low_confidence_model(self):
+        original_get_server_config = ai_service.get_server_config
+        original_retrieve = ai_service._retrieve_law_context
+        original_create_client = ai_service.create_openai_client
+        original_request = ai_service._request_law_qa_text
+
+        chunk = ai_service._LawChunk(
+            url="https://laws.example/base",
+            document_title="Процессуальный кодекс",
+            article_label="Статья 1. Право на защиту",
+            text="Статья 1. Право на защиту. Каждый имеет право на защиту.",
+        )
+        retrieval_result = SimpleNamespace(
+            is_configured=True,
+            server_code="blackberry",
+            server_name="BlackBerry",
+            indexed_chunk_count=1,
+            confidence="low",
+            profile="law_qa",
+            matches=[SimpleNamespace(score=91, excerpt="Каждый имеет право на защиту.", chunk=chunk)],
+            bundle_health=SimpleNamespace(
+                status="fresh",
+                generated_at="2026-04-13T00:00:00Z",
+                fingerprint="bundle-low-confidence",
+                warnings=(),
+            ),
+        )
+        captured: dict[str, str] = {}
+
+        class DummyServerConfig:
+            feature_flags = frozenset()
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service._retrieve_law_context = lambda **kwargs: retrieval_result
+        ai_service.create_openai_client = lambda **kwargs: object()
+
+        def fake_request(**kwargs):
+            captured["model_name"] = kwargs["model_name"]
+            return "Ответ по нормам.", ai_service.AiUsageSummary()
+
+        ai_service._request_law_qa_text = fake_request
+        try:
+            result = ai_service.answer_law_question_details(
+                LawQaPayload(
+                    server_code="blackberry",
+                    model="gpt-5.4-mini",
+                    question="Какая норма регулирует право на защиту при задержании?",
+                    max_answer_chars=2000,
+                )
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service._retrieve_law_context = original_retrieve
+            ai_service.create_openai_client = original_create_client
+            ai_service._request_law_qa_text = original_request
+
+        self.assertEqual(captured["model_name"], "gpt-5.4")
+        self.assertEqual(result.selected_model, "gpt-5.4")
+        self.assertEqual(result.selection_reason, "law_qa_low_confidence")
+        self.assertEqual(result.telemetry["selected_model"], "gpt-5.4")
+        self.assertEqual(result.telemetry["selection_reason"], "law_qa_low_confidence")
+
+    def test_select_law_qa_model_uses_nano_for_short_question_when_flag_enabled(self):
+        server_config = SimpleNamespace(feature_flags=frozenset({"law_qa_nano_enabled"}))
+
+        selection = ai_service._select_law_qa_model(
+            question="Статья 7?",
+            retrieval_confidence="high",
+            server_config=server_config,
+        )
+
+        self.assertEqual(selection.model_name, "gpt-5.4-nano")
+        self.assertEqual(selection.reason, "law_qa_high_confidence_short_question")
 
     def test_law_qa_details_include_retrieval_debug(self):
         original_get_server_config = ai_service.get_server_config

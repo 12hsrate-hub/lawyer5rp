@@ -472,6 +472,7 @@ def suggest_description(
     complaint_basis: str = "",
     main_focus: str = "",
     law_context: str = "",
+    model_name: str = "",
     prompt_mode: str = "legacy",
     policy_mode: str = "",
     pipeline_context: str = "",
@@ -489,6 +490,7 @@ def suggest_description(
         complaint_basis=complaint_basis,
         main_focus=main_focus,
         law_context=law_context,
+        model_name=model_name,
         prompt_mode=prompt_mode,
         policy_mode=policy_mode,
         pipeline_context=pipeline_context,
@@ -508,6 +510,7 @@ def suggest_description_result(
     complaint_basis: str = "",
     main_focus: str = "",
     law_context: str = "",
+    model_name: str = "",
     prompt_mode: str = "legacy",
     policy_mode: str = "",
     pipeline_context: str = "",
@@ -529,10 +532,11 @@ def suggest_description_result(
         pipeline_context=pipeline_context,
         retrieval_context_mode=retrieval_context_mode,
     )
+    resolved_model_name = str(model_name or OPENAI_TEXT_MODEL).strip() or OPENAI_TEXT_MODEL
     cache = get_ai_cache()
     cache_key = cache.build_key(
         operation="suggest_description",
-        model=OPENAI_TEXT_MODEL,
+        model=resolved_model_name,
         payload={
             "prompt_version": SUGGEST_PROMPT_VERSION,
             "prompt_mode": str(prompt_mode or "legacy").strip().lower(),
@@ -565,7 +569,7 @@ def suggest_description_result(
             attempt_path="cache",
         )
 
-    response = client.responses.create(model=OPENAI_TEXT_MODEL, input=prompt)
+    response = client.responses.create(model=resolved_model_name, input=prompt)
     text = extract_response_text(response)
     usage = extract_response_usage(response)
     cache.set(
@@ -1012,6 +1016,7 @@ def suggest_description_with_proxy_fallback(
     complaint_basis: str = "",
     main_focus: str = "",
     law_context: str = "",
+    model_name: str = "",
     prompt_mode: str = "legacy",
     policy_mode: str = "",
     pipeline_context: str = "",
@@ -1037,6 +1042,7 @@ def suggest_description_with_proxy_fallback(
                 complaint_basis=complaint_basis,
                 main_focus=main_focus,
                 law_context=law_context,
+                model_name=model_name,
                 prompt_mode=prompt_mode,
                 policy_mode=policy_mode,
                 pipeline_context=pipeline_context,
@@ -1062,6 +1068,7 @@ def suggest_description_with_proxy_fallback_result(
     complaint_basis: str = "",
     main_focus: str = "",
     law_context: str = "",
+    model_name: str = "",
     prompt_mode: str = "legacy",
     policy_mode: str = "",
     pipeline_context: str = "",
@@ -1085,12 +1092,13 @@ def suggest_description_with_proxy_fallback_result(
             subject=subject,
             event_dt=event_dt,
             raw_desc=raw_desc,
-                complaint_basis=complaint_basis,
-                main_focus=main_focus,
-                law_context=law_context,
-                prompt_mode=prompt_mode,
-                policy_mode=policy_mode,
-                pipeline_context=pipeline_context,
+            complaint_basis=complaint_basis,
+            main_focus=main_focus,
+            law_context=law_context,
+            model_name=model_name,
+            prompt_mode=prompt_mode,
+            policy_mode=policy_mode,
+            pipeline_context=pipeline_context,
                 retrieval_context_mode=retrieval_context_mode,
                 bundle_fingerprint=bundle_fingerprint,
                 retrieval_profile=retrieval_profile,

@@ -261,6 +261,8 @@ async def suggest(
         result = await run_in_threadpool(suggest_text_details, payload, server_code=user.server_code)
     finally:
         SUGGEST_CONCURRENCY_LIMITER.release()
+    result_selected_model = str(getattr(result, "selected_model", "") or getattr(result, "telemetry", {}).get("model") or "").strip()
+    result_selection_reason = str(getattr(result, "selection_reason", "") or "").strip()
     metrics_store.log_event(
         event_type="ai_suggest",
         username=user.username,
@@ -270,6 +272,9 @@ async def suggest(
         resource_units=len(payload.raw_desc or "") + len(result.text),
         meta={
             "server_code": user.server_code,
+            "model": result_selected_model,
+            "selected_model": result_selected_model,
+            "selection_reason": result_selection_reason,
             "complaint_basis": payload.complaint_basis,
             "main_focus": payload.main_focus,
             "input_chars": len(payload.raw_desc or ""),
@@ -326,8 +331,11 @@ async def law_qa_test(
 ) -> LawQaResponse:
     _ensure_law_qa_permission(store, user)
     effective_server_code = payload.server_code or user.server_code or store.get_server_code(user.username)
-    payload = payload.model_copy(update={"server_code": effective_server_code, "model": get_default_law_qa_model()})
+    payload = payload.model_copy(update={"server_code": effective_server_code})
     result = await run_in_threadpool(answer_law_question_details, payload)
+    result_selected_model = str(getattr(result, "selected_model", "") or getattr(result, "telemetry", {}).get("model") or "").strip()
+    result_selection_reason = str(getattr(result, "selection_reason", "") or "").strip()
+    result_requested_model = str(getattr(result, "requested_model", "") or payload.model or "").strip()
     metrics_store.log_event(
         event_type="ai_law_qa_test",
         username=user.username,
@@ -337,7 +345,10 @@ async def law_qa_test(
         resource_units=len(payload.question or "") + len(result.text),
         meta={
             "server_code": effective_server_code,
-            "model": get_default_law_qa_model(),
+            "model": result_selected_model or get_default_law_qa_model(),
+            "selected_model": result_selected_model,
+            "selection_reason": result_selection_reason,
+            "requested_model": result_requested_model,
             "indexed_documents": result.indexed_documents,
             "used_sources_count": len(result.used_sources),
             "retrieval_confidence": result.retrieval_confidence,
