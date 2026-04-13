@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from fastapi import Depends, HTTPException, Request, status
 
+from ogp_web.db.factory import get_database_backend
 from ogp_web.server_config import PermissionSet, build_permission_set, get_server_config
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore, get_default_admin_metrics_store
 from ogp_web.storage.admin_catalog_store import AdminCatalogStore, get_default_admin_catalog_store
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
+from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore, get_default_exam_answers_store
 from ogp_web.storage.user_store import UserStore, get_default_user_store
+from ogp_web.storage.content_workflow_repository import ContentWorkflowRepository
 
 
 def get_user_store(request: Request) -> UserStore:
@@ -39,6 +42,19 @@ def get_admin_catalog_store(request: Request) -> AdminCatalogStore:
     if store is None:
         return get_default_admin_catalog_store()
     return store
+
+
+
+def get_content_workflow_service(request: Request) -> ContentWorkflowService:
+    service = getattr(request.app.state, "content_workflow_service", None)
+    if service is not None:
+        return service
+    backend = get_database_backend()
+    repository = ContentWorkflowRepository(backend)
+    legacy_store = get_admin_catalog_store(request)
+    return ContentWorkflowService(repository, legacy_store=legacy_store)
+
+
 def get_exam_import_task_registry(request: Request) -> ExamImportTaskRegistry:
     return request.app.state.exam_import_task_registry
 
