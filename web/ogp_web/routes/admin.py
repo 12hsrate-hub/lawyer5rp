@@ -20,6 +20,7 @@ from ogp_web.schemas import (
     AdminBulkActionPayload,
     AdminDeactivatePayload,
     AdminEmailUpdatePayload,
+    AdminExamScoreResetPayload,
     AdminPasswordResetPayload,
     AdminQuotaPayload,
 )
@@ -1681,6 +1682,40 @@ async def admin_set_daily_quota(
         meta={"target_username": username, "daily_limit": payload.daily_limit},
     )
     return {"ok": True, "user": result}
+
+
+@router.post("/api/admin/exam-import/reset-scores")
+async def admin_reset_exam_scores_for_user(
+    payload: AdminExamScoreResetPayload,
+    user: AuthUser = Depends(require_admin_user),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    exam_store: ExamAnswersStore = Depends(get_exam_answers_store),
+):
+    if not any([payload.full_name, payload.discord_tag, payload.passport]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=["Нужно указать хотя бы один фильтр: full_name, discord_tag или passport."],
+        )
+    reset_count = exam_store.reset_scores_for_user(
+        full_name=payload.full_name,
+        discord_tag=payload.discord_tag,
+        passport=payload.passport,
+    )
+    metrics_store.log_event(
+        event_type="admin_reset_exam_scores",
+        username=user.username,
+        server_code=user.server_code,
+        path="/api/admin/exam-import/reset-scores",
+        method="POST",
+        status_code=200,
+        meta={
+            "full_name": payload.full_name,
+            "discord_tag": payload.discord_tag,
+            "passport": payload.passport,
+            "reset_count": reset_count,
+        },
+    )
+    return {"ok": True, "reset_count": reset_count}
 
 
 @router.post("/api/admin/users/bulk-actions")

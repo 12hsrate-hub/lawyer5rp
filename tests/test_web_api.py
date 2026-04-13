@@ -571,6 +571,57 @@ class WebApiTests(unittest.TestCase):
         login_response = self.client.post("/api/auth/login", json={"username": "emailnew@example.com", "password": "NewPassword456!"})
         self.assertEqual(login_response.status_code, 200)
 
+    def test_admin_can_reset_exam_scores_for_specific_user(self):
+        self.exam_store.import_rows(
+            [
+                {
+                    "source_row": 2,
+                    "submitted_at": "2026-04-10 10:00:00",
+                    "full_name": "User One",
+                    "discord_tag": "user.one#1",
+                    "passport": "111111",
+                    "exam_format": "remote",
+                    "payload": {"Question F": "Ответ"},
+                    "answer_count": 1,
+                },
+                {
+                    "source_row": 3,
+                    "submitted_at": "2026-04-10 10:01:00",
+                    "full_name": "User Two",
+                    "discord_tag": "user.two#2",
+                    "passport": "222222",
+                    "exam_format": "remote",
+                    "payload": {"Question F": "Ответ"},
+                    "answer_count": 1,
+                },
+            ]
+        )
+        self.exam_store.save_exam_scores(2, [{"column": "F", "score": 88, "rationale": "ok"}])
+        self.exam_store.save_exam_scores(3, [{"column": "F", "score": 92, "rationale": "ok"}])
+
+        self._register_verify_and_login("12345", "admin-reset@example.com")
+        response = self.client.post(
+            "/api/admin/exam-import/reset-scores",
+            json={"discord_tag": "user.one#1"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["reset_count"], 1)
+
+        target = self.exam_store.get_entry(2)
+        other = self.exam_store.get_entry(3)
+        self.assertIsNotNone(target)
+        self.assertEqual(target.get("exam_scores"), [])
+        self.assertIsNone(target.get("average_score"))
+        self.assertIsNotNone(other)
+        self.assertEqual(other.get("average_score"), 92.0)
+
+    def test_admin_reset_exam_scores_requires_filter(self):
+        self._register_verify_and_login("12345", "admin-reset-empty@example.com")
+        response = self.client.post("/api/admin/exam-import/reset-scores", json={})
+        self.assertEqual(response.status_code, 400)
+
     def test_generate_flow_survives_admin_metrics_write_failure(self):
         tmp_path = Path(self.tmpdir.name)
 

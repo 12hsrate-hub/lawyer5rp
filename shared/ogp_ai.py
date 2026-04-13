@@ -4,6 +4,7 @@ import json
 import os
 import re
 import threading
+import unicodedata
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from time import monotonic
@@ -40,6 +41,12 @@ _HIGH_JACCARD_THRESHOLD = 0.8
 _VERY_HIGH_JACCARD_THRESHOLD = 0.94
 _BATCH_SCORING_CHUNK_SIZE = 12
 _RETRY_BATCH_SCORING_CHUNK_SIZE = 4
+_EXAM_RUBRIC_VERSION = "gta5rp_legal_v3"
+_EXAM_EMPTY_MARKERS = {"", "-", "—", "нет ответа", "n/a", "none", "null"}
+_NEGATION_WINDOW_PATTERN = re.compile(r"(?:\bне\b|\bnot\b)[\s:,-]{0,6}$", flags=re.IGNORECASE)
+_PRECHECK_MIN_MARKER_HITS = 2
+_BATCH_TARGET_OCCUPANCY = 0.60
+_BATCH_CONTEXT_BUDGET_TOKENS = 6000
 OPENAI_PROXY_ONLY = _OPENAI_CONFIG.proxy_only
 OPENAI_ROUTE_POLICY = _OPENAI_CONFIG.route_policy
 _OPENAI_CONCURRENCY_LIMITS = {
@@ -606,9 +613,28 @@ def extract_principal_fields(
 
 
 def _normalize_exam_answer(value: str) -> str:
-    normalized = re.sub(r"[^\w\s]+", " ", str(value or "").lower())
+    normalized = unicodedata.normalize("NFKC", str(value or ""))
+    normalized = _normalize_exam_text_soft(normalized)
+    normalized = re.sub(r"[^\w\s]+", " ", normalized.lower())
     normalized = re.sub(r"\s+", " ", normalized).strip()
     return normalized
+
+
+def _normalize_exam_text_soft(value: str) -> str:
+    text = unicodedata.normalize("NFKC", str(value or ""))
+    text = (
+        text.replace("\u2018", "'")
+        .replace("\u2019", "'")
+        .replace("\u201C", '"')
+        .replace("\u201D", '"')
+        .replace("\u00AB", '"')
+        .replace("\u00BB", '"')
+        .replace("\u2013", "-")
+        .replace("\u2014", "-")
+        .replace("\u2212", "-")
+    )
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
 def _tokenize_exam_answer(value: str) -> list[str]:
@@ -653,6 +679,125 @@ def _build_exam_score_cache_key(
             "normalized_correct_answer": _normalize_exam_answer(correct_answer),
         },
     )
+
+
+def _estimate_prompt_tokens(value: str) -> int:
+    compact = str(value or "").strip()
+    if not compact:
+        return 0
+    return max(1, int(len(compact) / 3.5))
+
+
+def _contains_explicit_negative_context(*, text: str, term_start: int) -> bool:
+    left = text[max(0, term_start - 12) : term_start]
+    return bool(_NEGATION_WINDOW_PATTERN.search(left))
+
+
+def _contains_rule_term(answer: str, term: str) -> bool:
+    normalized_answer = _normalize_exam_text_soft(answer).lower()
+    normalized_term = _normalize_exam_text_soft(term).lower()
+    if not normalized_term:
+        return False
+    pattern = re.compile(rf"(?<!\w){re.escape(normalized_term)}(?!\w)")
+    for match in pattern.finditer(normalized_answer):
+        if _contains_explicit_negative_context(text=normalized_answer, term_start=match.start()):
+            continue
+        return True
+    return False
+
+
+def _canonicalize_exam_item(item: dict[str, object]) -> dict[str, object]:
+    question_type = str(item.get("question_type") or "standard").strip().lower()
+    if question_type not in {"standard", "list_all", "exact_ref"}:
+        question_type = "standard"
+    return {
+        "id": str(item.get("column") or item.get("id") or "").strip() or "unknown",
+        "column": str(item.get("column") or item.get("id") or "").strip() or "unknown",
+        "rubric_version": str(item.get("rubric_version") or _EXAM_RUBRIC_VERSION).strip() or _EXAM_RUBRIC_VERSION,
+        "exam_type": _normalize_exam_text_soft(str(item.get("exam_type") or "")),
+        "question_type": question_type,
+        "question": _normalize_exam_text_soft(str(item.get("question") or item.get("header") or "")),
+        "header": _normalize_exam_text_soft(str(item.get("header") or item.get("question") or "")),
+        "candidate_raw": str(item.get("user_answer") or ""),
+        "candidate": _normalize_exam_text_soft(str(item.get("user_answer") or "")),
+        "reference_raw": str(item.get("correct_answer") or ""),
+        "reference": _normalize_exam_text_soft(str(item.get("correct_answer") or "")),
+        "key_points": [_normalize_exam_text_soft(str(point)) for point in list(item.get("key_points") or []) if str(point).strip()],
+        "must_not_include": [
+            _normalize_exam_text_soft(str(point)) for point in list(item.get("must_not_include") or []) if str(point).strip()
+        ],
+        "fatal_errors": [_normalize_exam_text_soft(str(point)) for point in list(item.get("fatal_errors") or []) if str(point).strip()],
+    }
+
+
+def _precheck_exam_item(item: dict[str, object]) -> dict[str, object]:
+    candidate = str(item.get("candidate") or "")
+    normalized_candidate = _normalize_exam_answer(candidate)
+    if normalized_candidate in _EXAM_EMPTY_MARKERS:
+        return {
+            "auto_decision": "empty",
+            "result": {
+                "score": 1,
+                "verdict": "incorrect",
+                "normalized_empty": True,
+                "fatal_conflict": False,
+                "rationale": "Ответ отсутствует после нормализации.",
+            },
+        }
+
+    fatal_hits = [term for term in list(item.get("fatal_errors") or []) if _contains_rule_term(candidate, str(term))]
+    if fatal_hits:
+        return {
+            "auto_decision": "fatal_conflict",
+            "result": {
+                "score": 1,
+                "verdict": "incorrect",
+                "normalized_empty": False,
+                "fatal_conflict": True,
+                "fatal_hits": fatal_hits,
+                "rationale": "Обнаружено явное фатальное противоречие по fatal_errors.",
+            },
+        }
+
+    marker_hits = [term for term in list(item.get("key_points") or []) if _contains_rule_term(candidate, str(term))]
+    return {
+        "auto_decision": "llm",
+        "semantic_hint_hits": marker_hits[:_PRECHECK_MIN_MARKER_HITS],
+    }
+
+
+def _build_exam_batches_by_budget(items: list[dict[str, object]], *, hard_item_limit: int) -> list[list[dict[str, object]]]:
+    token_budget = max(500, int(_BATCH_CONTEXT_BUDGET_TOKENS * _BATCH_TARGET_OCCUPANCY))
+    buckets: dict[str, list[dict[str, object]]] = {"short": [], "long": []}
+    for item in items:
+        estimate = _estimate_prompt_tokens(
+            " ".join(
+                [
+                    str(item.get("exam_type") or ""),
+                    str(item.get("question") or ""),
+                    str(item.get("candidate") or ""),
+                    str(item.get("reference") or ""),
+                ]
+            )
+        )
+        buckets["long" if estimate >= 280 else "short"].append(item)
+    batches: list[list[dict[str, object]]] = []
+    for group in ("short", "long"):
+        current: list[dict[str, object]] = []
+        current_tokens = 0
+        for item in buckets[group]:
+            estimate = _estimate_prompt_tokens(
+                f"{item.get('question','')} {item.get('candidate','')} {item.get('reference','')}"
+            )
+            if current and (len(current) >= hard_item_limit or current_tokens + estimate > token_budget):
+                batches.append(current)
+                current = []
+                current_tokens = 0
+            current.append(item)
+            current_tokens += estimate
+        if current:
+            batches.append(current)
+    return batches
 
 
 def _estimate_exam_score_without_llm(*, user_answer: str, correct_answer: str) -> dict[str, object] | None:
@@ -962,21 +1107,32 @@ def score_exam_answers_batch_with_proxy_fallback(
 ) -> dict[str, dict[str, object]] | tuple[dict[str, dict[str, object]], dict[str, object]]:
     stats = _empty_exam_batch_stats()
     stats["answer_count"] = len(items)
+    stats["rubric_version"] = _EXAM_RUBRIC_VERSION
     if not items:
         return ({}, stats) if return_stats else {}
     chunk_size = max(1, int(chunk_size or _BATCH_SCORING_CHUNK_SIZE))
 
     exact_results: dict[str, dict[str, object]] = {}
-    pending_items: list[dict[str, str]] = []
+    pending_items: list[dict[str, object]] = []
     cache = get_ai_cache()
     for item in items:
-        column = item["column"]
-        user_answer = item["user_answer"]
-        correct_answer = item["correct_answer"]
+        canonical_item = _canonicalize_exam_item(item)
+        column = str(canonical_item["column"])
+        user_answer = str(canonical_item["candidate_raw"])
+        correct_answer = str(canonical_item["reference_raw"])
+
+        precheck = _precheck_exam_item(canonical_item)
+        if precheck.get("auto_decision") in {"empty", "fatal_conflict"}:
+            exact_results[column] = _normalize_exam_result(
+                precheck.get("result"),
+                fallback_rationale=DEFAULT_INVALID_BATCH_RATIONALE,
+            )
+            continue
+
         use_heuristic = not (
-            str(item.get("question") or "").strip()
-            or str(item.get("exam_type") or "").strip()
-            or list(item.get("key_points") or [])
+            str(canonical_item.get("question") or "").strip()
+            or str(canonical_item.get("exam_type") or "").strip()
+            or list(canonical_item.get("key_points") or [])
         )
         heuristic = _estimate_exam_score_without_llm(user_answer=user_answer, correct_answer=correct_answer) if use_heuristic else None
         if heuristic is not None:
@@ -990,20 +1146,21 @@ def score_exam_answers_batch_with_proxy_fallback(
             exact_results[column] = _normalize_exam_result(cached, fallback_rationale=DEFAULT_EXAM_RATIONALE)
             stats["cache_hit_count"] += 1
             continue
-        pending_items.append(item)
+        pending_items.append(canonical_item)
 
     if not pending_items:
         return (exact_results, stats) if return_stats else exact_results
 
-    def _chunk_items(chunk_items: list[dict[str, str]]) -> str:
+    def _chunk_items(chunk_items: list[dict[str, object]]) -> str:
         return "\n".join(
             (
                 f'[{item["column"]}]'
                 f'\nExam type: {item.get("exam_type", "")}'
-                f'\nQuestion: {item.get("question") or item["header"]}'
+                f'\nQuestion: {item.get("question") or item.get("header")}'
                 f'\nquestion_type: {item.get("question_type", "standard")}'
-                f'\ncandidate_answer: {item["user_answer"]}'
-                f'\nDraft reference answer: {item["correct_answer"]}'
+                f'\nrubric_version: {item.get("rubric_version", _EXAM_RUBRIC_VERSION)}'
+                f'\ncandidate_answer: {item.get("candidate", "")}'
+                f'\nDraft reference answer: {item.get("reference", "")}'
                 f'\nMinimal required points:\n'
                 + "\n".join(f'- {point}' for point in (item.get("key_points") or []))
                 + f'\nmust_not_include:\n'
@@ -1016,8 +1173,7 @@ def score_exam_answers_batch_with_proxy_fallback(
 
     def run(client):
         all_results: dict[str, dict[str, object]] = {}
-        for start in range(0, len(pending_items), chunk_size):
-            chunk_items = pending_items[start : start + chunk_size]
+        for chunk_items in _build_exam_batches_by_budget(pending_items, hard_item_limit=chunk_size):
             cache_key = cache.build_key(
                 operation="score_exam_answers_batch",
                 model=OPENAI_EXAM_SCORING_MODEL,
@@ -1029,9 +1185,11 @@ def score_exam_answers_batch_with_proxy_fallback(
                             "header": item["header"],
                             "question": item.get("question", ""),
                             "exam_type": item.get("exam_type", ""),
+                            "question_type": item.get("question_type", "standard"),
+                            "rubric_version": item.get("rubric_version", _EXAM_RUBRIC_VERSION),
                             "key_points": [str(point).strip() for point in (item.get("key_points") or []) if str(point).strip()],
-                            "normalized_user_answer": _normalize_exam_answer(item["user_answer"]),
-                            "normalized_correct_answer": _normalize_exam_answer(item["correct_answer"]),
+                            "normalized_user_answer": _normalize_exam_answer(str(item.get("candidate") or "")),
+                            "normalized_correct_answer": _normalize_exam_answer(str(item.get("reference") or "")),
                         }
                         for item in chunk_items
                     ],
@@ -1054,14 +1212,14 @@ def score_exam_answers_batch_with_proxy_fallback(
             raw_by_column = _extract_batch_results_map(raw)
             chunk_results: dict[str, dict[str, object]] = {}
             for item in chunk_items:
-                column = item["column"]
+                column = str(item["column"])
                 payload = raw_by_column.get(_normalize_exam_column_key(column))
                 normalized_result = _normalize_exam_result(payload, fallback_rationale=DEFAULT_INVALID_BATCH_RATIONALE)
                 chunk_results[column] = normalized_result
                 per_item_cache_key = _build_exam_score_cache_key(
                     cache,
-                    user_answer=item["user_answer"],
-                    correct_answer=item["correct_answer"],
+                    user_answer=str(item.get("candidate_raw") or item.get("candidate") or ""),
+                    correct_answer=str(item.get("reference_raw") or item.get("reference") or ""),
                     column=str(item.get("column") or ""),
                     question=str(item.get("question") or item.get("header") or ""),
                     exam_type=str(item.get("exam_type") or ""),
