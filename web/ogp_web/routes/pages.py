@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ogp_web.dependencies import get_exam_answers_store, get_user_store, requires_permission
+from ogp_web.env import is_test_user
 from ogp_web.server_config import PermissionSet, ServerConfig, build_permission_set, get_server_config, list_server_configs
 from ogp_web.services.ai_service import get_default_law_qa_model
 from ogp_web.services.auth_service import AuthError, AuthUser, get_current_user
@@ -166,7 +167,7 @@ async def complaint_page(
 @router.get("/complaint-test", response_class=HTMLResponse)
 async def complaint_test_page(
     request: Request,
-    user: AuthUser = Depends(requires_permission("complaint_presets")),
+    user: AuthUser = Depends(requires_permission("court_claims")),
     store: UserStore = Depends(get_user_store),
 ):
     server_config, permissions = _server_context(store, user.username)
@@ -179,7 +180,11 @@ async def complaint_test_page(
             permissions=permissions,
             nav_active="complaint_test",
             complaint_mode="test",
-            preset_payload_json=json.dumps(server_config.complaint_test_preset, ensure_ascii=False),
+            preset_payload_json=(
+                json.dumps(server_config.complaint_test_preset, ensure_ascii=False)
+                if is_test_user(user.username)
+                else ""
+            ),
         ),
     )
 

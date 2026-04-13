@@ -157,6 +157,8 @@ class FakePostgresConnection:
             return self._reactivate_user(params[0])
         if normalized.startswith("UPDATE users SET api_quota_daily = %s WHERE username = %s"):
             return self._set_daily_quota(params)
+        if normalized.startswith("SELECT DISTINCT p.code AS code FROM users u JOIN user_roles ur"):
+            return self._list_permission_codes(params)
 
         raise AssertionError(f"Unsupported fake postgres query: {normalized}")
 
@@ -288,6 +290,30 @@ class FakePostgresConnection:
                 reverse=True,
             )
         ]
+        return FakeCursor(rowcount=len(rows), rows=rows)
+
+    def _list_permission_codes(self, params):
+        username, server_code = params
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0, rows=[])
+
+        role = self.state["roles"].get((user["id"], server_code))
+        permission_codes: list[str] = []
+        if role:
+            if role.get("is_tester"):
+                permission_codes.append("court_claims")
+            if role.get("is_gka"):
+                permission_codes.extend(("exam_import", "complaint_presets"))
+
+        rows = []
+        seen_codes = set()
+        for code in permission_codes:
+            normalized = str(code or "").strip().lower()
+            if not normalized or normalized in seen_codes:
+                continue
+            seen_codes.add(normalized)
+            rows.append({"code": normalized})
         return FakeCursor(rowcount=len(rows), rows=rows)
 
     def _mark_email_verified(self, username: str, *, preserve_existing: bool = False):
