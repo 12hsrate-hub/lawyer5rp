@@ -30,6 +30,7 @@ from ogp_web.routes.auth import router as auth_router
 from ogp_web.routes.complaint import router as complaint_router
 from ogp_web.routes.cases import router as cases_router
 from ogp_web.routes.exam_import import router as exam_import_router
+from ogp_web.routes.jobs import router as jobs_router
 from ogp_web.routes.pages import router as pages_router
 from ogp_web.routes.profile import router as profile_router
 from ogp_web.routes.validation import router as validation_router
@@ -416,6 +417,7 @@ def create_app(
     app.include_router(cases_router)
     app.include_router(validation_router)
     app.include_router(exam_import_router)
+    app.include_router(jobs_router)
     app.include_router(admin_router)
     return app
 
