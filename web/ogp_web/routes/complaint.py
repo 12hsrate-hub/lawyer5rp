@@ -21,7 +21,9 @@ from ogp_web.schemas import (
     GeneratedDocumentHistoryResponse,
     GeneratedDocumentSnapshotResponse,
     LawQaPayload,
+    DocumentVersionCitationsResponse,
     LawQaResponse,
+    LawQaRunCitationsResponse,
     PrincipalScanPayload,
     PrincipalScanResult,
     RehabPayload,
@@ -33,8 +35,10 @@ from ogp_web.services import ai_service
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
 from ogp_web.services.complaint_service import build_generation_context_snapshot
+from ogp_web.services.citation_service import save_answer_citations
 from ogp_web.services.generation_orchestrator import GenerationOrchestrator
 from ogp_web.services.validation_service import ValidationService
+from ogp_web.services.retrieval_service import run_retrieval
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.user_store import UserStore
 from ogp_web.storage.validation_repository import ValidationRepository
@@ -249,6 +253,7 @@ async def generate(
 ) -> GenerateResponse:
     _validate_server_payload(store, user, org=payload.org)
     context_snapshot = build_generation_context_snapshot(store, user, document_kind="complaint")
+    context_snapshot["citations_policy_gate"] = {"mode": "shadow", "status": "flagged_no_citations"}
     bbcode = generate_bbcode_text(store, payload, user)
     document_id = store.save_generated_document(
         username=user.username,
@@ -493,6 +498,40 @@ async def extract_principal(
     return result
 
 
+def _law_qa_selected_norms_to_citations(*, store: UserStore, server_id: str, law_version_id: int | None, selected_norms: list[dict[str, object]]) -> list[dict[str, object]]:
+    if law_version_id is None:
+        return []
+    citations: list[dict[str, object]] = []
+    for norm in selected_norms:
+        source_url = str(norm.get("source_url") or "").strip()
+        document_title = str(norm.get("document_title") or "").strip()
+        article_label = str(norm.get("article_label") or "").strip()
+        excerpt = str(norm.get("excerpt") or norm.get("excerpt_preview") or "").strip()
+        if not source_url or not document_title or not article_label:
+            continue
+        source = store.resolve_law_article_source(
+            server_id=server_id,
+            law_version_id=law_version_id,
+            article_label=article_label,
+            document_title=document_title,
+            source_url=source_url,
+        )
+        if source is None:
+            continue
+        citations.append(
+            {
+                "citation_type": "norm",
+                "source_type": "law_article",
+                "source_id": int(source["source_id"]),
+                "source_version_id": int(source["source_version_id"]),
+                "canonical_ref": f"{document_title} {article_label}",
+                "quoted_text": excerpt,
+                "usage_type": "supporting",
+            }
+        )
+    return citations
+
+
 @router.post("/api/ai/law-qa-test", response_model=LawQaResponse)
 async def law_qa_test(
     payload: LawQaPayload,
@@ -500,7 +539,9 @@ async def law_qa_test(
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> LawQaResponse:
-    effective_server_code = payload.server_code or user.server_code or store.get_server_code(user.username)
+    effective_server_code = payload.server_code or user.server_code
+    if not str(effective_server_code or "").strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["server_code is required."])
     payload = payload.model_copy(update={"server_code": effective_server_code})
     result = await _run_ai_task(
         metrics_store=metrics_store,
@@ -514,6 +555,42 @@ async def law_qa_test(
     result_selected_model = str(getattr(result, "selected_model", "") or getattr(result, "telemetry", {}).get("model") or "").strip()
     result_selection_reason = str(getattr(result, "selection_reason", "") or "").strip()
     result_requested_model = str(getattr(result, "requested_model", "") or payload.model or "").strip()
+    selected_norms = list(getattr(result, "selected_norms", []) or [])
+    raw_citations = _law_qa_selected_norms_to_citations(
+        store=store,
+        server_id=effective_server_code,
+        law_version_id=payload.law_version_id,
+        selected_norms=selected_norms,
+    )
+    retrieval = run_retrieval(
+        store=store,
+        actor_username=user.username,
+        server_id=effective_server_code,
+        run_type="law_qa",
+        query_text=payload.question,
+        effective_versions={"law_version_id": payload.law_version_id},
+        retrieved_sources=[{"url": item} for item in (getattr(result, "used_sources", []) or [])],
+        candidates=raw_citations,
+        policy_status="pass" if raw_citations else "blocked_missing_citations",
+    )
+    actor_id = store.get_user_id(user.username)
+    if actor_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Пользователь не найден."])
+    law_qa_run_id = store.create_law_qa_run(
+        server_id=effective_server_code,
+        user_id=int(actor_id),
+        question=payload.question,
+        answer_text=result.text,
+        retrieval_run_id=retrieval.retrieval_run_id,
+        snapshot_id=str(payload.law_version_id or ""),
+    )
+    citations = save_answer_citations(
+        store=store,
+        server_id=effective_server_code,
+        law_qa_run_id=law_qa_run_id,
+        retrieval_run_id=retrieval.retrieval_run_id,
+        citations=raw_citations,
+    )
     metrics_store.log_event(
         event_type="ai_law_qa_test",
         username=user.username,
@@ -579,7 +656,32 @@ async def law_qa_test(
         warnings=result.warnings,
         shadow=result.shadow,
         selected_norms=result.selected_norms,
+        retrieval_run_id=retrieval.retrieval_run_id,
+        law_qa_run_id=law_qa_run_id,
+        citations=citations,
     )
+
+
+@router.get("/api/document-versions/{version_id}/citations", response_model=DocumentVersionCitationsResponse)
+async def document_version_citations(
+    version_id: int,
+    user: AuthUser = Depends(requires_permission()),
+    store: UserStore = Depends(get_user_store),
+) -> DocumentVersionCitationsResponse:
+    _ = user
+    items = store.get_document_version_citations(document_version_id=version_id, server_id=user.server_code)
+    return DocumentVersionCitationsResponse(items=items)
+
+
+@router.get("/api/law-qa-runs/{run_id}/citations", response_model=LawQaRunCitationsResponse)
+async def law_qa_run_citations(
+    run_id: int,
+    user: AuthUser = Depends(requires_permission("court_claims")),
+    store: UserStore = Depends(get_user_store),
+) -> LawQaRunCitationsResponse:
+    _ = user
+    items = store.get_law_qa_run_citations(law_qa_run_id=run_id, server_id=user.server_code)
+    return LawQaRunCitationsResponse(items=items)
 
 
 @router.post("/api/ai/feedback", response_model=AiFeedbackResponse)

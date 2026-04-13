@@ -1266,6 +1266,29 @@ class WebApiTests(unittest.TestCase):
         self._register_verify_and_login("tester", "tester_law@example.com")
 
         original = complaint_route.ai_service.answer_law_question_details
+        original_run_retrieval = complaint_route.run_retrieval
+        original_save_answer_citations = complaint_route.save_answer_citations
+        original_get_user_id = self.store.get_user_id
+        original_create_law_qa_run = self.store.create_law_qa_run
+        original_resolve_law_article_source = self.store.resolve_law_article_source
+        self.store.get_user_id = lambda username: 1
+        self.store.create_law_qa_run = lambda **kwargs: 77
+        self.store.resolve_law_article_source = lambda **kwargs: {"source_id": 10, "source_version_id": 88}
+        complaint_route.run_retrieval = lambda **kwargs: type("RetrievalResult", (), {"retrieval_run_id": 55})()
+        complaint_route.save_answer_citations = lambda **kwargs: [
+            {
+                "id": 1,
+                "retrieval_run_id": 55,
+                "citation_type": "norm",
+                "source_type": "law_article",
+                "source_id": 10,
+                "source_version_id": 88,
+                "canonical_ref": "Кодекс Статья 20",
+                "quoted_text": "Фрагмент",
+                "usage_type": "supporting",
+                "created_at": "2026-04-13T00:00:00+00:00",
+            }
+        ]
         complaint_route.ai_service.answer_law_question_details = lambda payload: type(
             "LawQaAnswerResult",
             (),
@@ -1312,10 +1335,16 @@ class WebApiTests(unittest.TestCase):
                     "model": "gpt-5.4",
                     "question": "Какая норма регулирует доступ адвоката?",
                     "max_answer_chars": 2000,
+                    "law_version_id": 88,
                 },
             )
         finally:
             complaint_route.ai_service.answer_law_question_details = original
+            complaint_route.run_retrieval = original_run_retrieval
+            complaint_route.save_answer_citations = original_save_answer_citations
+            self.store.get_user_id = original_get_user_id
+            self.store.create_law_qa_run = original_create_law_qa_run
+            self.store.resolve_law_article_source = original_resolve_law_article_source
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -1325,6 +1354,98 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(payload["retrieval_confidence"], "high")
         self.assertEqual(payload["retrieval_profile"], "law_qa")
         self.assertEqual(payload["selected_norms"][0]["article_label"], "Статья 20")
+        self.assertEqual(payload["retrieval_run_id"], 55)
+        self.assertEqual(payload["law_qa_run_id"], 77)
+        self.assertEqual(len(payload["citations"]), 1)
+
+
+    def test_generate_snapshot_includes_staged_citation_gate(self):
+        self._register_verify_and_login("snapshot_gate", "snapshot_gate@example.com")
+        self.client.put(
+            "/api/profile",
+            json={
+                "name": "Rep",
+                "passport": "AA",
+                "address": "Addr",
+                "phone": "1234567",
+                "discord": "disc",
+                "passport_scan_url": "https://example.com/rep",
+            },
+        )
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "appeal_no": "1234",
+                "org": "LSPD",
+                "subject_names": "John Doe",
+                "situation_description": "Описание",
+                "violation_short": "Нарушение",
+                "event_dt": "08.04.2026 14:30",
+                "today_date": "08.04.2026",
+                "victim": {
+                    "name": "Victim",
+                    "passport": "BB",
+                    "address": "Addr",
+                    "phone": "7654321",
+                    "discord": "victim",
+                    "passport_scan_url": "https://example.com/victim",
+                },
+                "contract_url": "https://example.com/contract",
+                "bar_request_url": "",
+                "official_answer_url": "",
+                "mail_notice_url": "",
+                "arrest_record_url": "",
+                "personnel_file_url": "",
+                "video_fix_urls": [],
+                "provided_video_urls": [],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        snapshot_response = self.client.get(f"/api/generated-documents/{response.json()['generated_document_id']}/snapshot")
+        self.assertEqual(snapshot_response.status_code, 200)
+        self.assertEqual(
+            snapshot_response.json()["context_snapshot"]["citations_policy_gate"]["status"],
+            "flagged_no_citations",
+        )
+
+    def test_read_citations_api_uses_store_items(self):
+        self._register_verify_and_login("tester", "citations_reader@example.com")
+        original_doc = self.store.get_document_version_citations
+        original_lawqa = self.store.get_law_qa_run_citations
+        self.store.get_document_version_citations = lambda **kwargs: [{
+            "id": 1,
+            "retrieval_run_id": 2,
+            "citation_type": "norm",
+            "source_type": "law_article",
+            "source_id": 3,
+            "source_version_id": 4,
+            "canonical_ref": "Ref",
+            "quoted_text": "Text",
+            "usage_type": "supporting",
+            "created_at": "2026-04-13T00:00:00+00:00",
+        }]
+        self.store.get_law_qa_run_citations = lambda **kwargs: [{
+            "id": 5,
+            "retrieval_run_id": 6,
+            "citation_type": "norm",
+            "source_type": "law_article",
+            "source_id": 7,
+            "source_version_id": 8,
+            "canonical_ref": "Ref2",
+            "quoted_text": "Text2",
+            "usage_type": "supporting",
+            "created_at": "2026-04-13T00:00:00+00:00",
+        }]
+        try:
+            response_doc = self.client.get("/api/document-versions/10/citations")
+            response_lawqa = self.client.get("/api/law-qa-runs/11/citations")
+        finally:
+            self.store.get_document_version_citations = original_doc
+            self.store.get_law_qa_run_citations = original_lawqa
+        self.assertEqual(response_doc.status_code, 200)
+        self.assertEqual(response_lawqa.status_code, 200)
+        self.assertEqual(response_doc.json()["items"][0]["source_version_id"], 4)
+        self.assertEqual(response_lawqa.json()["items"][0]["source_version_id"], 8)
 
     def test_ai_feedback_endpoint_records_normalized_feedback(self):
         self._register_verify_and_login("tester", "tester_feedback@example.com")
