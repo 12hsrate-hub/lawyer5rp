@@ -372,3 +372,29 @@ async def exam_import_detail(
         _fill_question_g_fields(entry)
     entry["exam_scores"] = [ExamAnswerScore(**item).model_dump() for item in (entry.get("exam_scores") or [])]
     return ExamImportDetail(**_normalize_entry(entry))
+
+
+@router.delete("/api/exam-import/rows/{source_row}/scores", response_model=ExamImportDetail)
+async def clear_exam_import_row_scores(
+    source_row: int,
+    user: AuthUser = Depends(require_user),
+    store: ExamAnswersStore = Depends(get_exam_answers_store),
+) -> ExamImportDetail:
+    if not is_test_user(user.username):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
+
+    entry = await _run_sync_io(store.get_entry, source_row)
+    if entry is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Строка не найдена в базе импорта."])
+
+    cleared = await _run_sync_io(store.clear_scores_for_row, source_row)
+    if not cleared:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Строка не найдена в базе импорта."])
+
+    refreshed = await _run_sync_io(store.get_entry, source_row)
+    if refreshed is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Строка не найдена в базе импорта."])
+    if refreshed.get("exam_scores"):
+        _fill_question_g_fields(refreshed)
+    refreshed["exam_scores"] = [ExamAnswerScore(**item).model_dump() for item in (refreshed.get("exam_scores") or [])]
+    return ExamImportDetail(**_normalize_entry(refreshed))

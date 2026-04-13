@@ -29,7 +29,6 @@
     <table class="legal-table">
       <thead>
         <tr>
-          <th>Строка</th>
           <th>Дата</th>
           <th>Имя / Фамилия</th>
           <th>Discord</th>
@@ -70,7 +69,6 @@
             data-row-discord="{{ entry.discord_tag|lower }}"
             data-row-passport="{{ entry.passport|lower }}"
           >
-            <td>{{ entry.source_row }}</td>
             <td>{{ entry.submitted_at }}</td>
             <td>{{ entry.full_name }}</td>
             <td>{{ entry.discord_tag }}</td>
@@ -78,7 +76,7 @@
             <td>{{ entry.exam_format }}</td>
             <td>{{ entry.answer_count }}</td>
             <td class="exam-average-cell">{% if entry.average_score is not none %}{{ entry.average_score }} / 100{% else %}—{% endif %}</td>
-            <td><span class="exam-status-badge exam-status-badge--{{ row_status_tone }}">{{ row_status_label }}</span></td>
+            <td class="exam-status-cell"><span class="exam-status-badge exam-status-badge--{{ row_status_tone }}">{{ row_status_label }}</span></td>
             <td>{{ entry.imported_at }}</td>
             <td>
               <div class="legal-inline-actions">
@@ -92,7 +90,7 @@
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="11" class="legal-table__empty">База пока пустая. Первый импорт создаст записи из Google Sheets.</td>
+            <td colspan="10" class="legal-table__empty">База пока пустая. Первый импорт создаст записи из Google Sheets.</td>
           </tr>
         {% endif %}
       </tbody>
