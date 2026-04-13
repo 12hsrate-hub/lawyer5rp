@@ -44,6 +44,7 @@ const actionQuotaField = document.getElementById("admin-action-quota-field");
 const actionQuotaInput = document.getElementById("admin-action-quota");
 const actionConfirmButton = document.getElementById("admin-action-confirm");
 const actionCancelButton = document.getElementById("admin-action-cancel");
+const catalogHost = document.getElementById("admin-catalog");
 
 const {
   apiFetch,
@@ -65,6 +66,68 @@ let selectedUser = null;
 let pendingAction = null;
 let selectedBulkUsers = new Set();
 const userIndex = new Map();
+let activeCatalogEntity = "servers";
+
+function catalogEndpoint(entityType, itemId = "") {
+  const suffix = itemId ? `/${encodeURIComponent(itemId)}` : "";
+  return `/api/admin/catalog/${encodeURIComponent(entityType)}${suffix}`;
+}
+
+function renderCatalog(payload) {
+  if (!catalogHost) return;
+  const entityType = payload?.entity_type || activeCatalogEntity;
+  activeCatalogEntity = entityType;
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  const audit = Array.isArray(payload?.audit) ? payload.audit : [];
+  catalogHost.innerHTML = `
+    <div class="admin-section-toolbar">
+      <label class="legal-field"><span class="legal-field__label">Entity</span>
+        <select id="catalog-entity">
+          ${["servers", "laws", "templates", "features", "rules"]
+            .map((name) => `<option value="${name}" ${name === entityType ? "selected" : ""}>${name}</option>`)
+            .join("")}
+        </select>
+      </label>
+      <button type="button" id="catalog-create" class="primary-button">Create</button>
+    </div>
+    <div class="legal-table-wrap">
+      <table class="legal-table">
+        <thead><tr><th>Title</th><th>State</th><th>Version</th><th>Author</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${items
+            .map((item) => `
+              <tr>
+                <td>${escapeHtml(String(item.title || ""))}</td>
+                <td>${escapeHtml(String(item.state || ""))}</td>
+                <td>${escapeHtml(String(item.versions?.length || 0))}</td>
+                <td>${escapeHtml(String(item.updated_by || ""))}</td>
+                <td>
+                  <button type="button" class="ghost-button" data-catalog-edit="${escapeHtml(String(item.id || ""))}">Edit</button>
+                  <button type="button" class="ghost-button" data-catalog-next="${escapeHtml(String(item.id || ""))}">Next</button>
+                  <button type="button" class="ghost-button" data-catalog-rollback="${escapeHtml(String(item.id || ""))}">Rollback</button>
+                  <button type="button" class="ghost-button" data-catalog-delete="${escapeHtml(String(item.id || ""))}">Delete</button>
+                </td>
+              </tr>
+            `)
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+    <p class="legal-section__description">Audit log (author + diff):</p>
+    <pre class="legal-field__hint">${escapeHtml(audit.slice(0, 8).map((row) => `${row.created_at} ${row.author} ${row.action} ${row.workflow_from || ""}->${row.workflow_to || ""}\n${row.diff || ""}`).join("\n\n"))}</pre>
+  `;
+}
+
+async function loadCatalog(entityType = activeCatalogEntity) {
+  if (!catalogHost) return;
+  const response = await apiFetch(catalogEndpoint(entityType));
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить catalog."));
+    return;
+  }
+  renderCatalog(payload);
+}
 
 const userModal = createModalController({
   modal: document.getElementById("admin-user-modal"),
@@ -2294,6 +2357,64 @@ usersHost?.addEventListener("change", (event) => {
   }
 });
 
+catalogHost?.addEventListener("change", async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (target.id === "catalog-entity") {
+    await loadCatalog(String(target.value || "servers"));
+  }
+});
+
+catalogHost?.addEventListener("click", async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (target.id === "catalog-create") {
+    const title = window.prompt("Title", "") || "";
+    const raw = window.prompt("JSON config", "{}") || "{}";
+    await performAdminAction(catalogEndpoint(activeCatalogEntity), "Элемент создан.", {
+      title,
+      config: JSON.parse(raw),
+    });
+    await loadCatalog(activeCatalogEntity);
+    return;
+  }
+  const editId = target.getAttribute("data-catalog-edit");
+  if (editId) {
+    const title = window.prompt("New title", "") || "";
+    const raw = window.prompt("New JSON config", "{}") || "{}";
+    const response = await apiFetch(catalogEndpoint(activeCatalogEntity, editId), {
+      method: "PUT",
+      body: JSON.stringify({ title, config: JSON.parse(raw) }),
+    });
+    if (response.ok) showMessage("Элемент обновлен.");
+    await loadCatalog(activeCatalogEntity);
+    return;
+  }
+  const nextId = target.getAttribute("data-catalog-next");
+  if (nextId) {
+    const row = Array.from(catalogHost.querySelectorAll("[data-catalog-next]")).find((el) => el.getAttribute("data-catalog-next") === nextId);
+    const tr = row?.closest("tr");
+    const state = tr?.children?.[1]?.textContent?.trim() || "draft";
+    const targetState = state === "draft" ? "review" : state === "review" ? "publish" : "draft";
+    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, nextId)}/workflow`, "Workflow обновлен.", { target_state: targetState });
+    await loadCatalog(activeCatalogEntity);
+    return;
+  }
+  const rollbackId = target.getAttribute("data-catalog-rollback");
+  if (rollbackId) {
+    const version = Number(window.prompt("Rollback to version", "1") || "1");
+    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, rollbackId)}/rollback`, "Rollback выполнен.", { version });
+    await loadCatalog(activeCatalogEntity);
+    return;
+  }
+  const deleteId = target.getAttribute("data-catalog-delete");
+  if (deleteId) {
+    const response = await apiFetch(catalogEndpoint(activeCatalogEntity, deleteId), { method: "DELETE" });
+    if (response.ok) showMessage("Элемент удален.");
+    await loadCatalog(activeCatalogEntity);
+  }
+});
+
 userModalBody?.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
@@ -2377,6 +2498,7 @@ Promise.all([
   loadAdminPerformance(),
   loadAiPipeline(),
   loadRoleHistory(),
+  loadCatalog(),
 ]).then(() => {
   scheduleLiveRefresh();
 });
