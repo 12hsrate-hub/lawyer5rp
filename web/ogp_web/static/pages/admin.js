@@ -68,6 +68,7 @@ let pendingAction = null;
 let selectedBulkUsers = new Set();
 const userIndex = new Map();
 let activeCatalogEntity = String(catalogHost?.dataset.catalogEntity || "servers");
+let activeSyntheticSuite = "";
 
 function catalogEndpoint(entityType, itemId = "") {
   const suffix = itemId ? `/${encodeURIComponent(itemId)}` : "";
@@ -568,15 +569,24 @@ function renderSynthetic(summary) {
   }
   const bySuite = summary?.by_suite || {};
   const suites = ["smoke", "nightly", "load", "fault"];
+  const suiteDescriptions = {
+    smoke: "Быстрая проверка основных сценариев генерации, снапшотов, цитат и публикации.",
+    nightly: "Расширенный регрессионный прогон полного workflow, вложений, артефактов и rollback.",
+    load: "Нагрузочная проверка burst/sustained сценариев генерации, экспорта и content workflow.",
+    fault: "Проверка отказоустойчивости: retry, DLQ, idempotency, isolation и policy gates.",
+  };
   const cards = suites.map((suite) => {
     const row = bySuite[suite] || {};
     const latest = String(row.latest_status || "unknown");
     const tone = latest === "pass" ? "success-soft" : latest === "fail" ? "danger-soft" : "muted";
+    const isRunning = activeSyntheticSuite === suite;
     return `
       <article class="legal-status-card">
         <span class="legal-status-card__label">${escapeHtml(suite)}</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${renderBadge(latest, tone)}</strong>
         <span class="admin-user-cell__secondary">runs: ${escapeHtml(String(row.runs_total || 0))}, failed: ${escapeHtml(String(row.failed_total || 0))}</span>
+        <span class="admin-user-cell__secondary">${escapeHtml(suiteDescriptions[suite] || "")}</span>
+        <button type="button" class="ghost-button" data-synthetic-run="${suite}" ${isRunning ? "disabled" : ""}>${isRunning ? "Запуск..." : "Запустить"}</button>
       </article>
     `;
   });
@@ -596,6 +606,38 @@ function renderSynthetic(summary) {
     <div class="admin-performance-grid">${cards.join("")}</div>
     ${failedHtml}
   `;
+}
+
+async function runSyntheticSuite(suite) {
+  const normalizedSuite = String(suite || "").trim().toLowerCase();
+  if (!normalizedSuite || activeSyntheticSuite) {
+    return;
+  }
+  activeSyntheticSuite = normalizedSuite;
+  clearMessage();
+  renderSynthetic({ by_suite: {} });
+  try {
+    const response = await apiFetch("/api/admin/synthetic/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        suite: normalizedSuite,
+        trigger: "admin_ui",
+      }),
+    });
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      setStateError(errorsHost, formatHttpError(response, payload, `Не удалось запустить synthetic suite ${normalizedSuite}.`));
+      return;
+    }
+    showMessage(`Synthetic suite ${normalizedSuite} завершен: ${String(payload?.status || "unknown")}.`);
+    await loadAdminOverview({ silent: true });
+  } catch (error) {
+    setStateError(errorsHost, error?.message || `Не удалось запустить synthetic suite ${normalizedSuite}.`);
+  } finally {
+    activeSyntheticSuite = "";
+    await loadAdminOverview({ silent: true });
+  }
 }
 
 function renderCostSummary(totals) {
@@ -2411,6 +2453,18 @@ examImportHost?.addEventListener("click", async (event) => {
     return;
   }
   await openExamEntryDetail(detailButton.getAttribute("data-exam-source-row") || "");
+});
+
+syntheticHost?.addEventListener("click", async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  const button = target.closest("[data-synthetic-run]");
+  if (!(button instanceof HTMLElement)) {
+    return;
+  }
+  await runSyntheticSuite(button.getAttribute("data-synthetic-run") || "");
 });
 
 usersHost?.addEventListener("change", (event) => {
