@@ -141,7 +141,21 @@ def _resolve_actor_user_id() -> int:
         actor_user_id = user_store.get_user_id(username)
         if actor_user_id is not None:
             return int(actor_user_id)
-    return 1
+    conn = user_store.backend.connect()
+    try:
+        row = conn.execute(
+            """
+            SELECT id
+            FROM users
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1
+            """
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is not None and row.get("id") is not None:
+        return int(row["id"])
+    raise RuntimeError("Cannot seed admin catalog workflow: no users found in database")
 
 
 def seed(*, server_scope: str = "server", server_id: str = "blackberry", safe_rerun: bool = True) -> dict[str, object]:
