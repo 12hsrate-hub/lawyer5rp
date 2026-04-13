@@ -137,21 +137,21 @@ curl -sS http://127.0.0.1:8000/health
 ## T6. Пошаговое включение (P0)
 
 ### Порядок (не менять)
-1. `cases_v1 = on`
-2. `documents_v2 = on`
-3. `async_jobs_v1 = on`
-4. `validation_gate_v1 = on` (**warn mode**)
-5. `citations_required = on` (**warn mode**)
+1. `cases_v1 = all`
+2. `documents_v2 = all`
+3. `async_jobs_v1 = all`
+4. `validation_gate_v1 = all` (**warn enforcement**)
+5. `citations_required = all` (**warn enforcement**)
 
 ### Журнал изменений флагов
 
 | UTC time | Actor | Flag | Old | New | Mode/Notes |
 |---|---|---|---|---|---|
-| _YYYY-MM-DDThh:mm:ssZ_ | _name_ | `cases_v1` | off | on | |
-| _YYYY-MM-DDThh:mm:ssZ_ | _name_ | `documents_v2` | off | on | |
-| _YYYY-MM-DDThh:mm:ssZ_ | _name_ | `async_jobs_v1` | off | on | |
-| _YYYY-MM-DDThh:mm:ssZ_ | _name_ | `validation_gate_v1` | off | on | warn |
-| _YYYY-MM-DDThh:mm:ssZ_ | _name_ | `citations_required` | off | on | warn |
+| _YYYY-MM-DDThh:mm:ssZ_ | _name_ | `cases_v1` | off | all | |
+| _YYYY-MM-DDThh:mm:ssZ_ | _name_ | `documents_v2` | off | all | |
+| _YYYY-MM-DDThh:mm:ssZ_ | _name_ | `async_jobs_v1` | off | all | |
+| _YYYY-MM-DDThh:mm:ssZ_ | _name_ | `validation_gate_v1` | off | all | enforcement=warn |
+| _YYYY-MM-DDThh:mm:ssZ_ | _name_ | `citations_required` | off | all | enforcement=warn |
 
 ### DoD
 - [ ] Флаги включены в требуемом порядке.
