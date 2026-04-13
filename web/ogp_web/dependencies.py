@@ -10,9 +10,11 @@ from ogp_web.storage.admin_catalog_store import AdminCatalogStore, get_default_a
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
 from ogp_web.services.feature_flags import FeatureFlagService
 from ogp_web.services.content_workflow_service import ContentWorkflowService
+from ogp_web.services.admin_dashboard_service import AdminDashboardService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore, get_default_exam_answers_store
 from ogp_web.storage.user_store import UserStore, get_default_user_store
 from ogp_web.storage.content_workflow_repository import ContentWorkflowRepository
+from ogp_web.storage.admin_dashboard_repository import AdminDashboardRepository
 
 
 def get_user_store(request: Request) -> UserStore:
@@ -55,6 +57,24 @@ def get_content_workflow_service(request: Request) -> ContentWorkflowService:
     legacy_store = get_admin_catalog_store(request)
     return ContentWorkflowService(repository, legacy_store=legacy_store)
 
+
+
+def get_admin_dashboard_repository(request: Request) -> AdminDashboardRepository:
+    repository = getattr(request.app.state, "admin_dashboard_repository", None)
+    if repository is not None:
+        return repository
+    backend = get_database_backend()
+    return AdminDashboardRepository(backend)
+
+
+def get_admin_dashboard_service(
+    request: Request,
+    repository: AdminDashboardRepository = Depends(get_admin_dashboard_repository),
+) -> AdminDashboardService:
+    service = getattr(request.app.state, "admin_dashboard_service", None)
+    if service is not None:
+        return service
+    return AdminDashboardService(repository)
 
 def get_exam_import_task_registry(request: Request) -> ExamImportTaskRegistry:
     return request.app.state.exam_import_task_registry
