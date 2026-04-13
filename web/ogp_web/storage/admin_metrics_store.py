@@ -5,7 +5,7 @@ import json
 import logging
 from contextlib import closing
 from io import StringIO
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -115,10 +115,8 @@ class AdminMetricsStore:
     ) -> dict[str, Any]:
         window = max(1, int(window_minutes or 1))
         endpoint_limit = max(1, int(top_endpoints or 10))
-        start_at = datetime.utcnow() - timedelta(minutes=window)
-
-        created_at_filter = "created_at >= %s"
-        created_at_param = start_at.isoformat()
+        created_at_filter = "created_at >= NOW() - (%s::int * INTERVAL '1 minute')"
+        created_at_param = window
 
         with closing(self._connect()) as conn:
             totals = conn.execute(
@@ -128,6 +126,10 @@ class AdminMetricsStore:
                     SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_count,
                     COALESCE(SUM(CASE WHEN event_type = 'api_request' THEN 1 ELSE 0 END), 0) AS api_requests_total,
                     COALESCE(AVG(CASE WHEN event_type = 'api_request' AND duration_ms IS NOT NULL THEN duration_ms END), 0) AS avg_duration_ms,
+                    percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_ms)
+                        FILTER (WHERE event_type = 'api_request' AND duration_ms IS NOT NULL) AS p50_duration_ms,
+                    percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms)
+                        FILTER (WHERE event_type = 'api_request' AND duration_ms IS NOT NULL) AS p95_duration_ms,
                     COALESCE(SUM(CASE WHEN event_type = 'api_request' THEN COALESCE(request_bytes, 0) ELSE 0 END), 0) AS request_bytes,
                     COALESCE(SUM(CASE WHEN event_type = 'api_request' THEN COALESCE(response_bytes, 0) ELSE 0 END), 0) AS response_bytes,
                     COALESCE(SUM(CASE WHEN event_type = 'api_request' THEN COALESCE(resource_units, 0) ELSE 0 END), 0) AS resource_units
@@ -140,65 +142,44 @@ class AdminMetricsStore:
 
             endpoint_rows = conn.execute(
                 f"""
-                SELECT path, duration_ms, status_code
+                SELECT
+                    BTRIM(path) AS path,
+                    COUNT(*) AS count,
+                    SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_count,
+                    COALESCE(AVG(duration_ms), 0) AS avg_ms,
+                    percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_ms)
+                        FILTER (WHERE duration_ms IS NOT NULL) AS p50_ms,
+                    percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms)
+                        FILTER (WHERE duration_ms IS NOT NULL) AS p95_ms
                 FROM metric_events
                 WHERE event_type = 'api_request'
                   AND path IS NOT NULL
+                  AND BTRIM(path) <> ''
                   AND {created_at_filter}
+                GROUP BY BTRIM(path)
+                ORDER BY count DESC, path ASC
+                LIMIT {self._placeholder()}
                 """,
-                (created_at_param,),
+                (created_at_param, endpoint_limit),
             ).fetchall()
 
         total_events = self._safe_request_count(totals["request_count"])
-        all_durations: list[int] = []
-        endpoint_aggregates: dict[str, dict[str, list[int] | int]] = {}
-
+        top_endpoints_payload: list[dict[str, Any]] = []
         for row in endpoint_rows:
             path = str(row["path"] or "").strip()
             if not path:
                 continue
-            duration = self._safe_duration(row["duration_ms"])
-            status_code = row["status_code"]
-            entry = endpoint_aggregates.setdefault(
-                path,
-                {
-                    "count": 0,
-                    "errors": 0,
-                    "durations": [],
-                },
-            )
-            entry["count"] = int(entry["count"]) + 1
-            entry["errors"] = int(entry["errors"]) + (
-                1 if isinstance(status_code, int) and status_code >= 400 else 0
-            )
-            if duration is not None:
-                all_durations.append(duration)
-                entry_durations = entry["durations"]
-                if isinstance(entry_durations, list):
-                    entry_durations.append(duration)
-
-        sorted_endpoints = sorted(
-            endpoint_aggregates.items(),
-            key=lambda item: int(item[1]["count"]),
-            reverse=True,
-        )
-        top_endpoints_payload: list[dict[str, Any]] = []
-
-        for path, values in sorted_endpoints[:endpoint_limit]:
-            durations = values["durations"]
-            assert isinstance(durations, list)
-            durations_int = [int(item) for item in durations]
-            endpoint_errors = int(values["errors"])
-            endpoint_count = int(values["count"])
+            endpoint_errors = self._safe_request_count(row["error_count"])
+            endpoint_count = self._safe_request_count(row["count"])
             top_endpoints_payload.append(
                 {
                     "path": path,
                     "count": endpoint_count,
                     "error_count": endpoint_errors,
                     "error_rate": round(endpoint_errors / endpoint_count, 4) if endpoint_count else 0,
-                    "p50_ms": self._percentile(durations_int, 0.5),
-                    "p95_ms": self._percentile(durations_int, 0.95),
-                    "avg_ms": round(sum(durations_int) / len(durations_int), 2) if durations_int else 0,
+                    "p50_ms": self._safe_duration(row["p50_ms"]),
+                    "p95_ms": self._safe_duration(row["p95_ms"]),
+                    "avg_ms": round(float(row["avg_ms"] or 0), 2),
                 }
             )
 
@@ -212,8 +193,8 @@ class AdminMetricsStore:
             "error_count": error_count,
             "error_rate": round(error_count / total_events, 4) if total_events else 0,
             "throughput_rps": round(total_events / throughput_window_seconds, 4),
-            "p50_ms": self._percentile(all_durations, 0.5),
-            "p95_ms": self._percentile(all_durations, 0.95),
+            "p50_ms": self._safe_duration(totals["p50_duration_ms"]),
+            "p95_ms": self._safe_duration(totals["p95_duration_ms"]),
             "avg_ms": round(duration_avg, 2),
             "endpoint_overview": top_endpoints_payload,
             "totals": {
@@ -243,6 +224,15 @@ class AdminMetricsStore:
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_server_code ON metric_events(server_code)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_event_type ON metric_events(event_type)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_metric_events_event_type_created_at ON metric_events(event_type, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_metric_events_path_created_at ON metric_events(path, created_at DESC) WHERE path IS NOT NULL"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_metric_events_username_created_at ON metric_events(username, created_at DESC) WHERE username IS NOT NULL"
+            )
             conn.commit()
 
     def log_event(
@@ -453,7 +443,13 @@ class AdminMetricsStore:
             ).fetchall()
         }
 
-    def _load_ai_exam_stats(self, conn) -> dict[str, object]:
+    def _load_ai_exam_stats(
+        self,
+        conn,
+        *,
+        window_hours: int = 0,
+        row_limit: int = 0,
+    ) -> dict[str, object]:
         stats = {
             "ai_exam_scoring_total": 0,
             "ai_exam_scoring_rows": 0,
@@ -471,39 +467,90 @@ class AdminMetricsStore:
             "ai_exam_scoring_ms_p50": None,
             "ai_exam_scoring_ms_p95": None,
         }
-        rows = conn.execute(
+        scoped_window_hours = max(0, int(window_hours or 0))
+        scoped_row_limit = max(0, int(row_limit or 0))
+
+        row = conn.execute(
             """
-            SELECT event_type, meta_json
-            FROM metric_events
-            WHERE event_type IN ('ai_exam_scoring', 'exam_import_score_failures', 'exam_import_row_score_error')
-            """
-        ).fetchall()
-        scoring_ms_values: list[int] = []
-        for row in rows:
-            event_type = str(row["event_type"] or "")
-            meta = self._decode_json_field(row["meta_json"])
-            if event_type == "ai_exam_scoring":
-                stats["ai_exam_scoring_total"] += 1
-                stats["ai_exam_scoring_rows"] += int(meta.get("rows_scored") or 0)
-                stats["ai_exam_scoring_answers"] += int(meta.get("answer_count") or 0)
-                stats["ai_exam_heuristic_total"] += int(meta.get("heuristic_count") or 0)
-                stats["ai_exam_cache_total"] += int(meta.get("cache_hit_count") or 0)
-                stats["ai_exam_llm_total"] += int(meta.get("llm_count") or 0)
-                stats["ai_exam_llm_calls_total"] += int(meta.get("llm_calls") or 0)
-                stats["ai_exam_invalid_batch_items_total"] += int(meta.get("invalid_batch_item_count") or 0)
-                stats["ai_exam_retry_batch_items_total"] += int(meta.get("retry_batch_items") or 0)
-                stats["ai_exam_retry_batch_calls_total"] += int(meta.get("retry_batch_calls") or 0)
-                stats["ai_exam_retry_single_items_total"] += int(meta.get("retry_single_items") or 0)
-                stats["ai_exam_retry_single_calls_total"] += int(meta.get("retry_single_calls") or 0)
-                scoring_ms = self._safe_duration(meta.get("scoring_ms"))
-                if scoring_ms is not None:
-                    scoring_ms_values.append(scoring_ms)
-            else:
-                stats["ai_exam_failure_total"] += 1
-        if scoring_ms_values:
-            stats["ai_exam_scoring_ms_p50"] = self._percentile(scoring_ms_values, 0.5)
-            stats["ai_exam_scoring_ms_p95"] = self._percentile(scoring_ms_values, 0.95)
+            WITH scoped_events AS (
+                SELECT event_type, meta_json
+                FROM metric_events
+                WHERE event_type IN ('ai_exam_scoring', 'exam_import_score_failures', 'exam_import_row_score_error')
+                  AND (%s::int <= 0 OR created_at >= NOW() - (%s::int * INTERVAL '1 hour'))
+                ORDER BY created_at DESC
+                LIMIT CASE WHEN %s::int > 0 THEN %s::int ELSE 2147483647 END
+            )
+            SELECT
+                SUM(CASE WHEN event_type = 'ai_exam_scoring' THEN 1 ELSE 0 END) AS ai_exam_scoring_total,
+                COALESCE(SUM(CASE WHEN event_type = 'ai_exam_scoring' THEN COALESCE(NULLIF(meta_json->>'rows_scored', ''), '0')::bigint ELSE 0 END), 0) AS ai_exam_scoring_rows,
+                COALESCE(SUM(CASE WHEN event_type = 'ai_exam_scoring' THEN COALESCE(NULLIF(meta_json->>'answer_count', ''), '0')::bigint ELSE 0 END), 0) AS ai_exam_scoring_answers,
+                COALESCE(SUM(CASE WHEN event_type = 'ai_exam_scoring' THEN COALESCE(NULLIF(meta_json->>'heuristic_count', ''), '0')::bigint ELSE 0 END), 0) AS ai_exam_heuristic_total,
+                COALESCE(SUM(CASE WHEN event_type = 'ai_exam_scoring' THEN COALESCE(NULLIF(meta_json->>'cache_hit_count', ''), '0')::bigint ELSE 0 END), 0) AS ai_exam_cache_total,
+                COALESCE(SUM(CASE WHEN event_type = 'ai_exam_scoring' THEN COALESCE(NULLIF(meta_json->>'llm_count', ''), '0')::bigint ELSE 0 END), 0) AS ai_exam_llm_total,
+                COALESCE(SUM(CASE WHEN event_type = 'ai_exam_scoring' THEN COALESCE(NULLIF(meta_json->>'llm_calls', ''), '0')::bigint ELSE 0 END), 0) AS ai_exam_llm_calls_total,
+                COALESCE(SUM(CASE WHEN event_type <> 'ai_exam_scoring' THEN 1 ELSE 0 END), 0) AS ai_exam_failure_total,
+                COALESCE(SUM(CASE WHEN event_type = 'ai_exam_scoring' THEN COALESCE(NULLIF(meta_json->>'invalid_batch_item_count', ''), '0')::bigint ELSE 0 END), 0) AS ai_exam_invalid_batch_items_total,
+                COALESCE(SUM(CASE WHEN event_type = 'ai_exam_scoring' THEN COALESCE(NULLIF(meta_json->>'retry_batch_items', ''), '0')::bigint ELSE 0 END), 0) AS ai_exam_retry_batch_items_total,
+                COALESCE(SUM(CASE WHEN event_type = 'ai_exam_scoring' THEN COALESCE(NULLIF(meta_json->>'retry_batch_calls', ''), '0')::bigint ELSE 0 END), 0) AS ai_exam_retry_batch_calls_total,
+                COALESCE(SUM(CASE WHEN event_type = 'ai_exam_scoring' THEN COALESCE(NULLIF(meta_json->>'retry_single_items', ''), '0')::bigint ELSE 0 END), 0) AS ai_exam_retry_single_items_total,
+                COALESCE(SUM(CASE WHEN event_type = 'ai_exam_scoring' THEN COALESCE(NULLIF(meta_json->>'retry_single_calls', ''), '0')::bigint ELSE 0 END), 0) AS ai_exam_retry_single_calls_total,
+                percentile_cont(0.5) WITHIN GROUP (
+                    ORDER BY CASE
+                        WHEN COALESCE(meta_json->>'scoring_ms', '') ~ '^[0-9]+(?:\\.[0-9]+)?$'
+                            THEN (meta_json->>'scoring_ms')::numeric
+                        ELSE NULL
+                    END
+                ) FILTER (
+                    WHERE event_type = 'ai_exam_scoring'
+                      AND COALESCE(meta_json->>'scoring_ms', '') ~ '^[0-9]+(?:\\.[0-9]+)?$'
+                ) AS ai_exam_scoring_ms_p50,
+                percentile_cont(0.95) WITHIN GROUP (
+                    ORDER BY CASE
+                        WHEN COALESCE(meta_json->>'scoring_ms', '') ~ '^[0-9]+(?:\\.[0-9]+)?$'
+                            THEN (meta_json->>'scoring_ms')::numeric
+                        ELSE NULL
+                    END
+                ) FILTER (
+                    WHERE event_type = 'ai_exam_scoring'
+                      AND COALESCE(meta_json->>'scoring_ms', '') ~ '^[0-9]+(?:\\.[0-9]+)?$'
+                ) AS ai_exam_scoring_ms_p95
+            FROM scoped_events
+            """,
+            (scoped_window_hours, scoped_window_hours, scoped_row_limit, scoped_row_limit),
+        ).fetchone()
+        if row:
+            for key in (
+                "ai_exam_scoring_total",
+                "ai_exam_scoring_rows",
+                "ai_exam_scoring_answers",
+                "ai_exam_heuristic_total",
+                "ai_exam_cache_total",
+                "ai_exam_llm_total",
+                "ai_exam_llm_calls_total",
+                "ai_exam_failure_total",
+                "ai_exam_invalid_batch_items_total",
+                "ai_exam_retry_batch_items_total",
+                "ai_exam_retry_batch_calls_total",
+                "ai_exam_retry_single_items_total",
+                "ai_exam_retry_single_calls_total",
+            ):
+                stats[key] = self._safe_request_count(row[key])
+            stats["ai_exam_scoring_ms_p50"] = self._safe_duration(row["ai_exam_scoring_ms_p50"])
+            stats["ai_exam_scoring_ms_p95"] = self._safe_duration(row["ai_exam_scoring_ms_p95"])
         return stats
+
+    def refresh_dashboard_materialized_views(self) -> None:
+        """Best-effort refresh of optional dashboard materialized views.
+
+        Dashboards are read-heavy, so environments can provision pre-aggregated
+        materialized views and call this from a periodic job.
+        """
+        with closing(self._connect()) as conn:
+            for view_name in ("admin_dashboard_overview_mv", "admin_dashboard_endpoint_mv"):
+                row = conn.execute("SELECT to_regclass(%s) AS regclass", (f"public.{view_name}",)).fetchone()
+                if row and row["regclass"]:
+                    conn.execute(f"REFRESH MATERIALIZED VIEW {view_name}")
+            conn.commit()
 
     def _load_latest_event(self, conn, event_types: tuple[str, ...]) -> dict[str, Any] | None:
         placeholders = ", ".join(self._placeholder() for _ in event_types)
