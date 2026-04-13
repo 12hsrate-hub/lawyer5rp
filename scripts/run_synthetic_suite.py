@@ -14,11 +14,13 @@ for candidate in (ROOT_DIR, WEB_DIR):
         sys.path.insert(0, str(candidate))
 
 from ogp_web.db.factory import get_database_backend
+from ogp_web.env import load_web_env
 from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 
 
 def main() -> int:
+    load_web_env()
     parser = argparse.ArgumentParser(description="Run synthetic suite and persist results in admin metrics.")
     parser.add_argument("--suite", required=True, choices=["smoke", "nightly", "load", "fault"])
     parser.add_argument("--server", default=os.getenv("OGP_DEFAULT_SERVER_CODE", "blackberry"))
