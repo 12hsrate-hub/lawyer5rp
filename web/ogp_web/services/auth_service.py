@@ -222,6 +222,11 @@ def require_user(request: Request) -> AuthUser:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=["Доступ к аккаунту заблокирован администратором."],
                 )
+        except AuthError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=[str(exc)],
+            ) from exc
         except HTTPException:
             raise
         except Exception:

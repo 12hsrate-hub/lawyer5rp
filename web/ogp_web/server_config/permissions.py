@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ogp_web.env import is_test_user
 from ogp_web.services.auth_service import is_admin_user
-from ogp_web.storage.user_store import UserStore
 
 from .types import ServerConfig
+
+if TYPE_CHECKING:
+    from ogp_web.storage.user_store import UserStore
 
 
 @dataclass(frozen=True)

@@ -54,6 +54,7 @@ class PostgresBackend:
             "servers": {},
             "users": {},
             "roles": {},
+            "selected_servers": {},
             "drafts": {},
             "generated_documents": [],
             "auth_rate_limit_events": [],
@@ -119,6 +120,8 @@ class FakePostgresConnection:
             return self._insert_user(params)
         if normalized.startswith("INSERT INTO user_server_roles "):
             return self._upsert_role(params)
+        if normalized.startswith("INSERT INTO user_selected_servers (user_id, server_code, updated_at)"):
+            return self._upsert_selected_server(params)
         if normalized.startswith("INSERT INTO complaint_drafts (user_id, server_code, draft_json) VALUES"):
             return self._insert_draft(params)
         if normalized.startswith("INSERT INTO complaint_drafts (user_id, server_code, draft_json, updated_at) SELECT"):
@@ -126,12 +129,17 @@ class FakePostgresConnection:
         if normalized.startswith("INSERT INTO generated_documents ("):
             return self._insert_generated_document(params)
         if (
-            "FROM users u LEFT JOIN user_server_roles usr" in normalized
+            (
+                "FROM users u LEFT JOIN user_server_roles usr" in normalized
+                or "FROM users u LEFT JOIN user_selected_servers uss ON uss.user_id = u.id LEFT JOIN user_server_roles usr" in normalized
+            )
             and "ORDER BY u.created_at DESC, u.username ASC" in normalized
         ):
             return self._list_users(params)
         if "FROM users u LEFT JOIN user_server_roles usr" in normalized and "LEFT JOIN complaint_drafts cd" in normalized:
             return self._fetch_user(normalized, params)
+        if normalized.startswith("SELECT uss.server_code AS selected_server_code FROM users u LEFT JOIN user_selected_servers uss ON uss.user_id = u.id WHERE u.username = %s LIMIT 1"):
+            return self._fetch_selected_server(params[0])
         if normalized.startswith("SELECT id FROM users WHERE username = %s"):
             user = self.state["users"].get(params[0])
             return FakeCursor(rowcount=1 if user else 0, one={"id": user["id"]} if user else None)
@@ -221,6 +229,15 @@ class FakePostgresConnection:
         }
         return FakeCursor(rowcount=1)
 
+    def _upsert_selected_server(self, params):
+        user_id, server_code = params[:2]
+        self.state["selected_servers"][user_id] = {
+            "user_id": user_id,
+            "server_code": server_code,
+            "updated_at": self._now(),
+        }
+        return FakeCursor(rowcount=1)
+
     def _insert_draft(self, params):
         user_id, server_code = params
         self.state["drafts"][(user_id, server_code)] = {
@@ -267,8 +284,10 @@ class FakePostgresConnection:
         return None
 
     def _compose_user_row(self, user, server_code: str):
-        role = self.state["roles"].get((user["id"], server_code), {})
-        draft = self.state["drafts"].get((user["id"], server_code), {})
+        selected_server = self.state["selected_servers"].get(user["id"], {}).get("server_code")
+        effective_server = selected_server or server_code
+        role = self.state["roles"].get((user["id"], effective_server), {})
+        draft = self.state["drafts"].get((user["id"], effective_server), {})
         return {
             "username": user["username"],
             "email": user["email"],
@@ -285,13 +304,23 @@ class FakePostgresConnection:
             "deactivated_at": user.get("deactivated_at"),
             "deactivated_reason": user.get("deactivated_reason"),
             "api_quota_daily": user.get("api_quota_daily", 0),
-            "server_code": role.get("server_code", server_code),
+            "server_code": role.get("server_code", effective_server),
             "is_tester": role.get("is_tester", False),
             "is_gka": role.get("is_gka", False),
             "representative_profile": json.dumps(user["representative_profile"], ensure_ascii=False),
             "complaint_draft_json": json.dumps(draft.get("draft_json", {}), ensure_ascii=False),
             "complaint_draft_updated_at": draft.get("updated_at"),
         }
+
+    def _fetch_selected_server(self, username: str):
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0, one=None)
+        selected = self.state["selected_servers"].get(user["id"])
+        payload = {
+            "selected_server_code": selected.get("server_code") if selected else None,
+        }
+        return FakeCursor(rowcount=1, one=payload)
 
     def _fetch_user(self, normalized: str, params):
         server_code = params[0]
@@ -309,7 +338,22 @@ class FakePostgresConnection:
         return FakeCursor(rowcount=1 if row else 0, one=row)
 
     def _list_users(self, params):
-        server_code = params[0]
+        server_code = "blackberry"
+        safe_limit = None
+        if params:
+            first_param = params[0]
+            if isinstance(first_param, str):
+                server_code = first_param
+                if len(params) > 1:
+                    try:
+                        safe_limit = max(0, int(params[1]))
+                    except (TypeError, ValueError):
+                        safe_limit = None
+            else:
+                try:
+                    safe_limit = max(0, int(first_param))
+                except (TypeError, ValueError):
+                    safe_limit = None
         rows = [
             self._compose_user_row(user, server_code)
             for user in sorted(
@@ -318,6 +362,8 @@ class FakePostgresConnection:
                 reverse=True,
             )
         ]
+        if safe_limit:
+            rows = rows[:safe_limit]
         return FakeCursor(rowcount=len(rows), rows=rows)
 
     def _list_permission_codes(self, params):

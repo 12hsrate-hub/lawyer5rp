@@ -325,6 +325,23 @@ class ProfileResponse(BaseModel):
     message: str = ""
 
 
+class SelectedServerPayload(BaseModel):
+    server_code: str = ""
+
+    @field_validator("server_code")
+    @classmethod
+    def validate_server_code(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            raise ValueError("Укажите код сервера.")
+        return normalized
+
+
+class SelectedServerResponse(BaseModel):
+    server_code: str = ""
+    message: str = ""
+
+
 class ExamImportEntry(BaseModel):
     source_row: int
     submitted_at: str = ""

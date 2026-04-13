@@ -34,7 +34,11 @@ _TEMPLATE_VERSION_IDS = {
 
 
 def to_domain_model(store: UserStore, payload: ComplaintPayload, user: AuthUser) -> ComplaintInput:
-    representative = payload.representative or get_profile_payload(store, user.username)
+    representative = payload.representative or get_profile_payload(
+        store,
+        user.username,
+        server_code=user.server_code,
+    )
     today_date = payload.today_date.strip() or datetime.now().strftime("%d.%m.%Y")
     return ComplaintInput(
         appeal_no=payload.appeal_no.strip(),
@@ -68,7 +72,11 @@ def generate_bbcode_text(store: UserStore, payload: ComplaintPayload, user: Auth
 
 
 def generate_rehab_bbcode_text(store: UserStore, payload: RehabPayload, user: AuthUser) -> str:
-    representative = get_profile_payload(store, user.username)
+    representative = get_profile_payload(
+        store,
+        user.username,
+        server_code=user.server_code,
+    )
     today_date = payload.today_date.strip() or datetime.now().strftime("%d.%m.%Y")
     rehab = RehabInput(
         representative=Representative(**representative.model_dump()),
