@@ -7,6 +7,7 @@ import shutil
 import sys
 import threading
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -53,6 +54,7 @@ class PostgresBackend:
             "users": {},
             "roles": {},
             "drafts": {},
+            "auth_rate_limit_events": [],
             "clock": 0,
             "missing_tables": set(missing_tables or set()),
         }
@@ -89,12 +91,24 @@ class FakePostgresConnection:
 
         if normalized == "SELECT 1":
             return FakeCursor(rowcount=1, one={"?column?": 1})
+        if normalized == "SELECT pg_advisory_xact_lock(hashtext(%s))":
+            return FakeCursor(rowcount=1, one={"pg_advisory_xact_lock": None})
         if normalized == "SELECT to_regclass(%s) AS regclass":
             table_name = str(params[0]).split(".", 1)[-1]
             present = table_name not in self.state["missing_tables"]
             return FakeCursor(rowcount=1, one={"regclass": params[0] if present else None})
         if normalized == "SELECT COUNT(*) AS total FROM users":
             return FakeCursor(rowcount=1, one={"total": len(self.state["users"])})
+        if normalized == "DELETE FROM auth_rate_limit_events":
+            deleted = len(self.state["auth_rate_limit_events"])
+            self.state["auth_rate_limit_events"] = []
+            return FakeCursor(rowcount=deleted)
+        if normalized.startswith("DELETE FROM auth_rate_limit_events WHERE action = %s AND subject_key = %s"):
+            return self._delete_rate_limit_events(params)
+        if normalized.startswith("SELECT COUNT(*) AS total FROM auth_rate_limit_events WHERE action = %s AND subject_key = %s"):
+            return self._count_rate_limit_events(params)
+        if normalized.startswith("INSERT INTO auth_rate_limit_events (action, subject_key) VALUES (%s, %s)"):
+            return self._insert_rate_limit_event(params)
         if normalized.startswith("INSERT INTO servers"):
             code, title = params
             self.state["servers"][code] = {"code": code, "title": title}
@@ -137,12 +151,19 @@ class FakePostgresConnection:
             return self._mark_email_verified(params[0], preserve_existing=True)
         if normalized.startswith("UPDATE users SET email = %s, email_verified_at = NULL, email_verification_token_hash = NULL WHERE username = %s"):
             return self._update_email(params)
+        if normalized.startswith("UPDATE users SET deactivated_at = NOW(), deactivated_reason = %s, access_blocked_at = COALESCE(access_blocked_at, NOW()), access_blocked_reason = COALESCE(NULLIF(access_blocked_reason, ''), %s) WHERE username = %s"):
+            return self._deactivate_user(params)
+        if normalized.startswith("UPDATE users SET deactivated_at = NULL, deactivated_reason = NULL, access_blocked_at = NULL, access_blocked_reason = NULL WHERE username = %s"):
+            return self._reactivate_user(params[0])
+        if normalized.startswith("UPDATE users SET api_quota_daily = %s WHERE username = %s"):
+            return self._set_daily_quota(params)
 
         raise AssertionError(f"Unsupported fake postgres query: {normalized}")
 
     def _now(self) -> str:
         self.state["clock"] += 1
-        return f"2026-04-10T00:00:{self.state['clock']:02d}Z"
+        current = datetime.now(timezone.utc) + timedelta(seconds=self.state["clock"])
+        return current.isoformat()
 
     def _insert_user(self, params):
         username, email, salt, password_hash, created_at, token_hash, token_sent_at, profile_json = params
@@ -166,6 +187,9 @@ class FakePostgresConnection:
             "password_reset_sent_at": None,
             "access_blocked_at": None,
             "access_blocked_reason": None,
+            "deactivated_at": None,
+            "deactivated_reason": None,
+            "api_quota_daily": 0,
             "representative_profile": json.loads(profile_json),
         }
         return FakeCursor(rowcount=1, one={"id": user_id})
@@ -228,6 +252,9 @@ class FakePostgresConnection:
             "password_reset_sent_at": user["password_reset_sent_at"],
             "access_blocked_at": user["access_blocked_at"],
             "access_blocked_reason": user["access_blocked_reason"],
+            "deactivated_at": user.get("deactivated_at"),
+            "deactivated_reason": user.get("deactivated_reason"),
+            "api_quota_daily": user.get("api_quota_daily", 0),
             "server_code": role.get("server_code", server_code),
             "is_tester": role.get("is_tester", False),
             "is_gka": role.get("is_gka", False),
@@ -350,6 +377,72 @@ class FakePostgresConnection:
         user["email_verification_token_hash"] = None
         return FakeCursor(rowcount=1)
 
+    def _deactivate_user(self, params):
+        reason, block_reason, username = params
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0)
+        user["deactivated_at"] = self._now()
+        user["deactivated_reason"] = reason
+        if not user.get("access_blocked_at"):
+            user["access_blocked_at"] = self._now()
+        if not str(user.get("access_blocked_reason") or "").strip():
+            user["access_blocked_reason"] = block_reason
+        return FakeCursor(rowcount=1)
+
+    def _reactivate_user(self, username: str):
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0)
+        user["deactivated_at"] = None
+        user["deactivated_reason"] = None
+        user["access_blocked_at"] = None
+        user["access_blocked_reason"] = None
+        return FakeCursor(rowcount=1)
+
+    def _set_daily_quota(self, params):
+        daily_limit, username = params
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0)
+        user["api_quota_daily"] = int(daily_limit or 0)
+        return FakeCursor(rowcount=1)
+
+    def _insert_rate_limit_event(self, params):
+        action, subject_key = params
+        self.state["auth_rate_limit_events"].append(
+            {
+                "action": str(action),
+                "subject_key": str(subject_key),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        return FakeCursor(rowcount=1)
+
+    def _count_rate_limit_events(self, params):
+        action, subject_key = params
+        total = sum(
+            1
+            for row in self.state["auth_rate_limit_events"]
+            if row["action"] == str(action) and row["subject_key"] == str(subject_key)
+        )
+        return FakeCursor(rowcount=1, one={"total": total})
+
+    def _delete_rate_limit_events(self, params):
+        action, subject_key, _window_seconds = params
+        threshold = datetime.now(timezone.utc) - timedelta(seconds=int(_window_seconds or 0))
+        before = len(self.state["auth_rate_limit_events"])
+        self.state["auth_rate_limit_events"] = [
+            row
+            for row in self.state["auth_rate_limit_events"]
+            if not (
+                row["action"] == str(action)
+                and row["subject_key"] == str(subject_key)
+                and datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00")).astimezone(timezone.utc) < threshold
+            )
+        ]
+        return FakeCursor(rowcount=before - len(self.state["auth_rate_limit_events"]))
+
 
 class FakeAdminMetricsPostgresBackend:
     def __init__(
@@ -425,6 +518,12 @@ class FakeAdminMetricsConnection:
             return FakeCursor(rowcount=0)
         if normalized.startswith("INSERT INTO metric_events "):
             return self._insert_event(params)
+        if normalized.startswith("SELECT COUNT(*) AS request_count, SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_count, COALESCE(SUM(CASE WHEN event_type = 'api_request' THEN 1 ELSE 0 END), 0) AS api_requests_total,"):
+            return self._performance_totals(params)
+        if normalized.startswith("SELECT path, duration_ms, status_code FROM metric_events WHERE event_type = 'api_request' AND path IS NOT NULL AND created_at >= %s"):
+            return self._performance_endpoint_rows(params)
+        if normalized == "SELECT COUNT(*) AS total FROM metric_events WHERE event_type = 'api_request' AND username = %s AND created_at >= NOW() - INTERVAL '1 day'":
+            return self._count_user_api_requests_last_24h(params)
         if "COUNT(*) AS total_events" in normalized and "FROM metric_events" in normalized:
             return self._totals()
         if normalized.startswith("SELECT path, COUNT(*) AS count FROM metric_events"):
@@ -442,7 +541,8 @@ class FakeAdminMetricsConnection:
 
     def _now(self) -> str:
         self.state["clock"] += 1
-        return f"2026-04-10T00:00:{self.state['clock']:02d}Z"
+        current = datetime.now(timezone.utc) + timedelta(seconds=self.state["clock"])
+        return current.isoformat()
 
     def _insert_event(self, params):
         event = {
@@ -598,6 +698,73 @@ class FakeAdminMetricsConnection:
                 "meta_json": item["meta_json"],
             },
         )
+
+    def _count_user_api_requests_last_24h(self, params):
+        username = str(params[0] or "").strip().lower()
+        threshold = datetime.now(timezone.utc) - timedelta(days=1)
+        total = 0
+        for item in self.state["metric_events"]:
+            if item["event_type"] != "api_request":
+                continue
+            if str(item["username"] or "").strip().lower() != username:
+                continue
+            created_at = datetime.fromisoformat(str(item["created_at"]).replace("Z", "+00:00"))
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            if created_at.astimezone(timezone.utc) >= threshold:
+                total += 1
+        return FakeCursor(rowcount=1, one={"total": total})
+
+    def _performance_totals(self, params):
+        threshold = datetime.fromisoformat(str(params[0]).replace("Z", "+00:00")).astimezone(timezone.utc)
+        events = []
+        for item in self.state["metric_events"]:
+            if item["event_type"] != "api_request":
+                continue
+            created_at = datetime.fromisoformat(str(item["created_at"]).replace("Z", "+00:00"))
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            if created_at.astimezone(timezone.utc) >= threshold:
+                events.append(item)
+        request_count = len(events)
+        error_count = sum(1 for item in events if int(item.get("status_code") or 0) >= 400)
+        avg_duration_ms = (
+            sum(int(item.get("duration_ms") or 0) for item in events if item.get("duration_ms") is not None) / request_count
+            if request_count
+            else 0
+        )
+        return FakeCursor(
+            rowcount=1,
+            one={
+                "request_count": request_count,
+                "error_count": error_count,
+                "api_requests_total": request_count,
+                "avg_duration_ms": avg_duration_ms,
+                "request_bytes": sum(int(item.get("request_bytes") or 0) for item in events),
+                "response_bytes": sum(int(item.get("response_bytes") or 0) for item in events),
+                "resource_units": sum(int(item.get("resource_units") or 0) for item in events),
+            },
+        )
+
+    def _performance_endpoint_rows(self, params):
+        threshold = datetime.fromisoformat(str(params[0]).replace("Z", "+00:00")).astimezone(timezone.utc)
+        rows = []
+        for item in self.state["metric_events"]:
+            if item["event_type"] != "api_request" or not item.get("path"):
+                continue
+            created_at = datetime.fromisoformat(str(item["created_at"]).replace("Z", "+00:00"))
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            if created_at.astimezone(timezone.utc) < threshold:
+                continue
+            rows.append(
+                {
+                    "path": item["path"],
+                    "duration_ms": item["duration_ms"],
+                    "status_code": item["status_code"],
+                }
+            )
+        return FakeCursor(rowcount=len(rows), rows=rows)
 
 
 class FakeExamAnswersPostgresBackend:
@@ -2195,6 +2362,39 @@ class PostgresExamAnswersStoreTests(unittest.TestCase):
 
         pending = store.list_entries_needing_scores(limit=10)
         self.assertEqual(pending, [])
+
+    def test_postgres_exam_answers_store_inserts_new_attempt_when_same_row_is_reused_later(self):
+        store = self.make_store()
+
+        first = {
+            "source_row": 2,
+            "submitted_at": "2026-04-08 12:00:00",
+            "full_name": "First User",
+            "discord_tag": "first",
+            "passport": "123456",
+            "exam_format": "remote",
+            "payload": {"name": "First User", "Question F": "Answer F"},
+            "answer_count": 1,
+        }
+        replacement = {
+            "source_row": 2,
+            "submitted_at": "2026-04-09 09:00:00",
+            "full_name": "Second User",
+            "discord_tag": "second",
+            "passport": "654321",
+            "exam_format": "remote",
+            "payload": {"name": "Second User", "Question F": "Other F"},
+            "answer_count": 1,
+        }
+
+        first_result = store.import_rows([first])
+        replacement_result = store.import_rows([replacement])
+
+        self.assertEqual(first_result["inserted_count"], 1)
+        self.assertEqual(replacement_result["inserted_count"], 1)
+        self.assertEqual(replacement_result["updated_count"], 0)
+        self.assertEqual(store.count(), 1)
+        self.assertEqual(store.get_entry(2)["full_name"], "Second User")
 
     def test_postgres_exam_answers_store_preserves_scores_when_identity_fields_change_but_answers_match(self):
         store = self.make_store()

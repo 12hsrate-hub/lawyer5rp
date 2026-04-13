@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from contextlib import closing
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ ROOT_DIR = Path(__file__).resolve().parents[3]
 DATA_DIR = ROOT_DIR / "web" / "data"
 DB_PATH = DATA_DIR / "exam_answers.db"
 REFERENCE_SOURCE_ROW = 0
+SOURCE_ROW_MATCH_MAX_DELTA = timedelta(minutes=10)
 INVALID_BATCH_RATIONALE = "Модель не вернула корректную оценку по этому пункту."
 
 
@@ -68,6 +70,53 @@ class ExamAnswersStore:
             ensure_ascii=False,
             separators=(",", ":"),
         )
+
+    @staticmethod
+    def _normalize_exam_format_for_match(exam_format: object) -> str:
+        raw = str(exam_format or "").strip()
+        normalized = _normalize_match_text(raw)
+        return normalized or raw.lower()
+
+    @staticmethod
+    def _parse_submitted_at(value: object) -> datetime | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M"):
+            try:
+                return datetime.strptime(raw, fmt)
+            except ValueError:
+                continue
+        return None
+
+    @classmethod
+    def _is_source_row_match_candidate(cls, *, existing: dict[str, object], row: dict[str, object]) -> bool:
+        if int(existing.get("source_row") or 0) != int(row["source_row"]):
+            return False
+        existing_exam_format = cls._normalize_exam_format_for_match(existing.get("exam_format") or "")
+        row_exam_format = cls._normalize_exam_format_for_match(row.get("exam_format") or "")
+        if existing_exam_format != row_exam_format:
+            return False
+
+        existing_submitted_at = str(existing.get("submitted_at") or "").strip()
+        row_submitted_at = str(row.get("submitted_at") or "").strip()
+        if existing_submitted_at == row_submitted_at:
+            return True
+
+        existing_dt = cls._parse_submitted_at(existing_submitted_at)
+        row_dt = cls._parse_submitted_at(row_submitted_at)
+        if existing_dt is None or row_dt is None:
+            return False
+
+        if existing_dt.tzinfo is not None:
+            existing_dt = existing_dt.astimezone().replace(tzinfo=None)
+        if row_dt.tzinfo is not None:
+            row_dt = row_dt.astimezone().replace(tzinfo=None)
+        return abs(existing_dt - row_dt) <= SOURCE_ROW_MATCH_MAX_DELTA
 
     def __init__(self, db_path: Path, backend: DatabaseBackend | None = None):
         self.db_path = db_path
@@ -245,6 +294,21 @@ class ExamAnswersStore:
         if exact_matches:
             return max(
                 exact_matches,
+                key=lambda item: self._import_match_sort_key(
+                    item,
+                    source_row=source_row,
+                    submitted_at=submitted_at,
+                ),
+            )
+
+        source_row_matches = [
+            item
+            for item in existing_rows
+            if int(item["id"]) not in matched_ids and self._is_source_row_match_candidate(existing=item, row=row)
+        ]
+        if source_row_matches:
+            return max(
+                source_row_matches,
                 key=lambda item: self._import_match_sort_key(
                     item,
                     source_row=source_row,

@@ -16,6 +16,7 @@ for candidate in (ROOT_DIR, WEB_DIR):
 
 os.environ.setdefault("OGP_WEB_SECRET", "test-secret")
 os.environ.setdefault("OGP_DB_BACKEND", "postgres")
+os.environ.setdefault("OGP_SKIP_DEFAULT_APP_INIT", "1")
 
 from fastapi.testclient import TestClient
 
@@ -52,7 +53,14 @@ class WebApiTests(unittest.TestCase):
         )
         self.exam_store = ExamAnswersStore(root / "exam_answers.db", backend=FakeExamAnswersPostgresBackend())
         self.admin_store = AdminMetricsStore(root / "admin_metrics.db", backend=FakeAdminMetricsPostgresBackend())
-        self.client = TestClient(create_app(self.store, self.exam_store, self.admin_store), base_url="https://testserver")
+        self.task_registry = ExamImportTaskRegistry(
+            root / "exam_import_tasks.db",
+            backend=FakeExamImportTasksPostgresBackend(),
+        )
+        self.client = TestClient(
+            create_app(self.store, self.exam_store, self.admin_store, self.task_registry),
+            base_url="https://testserver",
+        )
         reset_rate_limit(self.client.app.state.rate_limiter)
 
     def tearDown(self):
@@ -349,7 +357,10 @@ class WebApiTests(unittest.TestCase):
             def log_event(self, *args, **kwargs) -> bool:
                 return False
 
-        client = TestClient(create_app(self.store, self.exam_store, UnhealthyAdminMetricsStore()), base_url="https://testserver")
+        client = TestClient(
+            create_app(self.store, self.exam_store, UnhealthyAdminMetricsStore(), self.task_registry),
+            base_url="https://testserver",
+        )
         try:
             response = client.get("/health")
             self.assertEqual(response.status_code, 503)
@@ -498,7 +509,10 @@ class WebApiTests(unittest.TestCase):
         self._register_verify_and_login("sessionuser", "sessionuser@example.com")
         session_client = self.client
 
-        admin_client = TestClient(create_app(self.store, self.exam_store, self.admin_store), base_url="https://testserver")
+        admin_client = TestClient(
+            create_app(self.store, self.exam_store, self.admin_store, self.task_registry),
+            base_url="https://testserver",
+        )
         try:
             response = admin_client.post(
                 "/api/auth/register",
@@ -567,7 +581,10 @@ class WebApiTests(unittest.TestCase):
                 raise RuntimeError("attempt to write a readonly database")
 
         broken_admin_store = BrokenAdminMetricsStore()
-        client = TestClient(create_app(self.store, self.exam_store, broken_admin_store), base_url="https://testserver")
+        client = TestClient(
+            create_app(self.store, self.exam_store, broken_admin_store, self.task_registry),
+            base_url="https://testserver",
+        )
         try:
             response = client.post(
                 "/api/auth/register",
@@ -1000,7 +1017,8 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(payload["quality_summary"]["validation_retry_rate"], 100.0)
         self.assertEqual(payload["quality_summary"]["safe_fallback_rate"], 100.0)
         self.assertEqual(payload["quality_summary"]["bands"]["wrong_law_rate"], "red")
-        self.assertEqual(payload["quality_summary"]["bands"]["wrong_fact_rate"], "red")
+        self.assertEqual(payload["quality_summary"]["wrong_fact_rate"], 0.0)
+        self.assertEqual(payload["quality_summary"]["bands"]["wrong_fact_rate"], "green")
         self.assertEqual(payload["quality_summary"]["bands"]["new_fact_validation_rate"], "red")
         self.assertEqual(payload["cost_tables"]["by_flow"][0]["flow"], "law_qa")
         self.assertEqual(payload["top_inaccurate_generations"][0]["generation_id"], "gen_admin_1")

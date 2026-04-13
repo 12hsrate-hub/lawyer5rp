@@ -194,6 +194,7 @@ def create_app(
     user_store: UserStore | None = None,
     exam_answers_store: ExamAnswersStore | None = None,
     admin_metrics_store: AdminMetricsStore | None = None,
+    exam_import_task_registry: ExamImportTaskRegistry | None = None,
 ) -> FastAPI:
     _configure_web_logging()
     _get_secret_key()
@@ -215,9 +216,9 @@ def create_app(
         else EXAM_IMPORT_TASKS_DB_PATH
     )
     exam_import_tasks_backend = None
-    if getattr(app.state.admin_metrics_store, "is_postgres_backend", False):
-        exam_import_tasks_backend = app.state.admin_metrics_store.backend
-    app.state.exam_import_task_registry = ExamImportTaskRegistry(
+    if exam_import_task_registry is None and getattr(app.state.admin_metrics_store, "is_postgres_backend", False):
+        exam_import_tasks_backend = getattr(app.state.admin_metrics_store, "backend", None)
+    app.state.exam_import_task_registry = exam_import_task_registry or ExamImportTaskRegistry(
         exam_import_tasks_db_path,
         backend=exam_import_tasks_backend,
     )
@@ -277,7 +278,8 @@ def create_app(
     @app.middleware("http")
     async def capture_admin_metrics(request, call_next):
         started = time.perf_counter()
-        request_id = getattr(request.state, "request_id", "")
+        request_id = getattr(request.state, "request_id", "") or uuid.uuid4().hex
+        request.state.request_id = request_id
         user = get_current_user(request) if request.url.path.startswith("/api/") else None
         if request.url.path.startswith("/api/") and user and not request.url.path.startswith("/api/auth/"):
             policy_name = "user_quota_daily"
@@ -405,6 +407,8 @@ def create_app(
     app.include_router(admin_router)
     return app
 
-
-app = create_app()
-atexit.register(_close_app_resources, app)
+if os.getenv("OGP_SKIP_DEFAULT_APP_INIT", "").strip() == "1":
+    app = None
+else:
+    app = create_app()
+    atexit.register(_close_app_resources, app)

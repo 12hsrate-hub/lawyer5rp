@@ -14,17 +14,24 @@ for candidate in (ROOT_DIR, WEB_DIR):
 
 os.environ.setdefault("OGP_WEB_SECRET", "test-secret")
 os.environ.setdefault("OGP_DB_BACKEND", "postgres")
+os.environ.setdefault("OGP_SKIP_DEFAULT_APP_INIT", "1")
 
 from fastapi.testclient import TestClient
 
 from ogp_web.app import create_app
 from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
+from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.storage.user_store import UserStore
 from tests.temp_helpers import make_temporary_directory
-from tests.test_web_storage import FakeAdminMetricsPostgresBackend, FakeExamAnswersPostgresBackend, PostgresBackend
+from tests.test_web_storage import (
+    FakeAdminMetricsPostgresBackend,
+    FakeExamAnswersPostgresBackend,
+    FakeExamImportTasksPostgresBackend,
+    PostgresBackend,
+)
 
 
 class WebPagesSmokeTests(unittest.TestCase):
@@ -40,7 +47,14 @@ class WebPagesSmokeTests(unittest.TestCase):
         )
         self.exam_store = ExamAnswersStore(root / "exam_answers.db", backend=FakeExamAnswersPostgresBackend())
         self.admin_store = AdminMetricsStore(root / "admin_metrics.db", backend=FakeAdminMetricsPostgresBackend())
-        self.client = TestClient(create_app(self.store, self.exam_store, self.admin_store), base_url="https://testserver")
+        self.task_registry = ExamImportTaskRegistry(
+            root / "exam_import_tasks.db",
+            backend=FakeExamImportTasksPostgresBackend(),
+        )
+        self.client = TestClient(
+            create_app(self.store, self.exam_store, self.admin_store, self.task_registry),
+            base_url="https://testserver",
+        )
         reset_rate_limit(self.client.app.state.rate_limiter)
 
         response = self.client.post(
