@@ -13,6 +13,7 @@ from typing import Iterable
 from urllib.parse import urljoin, urlparse
 
 import httpx
+from ogp_web.services.law_version_service import load_law_chunks_by_version, resolve_active_law_version
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +49,7 @@ class LawBundleSource:
 
 @dataclass(frozen=True)
 class LawBundleMeta:
+    law_version_id: int | None
     server_code: str
     generated_at_utc: str
     source_count: int
@@ -332,7 +334,17 @@ def write_law_bundle(bundle: dict[str, object], destination: Path) -> Path:
     return destination
 
 
-def load_law_bundle_meta(server_code: str, bundle_path: str = "") -> LawBundleMeta | None:
+def load_law_bundle_meta(server_code: str, bundle_path: str = "", requested_version_id: int | None = None) -> LawBundleMeta | None:
+    resolved_version = resolve_active_law_version(server_code=server_code, requested_version_id=requested_version_id)
+    if resolved_version:
+        return LawBundleMeta(
+            law_version_id=resolved_version.id,
+            server_code=resolved_version.server_code,
+            generated_at_utc=resolved_version.generated_at_utc,
+            source_count=0,
+            chunk_count=resolved_version.chunk_count,
+            fingerprint=resolved_version.fingerprint,
+        )
     path = resolve_law_bundle_path(server_code, bundle_path)
     if not path.exists():
         return None
@@ -340,7 +352,14 @@ def load_law_bundle_meta(server_code: str, bundle_path: str = "") -> LawBundleMe
     return _payload_to_bundle_meta(server_code, payload)
 
 
-def load_law_bundle_chunks(server_code: str, bundle_path: str = "") -> tuple[LawChunk, ...]:
+def load_law_bundle_chunks(
+    server_code: str,
+    bundle_path: str = "",
+    requested_version_id: int | None = None,
+) -> tuple[LawChunk, ...]:
+    resolved_version = resolve_active_law_version(server_code=server_code, requested_version_id=requested_version_id)
+    if resolved_version:
+        return load_law_chunks_by_version(server_code, resolved_version.id)
     path = resolve_law_bundle_path(server_code, bundle_path)
     if not path.exists():
         return ()
@@ -374,6 +393,7 @@ def _payload_to_bundle_meta(server_code: str, payload: dict[str, object]) -> Law
         sort_keys=True,
     )
     return LawBundleMeta(
+        law_version_id=None,
         server_code=str(payload.get("server_code") or server_code).strip() or server_code,
         generated_at_utc=str(payload.get("generated_at_utc") or "").strip(),
         source_count=len(sources) if isinstance(sources, list) else 0,

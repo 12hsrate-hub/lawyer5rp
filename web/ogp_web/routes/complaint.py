@@ -354,6 +354,8 @@ async def suggest(
             "selection_reason": result_selection_reason,
             "complaint_basis": payload.complaint_basis,
             "main_focus": payload.main_focus,
+            "law_version_id": payload.law_version_id,
+            "template_version_id": payload.template_version_id,
             "input_chars": len(payload.raw_desc or ""),
             "output_chars": len(result.text),
         },
@@ -447,6 +449,7 @@ async def law_qa_test(
             "retrieval_confidence": result.retrieval_confidence,
             "selected_norms_count": len(result.selected_norms),
             "max_answer_chars": payload.max_answer_chars,
+            "law_version_id": payload.law_version_id,
         },
     )
     metrics_store.log_ai_generation(
@@ -469,6 +472,7 @@ async def law_qa_test(
         bundle_status=result.bundle_status,
         bundle_generated_at=result.bundle_generated_at,
         bundle_fingerprint=result.bundle_fingerprint,
+        law_version_id=payload.law_version_id,
         warnings=result.warnings,
         shadow=result.shadow,
         selected_norms=result.selected_norms,
