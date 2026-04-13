@@ -247,6 +247,8 @@ class FakePostgresConnection:
             return self._list_permission_codes(params)
         if normalized.startswith("SELECT gd.id AS id, gd.server_code AS server_code, gd.document_kind AS document_kind, gd.created_at AS created_at FROM generated_documents gd JOIN users u ON u.id = gd.user_id WHERE u.username = %s ORDER BY gd.created_at DESC, gd.id DESC LIMIT %s"):
             return self._list_generated_documents(params)
+        if normalized.startswith("SELECT gs.legacy_generated_document_id AS id, gs.server_id AS server_code, gs.document_kind AS document_kind, gs.created_at AS created_at FROM generation_snapshots gs JOIN users u ON u.id = gs.user_id WHERE u.username = %s AND gs.legacy_generated_document_id IS NOT NULL ORDER BY gs.created_at DESC, gs.id DESC LIMIT %s"):
+            return self._list_generation_snapshots_history(params)
         if normalized.startswith("SELECT gd.id AS id, gd.server_code AS server_code, gd.document_kind AS document_kind, gd.created_at AS created_at, CAST(gd.context_snapshot_json AS TEXT) AS context_snapshot_json FROM generated_documents gd JOIN users u ON u.id = gd.user_id WHERE u.username = %s AND gd.id = %s LIMIT 1"):
             return self._fetch_generated_document_snapshot(params)
         if normalized.startswith("SELECT gs.legacy_generated_document_id AS id, gs.server_id AS server_code, gs.document_kind AS document_kind, gs.created_at AS created_at FROM generation_snapshots gs JOIN users u ON u.id = gs.user_id WHERE u.username = %s ORDER BY gs.created_at DESC, gs.id DESC LIMIT %s"):
