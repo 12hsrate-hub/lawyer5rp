@@ -37,9 +37,11 @@ from ogp_web.services.complaint_service import generate_bbcode_text, generate_re
 from ogp_web.services.complaint_service import build_generation_context_snapshot
 from ogp_web.services.citation_service import save_answer_citations
 from ogp_web.services.generation_orchestrator import GenerationOrchestrator
+from ogp_web.services.validation_service import ValidationService
 from ogp_web.services.retrieval_service import run_retrieval
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.user_store import UserStore
+from ogp_web.storage.validation_repository import ValidationRepository
 
 
 router = APIRouter(tags=["complaint"])
@@ -166,6 +168,10 @@ def _server_config_for_user(store: UserStore, user: AuthUser):
     return get_server_config(user.server_code or store.get_server_code(user.username))
 
 
+def _validation_service(store: UserStore) -> ValidationService:
+    return ValidationService(ValidationRepository(store.backend))
+
+
 def _validate_server_payload(store: UserStore, user: AuthUser, *, org: str = "", complaint_basis: str = "") -> None:
     server_config = _server_config_for_user(store, user)
     normalized_org = str(org or "").strip()
@@ -258,9 +264,10 @@ async def generate(
         context_snapshot=context_snapshot,
     )
     orchestrator = GenerationOrchestrator(store)
+    bridge_result = None
     if orchestrator.bridge_mode() != "off":
         try:
-            orchestrator.write_generation_bridge(
+            bridge_result = orchestrator.write_generation_bridge(
                 username=user.username,
                 server_code=user.server_code,
                 document_kind="complaint",
@@ -271,6 +278,15 @@ async def generate(
             )
         except Exception:
             if orchestrator.bridge_mode() == "strict":
+                raise
+    if bridge_result is not None:
+        try:
+            _validation_service(store).run_validation(
+                target_type="document_version",
+                target_id=int(bridge_result.document_version_id),
+            )
+        except Exception:
+            if str(os.getenv("OGP_VALIDATION_GENERATION_STRICT", "0") or "").strip() in {"1", "true", "yes", "on"}:
                 raise
     metrics_store.log_event(
         event_type="complaint_generated",
@@ -604,6 +620,26 @@ async def law_qa_test(
         path="/api/ai/law-qa-test",
         meta=ai_service.build_law_qa_metrics_meta(payload=payload, result=result, used_sources=result.used_sources),
     )
+    try:
+        validation_repo = ValidationRepository(store.backend)
+        conn = store.backend.connect()
+        user_row = conn.execute("SELECT id FROM users WHERE username = %s", (user.username,)).fetchone()
+        conn.close()
+        if user_row is not None:
+            qa_run = validation_repo.create_law_qa_run(
+                server_id=effective_server_code,
+                user_id=int(user_row["id"]),
+                question=payload.question,
+                answer_text=result.text,
+                used_sources=list(result.used_sources),
+                selected_norms=list(result.selected_norms),
+                metadata={"generation_id": result.generation_id, "legacy_endpoint": "/api/ai/law-qa-test"},
+            )
+            ValidationService(validation_repo).run_validation(target_type="law_qa_run", target_id=int(qa_run["id"]))
+    except Exception:
+        if str(os.getenv("OGP_VALIDATION_LAW_QA_STRICT", "0") or "").strip() in {"1", "true", "yes", "on"}:
+            raise
+
     return LawQaResponse(
         text=result.text,
         generation_id=result.generation_id,

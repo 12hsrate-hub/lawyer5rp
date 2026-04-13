@@ -280,6 +280,48 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual([item["version_number"] for item in versions], [1, 2])
         self.assertTrue(all(item.get("generation_snapshot_id") for item in versions))
 
+    def test_document_version_validation_endpoint_returns_latest_run(self):
+        self._register_verify_and_login("validation_user", "validation_user@example.com")
+        self.client.put(
+            "/api/profile",
+            json={
+                "name": "Rep",
+                "passport": "AA",
+                "address": "Addr",
+                "phone": "1234567",
+                "discord": "disc",
+                "passport_scan_url": "https://example.com/rep",
+            },
+        )
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "appeal_no": "1234",
+                "org": "LSPD",
+                "subject_names": "John Doe",
+                "situation_description": "Описание",
+                "violation_short": "Нарушение",
+                "event_dt": "08.04.2026 14:30",
+                "today_date": "08.04.2026",
+                "victim": {"name": "Victim", "passport": "BB", "address": "Addr", "phone": "7654321", "discord": "victim", "passport_scan_url": "https://example.com/victim"},
+                "contract_url": "https://example.com/contract",
+                "bar_request_url": "",
+                "official_answer_url": "",
+                "mail_notice_url": "",
+                "arrest_record_url": "",
+                "personnel_file_url": "",
+                "video_fix_urls": [],
+                "provided_video_urls": [],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        version_id = max(self.store.repository.backend._state["document_versions"].keys())
+        validation_response = self.client.get(f"/api/document-versions/{version_id}/validation")
+        self.assertEqual(validation_response.status_code, 200)
+        payload = validation_response.json()
+        self.assertEqual(payload["target_type"], "document_version")
+        self.assertEqual(int(payload["target_id"]), int(version_id))
+
     def test_generate_shadow_write_failure_keeps_legacy_response(self):
         self._register_verify_and_login("shadow_user", "shadow_user@example.com")
         self.client.put(
