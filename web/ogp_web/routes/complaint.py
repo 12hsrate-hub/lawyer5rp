@@ -63,6 +63,8 @@ def _normalize_history_items(items: list[dict[str, object]]) -> list[dict[str, o
         created_at = row.get("created_at")
         if isinstance(created_at, datetime):
             row["created_at"] = created_at.isoformat()
+        elif created_at is not None and not isinstance(created_at, str):
+            row["created_at"] = str(created_at)
         normalized.append(row)
     return normalized
 

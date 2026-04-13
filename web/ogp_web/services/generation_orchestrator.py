@@ -261,7 +261,14 @@ class GenerationOrchestrator:
             """,
             (username, safe_limit),
         ).fetchall()
-        return [dict(row) for row in rows if int(row.get("id") or 0) > 0]
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            if int(row.get("id") or 0) <= 0:
+                continue
+            payload = dict(row)
+            payload["created_at"] = str(payload.get("created_at") or "")
+            items.append(payload)
+        return items
 
     def get_snapshot_by_legacy_id(self, *, username: str, legacy_generated_document_id: int) -> dict[str, Any] | None:
         normalized_id = int(legacy_generated_document_id or 0)

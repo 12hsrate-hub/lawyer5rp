@@ -713,7 +713,14 @@ class UserStore:
             """,
             (normalized_username, safe_limit),
         )
-        return [dict(row) for row in rows if int(row.get("id") or 0) > 0]
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            if int(row.get("id") or 0) <= 0:
+                continue
+            payload = dict(row)
+            payload["created_at"] = str(payload.get("created_at") or "")
+            items.append(payload)
+        return items
 
     def get_generated_document_snapshot(self, username: str, document_id: int) -> dict[str, Any] | None:
         normalized_username = _normalize_username(username)
