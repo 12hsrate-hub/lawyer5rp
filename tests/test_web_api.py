@@ -24,6 +24,7 @@ from ogp_web.app import create_app
 from ogp_web.db.backends.sqlite import SQLiteBackend
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
+from ogp_web.routes import admin as admin_route
 from ogp_web.routes import complaint as complaint_route
 from ogp_web.routes import exam_import as exam_import_route
 from ogp_web.services import ai_service
@@ -957,6 +958,64 @@ class WebApiTests(unittest.TestCase):
         self.assertTrue(payload["policy_actions"])
         self.assertTrue(any(item["meta"]["generation_id"] == "gen_admin_1" for item in payload["generations"]))
         self.assertTrue(any(item["meta"]["generation_id"] == "gen_admin_1" for item in payload["feedback"]))
+
+    def test_admin_ai_pipeline_cost_tables_tolerate_dirty_telemetry(self):
+        generations = [
+            {"meta": {"model": "gpt-5.4-mini", "flow": "law_qa", "estimated_cost_usd": "n/a", "total_tokens": "oops"}},
+            {"meta": {"model": "gpt-5.4", "flow": "suggest", "estimated_cost_usd": "0.125", "total_tokens": "42"}},
+        ]
+
+        payload = admin_route._build_ai_pipeline_cost_tables(generations)
+
+        self.assertEqual(payload["by_model"][0]["model"], "gpt-5.4")
+        self.assertEqual(payload["by_model"][0]["estimated_cost_total_usd"], 0.125)
+        self.assertEqual(payload["by_model"][1]["model"], "gpt-5.4-mini")
+        self.assertEqual(payload["by_model"][1]["estimated_cost_total_usd"], 0.0)
+        self.assertEqual(payload["by_model"][1]["total_tokens"], 0)
+
+    def test_admin_ai_pipeline_quality_summary_does_not_count_cache_as_fallback(self):
+        generations = [
+            {"meta": {"attempt_path": "cache", "guard_status": "pass"}},
+            {"meta": {"attempt_path": "direct_after_proxy", "guard_status": "warn"}},
+            {"meta": {"context_compacted": True, "guard_status": "pass"}},
+        ]
+
+        payload = admin_route._build_ai_pipeline_quality_summary(generations=generations, feedback=[])
+
+        self.assertEqual(payload["generation_samples"], 3)
+        self.assertEqual(payload["fallback_rate"], 66.67)
+        self.assertEqual(payload["guard_warn_rate"], 33.33)
+
+    def test_admin_ai_pipeline_recent_filter_excludes_old_rows_from_flow_summary(self):
+        recent_generation = {
+            "created_at": "2026-04-13T10:00:00+00:00",
+            "meta": {
+                "model": "gpt-5.4-mini",
+                "latency_ms": 100,
+                "estimated_cost_usd": "0.02",
+                "total_tokens": 100,
+            },
+        }
+        old_generation = {
+            "created_at": "2026-04-10T10:00:00+00:00",
+            "meta": {
+                "model": "gpt-5.4",
+                "latency_ms": 9999,
+                "estimated_cost_usd": "n/a",
+                "total_tokens": "bad",
+            },
+        }
+
+        filtered = admin_route._filter_recent_metric_items(
+            [recent_generation, old_generation],
+            since_hours=24,
+        )
+        summary = admin_route._summarize_generation_rows(filtered)
+
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(summary["total_generations"], 1)
+        self.assertEqual(summary["latency_ms_p95"], 100)
+        self.assertEqual(summary["estimated_cost_total_usd"], 0.02)
 
     def test_law_qa_test_page_available_for_tester(self):
         self._register_verify_and_login("tester", "tester_law_page@example.com")
