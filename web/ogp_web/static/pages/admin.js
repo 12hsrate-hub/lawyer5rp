@@ -80,6 +80,14 @@ function renderCatalog(payload) {
   activeCatalogEntity = entityType;
   const items = Array.isArray(payload?.items) ? payload.items : [];
   const audit = Array.isArray(payload?.audit) ? payload.audit : [];
+  const auditByEntityId = new Map();
+  audit.forEach((row) => {
+    const entityId = String(row?.entity_id || "").trim();
+    if (!entityId || auditByEntityId.has(entityId)) {
+      return;
+    }
+    auditByEntityId.set(entityId, row);
+  });
   catalogHost.innerHTML = `
     <div class="admin-section-toolbar">
       <label class="legal-field"><span class="legal-field__label">Entity</span>
@@ -95,13 +103,22 @@ function renderCatalog(payload) {
       <table class="legal-table">
         <thead><tr><th>Title</th><th>State</th><th>Version</th><th>Author</th><th>Actions</th></tr></thead>
         <tbody>
-          ${items
-            .map((item) => `
+          ${items.length
+            ? items
+            .map((item) => {
+              const entityId = String(item.id || "");
+              const auditRow = auditByEntityId.get(entityId) || {};
+              const state = String(item.status || item.state || "draft");
+              const version = item.current_published_version_id ?? item.version_number ?? "—";
+              const author = String(
+                auditRow.author || item.updated_by || item.created_by || "system"
+              );
+              return `
               <tr>
                 <td>${escapeHtml(String(item.title || ""))}</td>
-                <td>${escapeHtml(String(item.state || ""))}</td>
-                <td>${escapeHtml(String(item.versions?.length || 0))}</td>
-                <td>${escapeHtml(String(item.updated_by || ""))}</td>
+                <td>${escapeHtml(state)}</td>
+                <td>${escapeHtml(String(version))}</td>
+                <td>${escapeHtml(author)}</td>
                 <td>
                   <button type="button" class="ghost-button" data-catalog-edit="${escapeHtml(String(item.id || ""))}">Edit</button>
                   <button type="button" class="ghost-button" data-catalog-next="${escapeHtml(String(item.id || ""))}">Next</button>
@@ -109,8 +126,10 @@ function renderCatalog(payload) {
                   <button type="button" class="ghost-button" data-catalog-delete="${escapeHtml(String(item.id || ""))}">Delete</button>
                 </td>
               </tr>
-            `)
-            .join("")}
+            `;
+            })
+            .join("")
+            : '<tr><td colspan="5" class="legal-section__description">Для этого раздела пока нет записей.</td></tr>'}
         </tbody>
       </table>
     </div>
