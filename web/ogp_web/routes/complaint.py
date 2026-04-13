@@ -18,6 +18,8 @@ from ogp_web.schemas import (
     ComplaintDraftResponse,
     ComplaintPayload,
     GenerateResponse,
+    GeneratedDocumentHistoryResponse,
+    GeneratedDocumentSnapshotResponse,
     LawQaPayload,
     LawQaResponse,
     PrincipalScanPayload,
@@ -30,6 +32,7 @@ from ogp_web.server_config import build_permission_set, get_server_config
 from ogp_web.services import ai_service
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
+from ogp_web.services.complaint_service import build_generation_context_snapshot
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.user_store import UserStore
 
@@ -248,7 +251,16 @@ async def generate(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> GenerateResponse:
     _validate_server_payload(store, user, org=payload.org)
+    context_snapshot = build_generation_context_snapshot(store, user, document_kind="complaint")
     bbcode = generate_bbcode_text(store, payload, user)
+    document_id = store.save_generated_document(
+        username=user.username,
+        server_code=user.server_code,
+        document_kind="complaint",
+        payload=payload.model_dump(),
+        result_text=bbcode,
+        context_snapshot=context_snapshot,
+    )
     metrics_store.log_event(
         event_type="complaint_generated",
         username=user.username,
@@ -265,7 +277,7 @@ async def generate(
             "description_chars": len(payload.situation_description or ""),
         },
     )
-    return GenerateResponse(bbcode=bbcode)
+    return GenerateResponse(bbcode=bbcode, generated_document_id=document_id)
 
 
 @router.post("/api/generate-rehab", response_model=GenerateResponse)
@@ -275,7 +287,16 @@ async def generate_rehab(
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> GenerateResponse:
+    context_snapshot = build_generation_context_snapshot(store, user, document_kind="rehab")
     bbcode = generate_rehab_bbcode_text(store, payload, user)
+    document_id = store.save_generated_document(
+        username=user.username,
+        server_code=user.server_code,
+        document_kind="rehab",
+        payload=payload.model_dump(),
+        result_text=bbcode,
+        context_snapshot=context_snapshot,
+    )
     metrics_store.log_event(
         event_type="rehab_generated",
         username=user.username,
@@ -290,7 +311,29 @@ async def generate_rehab(
             "result_chars": len(bbcode),
         },
     )
-    return GenerateResponse(bbcode=bbcode)
+    return GenerateResponse(bbcode=bbcode, generated_document_id=document_id)
+
+
+@router.get("/api/generated-documents/history", response_model=GeneratedDocumentHistoryResponse)
+async def generated_documents_history(
+    limit: int = 30,
+    user: AuthUser = Depends(require_user),
+    store: UserStore = Depends(get_user_store),
+) -> GeneratedDocumentHistoryResponse:
+    items = store.list_generated_documents(user.username, limit=limit)
+    return GeneratedDocumentHistoryResponse(items=items)
+
+
+@router.get("/api/generated-documents/{document_id}/snapshot", response_model=GeneratedDocumentSnapshotResponse)
+async def generated_document_snapshot(
+    document_id: int,
+    user: AuthUser = Depends(require_user),
+    store: UserStore = Depends(get_user_store),
+) -> GeneratedDocumentSnapshotResponse:
+    snapshot = store.get_generated_document_snapshot(user.username, document_id)
+    if snapshot is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Документ не найден."])
+    return GeneratedDocumentSnapshotResponse(**snapshot)
 
 
 @router.post("/api/ai/suggest", response_model=SuggestResponse)

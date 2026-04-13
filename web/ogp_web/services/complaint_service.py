@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import inspect
 from datetime import datetime
 
 from fastapi import HTTPException, status
@@ -21,6 +23,14 @@ from shared.ogp_core import (
     validate_complaint_input,
     validate_rehab_input,
 )
+from ogp_web.server_config import get_server_config
+from ogp_web.services.law_bundle_service import load_law_bundle_meta
+
+
+_TEMPLATE_VERSION_IDS = {
+    "complaint": "complaint_bbcode_v1",
+    "rehab": "rehab_bbcode_v1",
+}
 
 
 def to_domain_model(store: UserStore, payload: ComplaintPayload, user: AuthUser) -> ComplaintInput:
@@ -73,3 +83,45 @@ def generate_rehab_bbcode_text(store: UserStore, payload: RehabPayload, user: Au
     if errors:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=errors)
     return build_rehab_bbcode(rehab)
+
+
+def _short_hash(value: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+
+def _template_hash(document_kind: str) -> str:
+    if document_kind == "rehab":
+        return _short_hash(inspect.getsource(build_rehab_bbcode))
+    return _short_hash(inspect.getsource(build_bbcode))
+
+
+def _validation_rules_version(document_kind: str) -> str:
+    if document_kind == "rehab":
+        source = inspect.getsource(validate_rehab_input)
+    else:
+        source = inspect.getsource(validate_complaint_input)
+    return _short_hash(source)
+
+
+def build_generation_context_snapshot(store: UserStore, user: AuthUser, *, document_kind: str) -> dict[str, object]:
+    server_code = user.server_code or store.get_server_code(user.username)
+    server_config = get_server_config(server_code)
+    bundle_meta = load_law_bundle_meta(server_code, server_config.law_qa_bundle_path)
+    return {
+        "server": {
+            "id": server_config.code,
+            "code": server_config.code,
+        },
+        "template_version": {
+            "id": _TEMPLATE_VERSION_IDS.get(document_kind, "complaint_bbcode_v1"),
+            "hash": _template_hash(document_kind),
+        },
+        "law_version_set": {
+            "hash": str(getattr(bundle_meta, "fingerprint", "") or "").strip(),
+        },
+        "validation_rules_version": _validation_rules_version(document_kind),
+        "feature_flags": sorted(server_config.feature_flags),
+    }
