@@ -1188,6 +1188,29 @@
   gap: 12px;
 }
 
+.admin-synthetic-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.admin-synthetic-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.admin-synthetic-card .ghost-button {
+  margin-top: auto;
+}
+
+.admin-synthetic-card__description {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.45;
+}
+
 .admin-exam-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

@@ -581,11 +581,11 @@ function renderSynthetic(summary) {
     const tone = latest === "pass" ? "success-soft" : latest === "fail" ? "danger-soft" : "muted";
     const isRunning = activeSyntheticSuite === suite;
     return `
-      <article class="legal-status-card">
+      <article class="legal-status-card admin-synthetic-card">
         <span class="legal-status-card__label">${escapeHtml(suite)}</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${renderBadge(latest, tone)}</strong>
         <span class="admin-user-cell__secondary">runs: ${escapeHtml(String(row.runs_total || 0))}, failed: ${escapeHtml(String(row.failed_total || 0))}</span>
-        <span class="admin-user-cell__secondary">${escapeHtml(suiteDescriptions[suite] || "")}</span>
+        <span class="admin-user-cell__secondary admin-synthetic-card__description">${escapeHtml(suiteDescriptions[suite] || "")}</span>
         <button type="button" class="ghost-button" data-synthetic-run="${suite}" ${isRunning ? "disabled" : ""}>${isRunning ? "Запуск..." : "Запустить"}</button>
       </article>
     `;
@@ -603,7 +603,7 @@ function renderSynthetic(summary) {
     </tbody></table></div>`
     : '<p class="legal-section__description">Падений synthetic suite не обнаружено.</p>';
   syntheticHost.innerHTML = `
-    <div class="admin-performance-grid">${cards.join("")}</div>
+    <div class="admin-performance-grid admin-synthetic-grid">${cards.join("")}</div>
     ${failedHtml}
   `;
 }
