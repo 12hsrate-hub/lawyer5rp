@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-SUGGEST_PROMPT_VERSION = "suggest.v31"
+SUGGEST_PROMPT_VERSION = "suggest.v32"
 PRINCIPAL_SCAN_PROMPT_VERSION = "principal_scan.v2"
 EXAM_SCORING_PROMPT_MODE_FULL = "full"
 EXAM_SCORING_PROMPT_MODE_COMPACT = "compact"
@@ -339,6 +339,7 @@ Mention a second validated norm only if it is independently supported by the dra
 Use no more than two directly validated norms in the final paragraph, and treat cross-references as supporting context only unless they are independently validated.
 If a decisive exception or note controls the case, state that rule explicitly in plain language instead of only citing the article number.
 Whenever you mention an article, include the name of the relevant code or law in the same sentence, preferably in the format "статья N (название кодекса или закона)".
+Do not introduce hypothetical sub-cases or extra conditions, such as a special procedure for a state servant, unless that condition is stated in the draft facts or independently validated in pipeline_context.
 """,
             ),
             ("generation_mode", mode_rules),

@@ -185,6 +185,34 @@ def test_policy_router_requires_state_service_trigger_for_article_19() -> None:
     assert context.policy_decision.valid_triggers_count == 0
 
 
+def test_policy_router_requires_bolo_trigger_for_article_39() -> None:
+    context = build_point3_pipeline_context(
+        complainant="Test Principal 2",
+        organization="LSPD",
+        target_person="Test Officer 2",
+        event_datetime="12.04.2026 18:20",
+        draft_text=(
+            "Человека задержали возле банка, провели обыск и изъяли имущество, "
+            "но по адвокатскому запросу запись процессуальных действий так и не была предоставлена."
+        ),
+        retrieval_status="normal_context",
+        retrieval_confidence="high",
+        retrieved_law_context="Источник: https://laws.example/processual\nНорма: Статья 39",
+        selected_norms=(
+            {
+                "source_url": "https://laws.example/processual",
+                "document_title": "Процессуальный кодекс",
+                "article_label": "Статья 39",
+                "excerpt": "Статья 39. Боло-розыск и ориентировки на лицо или транспортное средство.",
+                "score": 95,
+            },
+        ),
+    )
+
+    assert context.policy_decision.mode == MODE_FACTUAL_FALLBACK_EXPANDED
+    assert context.policy_decision.valid_triggers_count == 0
+
+
 def test_policy_router_falls_back_for_personal_conflict_with_only_generic_processual_triggers() -> None:
     context = build_point3_pipeline_context(
         complainant="Test Principal 3",

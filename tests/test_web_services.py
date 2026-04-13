@@ -754,6 +754,75 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(context.selected_norms[0]["article_label"], "Статья 18")
         self.assertIn("Maze Bank Arena", context.selected_norms[0]["excerpt"])
 
+    def test_build_suggest_law_context_penalizes_state_service_and_bolo_noise_for_missing_materials_case(self):
+        original_get_server_config = ai_service.get_server_config
+        original_retrieve = ai_service._retrieve_law_context
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ()
+            law_qa_bundle_path = "bundle.json"
+
+        article_19 = ai_service._LawChunk(
+            url="https://laws.example/processual-19",
+            document_title="Процессуальный кодекс",
+            article_label="Статья 19",
+            text="Статья 19. Порядок уведомления при задержании сотрудников государственной службы.",
+        )
+        article_39 = ai_service._LawChunk(
+            url="https://laws.example/processual-39",
+            document_title="Процессуальный кодекс",
+            article_label="Статья 39",
+            text="Статья 39. Боло-розыск и ориентировки.",
+        )
+        article_29 = ai_service._LawChunk(
+            url="https://laws.example/processual-29",
+            document_title="Процессуальный кодекс",
+            article_label="Статья 29",
+            text="Статья 29. Личный обыск при задержании и аресте.",
+        )
+
+        retrieval_result = type(
+            "RetrievalResult",
+            (),
+            {
+                "indexed_chunk_count": 3,
+                "confidence": "high",
+                "profile": "suggest",
+                "bundle_health": type(
+                    "BundleHealth",
+                    (),
+                    {"status": "ready", "generated_at": "2026-04-12T00:00:00Z", "fingerprint": "bundle-search-noise"},
+                )(),
+                "matches": [
+                    type("Match", (), {"score": 281, "excerpt": article_19.text, "chunk": article_19})(),
+                    type("Match", (), {"score": 264, "excerpt": article_39.text, "chunk": article_39})(),
+                    type("Match", (), {"score": 250, "excerpt": article_29.text, "chunk": article_29})(),
+                ],
+            },
+        )()
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service._retrieve_law_context = lambda **kwargs: retrieval_result
+        try:
+            context = ai_service._build_suggest_law_context(
+                server_code="blackberry",
+                question=(
+                    "missing_materials Отсутствие записи процессуальных действий по адвокатскому запросу "
+                    "Человека задержали, провели обыск и изъяли имущество."
+                ),
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service._retrieve_law_context = original_retrieve
+
+        self.assertGreaterEqual(context.selected_norms_count, 1)
+        self.assertEqual(context.selected_norms[0]["article_label"], "Статья 29")
+        labels = [item["article_label"] for item in context.selected_norms]
+        self.assertNotIn("Статья 19", labels[:1])
+        self.assertNotIn("Статья 39", labels[:1])
+
     def test_filtered_prompt_law_context_limits_grounded_norms_to_two_and_keeps_qualifiers(self):
         selected_norms = (
             {
@@ -1999,6 +2068,49 @@ https://laws.example/article
             retrieval_confidence="high",
         )
         self.assertIn("не добавляй обязанности", prompt)
+
+    def test_law_qa_prefers_explicit_admin_code_over_processual_noise_for_short_question(self):
+        question = "В течении какого срока допустимо привлечь правонарушителя к ответственности по Административному кодексу?"
+        chunks = [
+            ai_service._LawChunk(
+                url="https://laws.example/admin",
+                document_title="Административный кодекс",
+                article_label="Статья 12. Срок рассмотрения административного материала",
+                text="Статья 12. Административный кодекс. Срок рассмотрения административного материала составляет 48 часов.",
+            ),
+            ai_service._LawChunk(
+                url="https://laws.example/processual",
+                document_title="Процессуальный кодекс",
+                article_label="Статья 37. Срок задержания",
+                text="Статья 37. Срок задержания и иные процессуальные сроки.",
+            ),
+            ai_service._LawChunk(
+                url="https://laws.example/admin-old",
+                document_title="Административный кодекс",
+                article_label="Статья 10",
+                text="Статья 10. Норма утратила силу.",
+            ),
+        ]
+
+        selected, confidence = ai_service._select_law_qa_chunks(chunks, question)
+
+        self.assertIn(confidence, {"medium", "high"})
+        self.assertEqual(selected[0].document_title, "Административный кодекс")
+        self.assertNotIn("утратила силу", selected[0].text.lower())
+
+    def test_law_qa_prompt_marks_ambiguous_dopros_scope(self):
+        prompt = ai_service._build_law_qa_prompt(
+            server_name="BlackBerry",
+            server_code="blackberry",
+            model_name="gpt-5.4",
+            question="Может ли адвокат присутствовать на допросе?",
+            max_answer_chars=2000,
+            context_blocks=["[Документ: Закон]\n[Норма: Статья 4]\nТекст"],
+            retrieval_confidence="high",
+        )
+
+        self.assertIn("потенциально неоднозначный процессуальный термин", prompt)
+        self.assertIn("не отвечай безусловным 'да' или 'нет'", prompt)
 
     def test_law_qa_prompt_warns_about_false_premise_on_low_confidence(self):
         prompt = ai_service._build_law_qa_prompt(

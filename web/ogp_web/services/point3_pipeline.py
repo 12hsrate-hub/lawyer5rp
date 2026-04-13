@@ -120,6 +120,7 @@ _STATE_SERVICE_TERMS = (
     "удостоверен",
 )
 _SEARCH_ACTION_TERMS = ("обыск", "досмотр", "личный обыск", "изъят", "изъятие", "изъяли")
+_BOLO_SEARCH_TERMS = ("боло", "розыск", "ориентиров")
 _PERSONAL_CONFLICT_TERMS = ("личный конфликт", "личная неприязнь", "конфликт", "неприязн")
 _CODE_OR_LAW_MARKERS = ("кодекс", "закон")
 _PROTECTED_TERM_GROUPS: dict[str, tuple[str, ...]] = {
@@ -1164,6 +1165,10 @@ def _has_direct_fact_trigger(
     if group_key == "processual_code" and primary_article_number == "29":
         combined_text = " ".join((normalized_input.draft_text, normalized_input.applicability_notes, fact_text))
         return _contains_any_substring(combined_text, _SEARCH_ACTION_TERMS)
+
+    if group_key == "processual_code" and primary_article_number == "39":
+        combined_text = " ".join((normalized_input.draft_text, normalized_input.applicability_notes, fact_text))
+        return _contains_any_substring(combined_text, _BOLO_SEARCH_TERMS)
 
     if group_key == "advocate_law":
         combined_text = " ".join((normalized_input.draft_text, normalized_input.applicability_notes, fact_text))

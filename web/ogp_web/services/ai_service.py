@@ -56,7 +56,7 @@ from shared.ogp_ai import (
 from shared.ogp_ai_prompts import SUGGEST_PROMPT_VERSION, build_suggest_prompt
 
 LOGGER = logging.getLogger(__name__)
-LAW_QA_PROMPT_VERSION = "law_qa.v4"
+LAW_QA_PROMPT_VERSION = "law_qa.v5"
 
 
 _LawChunk = LawChunk
@@ -361,6 +361,19 @@ LAW_QA_FOCUS_IGNORED_TERMS = {
     "может",
     "имеет",
 }
+LAW_QA_SHORT_QUERY_MAX_KEYWORDS = 7
+LAW_QA_AMBIGUOUS_SCOPE_TERMS = ("допрос",)
+LAW_QA_DOPROS_DISAMBIGUATION_TERMS = ("свидетел", "свидетеля", "свидетель", "судебн", "подозреваем", "обвиняем", "задержан")
+LAW_QA_OUTDATED_MARKERS = ("утратила силу", "утратил силу", "не действует")
+LAW_QA_DOCUMENT_GROUP_PATTERNS: dict[str, tuple[str, ...]] = {
+    "processual_code": ("процессуальн", "процессуальный кодекс"),
+    "criminal_code": ("уголовн", "уголовный кодекс"),
+    "administrative_code": ("административн", "административный кодекс"),
+    "advocate_law": ("адвокатуре", "адвокатской деятельности"),
+    "judicial_system_law": ("судебной системе и судопроизводстве", "судопроизводств"),
+    "fib_law": ("fib", "фиб", "федерального бюро расследований"),
+    "labor_code": ("трудовой кодекс", "трудов"),
+}
 
 def _humanize_ai_exception(exc: Exception) -> str:
     raw = str(exc).strip() or exc.__class__.__name__
@@ -617,6 +630,80 @@ def _extract_law_qa_focus_subject_terms(question: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(subject_terms))
 
 
+def _law_qa_document_group_key(document_title: str) -> str:
+    normalized_title = _normalize_law_text(document_title)
+    if not normalized_title:
+        return ""
+    for group_key, patterns in LAW_QA_DOCUMENT_GROUP_PATTERNS.items():
+        if any(pattern in normalized_title for pattern in patterns):
+            return group_key
+    return ""
+
+
+def _detect_law_qa_document_focus(question: str) -> tuple[str, ...]:
+    normalized_question = _normalize_law_text(question)
+    tokens = set(_tokenize_normalized_text(normalized_question))
+    groups: list[str] = []
+
+    if "адвокат" in normalized_question:
+        groups.append("advocate_law")
+    if "ак" in tokens or "административн" in normalized_question:
+        groups.append("administrative_code")
+    if "ук" in tokens or "уголовн" in normalized_question or "преступ" in normalized_question:
+        groups.append("criminal_code")
+    if "пк" in tokens or any(
+        marker in normalized_question
+        for marker in ("задерж", "обыск", "досмотр", "арест", "процессуальн", "следств", "допрос")
+    ):
+        groups.append("processual_code")
+    if any(
+        marker in normalized_question
+        for marker in ("суд", "заседан", "ходатайств", "апелляц", "кассац", "свидетел", "допрос")
+    ):
+        groups.append("judicial_system_law")
+    if "fib" in normalized_question or "фиб" in normalized_question:
+        groups.append("fib_law")
+    return tuple(dict.fromkeys(groups))
+
+
+def _law_qa_document_adjustment(*, chunk: _LawChunk, question: str, normalized_text: str) -> int:
+    group_key = _law_qa_document_group_key(chunk.document_title)
+    focus_groups = _detect_law_qa_document_focus(question)
+    score = 0
+
+    if any(marker in normalized_text for marker in LAW_QA_OUTDATED_MARKERS):
+        score -= 120
+
+    if not group_key:
+        return score
+
+    if focus_groups:
+        if group_key in focus_groups:
+            score += 26
+            if len(focus_groups) == 1:
+                score += 10
+        elif group_key == "labor_code":
+            score -= 80
+        elif group_key == "judicial_system_law" and "judicial_system_law" not in focus_groups:
+            score -= 42
+        else:
+            score -= 26 if len(focus_groups) > 1 else 40
+    elif group_key == "labor_code":
+        score -= 36
+    return score
+
+
+def _is_short_law_qa_question(question: str) -> bool:
+    return len(_extract_keywords(question)) <= LAW_QA_SHORT_QUERY_MAX_KEYWORDS
+
+
+def _law_qa_requires_scope_clarification(question: str) -> bool:
+    normalized_question = _normalize_law_text(question)
+    if not any(term in normalized_question for term in LAW_QA_AMBIGUOUS_SCOPE_TERMS):
+        return False
+    return not any(term in normalized_question for term in LAW_QA_DOPROS_DISAMBIGUATION_TERMS)
+
+
 def _law_qa_focus_adjustment(
     *,
     chunk: _LawChunk,
@@ -750,6 +837,7 @@ def _score_law_chunk(chunk: _LawChunk, question: str) -> int:
     ) = _chunk_search_payload(chunk)
     terms = _expand_question_terms(question)
     score = 0
+    score += _law_qa_document_adjustment(chunk=chunk, question=question, normalized_text=normalized_text)
 
     code_hint_tokens = {
         token
@@ -850,6 +938,7 @@ def _cheap_score_law_chunk(chunk: _LawChunk, question: str) -> int:
     ) = _chunk_search_payload(chunk)
     terms = _expand_question_terms(question)
     score = 0
+    score += _law_qa_document_adjustment(chunk=chunk, question=question, normalized_text=normalized_text)
 
     code_hint_tokens = {
         token
@@ -935,10 +1024,13 @@ def _classify_law_qa_confidence(scores: list[int], question: str) -> str:
     nonzero = sum(1 for score in scores if score > 0)
     terms = _expand_question_terms(question)
     article_numbers = _extract_article_numbers(question)
+    focus_groups = _detect_law_qa_document_focus(question)
     if article_numbers and top >= 40:
         return "high"
     if top >= 48 and nonzero >= 3:
         return "high"
+    if focus_groups and _is_short_law_qa_question(question) and top >= 18 and nonzero >= 1:
+        return "medium"
     if top >= 26 and (nonzero >= 2 or len(terms) <= 4):
         return "medium"
     return "low"
@@ -951,6 +1043,7 @@ def _select_law_qa_chunks(chunks: list[_LawChunk], question: str, profile: str =
     confidence = _classify_law_qa_confidence([score for _, score in ranked], question)
     question_focus = _detect_law_qa_focus(question)
     short_focus_question = bool(question_focus) and len(_extract_keywords(question)) <= 4
+    short_question = _is_short_law_qa_question(question)
     if str(profile or "law_qa").strip().lower() == "suggest":
         target_count = {"high": 8, "medium": 7, "low": 6}.get(confidence, 7)
         fallback_count = 4
@@ -959,6 +1052,8 @@ def _select_law_qa_chunks(chunks: list[_LawChunk], question: str, profile: str =
         fallback_count = 6
         if short_focus_question:
             target_count = min(target_count, {"high": 3, "medium": 4, "low": 5}.get(confidence, 4))
+        elif short_question:
+            target_count = min(target_count, {"high": 4, "medium": 5, "low": 6}.get(confidence, 5))
     selected = positive[:target_count] or [item for item, _ in ranked[:fallback_count]]
     return selected, confidence
 
@@ -1099,6 +1194,14 @@ def _build_law_qa_prompt(
         "duties_only": "Если вопрос задан только об обязанностях, не добавляй права и иные соседние нормы, если они прямо не нужны для ответа.",
     }.get(_detect_law_qa_focus(question), "")
     focus_guidance_block = f"9. {focus_guidance}\n\n" if focus_guidance else "\n"
+    ambiguity_guidance = (
+        "10. Вопрос содержит потенциально неоднозначный процессуальный термин. "
+        "Сначала кратко обозначь, какой именно контекст прямо подтверждается нормами, и не отвечай безусловным 'да' или 'нет', "
+        "если для ответа пришлось бы додумывать недостающий процессуальный контекст."
+        if _law_qa_requires_scope_clarification(question)
+        else ""
+    )
+    ambiguity_guidance_block = f"{ambiguity_guidance}\n\n" if ambiguity_guidance else ""
     return (
         f"Ты юридический ассистент игрового сервера {server_name} ({server_code}).\n"
         "Отвечай только по переданным внутриигровым нормам.\n\n"
@@ -1112,6 +1215,7 @@ def _build_law_qa_prompt(
         "7. Ответ должен быть точным, прикладным, без воды и не длиннее заданного лимита.\n"
         f"8. {confidence_guidance}\n"
         + focus_guidance_block
+        + ambiguity_guidance_block
         + "Формат ответа:\n"
         "- Сначала дай прямой вывод по вопросу.\n"
         "- Затем коротко приведи правовое основание: статья, кодекс или закон и смысл нормы.\n"
@@ -1454,6 +1558,15 @@ _SUGGEST_ENTERTAINMENT_TERMS = (
 )
 _SUGGEST_TICKET_SANCTION_TERMS = ("штраф", "тикет")
 _SUGGEST_GENERIC_SECONDARY_PROCESSUAL_ARTICLES = {"20", "39", "59"}
+_SUGGEST_STATE_SERVICE_TERMS = (
+    "государственной службы",
+    "государственный служащий",
+    "госслужащ",
+    "прокурор",
+    "руководств",
+    "начальств",
+)
+_SUGGEST_BOLO_TERMS = ("боло", "розыск", "ориентиров")
 
 
 _SUGGEST_QUALIFIER_PATTERNS = (
@@ -1627,9 +1740,26 @@ def _suggest_norm_targets_ticket_sanction(document_title: str, article_label: st
     return any(term in combined for term in _SUGGEST_TICKET_SANCTION_TERMS)
 
 
+def _suggest_contains_any(text: str, terms: tuple[str, ...]) -> bool:
+    normalized_text = _normalize_suggest_inline(text).lower()
+    return any(term in normalized_text for term in terms)
+
+
+def _suggest_norm_targets_state_service_procedure(document_title: str, article_label: str, excerpt: str) -> bool:
+    combined = _normalize_suggest_inline(" ".join((document_title, article_label, excerpt))).lower()
+    return "статья 19" in combined and _suggest_contains_any(combined, _SUGGEST_STATE_SERVICE_TERMS)
+
+
+def _suggest_norm_targets_bolo_procedure(document_title: str, article_label: str, excerpt: str) -> bool:
+    combined = _normalize_suggest_inline(" ".join((document_title, article_label, excerpt))).lower()
+    return "статья 39" in combined and _suggest_contains_any(combined, _SUGGEST_BOLO_TERMS)
+
+
 def _rerank_suggest_matches(matches, query: str):
     reranked = []
     mask_exception_case = _suggest_is_mask_exception_case(query)
+    query_has_state_service_terms = _suggest_contains_any(query, _SUGGEST_STATE_SERVICE_TERMS)
+    query_has_bolo_terms = _suggest_contains_any(query, _SUGGEST_BOLO_TERMS)
     for match in matches:
         title = str(getattr(getattr(match, "chunk", None), "document_title", "") or "")
         article_label = str(getattr(getattr(match, "chunk", None), "article_label", "") or "")
@@ -1637,6 +1767,10 @@ def _rerank_suggest_matches(matches, query: str):
         adjusted_score = int(getattr(match, "score", 0) or 0) + _suggest_document_priority_weight(title)
         if not _suggest_document_is_applicable(title, query):
             adjusted_score -= 80
+        if not query_has_state_service_terms and _suggest_norm_targets_state_service_procedure(title, article_label, excerpt):
+            adjusted_score -= 70
+        if not query_has_bolo_terms and _suggest_norm_targets_bolo_procedure(title, article_label, excerpt):
+            adjusted_score -= 70
         if mask_exception_case:
             if _suggest_norm_targets_mask_exception(title, article_label, excerpt):
                 adjusted_score += 45
