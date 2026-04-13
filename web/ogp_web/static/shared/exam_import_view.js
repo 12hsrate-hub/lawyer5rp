@@ -157,6 +157,14 @@ window.OGPExamImportView = {
           <span class="legal-status-card__label">Слабый уровень</span>
           <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(poorCount))}</strong>
         </article>
+        ${allowDelete
+          ? `<article class="legal-status-card">
+              <span class="legal-status-card__label">Действие со строкой</span>
+              <strong class="legal-status-card__value legal-status-card__value--small">
+                <button type="button" class="ghost-button exam-score-reset-btn" data-source-row="${escapeHtml(sourceRow)}">Очистить все оценки</button>
+              </strong>
+            </article>`
+          : ""}
       </div>
       <div class="legal-table-shell exam-detail-shell">
         <table class="legal-table">
@@ -169,7 +177,6 @@ window.OGPExamImportView = {
               <th>Ключевые критерии</th>
               <th>Балл</th>
               <th>Пояснение</th>
-              ${allowDelete ? "<th>Действие</th>" : ""}
             </tr>
           </thead>
           <tbody>
@@ -184,9 +191,6 @@ window.OGPExamImportView = {
                     <td>${escapeHtml(Array.isArray(item.key_points) && item.key_points.length ? item.key_points.join("; ") : "—")}</td>
                     <td>${this.renderScoreBadge(item.score, escapeHtml)}</td>
                     <td>${escapeHtml(item.rationale || "—")}</td>
-                    ${allowDelete
-                      ? `<td><button type="button" class="ghost-button exam-score-delete-btn" data-source-row="${escapeHtml(sourceRow)}" data-column="${escapeHtml(item.column || "")}">Удалить</button></td>`
-                      : ""}
                   </tr>
                 `,
               )

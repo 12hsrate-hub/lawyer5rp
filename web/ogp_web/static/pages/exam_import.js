@@ -553,33 +553,32 @@ async function runRowScoring(sourceRow) {
   }
 }
 
-async function deleteScore(sourceRow, column) {
+async function clearRowScores(sourceRow) {
   const normalizedSourceRow = Number(sourceRow);
-  const normalizedColumn = String(column || "").trim().toUpperCase();
-  if (!Number.isFinite(normalizedSourceRow) || normalizedSourceRow <= 0 || !normalizedColumn) {
-    showErrors("Не удалось определить оценку для удаления.");
+  if (!Number.isFinite(normalizedSourceRow) || normalizedSourceRow <= 0) {
+    showErrors("Не удалось определить строку для очистки оценок.");
     return;
   }
 
-  const shouldDelete = window.confirm(`Удалить оценку по столбцу ${normalizedColumn} в строке ${normalizedSourceRow}?`);
+  const shouldDelete = window.confirm(`Очистить все оценки в строке ${normalizedSourceRow}?`);
   if (!shouldDelete) {
     return;
   }
 
   clearErrors();
   showMessage("");
-  setBusy(true, `Удаляю оценку ${normalizedColumn} в строке ${normalizedSourceRow}...`);
+  setBusy(true, `Очищаю оценки в строке ${normalizedSourceRow}...`);
   try {
     const payload = await requestJson(
-      `/api/exam-import/rows/${normalizedSourceRow}/scores/${encodeURIComponent(normalizedColumn)}`,
-      "Не удалось удалить выбранную оценку.",
+      `/api/exam-import/rows/${normalizedSourceRow}/scores`,
+      "Не удалось очистить оценки строки.",
       { method: "DELETE" },
     );
     updateRowAverage(normalizedSourceRow, ExamView.formatAverage(payload));
     renderDetail(payload);
-    showMessage(`Оценка ${normalizedColumn} в строке ${normalizedSourceRow} удалена.`);
+    showMessage(`Оценки в строке ${normalizedSourceRow} очищены.`);
   } catch (error) {
-    showErrors(formatErrorMessage(error, "Не удалось удалить выбранную оценку."));
+    showErrors(formatErrorMessage(error, "Не удалось очистить оценки строки."));
   } finally {
     setBusy(false);
   }
@@ -732,11 +731,11 @@ detailScore?.addEventListener("click", (event) => {
   if (!target) {
     return;
   }
-  const deleteButton = target.closest(".exam-score-delete-btn");
-  if (!deleteButton) {
+  const resetButton = target.closest(".exam-score-reset-btn");
+  if (!resetButton) {
     return;
   }
-  deleteScore(deleteButton.dataset.sourceRow, deleteButton.dataset.column);
+  clearRowScores(resetButton.dataset.sourceRow);
 });
 
 detailModal.bind(document.getElementById("exam-detail-close"), document.getElementById("exam-detail-ok"));

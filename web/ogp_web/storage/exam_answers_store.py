@@ -961,6 +961,31 @@ class ExamAnswersStore:
             )
             conn.commit()
 
+    def clear_scores_for_row(self, source_row: int) -> bool:
+        normalized_source_row = int(source_row or 0)
+        if normalized_source_row <= 0:
+            return False
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                f"""
+                UPDATE exam_answers
+                SET question_g_score = NULL,
+                    question_g_rationale = NULL,
+                    question_g_scored_at = NULL,
+                    exam_scores_json = NULL,
+                    exam_scores_scored_at = NULL,
+                    average_score = NULL,
+                    average_score_answer_count = NULL,
+                    average_score_scored_at = NULL,
+                    needs_rescore = {self._placeholder()},
+                    updated_at = {self._current_timestamp_sql()}
+                WHERE source_row = {self._placeholder()}
+                """,
+                (self._bool_true_value(), normalized_source_row),
+            )
+            conn.commit()
+        return int(getattr(row, "rowcount", 0) or 0) > 0
+
     def delete_exam_score(self, source_row: int, column: str) -> bool:
         normalized_column = str(column or "").strip().upper()
         if int(source_row or 0) <= 0 or not normalized_column:

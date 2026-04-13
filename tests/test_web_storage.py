@@ -1018,6 +1018,8 @@ class FakeExamAnswersConnection:
             return FakeCursor(rowcount=1 if row else 0)
         if normalized.startswith("UPDATE exam_answers SET exam_scores_json = %s::jsonb, exam_scores_scored_at = NOW(), average_score = %s, average_score_answer_count = %s, average_score_scored_at = NOW(), needs_rescore = %s WHERE source_row = %s"):
             return self._save_scores(params)
+        if normalized.startswith("UPDATE exam_answers SET question_g_score = NULL, question_g_rationale = NULL, question_g_scored_at = NULL, exam_scores_json = NULL, exam_scores_scored_at = NULL, average_score = NULL, average_score_answer_count = NULL, average_score_scored_at = NULL, needs_rescore = %s, updated_at = NOW() WHERE source_row = %s"):
+            return self._reset_scores_for_row(params)
         if normalized.startswith("UPDATE exam_answers SET question_g_score = NULL, question_g_rationale = NULL, question_g_scored_at = NULL, exam_scores_json = NULL, exam_scores_scored_at = NULL, average_score = NULL, average_score_answer_count = NULL, average_score_scored_at = NULL, needs_rescore = %s, updated_at = NOW() WHERE source_row > 0 AND "):
             return self._reset_scores_by_user(normalized, params)
 
@@ -1214,6 +1216,23 @@ class FakeExamAnswersConnection:
             row["needs_rescore"] = needs_rescore
             row["updated_at"] = self._now()
         return FakeCursor(rowcount=len(matched_rows))
+
+    def _reset_scores_for_row(self, params):
+        needs_rescore, source_row = params
+        row = self._find_by_source_row(int(source_row))
+        if row is None:
+            return FakeCursor(rowcount=0)
+        row["question_g_score"] = None
+        row["question_g_rationale"] = None
+        row["question_g_scored_at"] = None
+        row["exam_scores_json"] = None
+        row["exam_scores_scored_at"] = None
+        row["average_score"] = None
+        row["average_score_answer_count"] = None
+        row["average_score_scored_at"] = None
+        row["needs_rescore"] = bool(needs_rescore)
+        row["updated_at"] = self._now()
+        return FakeCursor(rowcount=1)
 
 
 class FakeExamImportTasksPostgresBackend:
