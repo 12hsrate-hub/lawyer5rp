@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from difflib import SequenceMatcher
 from functools import lru_cache
 import logging
@@ -44,6 +43,20 @@ from ogp_web.services.point3_pipeline import (
     load_policy_thresholds,
 )
 from ogp_web.services.law_retrieval_service import retrieve_law_context, unique_sources
+from ogp_web.services.ai_pipeline.guardrails import clean_suggest_text as _pipeline_clean_suggest_text, truncate_suggest_value as _pipeline_truncate_suggest_value
+from ogp_web.services.ai_pipeline.interfaces import LawQaAnswerResult, SuggestContextBuildResult, SuggestTextResult
+from ogp_web.services.ai_pipeline.orchestration import (
+    LawQaOrchestrationDeps,
+    PrincipalScanDeps,
+    SuggestOrchestrationDeps,
+    run_law_qa,
+    run_principal_scan,
+    run_suggest,
+)
+from ogp_web.services.ai_pipeline.telemetry_meta import (
+    build_law_qa_metrics_meta as _pipeline_build_law_qa_metrics_meta,
+    build_suggest_metrics_meta as _pipeline_build_suggest_metrics_meta,
+)
 from shared.ogp_ai import (
     AiUsageSummary,
     OPENAI_TEXT_MODEL,
@@ -61,74 +74,6 @@ LAW_QA_PROMPT_VERSION = "law_qa.v5"
 
 
 _LawChunk = LawChunk
-
-
-@dataclass(frozen=True)
-class LawQaAnswerResult:
-    text: str
-    generation_id: str
-    used_sources: list[str]
-    indexed_documents: int
-    retrieval_confidence: str
-    retrieval_profile: str
-    guard_status: str
-    contract_version: str
-    bundle_status: str
-    bundle_generated_at: str
-    bundle_fingerprint: str
-    warnings: list[str]
-    shadow: dict[str, object]
-    selected_norms: list[dict[str, object]]
-    telemetry: dict[str, object]
-    budget_status: str
-    budget_warnings: list[str]
-    budget_policy: dict[str, object]
-
-
-@dataclass(frozen=True)
-class SuggestTextResult:
-    text: str
-    generation_id: str
-    guard_status: str
-    contract_version: str
-    warnings: list[str]
-    shadow: dict[str, object]
-    telemetry: dict[str, object]
-    budget_status: str
-    budget_warnings: list[str]
-    budget_policy: dict[str, object]
-    retrieval_ms: int
-    openai_ms: int
-    total_suggest_ms: int
-    prompt_mode: str
-    retrieval_confidence: str
-    retrieval_context_mode: str
-    retrieval_profile: str
-    bundle_status: str
-    bundle_generated_at: str
-    bundle_fingerprint: str
-    selected_norms_count: int
-    policy_mode: str = ""
-    policy_reason: str = ""
-    valid_triggers_count: int = 0
-    avg_trigger_confidence: float = 0.0
-    remediation_retries: int = 0
-    safe_fallback_used: bool = False
-    input_warning_codes: tuple[str, ...] = ()
-    protected_terms: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class SuggestContextBuildResult:
-    context_text: str
-    retrieval_confidence: str
-    retrieval_context_mode: str
-    retrieval_profile: str
-    bundle_status: str
-    bundle_generated_at: str
-    bundle_fingerprint: str
-    selected_norms_count: int
-    selected_norms: tuple[dict[str, object], ...] = ()
 
 
 def normalize_ai_feedback_issues(raw_issues: list[str] | tuple[str, ...]) -> tuple[str, ...]:
@@ -1546,11 +1491,23 @@ def _suggest_metrics_meta(
 
 
 def build_law_qa_metrics_meta(*, payload: LawQaPayload, result: LawQaAnswerResult, used_sources: list[str]) -> dict[str, object]:
-    return _law_qa_metrics_meta(payload=payload, result=result, used_sources=used_sources)
+    return _pipeline_build_law_qa_metrics_meta(
+        payload=payload,
+        result=result,
+        used_sources=used_sources,
+        short_text_hash=short_text_hash,
+        mask_text_preview=mask_text_preview,
+    )
 
 
 def build_suggest_metrics_meta(*, payload: SuggestPayload, result: SuggestTextResult, server_code: str) -> dict[str, object]:
-    return _suggest_metrics_meta(payload=payload, result=result, server_code=server_code)
+    return _pipeline_build_suggest_metrics_meta(
+        payload=payload,
+        result=result,
+        server_code=server_code,
+        short_text_hash=short_text_hash,
+        mask_text_preview=mask_text_preview,
+    )
 
 
 def _normalize_suggest_inline(value: object) -> str:
@@ -2131,53 +2088,14 @@ def _build_filtered_prompt_law_context(
 
 
 def _clean_suggest_text(text: str) -> str:
-    normalized = str(text or "").replace("\r\n", "\n").strip()
-    if not normalized:
-        return ""
-
-    normalized = re.sub(r"```(?:[\w+-]+)?\s*([\s\S]*?)```", lambda match: match.group(1).strip(), normalized)
-    normalized = re.sub(
-        r"\n?\s*(?:источники|sources)\s*:\s*[\s\S]*$",
-        "",
-        normalized,
-        flags=re.IGNORECASE,
-    )
-
-    cleaned_lines: list[str] = []
-    for raw_line in normalized.splitlines():
-        line = raw_line.strip()
-        if not line:
-            if cleaned_lines and cleaned_lines[-1] != "":
-                cleaned_lines.append("")
-            continue
-        if re.fullmatch(
-            r"(?i)(?:пункт\s*3|описательная\s+часть\s+жалобы|текст\s+жалобы|вариант\s+текста|готовый\s+текст)",
-            line,
-        ):
-            continue
-        if re.match(r"(?i)^(?:вот|ниже|готовый|обновленный|переписанный)\b.*(?:текст|вариант|пункт\s*3)", line):
-            continue
-        line = re.sub(r"^[-*•]\s+", "", line)
-        line = re.sub(r"^\d+\.\s+", "", line)
-        cleaned_lines.append(line)
-
-    cleaned = "\n".join(cleaned_lines)
-    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-    return cleaned.strip()
+    return _pipeline_clean_suggest_text(text)
 
 
 def _truncate_suggest_value(value: str, *, max_chars: int) -> str:
-    normalized = str(value or "").strip()
-    if max_chars <= 0 or len(normalized) <= max_chars:
-        return normalized
-    head = normalized[: max_chars + 1]
-    split_index = head.rfind(" ")
-    if split_index < max(0, int(max_chars * 0.6)):
-        split_index = max_chars
-    return head[:split_index].rstrip(" ,;:-") + "..."
+    return _pipeline_truncate_suggest_value(value, max_chars=max_chars)
 
 
-def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
+def _answer_law_question_details_impl(payload: LawQaPayload) -> LawQaAnswerResult:
     question = payload.question.strip()
     if not question:
         raise HTTPException(
@@ -2342,12 +2260,16 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
     )
 
 
+def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
+    return run_law_qa(payload, LawQaOrchestrationDeps(impl=_answer_law_question_details_impl))
+
+
 def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     result = answer_law_question_details(payload)
     return result.text, result.used_sources, result.indexed_documents
 
 
-def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> SuggestTextResult:
+def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> SuggestTextResult:
     total_started_at = monotonic()
     if not payload.victim_name.strip() or not payload.org.strip() or not payload.subject.strip() or not payload.event_dt.strip():
         raise HTTPException(
@@ -2638,39 +2560,30 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
     )
 
 
+def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> SuggestTextResult:
+    return run_suggest(payload, server_code=server_code, deps=SuggestOrchestrationDeps(impl=lambda p, s: _suggest_text_details_impl(p, server_code=s)))
+
+
 def suggest_text(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> str:
     return suggest_text_details(payload, server_code=server_code).text
 
 
-def extract_principal_scan(payload: PrincipalScanPayload) -> PrincipalScanResult:
-    image_data_url = payload.image_data_url.strip()
-    if not image_data_url.startswith("data:image/"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=["Загрузите изображение в формате PNG, JPG, WEBP или GIF."],
-        )
-
+def _extract_principal_scan_impl(payload: PrincipalScanPayload) -> PrincipalScanResult:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
 
-    try:
-        data = extract_principal_fields_with_proxy_fallback(
-            api_key=api_key,
-            proxy_url=proxy_url,
-            image_data_url=image_data_url,
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
+    return run_principal_scan(
+        payload,
+        PrincipalScanDeps(
+            impl=lambda image_data_url: extract_principal_fields_with_proxy_fallback(
+                api_key=api_key,
+                proxy_url=proxy_url,
+                image_data_url=image_data_url,
+            ),
+            ai_exception_details=_ai_exception_details,
+        ),
+    )
 
-    try:
-        result = PrincipalScanResult.model_validate(data)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=[f"Модель вернула ответ в неожиданном формате: {exc}"],
-        ) from exc
 
-    if not result.principal_address.strip():
-        result.principal_address = "-"
-
-    return result
+def extract_principal_scan(payload: PrincipalScanPayload) -> PrincipalScanResult:
+    return _extract_principal_scan_impl(payload)
