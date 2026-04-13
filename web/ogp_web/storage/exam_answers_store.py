@@ -2,15 +2,24 @@ from __future__ import annotations
 
 import json
 from contextlib import closing
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from ogp_web.db.factory import get_database_backend
 from ogp_web.db.types import DatabaseBackend
+from ogp_web.services.exam_sheet_service import (
+    _is_non_scoring_header,
+    _normalize_match_text,
+    is_exam_reference_payload,
+    is_exam_reference_row,
+)
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 DATA_DIR = ROOT_DIR / "web" / "data"
 DB_PATH = DATA_DIR / "exam_answers.db"
+REFERENCE_SOURCE_ROW = 0
+SOURCE_ROW_MATCH_MAX_DELTA = timedelta(minutes=10)
 INVALID_BATCH_RATIONALE = "Модель не вернула корректную оценку по этому пункту."
 
 
@@ -43,15 +52,16 @@ class ExamAnswersStore:
 
     @staticmethod
     def _build_score_signature(*, payload: dict[str, object], exam_format: str) -> str:
-        ordered_items = list((payload or {}).items())
         scoring_items: list[list[str]] = []
-        for index, (header, value) in enumerate(ordered_items):
-            if index < 5:
-                continue
+        for header, value in (payload or {}).items():
             header_text = str(header or "").strip()
-            if not header_text:
+            if not header_text or _is_non_scoring_header(header_text):
                 continue
-            scoring_items.append([header_text, str(value or "").strip()])
+            scoring_items.append([
+                _normalize_match_text(header_text) or header_text.lower(),
+                str(value or "").strip(),
+            ])
+        scoring_items.sort(key=lambda item: item[0])
         return json.dumps(
             {
                 "exam_format": str(exam_format or "").strip(),
@@ -60,6 +70,53 @@ class ExamAnswersStore:
             ensure_ascii=False,
             separators=(",", ":"),
         )
+
+    @staticmethod
+    def _normalize_exam_format_for_match(exam_format: object) -> str:
+        raw = str(exam_format or "").strip()
+        normalized = _normalize_match_text(raw)
+        return normalized or raw.lower()
+
+    @staticmethod
+    def _parse_submitted_at(value: object) -> datetime | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M"):
+            try:
+                return datetime.strptime(raw, fmt)
+            except ValueError:
+                continue
+        return None
+
+    @classmethod
+    def _is_source_row_match_candidate(cls, *, existing: dict[str, object], row: dict[str, object]) -> bool:
+        if int(existing.get("source_row") or 0) != int(row["source_row"]):
+            return False
+        existing_exam_format = cls._normalize_exam_format_for_match(existing.get("exam_format") or "")
+        row_exam_format = cls._normalize_exam_format_for_match(row.get("exam_format") or "")
+        if existing_exam_format != row_exam_format:
+            return False
+
+        existing_submitted_at = str(existing.get("submitted_at") or "").strip()
+        row_submitted_at = str(row.get("submitted_at") or "").strip()
+        if existing_submitted_at == row_submitted_at:
+            return True
+
+        existing_dt = cls._parse_submitted_at(existing_submitted_at)
+        row_dt = cls._parse_submitted_at(row_submitted_at)
+        if existing_dt is None or row_dt is None:
+            return False
+
+        if existing_dt.tzinfo is not None:
+            existing_dt = existing_dt.astimezone().replace(tzinfo=None)
+        if row_dt.tzinfo is not None:
+            row_dt = row_dt.astimezone().replace(tzinfo=None)
+        return abs(existing_dt - row_dt) <= SOURCE_ROW_MATCH_MAX_DELTA
 
     def __init__(self, db_path: Path, backend: DatabaseBackend | None = None):
         self.db_path = db_path
@@ -145,6 +202,67 @@ class ExamAnswersStore:
         }
 
     @staticmethod
+    def _is_reference_snapshot(row: dict[str, object] | None) -> bool:
+        if not isinstance(row, dict):
+            return False
+        payload = row.get("payload")
+        if not isinstance(payload, dict):
+            payload_json = row.get("payload_json")
+            if isinstance(payload_json, str):
+                try:
+                    payload = json.loads(payload_json)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    payload = {}
+        if int(row.get("source_row") or 0) == REFERENCE_SOURCE_ROW:
+            return True
+        return is_exam_reference_payload(
+            payload if isinstance(payload, dict) else {},
+            full_name=row.get("full_name"),
+            exam_format=row.get("exam_format"),
+        )
+
+    def _load_entry_by_source_row(self, source_row: int) -> dict[str, object] | None:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                f"""
+                SELECT
+                    source_row,
+                    submitted_at,
+                    full_name,
+                    discord_tag,
+                    passport,
+                    exam_format,
+                    answer_count,
+                    imported_at,
+                    updated_at,
+                    question_g_score,
+                    question_g_rationale,
+                    question_g_scored_at,
+                    exam_scores_json,
+                    exam_scores_scored_at,
+                    average_score,
+                    average_score_answer_count,
+                    average_score_scored_at,
+                    needs_rescore,
+                    payload_json
+                FROM exam_answers
+                WHERE source_row = {self._placeholder()}
+                """,
+                (source_row,),
+            ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        payload = self._decode_json_value(result.pop("payload_json"), {})
+        if not isinstance(payload, dict):
+            payload = {}
+        exam_scores_json = result.pop("exam_scores_json", None)
+        result["payload"] = payload
+        exam_scores = self._decode_json_value(exam_scores_json, [])
+        result["exam_scores"] = exam_scores if isinstance(exam_scores, list) else []
+        return result
+
+    @staticmethod
     def _import_match_sort_key(item: dict[str, object], *, source_row: int, submitted_at: str) -> tuple[int, int, int, int, int, int]:
         item_source_row = int(item.get("source_row") or 0)
         return (
@@ -176,6 +294,21 @@ class ExamAnswersStore:
         if exact_matches:
             return max(
                 exact_matches,
+                key=lambda item: self._import_match_sort_key(
+                    item,
+                    source_row=source_row,
+                    submitted_at=submitted_at,
+                ),
+            )
+
+        source_row_matches = [
+            item
+            for item in existing_rows
+            if int(item["id"]) not in matched_ids and self._is_source_row_match_candidate(existing=item, row=row)
+        ]
+        if source_row_matches:
+            return max(
+                source_row_matches,
                 key=lambda item: self._import_match_sort_key(
                     item,
                     source_row=source_row,
@@ -232,6 +365,7 @@ class ExamAnswersStore:
         current_timestamp = self._current_timestamp_sql()
         payload_placeholder = self._cast_json_value(placeholder)
         needs_rescore_value = self._bool_true_value()
+        reference_needs_rescore_value = False if isinstance(needs_rescore_value, bool) else 0
 
         normalized_rows: list[dict[str, object]] = []
         for row in rows:
@@ -263,6 +397,9 @@ class ExamAnswersStore:
                 }
             )
         normalized_rows = list({str(row["import_key"]): row for row in normalized_rows}.values())
+        reference_rows = [row for row in normalized_rows if is_exam_reference_row(row)]
+        normalized_rows = [row for row in normalized_rows if not is_exam_reference_row(row)]
+        imported_reference_row = reference_rows[-1] if reference_rows else None
 
         with closing(self._connect()) as conn:
             existing_rows = conn.execute(
@@ -285,6 +422,14 @@ class ExamAnswersStore:
                 """
             ).fetchall()
             existing_snapshots = [self._build_existing_import_snapshot(row) for row in existing_rows]
+            reference_snapshots = [item for item in existing_snapshots if self._is_reference_snapshot(item)]
+            existing_snapshots = [item for item in existing_snapshots if not self._is_reference_snapshot(item)]
+            reference_existing = next(
+                (item for item in reference_snapshots if int(item.get("source_row") or 0) == REFERENCE_SOURCE_ROW),
+                None,
+            )
+            if reference_existing is None and reference_snapshots:
+                reference_existing = max(reference_snapshots, key=lambda item: int(item.get("id") or 0))
             matched_ids: set[int] = set()
             matched_rows: list[dict[str, object] | None] = []
             for row in normalized_rows:
@@ -298,6 +443,23 @@ class ExamAnswersStore:
                 matched_rows.append(match)
 
             archived_source_row = self._next_archived_source_row(conn)
+            if reference_existing is not None and int(reference_existing.get("source_row") or 0) > 0:
+                conn.execute(
+                    f"UPDATE exam_answers SET source_row = {placeholder} WHERE id = {placeholder}",
+                    (REFERENCE_SOURCE_ROW, reference_existing["id"]),
+                )
+                reference_existing["source_row"] = REFERENCE_SOURCE_ROW
+            for existing in reference_snapshots:
+                if reference_existing is not None and int(existing["id"]) == int(reference_existing["id"]):
+                    continue
+                if int(existing["source_row"] or 0) <= 0:
+                    continue
+                conn.execute(
+                    f"UPDATE exam_answers SET import_key = NULL, source_row = {placeholder} WHERE id = {placeholder}",
+                    (archived_source_row, existing["id"]),
+                )
+                archived_source_row -= 1
+
             for existing in existing_snapshots:
                 if int(existing["id"]) in matched_ids or int(existing["source_row"] or 0) <= 0:
                     continue
@@ -305,6 +467,20 @@ class ExamAnswersStore:
                     f"UPDATE exam_answers SET import_key = NULL, source_row = {placeholder} WHERE id = {placeholder}",
                     (archived_source_row, existing["id"]),
                 )
+                archived_source_row -= 1
+
+            for row, existing in zip(normalized_rows, matched_rows):
+                if existing is None:
+                    continue
+                existing_source_row = int(existing.get("source_row") or 0)
+                target_source_row = int(row["source_row"])
+                if existing_source_row <= 0 or existing_source_row == target_source_row:
+                    continue
+                conn.execute(
+                    f"UPDATE exam_answers SET source_row = {placeholder} WHERE id = {placeholder}",
+                    (archived_source_row, existing["id"]),
+                )
+                existing["source_row"] = archived_source_row
                 archived_source_row -= 1
 
             for row, existing in zip(normalized_rows, matched_rows):
@@ -438,6 +614,142 @@ class ExamAnswersStore:
                         changed_rows.append(source_row)
                     else:
                         skipped_count += 1
+
+            if imported_reference_row is not None or reference_existing is not None:
+                reference_payload: dict[str, object] = {}
+                if imported_reference_row is not None:
+                    reference_payload = dict(imported_reference_row.get("payload") or {})
+                elif isinstance(reference_existing, dict):
+                    reference_payload = self._decode_json_value(reference_existing.get("payload_json"), {})
+                    if not isinstance(reference_payload, dict):
+                        reference_payload = {}
+
+                reference_source_row = REFERENCE_SOURCE_ROW
+                reference_submitted_at = str(
+                    (imported_reference_row or {}).get("submitted_at")
+                    or (reference_existing or {}).get("submitted_at")
+                    or ""
+                )
+                reference_full_name = str(
+                    (imported_reference_row or {}).get("full_name")
+                    or (reference_existing or {}).get("full_name")
+                    or ""
+                )
+                reference_discord_tag = str(
+                    (imported_reference_row or {}).get("discord_tag")
+                    or (reference_existing or {}).get("discord_tag")
+                    or ""
+                )
+                reference_passport = str(
+                    (imported_reference_row or {}).get("passport")
+                    or (reference_existing or {}).get("passport")
+                    or ""
+                )
+                reference_exam_format = str(
+                    (imported_reference_row or {}).get("exam_format")
+                    or (reference_existing or {}).get("exam_format")
+                    or ""
+                )
+                reference_answer_count = int(
+                    (imported_reference_row or {}).get("answer_count")
+                    or (reference_existing or {}).get("answer_count")
+                    or 0
+                )
+                reference_payload_json = self._encode_json_value(reference_payload)
+                reference_import_key = str(
+                    (imported_reference_row or {}).get("import_key")
+                    or (reference_existing or {}).get("import_key")
+                    or ""
+                )
+
+                if reference_existing is not None and str(reference_existing.get("import_key") or "") != reference_import_key:
+                    conn.execute(
+                        f"UPDATE exam_answers SET import_key = {placeholder} WHERE id = {placeholder}",
+                        (reference_import_key, reference_existing["id"]),
+                    )
+
+                reference_has_changes = reference_existing is None or any(
+                    [
+                        int((reference_existing or {}).get("source_row") or 0) != reference_source_row,
+                        str((reference_existing or {}).get("submitted_at") or "") != reference_submitted_at,
+                        str((reference_existing or {}).get("full_name") or "") != reference_full_name,
+                        str((reference_existing or {}).get("discord_tag") or "") != reference_discord_tag,
+                        str((reference_existing or {}).get("passport") or "") != reference_passport,
+                        str((reference_existing or {}).get("exam_format") or "") != reference_exam_format,
+                        str((reference_existing or {}).get("payload_json") or "") != reference_payload_json,
+                        int((reference_existing or {}).get("answer_count") or 0) != reference_answer_count,
+                        str((reference_existing or {}).get("import_key") or "") != reference_import_key,
+                        bool((reference_existing or {}).get("has_scores")),
+                    ]
+                )
+
+                if reference_existing is None:
+                    conn.execute(
+                        f"""
+                        INSERT INTO exam_answers (
+                            source_row,
+                            submitted_at,
+                            full_name,
+                            discord_tag,
+                            passport,
+                            exam_format,
+                            payload_json,
+                            answer_count,
+                            needs_rescore,
+                            import_key
+                        )
+                        VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {payload_placeholder}, {placeholder}, {placeholder}, {placeholder})
+                        """,
+                        (
+                            reference_source_row,
+                            reference_submitted_at,
+                            reference_full_name,
+                            reference_discord_tag,
+                            reference_passport,
+                            reference_exam_format,
+                            reference_payload_json,
+                            reference_answer_count,
+                            reference_needs_rescore_value,
+                            reference_import_key,
+                        ),
+                    )
+                elif reference_has_changes:
+                    conn.execute(
+                        f"""
+                        UPDATE exam_answers
+                        SET source_row = {placeholder},
+                            submitted_at = {placeholder},
+                            full_name = {placeholder},
+                            discord_tag = {placeholder},
+                            passport = {placeholder},
+                            exam_format = {placeholder},
+                            payload_json = {payload_placeholder},
+                            answer_count = {placeholder},
+                            question_g_score = NULL,
+                            question_g_rationale = NULL,
+                            question_g_scored_at = NULL,
+                            exam_scores_json = NULL,
+                            exam_scores_scored_at = NULL,
+                            average_score = NULL,
+                            average_score_answer_count = NULL,
+                            average_score_scored_at = NULL,
+                            needs_rescore = {placeholder},
+                            updated_at = {current_timestamp}
+                        WHERE id = {placeholder}
+                        """,
+                        (
+                            reference_source_row,
+                            reference_submitted_at,
+                            reference_full_name,
+                            reference_discord_tag,
+                            reference_passport,
+                            reference_exam_format,
+                            reference_payload_json,
+                            reference_answer_count,
+                            reference_needs_rescore_value,
+                            reference_existing["id"],
+                        ),
+                    )
             conn.commit()
 
         return {
@@ -448,7 +760,10 @@ class ExamAnswersStore:
             "changed_rows": changed_rows,
         }
 
-    def list_entries_needing_scores(self, limit: int = 500) -> list[dict[str, object]]:
+    def list_entries_needing_scores(self, limit: int = 500, *, include_rescore: bool = False) -> list[dict[str, object]]:
+        needs_scores_filter = "average_score IS NULL"
+        if include_rescore:
+            needs_scores_filter = f"(average_score IS NULL OR {self._needs_rescore_predicate()})"
         with closing(self._connect()) as conn:
             rows = conn.execute(
                 f"""
@@ -464,7 +779,7 @@ class ExamAnswersStore:
                     average_score_answer_count,
                     imported_at
                 FROM exam_answers
-                WHERE source_row > 0 AND (average_score IS NULL OR {self._needs_rescore_predicate()})
+                WHERE source_row > 0 AND {needs_scores_filter}
                 ORDER BY source_row ASC
                 LIMIT {self._placeholder()}
                 """,
@@ -513,16 +828,66 @@ class ExamAnswersStore:
             row = conn.execute("SELECT COUNT(*) AS total FROM exam_answers WHERE source_row > 0").fetchone()
         return int(row["total"] if row else 0)
 
-    def count_entries_needing_scores(self) -> int:
+    def count_entries_needing_scores(self, *, include_rescore: bool = False) -> int:
+        needs_scores_filter = "average_score IS NULL"
+        if include_rescore:
+            needs_scores_filter = f"(average_score IS NULL OR {self._needs_rescore_predicate()})"
         with closing(self._connect()) as conn:
             row = conn.execute(
                 f"""
                 SELECT COUNT(*) AS total
                 FROM exam_answers
-                WHERE source_row > 0 AND (average_score IS NULL OR {self._needs_rescore_predicate()})
+                WHERE source_row > 0 AND {needs_scores_filter}
                 """
             ).fetchone()
         return int(row["total"] if row else 0)
+
+    def reset_scores_for_user(
+        self,
+        *,
+        full_name: str = "",
+        discord_tag: str = "",
+        passport: str = "",
+    ) -> int:
+        normalized_full_name = str(full_name or "").strip()
+        normalized_discord_tag = str(discord_tag or "").strip()
+        normalized_passport = str(passport or "").strip()
+        filters: list[str] = []
+        values: list[object] = []
+        if normalized_full_name:
+            filters.append(f"full_name = {self._placeholder()}")
+            values.append(normalized_full_name)
+        if normalized_discord_tag:
+            filters.append(f"discord_tag = {self._placeholder()}")
+            values.append(normalized_discord_tag)
+        if normalized_passport:
+            filters.append(f"passport = {self._placeholder()}")
+            values.append(normalized_passport)
+        if not filters:
+            return 0
+
+        values = [self._bool_true_value(), *values]
+        where_clause = " AND ".join(filters)
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                f"""
+                UPDATE exam_answers
+                SET question_g_score = NULL,
+                    question_g_rationale = NULL,
+                    question_g_scored_at = NULL,
+                    exam_scores_json = NULL,
+                    exam_scores_scored_at = NULL,
+                    average_score = NULL,
+                    average_score_answer_count = NULL,
+                    average_score_scored_at = NULL,
+                    needs_rescore = {self._placeholder()},
+                    updated_at = {self._current_timestamp_sql()}
+                WHERE source_row > 0 AND {where_clause}
+                """,
+                tuple(values),
+            )
+            conn.commit()
+        return int(getattr(row, "rowcount", 0) or 0)
 
     def list_entries(self, limit: int = 20) -> list[dict[str, object]]:
         with closing(self._connect()) as conn:
@@ -549,46 +914,13 @@ class ExamAnswersStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def get_reference_entry(self) -> dict[str, object] | None:
+        return self._load_entry_by_source_row(REFERENCE_SOURCE_ROW)
+
     def get_entry(self, source_row: int) -> dict[str, object] | None:
-        with closing(self._connect()) as conn:
-            row = conn.execute(
-                f"""
-                SELECT
-                    source_row,
-                    submitted_at,
-                    full_name,
-                    discord_tag,
-                    passport,
-                    exam_format,
-                    answer_count,
-                    imported_at,
-                    updated_at,
-                    question_g_score,
-                    question_g_rationale,
-                    question_g_scored_at,
-                    exam_scores_json,
-                    exam_scores_scored_at,
-                    average_score,
-                    average_score_answer_count,
-                    average_score_scored_at,
-                    needs_rescore,
-                    payload_json
-                FROM exam_answers
-                WHERE source_row = {self._placeholder()} AND source_row > 0
-                """,
-                (source_row,),
-            ).fetchone()
-        if row is None:
+        if int(source_row or 0) <= 0:
             return None
-        result = dict(row)
-        payload = self._decode_json_value(result.pop("payload_json"), {})
-        if not isinstance(payload, dict):
-            payload = {}
-        exam_scores_json = result.pop("exam_scores_json", None)
-        result["payload"] = payload
-        exam_scores = self._decode_json_value(exam_scores_json, [])
-        result["exam_scores"] = exam_scores if isinstance(exam_scores, list) else []
-        return result
+        return self._load_entry_by_source_row(source_row)
 
     def save_question_g_score(self, source_row: int, score: int, rationale: str) -> None:
         with closing(self._connect()) as conn:
@@ -628,6 +960,32 @@ class ExamAnswersStore:
                 ),
             )
             conn.commit()
+
+    def clear_scores_for_row(self, source_row: int) -> bool:
+        normalized_source_row = int(source_row or 0)
+        if normalized_source_row <= 0:
+            return False
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                f"""
+                UPDATE exam_answers
+                SET question_g_score = NULL,
+                    question_g_rationale = NULL,
+                    question_g_scored_at = NULL,
+                    exam_scores_json = NULL,
+                    exam_scores_scored_at = NULL,
+                    average_score = NULL,
+                    average_score_answer_count = NULL,
+                    average_score_scored_at = NULL,
+                    needs_rescore = {self._placeholder()},
+                    updated_at = {self._current_timestamp_sql()}
+                WHERE source_row = {self._placeholder()}
+                """,
+                (self._bool_true_value(), normalized_source_row),
+            )
+            conn.commit()
+        return int(getattr(row, "rowcount", 0) or 0) > 0
+
 
 
 _DEFAULT_EXAM_ANSWERS_STORE: ExamAnswersStore | None = None

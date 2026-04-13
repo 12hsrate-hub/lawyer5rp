@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.concurrency import run_in_threadpool
 
 from ogp_web.dependencies import get_user_store
 from ogp_web.rate_limit import RateLimitExceeded, auth_rate_limit
@@ -42,7 +43,8 @@ async def auth_register(
 
     base_url = build_public_base_url(str(request.base_url))
     verification_url = f"{base_url}/verify-email?token={verification_token}"
-    delivery = send_verification_email(
+    delivery = await run_in_threadpool(
+        send_verification_email,
         recipient=user.email,
         username=user.username,
         verification_url=verification_url,
@@ -95,7 +97,8 @@ async def auth_resend_verification(
 
     base_url = build_public_base_url(str(request.base_url))
     verification_url = f"{base_url}/verify-email?token={verification_token}"
-    delivery = send_verification_email(
+    delivery = await run_in_threadpool(
+        send_verification_email,
         recipient=user.email,
         username=user.username,
         verification_url=verification_url,
@@ -139,7 +142,8 @@ async def auth_forgot_password(
 
     base_url = build_public_base_url(str(request.base_url))
     reset_url = f"{base_url}/reset-password?token={reset_token}"
-    delivery = send_password_reset_email(
+    delivery = await run_in_threadpool(
+        send_password_reset_email,
         recipient=user.email,
         username=user.username,
         reset_url=reset_url,

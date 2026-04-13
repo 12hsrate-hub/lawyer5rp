@@ -1,0 +1,87 @@
+thresholds:
+  min_valid_trigger_confidence: 0.70
+  borderline_trigger_confidence_min: 0.65
+  borderline_trigger_confidence_max: 0.74
+  min_root_overlap_for_trigger: 1
+
+document_priority:
+  default_weight: 0
+  court_proceedings_terms:
+    - суд
+    - суда
+    - суде
+    - судья
+    - иск
+    - исковое
+    - истец
+    - ответчик
+    - заседание
+    - ходатайство
+    - свидетель
+    - апелляция
+    - кассация
+    - судопроизвод
+  groups:
+    - key: processual_code
+      weight: 80
+      patterns:
+        - процессуальный кодекс
+    - key: criminal_code
+      weight: 72
+      patterns:
+        - уголовный кодекс
+    - key: administrative_code
+      weight: 66
+      patterns:
+        - административный кодекс
+    - key: advocate_law
+      weight: 44
+      patterns:
+        - об адвокатуре
+        - адвокатской деятельности
+    - key: regional_services_law
+      weight: 34
+      patterns:
+        - о деятельности региональных правоохранительных органов
+        - региональных правоохранительных органов
+    - key: fib_law
+      weight: 28
+      patterns:
+        - федерального бюро расследований
+        - fib
+        - фиб
+    - key: secret_services_law
+      weight: 24
+      patterns:
+        - секретной службы
+        - секретных служ
+        - usss
+        - государственной тайне
+    - key: judicial_system_law
+      weight: -48
+      patterns:
+        - о судебной системе и судопроизводстве
+        - судебной системе и судопроизводстве
+
+routing:
+  valid_trigger_mode: legal_grounded
+  fallback_mode: factual_fallback_expanded
+  low_confidence_context_borderline_action: factual_fallback_expanded
+  no_context_action: factual_fallback_expanded
+
+mode_contracts:
+  legal_grounded:
+    min_sentences: 4
+    max_sentences: 7
+    allow_article_references: true
+    require_employee_assessment: true
+  factual_fallback_expanded:
+    min_sentences: 4
+    max_sentences: 7
+    allow_article_references: false
+    require_employee_assessment: true
+
+safe_fallback:
+  mode: factual_fallback_expanded
+  min_sentences: 4
+  max_sentences: 4

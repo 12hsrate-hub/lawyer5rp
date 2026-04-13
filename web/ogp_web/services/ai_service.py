@@ -5,6 +5,7 @@ from difflib import SequenceMatcher
 from functools import lru_cache
 import logging
 import os
+from pathlib import Path
 import re
 import socket
 from time import monotonic
@@ -13,6 +14,7 @@ from ipaddress import ip_address
 from urllib.parse import urlparse
 
 import httpx
+import yaml
 from fastapi import HTTPException, status
 
 from ogp_web.schemas import LawQaPayload, PrincipalScanPayload, PrincipalScanResult, SuggestPayload
@@ -34,13 +36,32 @@ from ogp_web.services.legal_pipeline_service import (
     new_generation_id,
     normalize_feedback_issues,
     short_text_hash,
+    normalize_law_qa_text_formatting,
+    strip_law_qa_source_urls,
+)
+from ogp_web.services.point3_pipeline import (
+    MODE_FACTUAL_FALLBACK_EXPANDED,
+    RemediationOutcome,
+    apply_validation_remediation,
+    build_safe_fallback_paragraph,
+    build_point3_pipeline_context,
+    load_policy_thresholds,
+    validate_generated_paragraph,
 )
 from ogp_web.services.law_retrieval_service import retrieve_law_context, unique_sources
-from ogp_web.services.point3_policy_service import (
-    build_safe_factual_fallback,
-    build_validation_retry_instruction,
-    select_applicable_articles,
-    validate_suggest_output,
+from ogp_web.services.ai_pipeline.guardrails import clean_suggest_text as _pipeline_clean_suggest_text, truncate_suggest_value as _pipeline_truncate_suggest_value
+from ogp_web.services.ai_pipeline.interfaces import LawQaAnswerResult, SuggestContextBuildResult, SuggestTextResult
+from ogp_web.services.ai_pipeline.orchestration import (
+    LawQaOrchestrationDeps,
+    PrincipalScanDeps,
+    SuggestOrchestrationDeps,
+    run_law_qa,
+    run_principal_scan,
+    run_suggest,
+)
+from ogp_web.services.ai_pipeline.telemetry_meta import (
+    build_law_qa_metrics_meta as _pipeline_build_law_qa_metrics_meta,
+    build_suggest_metrics_meta as _pipeline_build_suggest_metrics_meta,
 )
 from shared.ogp_ai import (
     AiUsageSummary,
@@ -55,79 +76,32 @@ from shared.ogp_ai import (
 from shared.ogp_ai_prompts import SUGGEST_PROMPT_VERSION, build_suggest_prompt
 
 LOGGER = logging.getLogger(__name__)
-LAW_QA_PROMPT_VERSION = "law_qa.v2"
+LAW_QA_PROMPT_VERSION = "law_qa.v5"
+_ROOT_DIR = Path(__file__).resolve().parents[3]
+_MODEL_POLICY_PATH = _ROOT_DIR / "config" / "model_policy.yaml"
+_LAW_QA_SHORT_QUESTION_MAX_CHARS = 180
+_LAW_QA_SHORT_QUESTION_MAX_KEYWORDS = 6
+_SUGGEST_EDITORIAL_MAX_CHARS = 500
+_SUGGEST_EDITORIAL_MARKERS = (
+    "исправь",
+    "отредактируй",
+    "перепиши",
+    "перефразируй",
+    "сделай грамотно",
+    "приведи в порядок",
+    "сократи",
+    "убери ошибки",
+    "почисти текст",
+)
 
 
 _LawChunk = LawChunk
 
 
 @dataclass(frozen=True)
-class LawQaAnswerResult:
-    text: str
-    generation_id: str
-    used_sources: list[str]
-    indexed_documents: int
-    retrieval_confidence: str
-    retrieval_profile: str
-    guard_status: str
-    contract_version: str
-    bundle_status: str
-    bundle_generated_at: str
-    bundle_fingerprint: str
-    warnings: list[str]
-    shadow: dict[str, object]
-    selected_norms: list[dict[str, object]]
-    telemetry: dict[str, object]
-    budget_status: str
-    budget_warnings: list[str]
-    budget_policy: dict[str, object]
-
-
-@dataclass(frozen=True)
-class SuggestTextResult:
-    text: str
-    generation_id: str
-    guard_status: str
-    contract_version: str
-    warnings: list[str]
-    shadow: dict[str, object]
-    telemetry: dict[str, object]
-    budget_status: str
-    budget_warnings: list[str]
-    budget_policy: dict[str, object]
-    retrieval_ms: int
-    openai_ms: int
-    total_suggest_ms: int
-    prompt_mode: str
-    retrieval_confidence: str
-    retrieval_context_mode: str
-    retrieval_profile: str
-    bundle_status: str
-    bundle_generated_at: str
-    bundle_fingerprint: str
-    selected_norms_count: int
-    applicability_mode: str
-    applicability_notes: str
-    allowed_article_numbers: tuple[str, ...]
-    validation_status: str
-    validation_errors: tuple[str, ...]
-    validation_retry_count: int
-    safe_fallback_used: bool
-
-
-@dataclass(frozen=True)
-class SuggestContextBuildResult:
-    context_text: str
-    retrieval_confidence: str
-    retrieval_context_mode: str
-    retrieval_profile: str
-    bundle_status: str
-    bundle_generated_at: str
-    bundle_fingerprint: str
-    selected_norms_count: int
-    applicability_mode: str
-    applicability_notes: str
-    allowed_article_numbers: tuple[str, ...]
+class ModelSelectionDecision:
+    model_name: str
+    reason: str
 
 
 def normalize_ai_feedback_issues(raw_issues: list[str] | tuple[str, ...]) -> tuple[str, ...]:
@@ -342,6 +316,38 @@ LAW_QA_QUERY_ALIASES: dict[str, tuple[str, ...]] = {
     "ак": ("административный", "административного", "административный кодекс"),
     "дк": ("дорожный", "дорожного", "дорожный кодекс"),
 }
+LAW_QA_RIGHTS_MARKERS = ("права", "право", "вправе", "полномочия")
+LAW_QA_DUTIES_MARKERS = ("обязанности", "обязанность")
+LAW_QA_FOCUS_IGNORED_TERMS = {
+    "права",
+    "право",
+    "вправе",
+    "полномочия",
+    "обязанности",
+    "обязанность",
+    "кодекс",
+    "закон",
+    "статья",
+    "ст",
+    "норма",
+    "нормы",
+    "ли",
+    "может",
+    "имеет",
+}
+LAW_QA_SHORT_QUERY_MAX_KEYWORDS = 7
+LAW_QA_AMBIGUOUS_SCOPE_TERMS = ("допрос",)
+LAW_QA_DOPROS_DISAMBIGUATION_TERMS = ("свидетел", "свидетеля", "свидетель", "судебн", "подозреваем", "обвиняем", "задержан")
+LAW_QA_OUTDATED_MARKERS = ("утратила силу", "утратил силу", "не действует")
+LAW_QA_DOCUMENT_GROUP_PATTERNS: dict[str, tuple[str, ...]] = {
+    "processual_code": ("процессуальн", "процессуальный кодекс"),
+    "criminal_code": ("уголовн", "уголовный кодекс"),
+    "administrative_code": ("административн", "административный кодекс"),
+    "advocate_law": ("адвокатуре", "адвокатской деятельности"),
+    "judicial_system_law": ("судебной системе и судопроизводстве", "судопроизводств"),
+    "fib_law": ("fib", "фиб", "федерального бюро расследований"),
+    "labor_code": ("трудовой кодекс", "трудов"),
+}
 
 def _humanize_ai_exception(exc: Exception) -> str:
     raw = str(exc).strip() or exc.__class__.__name__
@@ -368,17 +374,39 @@ def _ai_exception_details(exc: Exception) -> list[str]:
     return details
 
 
+def _legacy_validation_error_codes(raw_codes: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    normalized = [str(code or "").strip() for code in raw_codes if str(code or "").strip()]
+    expanded = list(normalized)
+    if any(code in {"new_date", "new_number", "new_entity", "new_document"} for code in normalized):
+        expanded.append("new_fact_detected")
+    if "article_without_valid_trigger" in normalized:
+        expanded.append("unsupported_article_reference")
+    if any(code in {"new_url", "format_violation"} for code in normalized):
+        expanded.append("format_violation")
+    return tuple(dict.fromkeys(expanded))
+
+
 def get_law_qa_model_choices() -> tuple[str, ...]:
     raw = os.getenv("OPENAI_LAW_QA_MODELS", "").strip()
     if raw:
         values = tuple(dict.fromkeys(part.strip() for part in raw.split(",") if part.strip()))
         if values:
             return values
+    flow_policy = _get_model_routing_policy("law_qa")
+    configured = tuple(
+        dict.fromkeys(
+            str(flow_policy.get(key) or "").strip()
+            for key in ("default_model", "low_confidence_model", "high_confidence_short_question_model")
+            if str(flow_policy.get(key) or "").strip()
+        )
+    )
+    if configured:
+        return configured
     return ("gpt-5.4-mini",)
 
 
 def get_default_law_qa_model() -> str:
-    configured = os.getenv("OPENAI_TEXT_MODEL", "gpt-5.4-mini").strip() or "gpt-5.4-mini"
+    configured = _get_flow_model("law_qa", "default_model", os.getenv("OPENAI_TEXT_MODEL", "gpt-5.4-mini"))
     choices = get_law_qa_model_choices()
     if configured in choices:
         return configured
@@ -386,18 +414,105 @@ def get_default_law_qa_model() -> str:
 
 
 def resolve_law_qa_model(requested_model: str) -> str:
-    _ = requested_model
-    return get_default_law_qa_model()
     normalized = str(requested_model or "").strip()
     if not normalized:
         return get_default_law_qa_model()
     allowed = set(get_law_qa_model_choices())
-    if normalized not in allowed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=["Выбрана неподдерживаемая модель для поиска по законодательной базе."],
-        )
-    return normalized
+    return normalized if normalized in allowed else get_default_law_qa_model()
+
+
+@lru_cache(maxsize=1)
+def _load_model_policy() -> dict[str, object]:
+    if not _MODEL_POLICY_PATH.exists():
+        return {}
+    try:
+        payload = yaml.safe_load(_MODEL_POLICY_PATH.read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("Failed to load model policy config from %s: %s", _MODEL_POLICY_PATH, exc)
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _get_model_routing_policy(flow: str) -> dict[str, object]:
+    payload = _load_model_policy()
+    routing = payload.get("model_routing") if isinstance(payload, dict) else {}
+    if not isinstance(routing, dict):
+        return {}
+    flow_payload = routing.get(str(flow or "").strip())
+    return flow_payload if isinstance(flow_payload, dict) else {}
+
+
+def _get_flow_model(flow: str, key: str, fallback: str) -> str:
+    flow_policy = _get_model_routing_policy(flow)
+    value = str(flow_policy.get(key) or "").strip()
+    return value or str(fallback or "").strip()
+
+
+def _get_flow_flag(flow: str, key: str, fallback: str = "") -> str:
+    flow_policy = _get_model_routing_policy(flow)
+    value = str(flow_policy.get(key) or "").strip()
+    return value or str(fallback or "").strip()
+
+
+def _is_short_law_qa_question(question: str) -> bool:
+    normalized = str(question or "").strip()
+    if not normalized or len(normalized) > _LAW_QA_SHORT_QUESTION_MAX_CHARS:
+        return False
+    return len(_extract_keywords(normalized)) <= _LAW_QA_SHORT_QUESTION_MAX_KEYWORDS
+
+
+def _is_short_editorial_suggest_request(payload: SuggestPayload) -> bool:
+    raw_desc = _normalize_suggest_inline(payload.raw_desc).lower()
+    if not raw_desc or len(raw_desc) > _SUGGEST_EDITORIAL_MAX_CHARS:
+        return False
+    return any(marker in raw_desc for marker in _SUGGEST_EDITORIAL_MARKERS)
+
+
+def _select_law_qa_model(
+    *,
+    question: str,
+    retrieval_confidence: str,
+    server_config: object,
+) -> ModelSelectionDecision:
+    default_model = get_default_law_qa_model()
+    low_confidence_model = _get_flow_model("law_qa", "low_confidence_model", "gpt-5.4")
+    nano_model = _get_flow_model("law_qa", "high_confidence_short_question_model", "gpt-5.4-nano")
+    nano_flag = _get_flow_flag("law_qa", "high_confidence_short_question_flag", "law_qa_nano_enabled")
+    normalized_confidence = str(retrieval_confidence or "").strip().lower()
+    if normalized_confidence == "low" and low_confidence_model:
+        return ModelSelectionDecision(model_name=low_confidence_model, reason="law_qa_low_confidence")
+    if (
+        nano_model
+        and nano_flag
+        and normalized_confidence == "high"
+        and _is_short_law_qa_question(question)
+        and _server_feature_enabled(server_config, nano_flag)
+    ):
+        return ModelSelectionDecision(model_name=nano_model, reason="law_qa_high_confidence_short_question")
+    return ModelSelectionDecision(model_name=default_model, reason="law_qa_default")
+
+
+def _select_suggest_model(
+    *,
+    payload: SuggestPayload,
+    retrieval_context_mode: str,
+    server_config: object,
+) -> ModelSelectionDecision:
+    default_model = _get_flow_model("suggest", "default_model", OPENAI_TEXT_MODEL)
+    low_confidence_model = _get_flow_model("suggest", "low_confidence_model", "gpt-5.4")
+    short_editorial_model = _get_flow_model("suggest", "short_editorial_model", "gpt-5.4-nano")
+    short_editorial_flag = _get_flow_flag("suggest", "short_editorial_flag", "suggest_nano_enabled")
+    normalized_context_mode = str(retrieval_context_mode or "").strip().lower()
+    if normalized_context_mode in {"low_confidence_context", "no_context"} and low_confidence_model:
+        return ModelSelectionDecision(model_name=low_confidence_model, reason=f"suggest_{normalized_context_mode}")
+    if (
+        short_editorial_model
+        and short_editorial_flag
+        and _server_feature_enabled(server_config, short_editorial_flag)
+        and _is_short_editorial_suggest_request(payload)
+    ):
+        return ModelSelectionDecision(model_name=short_editorial_model, reason="suggest_short_editorial")
+    return ModelSelectionDecision(model_name=default_model, reason="suggest_default")
 
 
 class _LawHtmlParser(HTMLParser):
@@ -573,6 +688,171 @@ def _expand_question_terms(question: str) -> set[str]:
     }
 
 
+def _detect_law_qa_focus(question: str) -> str:
+    normalized_question = _normalize_law_text(question)
+    tokens = set(_tokenize_normalized_text(normalized_question))
+    asks_rights = any(marker in tokens for marker in LAW_QA_RIGHTS_MARKERS)
+    asks_duties = any(marker in tokens for marker in LAW_QA_DUTIES_MARKERS)
+    if asks_rights and not asks_duties:
+        return "rights_only"
+    if asks_duties and not asks_rights:
+        return "duties_only"
+    return ""
+
+
+def _extract_law_qa_focus_subject_terms(question: str) -> tuple[str, ...]:
+    focus = _detect_law_qa_focus(question)
+    if not focus:
+        return ()
+    subject_terms: list[str] = []
+    for token in _extract_keywords(question):
+        stem = _stem_law_token(token)
+        if token in LAW_QA_FOCUS_IGNORED_TERMS or stem in LAW_QA_FOCUS_IGNORED_TERMS:
+            continue
+        subject_terms.append(token)
+    return tuple(dict.fromkeys(subject_terms))
+
+
+def _law_qa_document_group_key(document_title: str) -> str:
+    normalized_title = _normalize_law_text(document_title)
+    if not normalized_title:
+        return ""
+    for group_key, patterns in LAW_QA_DOCUMENT_GROUP_PATTERNS.items():
+        if any(pattern in normalized_title for pattern in patterns):
+            return group_key
+    return ""
+
+
+def _detect_law_qa_document_focus(question: str) -> tuple[str, ...]:
+    normalized_question = _normalize_law_text(question)
+    tokens = set(_tokenize_normalized_text(normalized_question))
+    groups: list[str] = []
+    ambiguous_scope = _law_qa_requires_scope_clarification(question)
+    processual_markers = ("задерж", "обыск", "досмотр", "арест", "процессуальн", "следств")
+    judicial_markers = ("суд", "заседан", "ходатайств", "апелляц", "кассац", "свидетел")
+
+    if "адвокат" in normalized_question:
+        groups.append("advocate_law")
+    if "ак" in tokens or "административн" in normalized_question:
+        groups.append("administrative_code")
+    if "ук" in tokens or "уголовн" in normalized_question or "преступ" in normalized_question:
+        groups.append("criminal_code")
+    if "пк" in tokens or any(marker in normalized_question for marker in processual_markers) or (
+        "допрос" in normalized_question and not ambiguous_scope
+    ):
+        groups.append("processual_code")
+    if any(marker in normalized_question for marker in judicial_markers) or (
+        "допрос" in normalized_question and not ambiguous_scope
+    ):
+        groups.append("judicial_system_law")
+    if "fib" in normalized_question or "фиб" in normalized_question:
+        groups.append("fib_law")
+    return tuple(dict.fromkeys(groups))
+
+
+def _law_qa_document_adjustment(*, chunk: _LawChunk, question: str, normalized_text: str) -> int:
+    group_key = _law_qa_document_group_key(chunk.document_title)
+    focus_groups = _detect_law_qa_document_focus(question)
+    score = 0
+
+    if any(marker in normalized_text for marker in LAW_QA_OUTDATED_MARKERS):
+        score -= 120
+
+    if not group_key:
+        return score
+
+    if focus_groups:
+        if group_key in focus_groups:
+            score += 26
+            if len(focus_groups) == 1:
+                score += 10
+        elif group_key == "labor_code":
+            score -= 80
+        elif group_key == "judicial_system_law" and "judicial_system_law" not in focus_groups:
+            score -= 42
+        else:
+            score -= 26 if len(focus_groups) > 1 else 40
+    elif group_key == "labor_code":
+        score -= 36
+    return score
+
+
+def _is_short_law_qa_question(question: str) -> bool:
+    return len(_extract_keywords(question)) <= LAW_QA_SHORT_QUERY_MAX_KEYWORDS
+
+
+def _law_qa_requires_scope_clarification(question: str) -> bool:
+    normalized_question = _normalize_law_text(question)
+    if not any(term in normalized_question for term in LAW_QA_AMBIGUOUS_SCOPE_TERMS):
+        return False
+    return not any(term in normalized_question for term in LAW_QA_DOPROS_DISAMBIGUATION_TERMS)
+
+
+def _law_qa_focus_adjustment(
+    *,
+    chunk: _LawChunk,
+    question: str,
+    normalized_label: str,
+    normalized_text: str,
+    title_tokens: tuple[str, ...],
+    text_tokens: tuple[str, ...],
+    title_stems: tuple[str, ...],
+    text_stems: tuple[str, ...],
+) -> int:
+    focus = _detect_law_qa_focus(question)
+    if not focus:
+        return 0
+
+    score = 0
+    head_text = _normalize_law_text(str(chunk.text or "")[:500])
+    rights_word_pattern = r"\b(?:права|право|вправе|полномоч\w*)\b"
+    duties_word_pattern = r"\bобязанност\w*\b"
+    rights_heading = bool(re.search(rf"статья\s+\d+(?:\.\d+)?\s+[^.]{0,120}{rights_word_pattern}", head_text))
+    duties_heading = bool(re.search(rf"статья\s+\d+(?:\.\d+)?\s+[^.]{0,120}{duties_word_pattern}", head_text))
+    subject_terms = _extract_law_qa_focus_subject_terms(question)
+    subject_title_hits = 0
+    subject_text_hits = 0
+    for term in subject_terms:
+        stem = _stem_law_token(term)
+        if term in title_tokens or (stem and stem in title_stems):
+            subject_title_hits += 1
+        elif term in text_tokens or (stem and stem in text_stems):
+            subject_text_hits += 1
+
+    score += subject_title_hits * 18
+    score += subject_text_hits * 6
+    if subject_terms and subject_title_hits == 0 and subject_text_hits == 0:
+        score -= 60
+
+    if focus == "rights_only":
+        if re.search(rights_word_pattern, normalized_label):
+            score += 26
+        if rights_heading:
+            score += 24
+        if re.search(r"\bвправе\b", head_text):
+            score += 12
+        if re.search(duties_word_pattern, normalized_label):
+            score -= 28
+        if duties_heading:
+            score -= 30
+        if re.search(r"\bадвокат\s+обязан\b", head_text):
+            score -= 18
+    elif focus == "duties_only":
+        if re.search(duties_word_pattern, normalized_label):
+            score += 26
+        if duties_heading:
+            score += 24
+        if re.search(r"\bобязан(?:а|ы|о)?\b", head_text):
+            score += 12
+        if re.search(rights_word_pattern, normalized_label):
+            score -= 24
+        if rights_heading:
+            score -= 24
+        if re.search(r"\bвправе\b", head_text):
+            score -= 12
+    return score
+
+
 @lru_cache(maxsize=4096)
 def _chunk_search_payload(chunk: _LawChunk) -> tuple[str, str, tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
     normalized_title = _normalize_law_text(chunk.document_title)
@@ -641,6 +921,7 @@ def _score_law_chunk(chunk: _LawChunk, question: str) -> int:
     ) = _chunk_search_payload(chunk)
     terms = _expand_question_terms(question)
     score = 0
+    score += _law_qa_document_adjustment(chunk=chunk, question=question, normalized_text=normalized_text)
 
     code_hint_tokens = {
         token
@@ -715,6 +996,16 @@ def _score_law_chunk(chunk: _LawChunk, question: str) -> int:
         score += matched_terms * 2
         if matched_terms >= max(2, min(4, len(terms) // 3 or 1)):
             score += 8
+    score += _law_qa_focus_adjustment(
+        chunk=chunk,
+        question=question,
+        normalized_label=normalized_label,
+        normalized_text=normalized_text,
+        title_tokens=title_tokens,
+        text_tokens=text_tokens,
+        title_stems=title_stems,
+        text_stems=text_stems,
+    )
     return score
 
 
@@ -731,6 +1022,7 @@ def _cheap_score_law_chunk(chunk: _LawChunk, question: str) -> int:
     ) = _chunk_search_payload(chunk)
     terms = _expand_question_terms(question)
     score = 0
+    score += _law_qa_document_adjustment(chunk=chunk, question=question, normalized_text=normalized_text)
 
     code_hint_tokens = {
         token
@@ -796,6 +1088,16 @@ def _cheap_score_law_chunk(chunk: _LawChunk, question: str) -> int:
         score += matched_terms * 2
         if matched_terms >= max(2, min(4, len(terms) // 3 or 1)):
             score += 6
+    score += _law_qa_focus_adjustment(
+        chunk=chunk,
+        question=question,
+        normalized_label=normalized_label,
+        normalized_text=normalized_text,
+        title_tokens=title_tokens,
+        text_tokens=text_tokens,
+        title_stems=title_stems,
+        text_stems=text_stems,
+    )
     return score
 
 
@@ -806,10 +1108,19 @@ def _classify_law_qa_confidence(scores: list[int], question: str) -> str:
     nonzero = sum(1 for score in scores if score > 0)
     terms = _expand_question_terms(question)
     article_numbers = _extract_article_numbers(question)
+    focus_groups = _detect_law_qa_document_focus(question)
+    if _law_qa_requires_scope_clarification(question):
+        if article_numbers and top >= 40:
+            return "medium"
+        if top >= 26 and nonzero >= 1:
+            return "medium"
+        return "low"
     if article_numbers and top >= 40:
         return "high"
     if top >= 48 and nonzero >= 3:
         return "high"
+    if focus_groups and _is_short_law_qa_question(question) and top >= 18 and nonzero >= 1:
+        return "medium"
     if top >= 26 and (nonzero >= 2 or len(terms) <= 4):
         return "medium"
     return "low"
@@ -820,12 +1131,19 @@ def _select_law_qa_chunks(chunks: list[_LawChunk], question: str, profile: str =
     ranked = sorted(scored, key=lambda pair: pair[1], reverse=True)
     positive = [item for item, score in ranked if score > 0]
     confidence = _classify_law_qa_confidence([score for _, score in ranked], question)
+    question_focus = _detect_law_qa_focus(question)
+    short_focus_question = bool(question_focus) and len(_extract_keywords(question)) <= 4
+    short_question = _is_short_law_qa_question(question)
     if str(profile or "law_qa").strip().lower() == "suggest":
         target_count = {"high": 8, "medium": 7, "low": 6}.get(confidence, 7)
         fallback_count = 4
     else:
         target_count = {"high": 12, "medium": 14, "low": 16}.get(confidence, 14)
         fallback_count = 6
+        if short_focus_question:
+            target_count = min(target_count, {"high": 3, "medium": 4, "low": 5}.get(confidence, 4))
+        elif short_question:
+            target_count = min(target_count, {"high": 4, "medium": 5, "low": 6}.get(confidence, 5))
     selected = positive[:target_count] or [item for item, _ in ranked[:fallback_count]]
     return selected, confidence
 
@@ -961,6 +1279,20 @@ def _build_law_qa_prompt(
         "medium": "Уверенность в подборе норм средняя: если есть сомнение между нормами или формулировками, коротко обозначь его и не достраивай выводы.",
         "low": "Уверенность в подборе норм низкая: избегай категоричности; если прямого подтверждения нет, прямо скажи, что данных недостаточно.",
     }.get(retrieval_confidence, "Уверенность в подборе норм не определена.")
+    focus_guidance = {
+        "rights_only": "Если вопрос задан только о правах или полномочиях, не добавляй обязанности, запреты и соседние нормы, если они прямо не нужны для ответа.",
+        "duties_only": "Если вопрос задан только об обязанностях, не добавляй права и иные соседние нормы, если они прямо не нужны для ответа.",
+    }.get(_detect_law_qa_focus(question), "")
+    focus_guidance_block = f"10. {focus_guidance}\n\n" if focus_guidance else "\n"
+    ambiguity_guidance = (
+        "11. Вопрос содержит потенциально неоднозначный процессуальный термин. "
+        "Начни ответ с оговорки о том, какой именно контекст прямо подтверждается нормами, либо прямо скажи, что вопрос требует уточнения. "
+        "Не отвечай безусловным 'да' или 'нет', "
+        "если для ответа пришлось бы додумывать недостающий процессуальный контекст."
+        if _law_qa_requires_scope_clarification(question)
+        else ""
+    )
+    ambiguity_guidance_block = f"{ambiguity_guidance}\n\n" if ambiguity_guidance else ""
     return (
         f"Ты юридический ассистент игрового сервера {server_name} ({server_code}).\n"
         "Отвечай только по переданным внутриигровым нормам.\n\n"
@@ -970,12 +1302,17 @@ def _build_law_qa_prompt(
         "3. Если вопрос содержит неверную предпосылку, смешивает кодексы или не подтверждается переданными нормами, укажи это в первой фразе.\n"
         "4. Если вопрос задан разговорно, с опечатками или перефразированием, трактуй его только по ближайшему смыслу внутри переданных норм.\n"
         "5. Если вопрос требует перечисления, перечисляй только прямо подтвержденные элементы.\n"
-        "6. В конце каждого смыслового абзаца указывай ссылки на использованные источники в формате [Источник: URL].\n"
+        "6. Не добавляй в ответ URL, [Источник: ...] и любые ссылки на форум. Достаточно указывать статью и название кодекса или закона.\n"
         "7. Ответ должен быть точным, прикладным, без воды и не длиннее заданного лимита.\n"
-        f"8. {confidence_guidance}\n\n"
-        "Формат ответа:\n"
+        "8. Не используй markdown, выделение **, списки с маркерами и иное служебное форматирование. "
+        "Если перечисление необходимо, оформляй его plain text в одной или нескольких простых фразах.\n"
+        f"9. {confidence_guidance}\n"
+        + focus_guidance_block
+        + ambiguity_guidance_block
+        + "Формат ответа:\n"
         "- Сначала дай прямой вывод по вопросу.\n"
-        "- Затем коротко приведи правовое основание: статья, кодекс и смысл нормы.\n"
+        "- Затем коротко приведи правовое основание: статья, кодекс или закон и смысл нормы.\n"
+        '- Если ссылаешься на норму, используй формат "статья N (название кодекса или закона)".\n'
         "- Если данных недостаточно, скажи это прямо без догадок.\n\n"
         f"Лимит ответа: не более {max_answer_chars} символов.\n"
         f"Модель: {model_name}\n\n"
@@ -1034,7 +1371,6 @@ def _build_law_qa_context_blocks_limited(
         excerpt = _truncate_law_excerpt(match.excerpt or match.chunk.text, max_chars=max_excerpt_chars)
         context_blocks.append(
             (
-                f"[\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a: {match.chunk.url}]\n"
                 f"[\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442: {match.chunk.document_title}]\n"
                 f"[\u041d\u043e\u0440\u043c\u0430: {match.chunk.article_label}]\n"
                 f"{excerpt}"
@@ -1100,7 +1436,6 @@ def _build_law_qa_context_blocks(retrieval_result) -> list[str]:
         excerpt = match.excerpt or match.chunk.text.strip()
         context_blocks.append(
             (
-                f"[\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a: {match.chunk.url}]\n"
                 f"[\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442: {match.chunk.document_title}]\n"
                 f"[\u041d\u043e\u0440\u043c\u0430: {match.chunk.article_label}]\n"
                 f"{excerpt}"
@@ -1192,13 +1527,19 @@ def _law_qa_metrics_meta(
     result: LawQaAnswerResult,
     used_sources: list[str],
 ) -> dict[str, object]:
+    selected_model = str(getattr(result, "selected_model", "") or "").strip()
+    selection_reason = str(getattr(result, "selection_reason", "") or "").strip()
+    requested_model = str(getattr(result, "requested_model", "") or payload.model or "").strip()
     return {
         "generation_id": result.generation_id,
         "flow": "law_qa",
         "contract_version": result.contract_version,
         "prompt_version": LAW_QA_PROMPT_VERSION,
         "server_code": payload.server_code,
-        "model": payload.model,
+        "model": selected_model or payload.model,
+        "selected_model": selected_model,
+        "selection_reason": selection_reason,
+        "requested_model": requested_model,
         "input_chars": len(payload.question or ""),
         "input_hash": short_text_hash(payload.question or ""),
         "input_preview": mask_text_preview(payload.question or "", max_chars=180),
@@ -1236,26 +1577,21 @@ def _suggest_metrics_meta(
     bundle_generated_at = str(getattr(result, "bundle_generated_at", "") or "").strip()
     bundle_fingerprint = str(getattr(result, "bundle_fingerprint", "") or "").strip()
     selected_norms_count = int(getattr(result, "selected_norms_count", 0) or 0)
-    applicability_mode = str(getattr(result, "applicability_mode", "") or "").strip().lower()
-    applicability_notes = str(getattr(result, "applicability_notes", "") or "").strip()
-    allowed_article_numbers = [
-        str(value).strip()
-        for value in (getattr(result, "allowed_article_numbers", ()) or ())
-        if str(value).strip()
-    ]
-    validation_status = str(getattr(result, "validation_status", "") or "").strip().lower()
-    validation_errors = [
-        str(value).strip().lower()
-        for value in (getattr(result, "validation_errors", ()) or ())
-        if str(value).strip()
-    ]
-    validation_retry_count = int(getattr(result, "validation_retry_count", 0) or 0)
+    policy_mode = str(getattr(result, "policy_mode", "") or "").strip()
+    policy_reason = str(getattr(result, "policy_reason", "") or "").strip()
+    valid_triggers_count = int(getattr(result, "valid_triggers_count", 0) or 0)
+    avg_trigger_confidence = float(getattr(result, "avg_trigger_confidence", 0.0) or 0.0)
+    remediation_retries = int(getattr(result, "remediation_retries", 0) or 0)
     safe_fallback_used = bool(getattr(result, "safe_fallback_used", False))
+    input_warning_codes = tuple(str(item or "").strip() for item in (getattr(result, "input_warning_codes", ()) or ()) if str(item or "").strip())
+    protected_terms = tuple(str(item or "").strip() for item in (getattr(result, "protected_terms", ()) or ()) if str(item or "").strip())
     retrieval_ms = int(getattr(result, "retrieval_ms", 0) or 0)
     openai_ms = int(getattr(result, "openai_ms", 0) or 0)
     total_suggest_ms = int(getattr(result, "total_suggest_ms", 0) or 0)
     telemetry = dict(getattr(result, "telemetry", {}) or {})
     shadow = getattr(result, "shadow", {})
+    selected_model = str(getattr(result, "selected_model", "") or telemetry.get("model") or "").strip()
+    selection_reason = str(getattr(result, "selection_reason", "") or "").strip()
     return {
         "generation_id": result.generation_id,
         "flow": "suggest",
@@ -1271,6 +1607,9 @@ def _suggest_metrics_meta(
         "output_chars": len(result.text or ""),
         "output_hash": short_text_hash(result.text or ""),
         "output_preview": mask_text_preview(result.text or "", max_chars=220),
+        "model": selected_model,
+        "selected_model": selected_model,
+        "selection_reason": selection_reason,
         "guard_status": result.guard_status,
         "guard_warnings": list(result.warnings),
         "budget_status": result.budget_status,
@@ -1283,13 +1622,14 @@ def _suggest_metrics_meta(
         "bundle_generated_at": bundle_generated_at,
         "bundle_fingerprint": bundle_fingerprint,
         "selected_norms_count": selected_norms_count,
-        "applicability_mode": applicability_mode,
-        "applicability_notes": applicability_notes,
-        "allowed_article_numbers": allowed_article_numbers,
-        "validation_status": validation_status,
-        "validation_errors": validation_errors,
-        "validation_retry_count": validation_retry_count,
+        "policy_mode": policy_mode,
+        "policy_reason": policy_reason,
+        "valid_triggers_count": valid_triggers_count,
+        "avg_trigger_confidence": avg_trigger_confidence,
+        "remediation_retries": remediation_retries,
         "safe_fallback_used": safe_fallback_used,
+        "input_warning_codes": list(input_warning_codes),
+        "protected_terms": list(protected_terms),
         "retrieval_ms": retrieval_ms,
         "openai_ms": openai_ms,
         "total_suggest_ms": total_suggest_ms,
@@ -1299,20 +1639,302 @@ def _suggest_metrics_meta(
 
 
 def build_law_qa_metrics_meta(*, payload: LawQaPayload, result: LawQaAnswerResult, used_sources: list[str]) -> dict[str, object]:
-    return _law_qa_metrics_meta(payload=payload, result=result, used_sources=used_sources)
+    return _pipeline_build_law_qa_metrics_meta(
+        payload=payload,
+        result=result,
+        used_sources=used_sources,
+        short_text_hash=short_text_hash,
+        mask_text_preview=mask_text_preview,
+    )
 
 
 def build_suggest_metrics_meta(*, payload: SuggestPayload, result: SuggestTextResult, server_code: str) -> dict[str, object]:
-    return _suggest_metrics_meta(payload=payload, result=result, server_code=server_code)
+    return _pipeline_build_suggest_metrics_meta(
+        payload=payload,
+        result=result,
+        server_code=server_code,
+        short_text_hash=short_text_hash,
+        mask_text_preview=mask_text_preview,
+    )
 
 
-def _build_suggest_law_context(
+def _normalize_suggest_inline(value: object) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip())
+
+
+_SUGGEST_MASK_TERMS = ("маск", "маскиров", "визор", "капюшон")
+_SUGGEST_ENTERTAINMENT_TERMS = (
+    "maze bank arena",
+    "арена",
+    "развлекатель",
+    "увеселит",
+    "казино",
+    "клуб",
+    "бар",
+)
+_SUGGEST_TICKET_SANCTION_TERMS = ("штраф", "тикет")
+_SUGGEST_GENERIC_SECONDARY_PROCESSUAL_ARTICLES = {"20", "39", "59"}
+_SUGGEST_STATE_SERVICE_TERMS = (
+    "государственной службы",
+    "государственный служащий",
+    "госслужащ",
+    "прокурор",
+    "руководств",
+    "начальств",
+)
+_SUGGEST_BOLO_TERMS = ("боло", "розыск", "ориентиров")
+
+
+_SUGGEST_QUALIFIER_PATTERNS = (
+    ("exception", re.compile(r"\bИсключени(?:е|я)\s*:?", flags=re.IGNORECASE)),
+    ("note", re.compile(r"\bПримечани(?:е|я)(?:\s+к\s+(?:ч\.?|част[ьи])\s*\d+)?\s*:?", flags=re.IGNORECASE)),
+    ("comment", re.compile(r"\bКомментар(?:ий|ии)(?:\s+[IVXLC\d]+)?\s*:?", flags=re.IGNORECASE)),
+    ("clarification", re.compile(r"\b(?:Пояснение|Разъяснение)\s*:?", flags=re.IGNORECASE)),
+)
+_SUGGEST_CROSS_REF_PATTERN = re.compile(
+    r"\b(?:ст\.?|стат(?:ья|ьи|ье|ею))\s*\d+(?:\.\d+)?(?:\s*(?:ч\.?|част[ьи])\s*\d+)?(?:\s*(?:п\.?|пункт)\s*[\"«]?[a-zа-яё0-9-]+[\"»]?)?",
+    flags=re.IGNORECASE,
+)
+
+
+def _extract_suggest_norm_cross_refs(
+    text: str,
     *,
-    server_code: str,
-    question: str,
-    payload: SuggestPayload | None = None,
-    max_chunks: int = 4,
-) -> SuggestContextBuildResult:
+    article_label: str = "",
+    max_items: int = 6,
+) -> tuple[str, ...]:
+    normalized_text = _normalize_suggest_inline(text)
+    normalized_article = _normalize_suggest_inline(article_label).lower()
+    refs: list[str] = []
+    seen: set[str] = set()
+    for match in _SUGGEST_CROSS_REF_PATTERN.finditer(normalized_text):
+        ref_text = _normalize_suggest_inline(match.group(0))
+        ref_key = ref_text.lower()
+        if not ref_text or ref_key == normalized_article or ref_key in seen:
+            continue
+        seen.add(ref_key)
+        refs.append(ref_text)
+        if len(refs) >= max_items:
+            break
+    return tuple(refs)
+
+
+def _extract_suggest_norm_qualifiers(
+    text: str,
+    *,
+    article_label: str = "",
+    max_items: int = 6,
+    max_chars: int = 360,
+) -> tuple[dict[str, object], ...]:
+    normalized_text = _normalize_suggest_inline(text)
+    if not normalized_text:
+        return ()
+
+    matches: list[tuple[int, int, str]] = []
+    for kind, pattern in _SUGGEST_QUALIFIER_PATTERNS:
+        for match in pattern.finditer(normalized_text):
+            matches.append((match.start(), match.end(), kind))
+    if not matches:
+        return ()
+
+    matches.sort(key=lambda item: item[0])
+    qualifiers: list[dict[str, object]] = []
+    seen_sections: set[tuple[str, str]] = set()
+    for index, (start, _, kind) in enumerate(matches):
+        end = matches[index + 1][0] if index + 1 < len(matches) else len(normalized_text)
+        section_text = _truncate_suggest_value(normalized_text[start:end].strip(" ,;"), max_chars=max_chars)
+        if not section_text:
+            continue
+        section_key = (kind, section_text.lower())
+        if section_key in seen_sections:
+            continue
+        seen_sections.add(section_key)
+        qualifiers.append(
+            {
+                "kind": kind,
+                "text": section_text,
+                "related_refs": list(_extract_suggest_norm_cross_refs(section_text, article_label=article_label, max_items=4)),
+            }
+        )
+        if len(qualifiers) >= max_items:
+            break
+    return tuple(qualifiers)
+
+
+def _format_suggest_norm_sections(
+    *,
+    qualifiers: tuple[dict[str, object], ...] | list[dict[str, object]],
+    cross_refs: tuple[str, ...] | list[str],
+) -> tuple[str, ...]:
+    lines: list[str] = []
+    for qualifier in qualifiers:
+        kind = str(qualifier.get("kind", "") or "").strip()
+        text = str(qualifier.get("text", "") or "").strip()
+        related_refs = tuple(
+            str(ref or "").strip()
+            for ref in (qualifier.get("related_refs", ()) or ())
+            if str(ref or "").strip()
+        )
+        if not text:
+            continue
+        label = {
+            "exception": "Исключение",
+            "note": "Примечание",
+            "comment": "Комментарий",
+            "clarification": "Разъяснение",
+        }.get(kind, "Квалифицирующий фрагмент")
+        if text.lower().startswith(label.lower()):
+            lines.append(text)
+        else:
+            lines.append(f"{label}: {text}")
+        if related_refs:
+            lines.append(f"Связанные нормы: {', '.join(related_refs)}")
+    normalized_cross_refs = tuple(str(ref or "").strip() for ref in cross_refs if str(ref or "").strip())
+    if normalized_cross_refs:
+        lines.append(f"Перекрестные ссылки (supporting only): {', '.join(normalized_cross_refs)}")
+    return tuple(lines)
+
+
+def _suggest_document_priority_weight(document_title: str) -> int:
+    thresholds = load_policy_thresholds()
+    priority_config = thresholds.get("document_priority", {})
+    default_weight = int(priority_config.get("default_weight", 0) or 0)
+    normalized_title = _normalize_suggest_inline(document_title).lower()
+    for group in priority_config.get("groups", []):
+        patterns = tuple(str(item or "").strip().lower() for item in group.get("patterns", ()) if str(item or "").strip())
+        if normalized_title and any(pattern in normalized_title for pattern in patterns):
+            return int(group.get("weight", default_weight) or default_weight)
+    return default_weight
+
+
+def _suggest_document_group_key(document_title: str) -> str:
+    thresholds = load_policy_thresholds()
+    normalized_title = _normalize_suggest_inline(document_title).lower()
+    for group in thresholds.get("document_priority", {}).get("groups", []):
+        patterns = tuple(str(item or "").strip().lower() for item in group.get("patterns", ()) if str(item or "").strip())
+        if normalized_title and any(pattern in normalized_title for pattern in patterns):
+            return str(group.get("key", "") or "").strip()
+    return ""
+
+
+def _suggest_document_is_applicable(document_title: str, query: str) -> bool:
+    group_key = _suggest_document_group_key(document_title)
+    if group_key != "judicial_system_law":
+        return True
+    court_terms = load_policy_thresholds().get("document_priority", {}).get("court_proceedings_terms", ())
+    normalized_query = _normalize_suggest_inline(query).lower()
+    return any(
+        str(term or "").strip().lower() in normalized_query
+        for term in court_terms
+        if str(term or "").strip()
+    )
+
+
+def _suggest_is_mask_exception_case(text: str) -> bool:
+    normalized_text = _normalize_suggest_inline(text).lower()
+    return any(term in normalized_text for term in _SUGGEST_MASK_TERMS) and any(
+        term in normalized_text for term in _SUGGEST_ENTERTAINMENT_TERMS
+    )
+
+
+def _suggest_primary_article_number(norm_ref: str) -> str:
+    numbers = re.findall(r"\b\d{1,4}(?:\.\d+)?\b", _normalize_suggest_inline(norm_ref))
+    return numbers[0] if numbers else ""
+
+
+def _suggest_norm_targets_mask_exception(document_title: str, article_label: str, excerpt: str) -> bool:
+    combined = _normalize_suggest_inline(" ".join((document_title, article_label, excerpt))).lower()
+    return (
+        "статья 18" in combined
+        and any(term in combined for term in _SUGGEST_MASK_TERMS)
+        and any(term in combined for term in _SUGGEST_ENTERTAINMENT_TERMS)
+    )
+
+
+def _suggest_norm_targets_ticket_sanction(document_title: str, article_label: str, excerpt: str) -> bool:
+    combined = _normalize_suggest_inline(" ".join((document_title, article_label, excerpt))).lower()
+    return any(term in combined for term in _SUGGEST_TICKET_SANCTION_TERMS)
+
+
+def _suggest_contains_any(text: str, terms: tuple[str, ...]) -> bool:
+    normalized_text = _normalize_suggest_inline(text).lower()
+    return any(term in normalized_text for term in terms)
+
+
+def _suggest_norm_targets_state_service_procedure(document_title: str, article_label: str, excerpt: str) -> bool:
+    combined = _normalize_suggest_inline(" ".join((document_title, article_label, excerpt))).lower()
+    return "статья 19" in combined and _suggest_contains_any(combined, _SUGGEST_STATE_SERVICE_TERMS)
+
+
+def _suggest_norm_targets_bolo_procedure(document_title: str, article_label: str, excerpt: str) -> bool:
+    combined = _normalize_suggest_inline(" ".join((document_title, article_label, excerpt))).lower()
+    return "статья 39" in combined and _suggest_contains_any(combined, _SUGGEST_BOLO_TERMS)
+
+
+def _rerank_suggest_matches(matches, query: str):
+    reranked = []
+    mask_exception_case = _suggest_is_mask_exception_case(query)
+    query_has_state_service_terms = _suggest_contains_any(query, _SUGGEST_STATE_SERVICE_TERMS)
+    query_has_bolo_terms = _suggest_contains_any(query, _SUGGEST_BOLO_TERMS)
+    for match in matches:
+        title = str(getattr(getattr(match, "chunk", None), "document_title", "") or "")
+        article_label = str(getattr(getattr(match, "chunk", None), "article_label", "") or "")
+        excerpt = str(getattr(match, "excerpt", "") or getattr(getattr(match, "chunk", None), "text", "") or "")
+        adjusted_score = int(getattr(match, "score", 0) or 0) + _suggest_document_priority_weight(title)
+        if not _suggest_document_is_applicable(title, query):
+            adjusted_score -= 80
+        if not query_has_state_service_terms and _suggest_norm_targets_state_service_procedure(title, article_label, excerpt):
+            adjusted_score -= 70
+        if not query_has_bolo_terms and _suggest_norm_targets_bolo_procedure(title, article_label, excerpt):
+            adjusted_score -= 70
+        if mask_exception_case:
+            if _suggest_norm_targets_mask_exception(title, article_label, excerpt):
+                adjusted_score += 45
+            elif _suggest_norm_targets_ticket_sanction(title, article_label, excerpt):
+                adjusted_score -= 45
+        reranked.append((adjusted_score, match))
+    reranked.sort(key=lambda item: item[0], reverse=True)
+    return reranked
+
+
+def _build_suggest_forced_norms(*, server_code: str, query: str) -> tuple[dict[str, object], ...]:
+    if not _suggest_is_mask_exception_case(query):
+        return ()
+    try:
+        server_config = get_server_config(server_code)
+        bundle_path = str(getattr(server_config, "law_qa_bundle_path", "") or "").strip()
+        if not bundle_path:
+            return ()
+        chunks = load_law_bundle_chunks(server_code, bundle_path)
+    except Exception:
+        return ()
+
+    forced_norms: list[dict[str, object]] = []
+    for chunk in chunks:
+        if not _suggest_norm_targets_mask_exception(chunk.document_title, chunk.article_label, chunk.text):
+            continue
+        excerpt = _extract_relevant_law_excerpt(chunk.text, query, max_chars=900) or _truncate_law_excerpt(
+            chunk.text,
+            max_chars=900,
+        )
+        qualifiers = _extract_suggest_norm_qualifiers(chunk.text, article_label=str(chunk.article_label or ""))
+        cross_refs = _extract_suggest_norm_cross_refs(chunk.text, article_label=str(chunk.article_label or ""))
+        forced_norms.append(
+            {
+                "source_url": chunk.url,
+                "document_title": chunk.document_title,
+                "article_label": chunk.article_label,
+                "excerpt": excerpt,
+                "score": 100,
+                "qualifiers": list(qualifiers),
+                "cross_refs": list(cross_refs),
+            }
+        )
+        break
+    return tuple(forced_norms)
+
+
+def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: int = 4) -> SuggestContextBuildResult:
     retrieval_query = str(question or "").strip()
     if not retrieval_query:
         return SuggestContextBuildResult(
@@ -1324,9 +1946,10 @@ def _build_suggest_law_context(
             bundle_generated_at="",
             bundle_fingerprint="",
             selected_norms_count=0,
-            applicability_mode="factual_only",
-            applicability_notes="Прямые факт-триггеры для статей не найдены.",
+            applicability_mode="",
+            applicability_notes="",
             allowed_article_numbers=(),
+            selected_norms=(),
         )
 
     retrieval_result = _retrieve_law_context(
@@ -1345,15 +1968,17 @@ def _build_suggest_law_context(
             bundle_generated_at=retrieval_result.bundle_health.generated_at,
             bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
             selected_norms_count=0,
-            applicability_mode="factual_only",
-            applicability_notes="Retrieval не нашел надежный правовой контекст для прямых факт-триггеров.",
+            applicability_mode="",
+            applicability_notes="",
             allowed_article_numbers=(),
+            selected_norms=(),
         )
 
-    positive = [match for match in retrieval_result.matches if match.score > 0][:max_chunks]
+    ranked_matches = _rerank_suggest_matches(retrieval_result.matches, retrieval_query)
+    positive = [match for adjusted_score, match in ranked_matches if adjusted_score > 0][:max_chunks]
     selected_matches = list(positive)
-    if not selected_matches and retrieval_result.matches:
-        selected_matches = list(retrieval_result.matches[:max_chunks])
+    if not selected_matches and ranked_matches:
+        selected_matches = [match for _, match in ranked_matches[:max_chunks]]
     if not selected_matches:
         return SuggestContextBuildResult(
             context_text="",
@@ -1364,45 +1989,65 @@ def _build_suggest_law_context(
             bundle_generated_at=retrieval_result.bundle_health.generated_at,
             bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
             selected_norms_count=0,
-            applicability_mode="factual_only",
-            applicability_notes="Retrieval не вернул применимых норм для черновика.",
+            applicability_mode="",
+            applicability_notes="",
             allowed_article_numbers=(),
+            selected_norms=(),
         )
-
-    applicability_mode = "factual_plus_legal"
-    applicability_notes = "Применимость норм не проверялась."
-    allowed_article_numbers: tuple[str, ...] = ()
-    if payload is not None:
-        applicability = select_applicable_articles(
-            server_code=server_code,
-            payload=payload,
-            matches=selected_matches,
-        )
-        selected_matches = list(applicability.matches) or ([] if applicability.mode == "factual_only" else list(selected_matches))
-        applicability_mode = applicability.mode
-        applicability_notes = applicability.prompt_block
-        allowed_article_numbers = applicability.allowed_article_numbers
-        if applicability.mode == "factual_only":
-            context_mode = "no_context" if retrieval_result.confidence == "low" else "low_confidence_context"
-            return SuggestContextBuildResult(
-                context_text="",
-                retrieval_confidence=retrieval_result.confidence,
-                retrieval_context_mode=context_mode,
-                retrieval_profile=retrieval_result.profile,
-                bundle_status=retrieval_result.bundle_health.status,
-                bundle_generated_at=retrieval_result.bundle_health.generated_at,
-                bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
-                selected_norms_count=0,
-                applicability_mode=applicability.mode,
-                applicability_notes=applicability.prompt_block,
-                allowed_article_numbers=(),
-            )
 
     parts: list[str] = []
+    selected_norms: list[dict[str, object]] = []
+    seen_norm_keys: set[tuple[str, str, str]] = set()
+    forced_norms = _build_suggest_forced_norms(server_code=server_code, query=retrieval_query)
+    for norm in forced_norms:
+        key = (
+            str(norm.get("source_url", "") or "").strip(),
+            str(norm.get("document_title", "") or "").strip(),
+            str(norm.get("article_label", "") or "").strip(),
+        )
+        if key in seen_norm_keys:
+            continue
+        seen_norm_keys.add(key)
+        selected_norms.append(norm)
+        parts.append(
+            "\n".join(
+                (
+                    f"Источник: {norm.get('source_url', '')}",
+                    f"Документ: {norm.get('document_title', '')}",
+                    f"Норма: {norm.get('article_label', '')}",
+                    f"Фрагмент: {norm.get('excerpt', '')}",
+                    *_format_suggest_norm_sections(
+                        qualifiers=tuple(norm.get("qualifiers", ()) or ()),
+                        cross_refs=tuple(norm.get("cross_refs", ()) or ()),
+                    ),
+                )
+            ).strip()
+        )
     for match in selected_matches:
         excerpt = match.excerpt
         if not excerpt:
             continue
+        chunk_text = str(getattr(match.chunk, "text", "") or excerpt)
+        qualifiers = _extract_suggest_norm_qualifiers(chunk_text, article_label=str(match.chunk.article_label or ""))
+        cross_refs = _extract_suggest_norm_cross_refs(chunk_text, article_label=str(match.chunk.article_label or ""))
+        norm_payload = {
+            "source_url": match.chunk.url,
+            "document_title": match.chunk.document_title,
+            "article_label": match.chunk.article_label,
+            "excerpt": excerpt,
+            "score": match.score,
+            "qualifiers": list(qualifiers),
+            "cross_refs": list(cross_refs),
+        }
+        key = (
+            str(norm_payload.get("source_url", "") or "").strip(),
+            str(norm_payload.get("document_title", "") or "").strip(),
+            str(norm_payload.get("article_label", "") or "").strip(),
+        )
+        if key in seen_norm_keys:
+            continue
+        seen_norm_keys.add(key)
+        selected_norms.append(norm_payload)
         parts.append(
             "\n".join(
                 (
@@ -1410,6 +2055,7 @@ def _build_suggest_law_context(
                     f"\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442: {match.chunk.document_title}",
                     f"\u041d\u043e\u0440\u043c\u0430: {match.chunk.article_label}",
                     f"\u0424\u0440\u0430\u0433\u043c\u0435\u043d\u0442: {excerpt}",
+                    *_format_suggest_norm_sections(qualifiers=qualifiers, cross_refs=cross_refs),
                 )
             )
         )
@@ -1427,10 +2073,11 @@ def _build_suggest_law_context(
         bundle_status=retrieval_result.bundle_health.status,
         bundle_generated_at=retrieval_result.bundle_health.generated_at,
         bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
-        selected_norms_count=len(selected_matches),
-        applicability_mode=applicability_mode,
-        applicability_notes=applicability_notes,
-        allowed_article_numbers=allowed_article_numbers,
+        selected_norms_count=len(selected_norms),
+        applicability_mode="",
+        applicability_notes="",
+        allowed_article_numbers=(),
+        selected_norms=tuple(selected_norms),
     )
 
 
@@ -1445,12 +2092,25 @@ def _normalize_suggest_retrieval_fragment(value: str, *, max_chars: int | None =
     return truncated[:cutoff].rstrip(" ,;:-") + "…"
 
 
+def _build_suggest_retrieval_hints(payload: SuggestPayload) -> tuple[str, ...]:
+    raw_desc = _normalize_suggest_inline(payload.raw_desc).lower()
+    if _suggest_is_mask_exception_case(raw_desc):
+        return (
+            "статья 18 административный кодекс",
+            "допустимость ношения маски",
+            "развлекательное учреждение",
+            "Maze Bank Arena",
+        )
+    return ()
+
+
 def build_suggest_retrieval_query_light(payload: SuggestPayload, *, raw_desc_limit: int = 360) -> str:
     return " ".join(
         part
         for part in (
             _normalize_suggest_retrieval_fragment(payload.complaint_basis),
             _normalize_suggest_retrieval_fragment(payload.main_focus),
+            *(_normalize_suggest_retrieval_fragment(item) for item in _build_suggest_retrieval_hints(payload)),
             _normalize_suggest_retrieval_fragment(payload.org),
             _normalize_suggest_retrieval_fragment(payload.subject),
             _normalize_suggest_retrieval_fragment(payload.raw_desc, max_chars=raw_desc_limit),
@@ -1459,55 +2119,143 @@ def build_suggest_retrieval_query_light(payload: SuggestPayload, *, raw_desc_lim
     )
 
 
-def _clean_suggest_text(text: str) -> str:
-    normalized = str(text or "").replace("\r\n", "\n").strip()
-    if not normalized:
-        return ""
+def _select_prompt_valid_triggers(valid_triggers, *, max_items: int = 2):
+    def is_generic_secondary_support(trigger) -> bool:
+        group_key = _suggest_document_group_key(str(getattr(trigger, "document_title", "") or ""))
+        if group_key != "processual_code":
+            return False
+        return _suggest_primary_article_number(str(getattr(trigger, "norm_ref", "") or "")) in _SUGGEST_GENERIC_SECONDARY_PROCESSUAL_ARTICLES
 
-    normalized = re.sub(r"```(?:[\w+-]+)?\s*([\s\S]*?)```", lambda match: match.group(1).strip(), normalized)
-    normalized = re.sub(
-        r"\n?\s*(?:источники|sources)\s*:\s*[\s\S]*$",
-        "",
-        normalized,
-        flags=re.IGNORECASE,
+    def trigger_key(trigger):
+        generic_secondary = is_generic_secondary_support(trigger)
+        return (
+            1 if getattr(trigger, "matched_in_input", False) else 0,
+            0 if generic_secondary else 1,
+            1 if getattr(trigger, "qualifiers", ()) and not generic_secondary else 0,
+            float(getattr(trigger, "trigger_confidence", 0.0) or 0.0),
+            _suggest_document_priority_weight(str(getattr(trigger, "document_title", "") or "")),
+        )
+
+    def deserves_secondary_slot(trigger) -> bool:
+        if is_generic_secondary_support(trigger) and not bool(getattr(trigger, "matched_in_input", False)):
+            return False
+        return (
+            bool(getattr(trigger, "matched_in_input", False))
+            or bool(getattr(trigger, "qualifiers", ()) or ())
+            or not is_generic_secondary_support(trigger)
+        )
+
+    ranked = sorted(
+        valid_triggers,
+        key=trigger_key,
+        reverse=True,
     )
+    selected = []
+    seen: set[tuple[str, str, str]] = set()
+    for trigger in ranked:
+        key = (
+            str(getattr(trigger, "source_url", "") or "").strip(),
+            str(getattr(trigger, "document_title", "") or "").strip(),
+            str(getattr(trigger, "norm_ref", "") or "").strip(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        if selected and not deserves_secondary_slot(trigger):
+            continue
+        selected.append(trigger)
+        if len(selected) >= max_items:
+            break
+    return tuple(selected)
 
-    cleaned_lines: list[str] = []
-    for raw_line in normalized.splitlines():
-        line = raw_line.strip()
-        if not line:
-            if cleaned_lines and cleaned_lines[-1] != "":
-                cleaned_lines.append("")
-            continue
-        if re.fullmatch(
-            r"(?i)(?:пункт\s*3|описательная\s+часть\s+жалобы|текст\s+жалобы|вариант\s+текста|готовый\s+текст)",
-            line,
-        ):
-            continue
-        if re.match(r"(?i)^(?:вот|ниже|готовый|обновленный|переписанный)\b.*(?:текст|вариант|пункт\s*3)", line):
-            continue
-        line = re.sub(r"^[-*•]\s+", "", line)
-        line = re.sub(r"^\d+\.\s+", "", line)
-        cleaned_lines.append(line)
 
-    cleaned = "\n".join(cleaned_lines)
-    cleaned = re.sub(r"\n{2,}", " ", cleaned)
-    cleaned = re.sub(r"\s+", " ", cleaned)
-    return cleaned.strip()
+def _build_filtered_prompt_law_context(
+    *,
+    point3_context,
+    suggest_context: SuggestContextBuildResult,
+    fallback_law_context: str,
+) -> str:
+    valid_triggers = [item for item in point3_context.triggers if item.is_valid]
+    if valid_triggers:
+        parts: list[str] = []
+        seen: set[tuple[str, str, str]] = set()
+        for trigger in valid_triggers:
+            key = (
+                str(trigger.source_url or "").strip(),
+                str(trigger.document_title or "").strip(),
+                str(trigger.norm_ref or "").strip(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            parts.append(
+                "\n".join(
+                    (
+                        f"Источник: {trigger.source_url}",
+                        f"Документ: {trigger.document_title}",
+                        f"Норма: {trigger.norm_ref}",
+                        f"Фрагмент: {trigger.excerpt}",
+                    )
+                ).strip()
+            )
+        filtered = "\n\n".join(part for part in parts if part).strip()
+        if filtered:
+            return filtered
+
+    if suggest_context.selected_norms and point3_context.policy_decision.mode == MODE_FACTUAL_FALLBACK_EXPANDED:
+        return ""
+    return fallback_law_context
+
+
+def _build_filtered_prompt_law_context(
+    *,
+    point3_context,
+    suggest_context: SuggestContextBuildResult,
+    fallback_law_context: str,
+) -> str:
+    valid_triggers = [item for item in point3_context.triggers if item.is_valid]
+    if valid_triggers:
+        parts: list[str] = []
+        for trigger in _select_prompt_valid_triggers(valid_triggers, max_items=2):
+            parts.append(
+                "\n".join(
+                    (
+                        f"Источник: {trigger.source_url}",
+                        f"Документ: {trigger.document_title}",
+                        f"Норма: {trigger.norm_ref}",
+                        f"Фрагмент: {trigger.excerpt}",
+                        *_format_suggest_norm_sections(
+                            qualifiers=tuple(
+                                {
+                                    "kind": getattr(item, "kind", ""),
+                                    "text": getattr(item, "text", ""),
+                                    "related_refs": list(getattr(item, "related_refs", ()) or ()),
+                                }
+                                for item in (getattr(trigger, "qualifiers", ()) or ())
+                            ),
+                            cross_refs=getattr(trigger, "cross_refs", ()) or (),
+                        ),
+                    )
+                ).strip()
+            )
+        filtered = "\n\n".join(part for part in parts if part).strip()
+        if filtered:
+            return filtered
+
+    if suggest_context.selected_norms and point3_context.policy_decision.mode == MODE_FACTUAL_FALLBACK_EXPANDED:
+        return ""
+    return fallback_law_context
+
+
+def _clean_suggest_text(text: str) -> str:
+    return _pipeline_clean_suggest_text(text)
 
 
 def _truncate_suggest_value(value: str, *, max_chars: int) -> str:
-    normalized = str(value or "").strip()
-    if max_chars <= 0 or len(normalized) <= max_chars:
-        return normalized
-    head = normalized[: max_chars + 1]
-    split_index = head.rfind(" ")
-    if split_index < max(0, int(max_chars * 0.6)):
-        split_index = max_chars
-    return head[:split_index].rstrip(" ,;:-") + "..."
+    return _pipeline_truncate_suggest_value(value, max_chars=max_chars)
 
 
-def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
+def _answer_law_question_details_impl(payload: LawQaPayload) -> LawQaAnswerResult:
     question = payload.question.strip()
     if not question:
         raise HTTPException(
@@ -1515,7 +2263,7 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
             detail=["\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0432\u043e\u043f\u0440\u043e\u0441 \u0434\u043b\u044f \u0430\u043d\u0430\u043b\u0438\u0437\u0430."],
         )
 
-    model_name = resolve_law_qa_model(payload.model)
+    requested_model = str(payload.model or "").strip()
     generation_id = new_generation_id()
     retrieval_result = _retrieve_law_context(
         server_code=payload.server_code or DEFAULT_SERVER_CODE,
@@ -1544,6 +2292,14 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
         )
 
     server_config = get_server_config(retrieval_result.server_code)
+    selection = _select_law_qa_model(
+        question=question,
+        retrieval_confidence=retrieval_result.confidence,
+        server_config=server_config,
+    )
+    model_name = selection.model_name
+    selection_reason = selection.reason
+    low_confidence_model = _get_flow_model("law_qa", "low_confidence_model", "gpt-5.4")
     shadow = build_shadow_comparison(enabled=False, profile="", primary_matches=retrieval_result.matches, shadow_matches=())
     if _server_feature_enabled(server_config, "legal_pipeline_shadow"):
         shadow_profile = str(getattr(server_config, "shadow_law_qa_profile", "") or "").strip()
@@ -1603,6 +2359,9 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
                 raise
             except Exception as exc:
                 if _is_context_window_error(exc) and attempt_index < len(context_attempts) - 1:
+                    if low_confidence_model and model_name != low_confidence_model:
+                        model_name = low_confidence_model
+                        selection_reason = "law_qa_context_compacted"
                     LOGGER.warning(
                         "Law QA prompt exceeded context window for model %s; retrying with compact context level=%s",
                         model_name,
@@ -1617,7 +2376,9 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
             raise
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
 
-    limited = text[: payload.max_answer_chars].strip()
+    sanitized_text = strip_law_qa_source_urls(text)
+    sanitized_text = normalize_law_qa_text_formatting(sanitized_text)
+    limited = sanitized_text[: payload.max_answer_chars].strip()
     latency_ms = int((monotonic() - request_started_at) * 1000)
     telemetry = build_ai_telemetry(
         model_name=model_name,
@@ -1637,6 +2398,9 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
     telemetry_meta = telemetry_to_meta(telemetry)
     telemetry_meta.update(
         {
+            "selected_model": model_name,
+            "selection_reason": selection_reason,
+            "requested_model": requested_model,
             "context_compaction_level": compaction_level,
             "context_compacted": bool(compaction_level > 0),
         }
@@ -1667,7 +2431,14 @@ def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
         budget_status=budget_assessment.status,
         budget_warnings=list(budget_assessment.warnings),
         budget_policy=policy_to_meta(budget_assessment.policy),
+        selected_model=model_name,
+        selection_reason=selection_reason,
+        requested_model=requested_model,
     )
+
+
+def answer_law_question_details(payload: LawQaPayload) -> LawQaAnswerResult:
+    return run_law_qa(payload, LawQaOrchestrationDeps(impl=_answer_law_question_details_impl))
 
 
 def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
@@ -1675,7 +2446,7 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
     return result.text, result.used_sources, result.indexed_documents
 
 
-def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> SuggestTextResult:
+def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> SuggestTextResult:
     total_started_at = monotonic()
     if not payload.victim_name.strip() or not payload.org.strip() or not payload.subject.strip() or not payload.event_dt.strip():
         raise HTTPException(
@@ -1702,7 +2473,6 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
     suggest_context_raw = _build_suggest_law_context(
         server_code=server_code,
         question=suggest_query,
-        payload=payload,
     )
     if isinstance(suggest_context_raw, SuggestContextBuildResult):
         suggest_context = suggest_context_raw
@@ -1716,9 +2486,10 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
             bundle_generated_at="",
             bundle_fingerprint="",
             selected_norms_count=0,
-            applicability_mode="factual_plus_legal" if str(suggest_context_raw or "").strip() else "factual_only",
-            applicability_notes="Fallback context result without applicability metadata.",
+            applicability_mode="",
+            applicability_notes="",
             allowed_article_numbers=(),
+            selected_norms=(),
         )
     retrieval_ms = int((monotonic() - retrieval_started_at) * 1000)
     law_context = suggest_context.context_text
@@ -1766,6 +2537,14 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
     complaint_basis = payload.complaint_basis.strip()
     main_focus = payload.main_focus.strip()
     raw_desc = payload.raw_desc.strip()
+    selection = _select_suggest_model(
+        payload=payload,
+        retrieval_context_mode=suggest_context.retrieval_context_mode,
+        server_config=server_config,
+    )
+    selected_model = selection.model_name
+    selection_reason = selection.reason
+    low_confidence_model = _get_flow_model("suggest", "low_confidence_model", "gpt-5.4")
     if low_confidence_policy == "soft_fail" and suggest_context.retrieval_context_mode in {"low_confidence_context", "no_context"}:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1773,26 +2552,40 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
                 "Недостаточно надежного правового контекста для генерации. Уточните факты и повторите запрос.",
             ],
         )
-    suggest_attempts = (
-        (raw_desc, law_context),
-        (raw_desc, _truncate_suggest_value(law_context, max_chars=2600)),
-        (raw_desc, _truncate_suggest_value(law_context, max_chars=1500)),
-        (_truncate_suggest_value(raw_desc, max_chars=8000), _truncate_suggest_value(law_context, max_chars=1200)),
-        (_truncate_suggest_value(raw_desc, max_chars=5000), _truncate_suggest_value(law_context, max_chars=700)),
+    point3_context = build_point3_pipeline_context(
+        complainant=victim_name,
+        organization=org,
+        target_person=subject,
+        event_datetime=event_dt,
+        draft_text=raw_desc,
+        complaint_basis=complaint_basis,
+        main_focus=main_focus,
+        retrieval_status=suggest_context.retrieval_context_mode,
+        retrieval_confidence=suggest_context.retrieval_confidence,
+        retrieved_law_context=law_context,
+        selected_norms=suggest_context.selected_norms,
     )
-    applicability_notes = str(suggest_context.applicability_notes or "").strip()
-    force_factual_only = str(suggest_context.applicability_mode or "").strip().lower() == "factual_only"
-    selected_raw_desc = raw_desc
-    selected_law_context = law_context
+    policy_mode = point3_context.policy_decision.mode
+    pipeline_context_payload = point3_context.prompt_context_json()
+    prompt_law_context = _build_filtered_prompt_law_context(
+        point3_context=point3_context,
+        suggest_context=suggest_context,
+        fallback_law_context=law_context,
+    )
+    suggest_attempts = (
+        (raw_desc, prompt_law_context),
+        (raw_desc, _truncate_suggest_value(prompt_law_context, max_chars=2600)),
+        (raw_desc, _truncate_suggest_value(prompt_law_context, max_chars=1500)),
+        (_truncate_suggest_value(raw_desc, max_chars=8000), _truncate_suggest_value(prompt_law_context, max_chars=1200)),
+        (_truncate_suggest_value(raw_desc, max_chars=5000), _truncate_suggest_value(prompt_law_context, max_chars=700)),
+    )
 
     prompt_text = ""
     generation_result: TextGenerationResult | None = None
     openai_ms = 0
     suggest_compaction_level = 0
     validation_retry_count = 0
-    validation_status = "pass"
     validation_errors: tuple[str, ...] = ()
-    safe_fallback_used = False
     request_started_at = monotonic()
     try:
         for attempt_index, (attempt_raw_desc, attempt_law_context) in enumerate(suggest_attempts):
@@ -1806,14 +2599,15 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
                 main_focus=main_focus,
                 law_context=attempt_law_context,
                 prompt_mode=suggest_prompt_mode,
+                policy_mode=policy_mode,
+                pipeline_context=pipeline_context_payload,
                 retrieval_context_mode=suggest_context.retrieval_context_mode,
-                applicability_notes=applicability_notes,
-                force_factual_only=force_factual_only,
             )
             try:
                 generation_result = suggest_description_with_proxy_fallback_result(
                     api_key=api_key,
                     proxy_url=proxy_url,
+                    model_name=selected_model,
                     victim_name=victim_name,
                     org=org,
                     subject=subject,
@@ -1823,18 +2617,19 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
                     main_focus=main_focus,
                     law_context=attempt_law_context,
                     prompt_mode=suggest_prompt_mode,
+                    policy_mode=policy_mode,
+                    pipeline_context=pipeline_context_payload,
                     retrieval_context_mode=suggest_context.retrieval_context_mode,
                     bundle_fingerprint=suggest_context.bundle_fingerprint,
                     retrieval_profile=suggest_context.retrieval_profile,
-                    applicability_notes=applicability_notes,
-                    force_factual_only=force_factual_only,
                 )
                 suggest_compaction_level = attempt_index
-                selected_raw_desc = attempt_raw_desc
-                selected_law_context = attempt_law_context
                 break
             except Exception as exc:
                 if _is_context_window_error(exc) and attempt_index < len(suggest_attempts) - 1:
+                    if low_confidence_model and selected_model != low_confidence_model:
+                        selected_model = low_confidence_model
+                        selection_reason = "suggest_context_compacted"
                     LOGGER.warning(
                         "Suggest prompt exceeded context window; retrying with compact context level=%s",
                         attempt_index + 1,
@@ -1843,6 +2638,7 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
                 raise
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
+    openai_ms = int((monotonic() - request_started_at) * 1000)
     if generation_result is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1861,122 +2657,130 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=["Модель вернула некорректный формат ответа. Попробуйте еще раз."],
         )
-    validation_result = validate_suggest_output(
-        text=cleaned,
-        payload=payload,
-        server_code=server_code,
-        allowed_article_numbers=suggest_context.allowed_article_numbers,
-        allow_article_citations=not force_factual_only,
-    )
-    if validation_result.status != "pass":
-        validation_retry_count = 1
-        validation_status = "retry"
-        validation_errors = tuple(validation_result.error_codes)
-        retry_instruction = build_validation_retry_instruction(validation_result)
+    initial_validation = validate_generated_paragraph(cleaned, point3_context)
+    if initial_validation.blocker_codes:
+        validation_errors = _legacy_validation_error_codes(tuple(initial_validation.blocker_codes))
         try:
-            prompt_text = build_suggest_prompt(
-                victim_name=victim_name,
-                org=org,
-                subject=subject,
-                event_dt=event_dt,
-                raw_desc=selected_raw_desc,
-                complaint_basis=complaint_basis,
-                main_focus=main_focus,
-                law_context=selected_law_context,
-                prompt_mode=suggest_prompt_mode,
-                retrieval_context_mode=suggest_context.retrieval_context_mode,
-                applicability_notes=applicability_notes,
-                validation_error=retry_instruction,
-                force_factual_only=force_factual_only,
-            )
-            generation_result = suggest_description_with_proxy_fallback_result(
+            retry_generation = suggest_description_with_proxy_fallback_result(
                 api_key=api_key,
                 proxy_url=proxy_url,
+                model_name=selected_model,
                 victim_name=victim_name,
                 org=org,
                 subject=subject,
                 event_dt=event_dt,
-                raw_desc=selected_raw_desc,
+                raw_desc=raw_desc,
                 complaint_basis=complaint_basis,
                 main_focus=main_focus,
-                law_context=selected_law_context,
+                law_context=prompt_law_context,
                 prompt_mode=suggest_prompt_mode,
+                policy_mode=policy_mode,
+                pipeline_context=pipeline_context_payload,
                 retrieval_context_mode=suggest_context.retrieval_context_mode,
                 bundle_fingerprint=suggest_context.bundle_fingerprint,
                 retrieval_profile=suggest_context.retrieval_profile,
-                applicability_notes=applicability_notes,
-                validation_error=retry_instruction,
-                force_factual_only=force_factual_only,
+                validation_error=", ".join(validation_errors),
             )
-            retry_cleaned = _clean_suggest_text(generation_result.text or "")
-            retry_validation = validate_suggest_output(
-                text=retry_cleaned,
-                payload=payload,
-                server_code=server_code,
-                allowed_article_numbers=suggest_context.allowed_article_numbers,
-                allow_article_citations=not force_factual_only,
-            )
-            if retry_cleaned and retry_validation.status == "pass":
-                cleaned = retry_cleaned
-                validation_status = "pass_after_retry"
-            else:
-                validation_status = "fallback"
-                validation_errors = tuple(retry_validation.error_codes or validation_result.error_codes)
-                cleaned = build_safe_factual_fallback(payload)
-                safe_fallback_used = True
-        except Exception:
-            validation_status = "fallback"
-            cleaned = build_safe_factual_fallback(payload)
-            safe_fallback_used = True
-    openai_ms = int((monotonic() - request_started_at) * 1000)
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
+        retry_text = _clean_suggest_text(retry_generation.text)
+        if retry_text:
+            generation_result = retry_generation
+            cleaned = retry_text
+            validation_retry_count = 1
+    post_retry_validation = validate_generated_paragraph(cleaned, point3_context)
+    if validation_retry_count > 0 and post_retry_validation.blocker_codes:
+        fallback_text = build_safe_fallback_paragraph(point3_context)
+        fallback_validation = validate_generated_paragraph(fallback_text, point3_context)
+        remediation = RemediationOutcome(
+            text=fallback_text,
+            validation=fallback_validation,
+            retries_used=0,
+            safe_fallback_used=True,
+        )
+    else:
+        remediation = apply_validation_remediation(cleaned, point3_context)
+    final_text = remediation.text
+    if not final_text:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=["РњРѕРґРµР»СЊ РІРµСЂРЅСѓР»Р° РїСѓСЃС‚РѕР№ РёР»Рё РЅРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ С‚РµРєСЃС‚ РїРѕСЃР»Рµ РІР°Р»РёРґР°С†РёРё."],
+        )
     total_suggest_ms = int((monotonic() - total_started_at) * 1000)
     telemetry = build_ai_telemetry(
-        model_name=OPENAI_TEXT_MODEL,
+        model_name=selected_model,
         prompt_text=prompt_text,
-        output_text=cleaned,
+        output_text=final_text,
         usage=generation_result.usage,
         latency_ms=openai_ms,
         cache_hit=generation_result.cache_hit,
     )
     budget_assessment = evaluate_budget(flow="suggest", telemetry=telemetry)
-    guard_result = guard_suggest_answer(text=cleaned)
+    validation_result = remediation.validation
+    guard_result = guard_suggest_answer(text=final_text)
+    combined_guard_status = "fail" if validation_result.blockers else "warn" if (
+        guard_result.status == "warn" or validation_result.status == "warn"
+    ) else "pass"
+    if not validation_errors:
+        validation_errors = _legacy_validation_error_codes(tuple(validation_result.blocker_codes))
+    validation_status = validation_result.status
+    if remediation.safe_fallback_used:
+        validation_status = "fallback"
+    elif validation_retry_count > 0:
+        validation_status = "pass_after_retry"
     telemetry_meta = telemetry_to_meta(telemetry)
     telemetry_meta.update(
         {
             "attempt_path": generation_result.attempt_path,
             "attempt_duration_ms": generation_result.attempt_duration_ms,
             "route_policy": generation_result.route_policy,
+            "selected_model": selected_model,
+            "selection_reason": selection_reason,
             "context_compaction_level": suggest_compaction_level,
             "context_compacted": bool(suggest_compaction_level > 0),
             "retrieval_context_mode": suggest_context.retrieval_context_mode,
-            "applicability_mode": suggest_context.applicability_mode,
-            "allowed_article_numbers": list(suggest_context.allowed_article_numbers),
-            "validation_status": validation_status,
+            "policy_mode": policy_mode,
+            "policy_reason": point3_context.policy_decision.reason,
+            "valid_triggers_count": point3_context.policy_decision.valid_triggers_count,
+            "avg_trigger_confidence": point3_context.policy_decision.avg_confidence,
+            "validator_warning_codes": list(validation_result.warning_codes),
+            "validator_info_codes": list(validation_result.info_codes),
             "validation_errors": list(validation_errors),
             "validation_retry_count": validation_retry_count,
-            "safe_fallback_used": safe_fallback_used,
+            "validation_status": validation_status,
+            "input_warning_codes": list(point3_context.input_audit.warning_codes),
+            "protected_terms": list(point3_context.input_audit.protected_terms),
+            "remediation_retries": remediation.retries_used,
+            "safe_fallback_used": remediation.safe_fallback_used,
         }
     )
     return SuggestTextResult(
-        text=cleaned,
+        text=final_text,
         generation_id=generation_id,
-        guard_status=guard_result.status,
+        guard_status=combined_guard_status,
         contract_version=LEGAL_PIPELINE_CONTRACT_VERSION,
         warnings=list(
             dict.fromkeys(
                 list(guard_result.warning_codes)
+                + list(validation_result.warning_codes)
                 + list(budget_assessment.warnings)
+                + list(point3_context.input_audit.warning_codes)
                 + (
                     ["suggest_low_confidence_context"]
                     if suggest_context.retrieval_context_mode == "low_confidence_context"
                     else []
                 )
-                + (["suggest_no_article_triggers"] if force_factual_only else [])
                 + (["suggest_no_context"] if suggest_context.retrieval_context_mode == "no_context" else [])
                 + (["suggest_context_compacted"] if suggest_compaction_level > 0 else [])
-                + ([f"suggest_validation_{code}" for code in validation_errors])
-                + (["suggest_validation_retry"] if validation_retry_count else [])
-                + (["suggest_safe_factual_fallback"] if safe_fallback_used else [])
+                + (["suggest_output_remediated"] if remediation.retries_used > 0 else [])
+                + (["suggest_safe_fallback_template"] if remediation.safe_fallback_used else [])
+                + (["suggest_safe_factual_fallback"] if remediation.safe_fallback_used else [])
+                + (["suggest_validation_retry"] if validation_retry_count > 0 else [])
+                + (
+                    ["suggest_factual_fallback_expanded"]
+                    if policy_mode == MODE_FACTUAL_FALLBACK_EXPANDED
+                    else ["suggest_legal_grounded"]
+                )
             )
         ),
         shadow=_shadow_to_dict(shadow),
@@ -1995,49 +2799,46 @@ def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_
         bundle_generated_at=suggest_context.bundle_generated_at,
         bundle_fingerprint=suggest_context.bundle_fingerprint,
         selected_norms_count=suggest_context.selected_norms_count,
-        applicability_mode=suggest_context.applicability_mode,
-        applicability_notes=suggest_context.applicability_notes,
-        allowed_article_numbers=suggest_context.allowed_article_numbers,
+        policy_mode=policy_mode,
+        policy_reason=point3_context.policy_decision.reason,
+        valid_triggers_count=point3_context.policy_decision.valid_triggers_count,
+        avg_trigger_confidence=point3_context.policy_decision.avg_confidence,
+        remediation_retries=remediation.retries_used,
+        safe_fallback_used=remediation.safe_fallback_used,
         validation_status=validation_status,
-        validation_errors=validation_errors,
         validation_retry_count=validation_retry_count,
-        safe_fallback_used=safe_fallback_used,
+        validation_errors=validation_errors,
+        input_warning_codes=point3_context.input_audit.warning_codes,
+        protected_terms=point3_context.input_audit.protected_terms,
+        selected_model=selected_model,
+        selection_reason=selection_reason,
     )
+
+
+def suggest_text_details(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> SuggestTextResult:
+    return run_suggest(payload, server_code=server_code, deps=SuggestOrchestrationDeps(impl=lambda p, s: _suggest_text_details_impl(p, server_code=s)))
 
 
 def suggest_text(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> str:
     return suggest_text_details(payload, server_code=server_code).text
 
 
-def extract_principal_scan(payload: PrincipalScanPayload) -> PrincipalScanResult:
-    image_data_url = payload.image_data_url.strip()
-    if not image_data_url.startswith("data:image/"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=["Загрузите изображение в формате PNG, JPG, WEBP или GIF."],
-        )
-
+def _extract_principal_scan_impl(payload: PrincipalScanPayload) -> PrincipalScanResult:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
 
-    try:
-        data = extract_principal_fields_with_proxy_fallback(
-            api_key=api_key,
-            proxy_url=proxy_url,
-            image_data_url=image_data_url,
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
+    return run_principal_scan(
+        payload,
+        PrincipalScanDeps(
+            impl=lambda image_data_url: extract_principal_fields_with_proxy_fallback(
+                api_key=api_key,
+                proxy_url=proxy_url,
+                image_data_url=image_data_url,
+            ),
+            ai_exception_details=_ai_exception_details,
+        ),
+    )
 
-    try:
-        result = PrincipalScanResult.model_validate(data)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=[f"Модель вернула ответ в неожиданном формате: {exc}"],
-        ) from exc
 
-    if not result.principal_address.strip():
-        result.principal_address = "-"
-
-    return result
+def extract_principal_scan(payload: PrincipalScanPayload) -> PrincipalScanResult:
+    return _extract_principal_scan_impl(payload)

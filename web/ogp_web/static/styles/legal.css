@@ -662,9 +662,99 @@
   text-align: center;
 }
 
+.exam-detail-modal-card {
+  width: min(1320px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  overflow: hidden;
+}
+
 .exam-detail-shell {
-  max-height: 60vh;
+  max-height: min(44vh, 540px);
   overflow: auto;
+}
+
+.exam-detail-shell--scores {
+  max-height: min(46vh, 560px);
+}
+
+.exam-detail-shell--payload {
+  max-height: min(34vh, 420px);
+}
+
+.exam-detail-table {
+  table-layout: fixed;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.exam-detail-table th,
+.exam-detail-table td {
+  padding: 12px 14px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.exam-detail-table th {
+  letter-spacing: 0.04em;
+}
+
+.exam-detail-table--scores th:nth-child(1),
+.exam-detail-table--scores td:nth-child(1) {
+  width: 64px;
+}
+
+.exam-detail-table--scores th:nth-child(2),
+.exam-detail-table--scores td:nth-child(2) {
+  width: 26%;
+}
+
+.exam-detail-table--scores th:nth-child(3),
+.exam-detail-table--scores td:nth-child(3) {
+  width: 18%;
+}
+
+.exam-detail-table--scores th:nth-child(4),
+.exam-detail-table--scores td:nth-child(4) {
+  width: 22%;
+}
+
+.exam-detail-table--scores th:nth-child(5),
+.exam-detail-table--scores td:nth-child(5) {
+  width: 14%;
+}
+
+.exam-detail-table--scores th:nth-child(6),
+.exam-detail-table--scores td:nth-child(6) {
+  width: 84px;
+}
+
+.exam-detail-table--scores th:nth-child(7),
+.exam-detail-table--scores td:nth-child(7) {
+  width: 20%;
+}
+
+.exam-detail-table--payload th:nth-child(1),
+.exam-detail-table--payload td:nth-child(1) {
+  width: 34%;
+}
+
+.exam-detail-table--payload th:nth-child(2),
+.exam-detail-table--payload td:nth-child(2) {
+  width: 66%;
+}
+
+.exam-table-cell {
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.exam-table-cell--keypoints {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.exam-detail-table__col--score {
+  white-space: nowrap;
 }
 
 .exam-import-toolbar {
@@ -1236,6 +1326,19 @@
     width: 100%;
     min-width: 0;
   }
+
+  .exam-detail-modal-card {
+    width: min(100vw - 24px, 100%);
+    max-height: calc(100vh - 24px);
+  }
+
+  .exam-detail-shell {
+    max-height: min(42vh, 460px);
+  }
+
+  .exam-detail-table--scores {
+    min-width: 980px;
+  }
 }
 
 @media (max-width: 430px) {
@@ -1303,6 +1406,14 @@
   .legal-table {
     min-width: 620px;
     font-size: 13px;
+  }
+
+  .exam-detail-table--payload {
+    min-width: 720px;
+  }
+
+  .exam-detail-table--scores {
+    min-width: 980px;
   }
 
   .exam-status-badge,

@@ -1,6 +1,6 @@
 modes:
-  - factual_only
-  - factual_plus_legal
+  - legal_grounded
+  - factual_fallback_expanded
 
 global_rules:
   response_format: one_paragraph
@@ -11,23 +11,28 @@ global_rules:
     - documents
     - numbers
     - links
-  weak_context_mode: factual_only
+  weak_context_mode: factual_fallback_expanded
+  sentence_range:
+    min: 4
+    max: 7
+  employee_assessment_tone: procedural_restrained
+  internal_reasoning: allowed_but_not_exposed
 
 mode_contracts:
-  factual_only:
-    use_legal_links: false
-    allow_inference_beyond_context: false
-    fallback_on_low_confidence: factual_only
-  factual_plus_legal:
+  legal_grounded:
     use_legal_links: true
     allow_inference_beyond_context: false
-    fallback_on_low_confidence: factual_only
+    fallback_on_low_confidence: factual_fallback_expanded
+  factual_fallback_expanded:
+    use_legal_links: false
+    allow_inference_beyond_context: false
+    fallback_on_low_confidence: factual_fallback_expanded
+    require_employee_assessment: true
 
 retry_contract:
-  max_retries: 1
+  max_retries: 2
   retryable_failures:
+    - validator_blocker
     - transient_model_error
     - timeout
-  non_retryable_failures:
-    - factual_integrity_fail
-
+  non_retryable_failures: []

@@ -6,6 +6,7 @@ import shutil
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 WEB_DIR = ROOT_DIR / "web"
@@ -22,10 +23,11 @@ from fastapi import HTTPException
 from ogp_web.schemas import ComplaintPayload, LawQaPayload, PrincipalScanPayload, RehabPayload, SuggestPayload, VictimPayload
 from ogp_web.services import ai_service, auth_service, complaint_service, email_service, exam_import_service, exam_sheet_service
 from ogp_web.services.auth_service import AuthUser
+from ogp_web.services.legal_pipeline_service import normalize_law_qa_text_formatting
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.storage.user_store import UserStore
 from tests.temp_helpers import make_temp_dir
-from tests.test_web_storage import PostgresBackend
+from tests.test_web_storage import PostgresBackend as FakePostgresBackend
 
 
 class WebServiceTests(unittest.TestCase):
@@ -35,7 +37,7 @@ class WebServiceTests(unittest.TestCase):
         self.store = UserStore(
             root / "app.db",
             root / "users.json",
-            repository=UserRepository(PostgresBackend()),
+            repository=UserRepository(FakePostgresBackend()),
         )
         self.user, token = self.store.register("tester", "tester@example.com", "Password123!")
         self.store.confirm_email(token)
@@ -249,6 +251,24 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(items[0]["column"], "F")
         self.assertEqual(items[0]["correct_answer"], "row4 F")
 
+    def test_exam_sheet_service_build_exam_correct_answers_from_payload_is_stable_for_unordered_jsonb(self):
+        payload = {
+            "column_31": "",
+            "Р¤РѕСЂРјР°С‚ СЌРєР·Р°РјРµРЅР°": "РџРѕР»СѓС‡РµРЅРёРµ Р»РёС†РµРЅР·РёРё Р°РґРІРѕРєР°С‚Р°",
+            "Р’Р°С€Рµ РРјСЏ/Р¤Р°РјРёР»РёСЏ? (РїСЂРёРјРµСЂ Pavel Clayton)": "Р­С‚Р°Р»РѕРЅРЅС‹Р№ РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ",
+            "РЎРёС‚СѓР°С‚РёРІРЅС‹Р№ РІРѕРїСЂРѕСЃ. Р’Р°С€ РїРѕРґР·Р°С‰РёС‚РЅС‹Р№ Р±С‹Р» Р·Р°РґРµСЂР¶Р°РЅ Р·Р° СЃС‚. 18 РђРљ РЅР° РїР°СЂРєРѕРІРєРµ РєР°Р·РёРЅРѕ Diamond Р·Р° РЅРѕС€РµРЅРёРµ РјР°СЃРєРё РёР»Рё РёРЅРѕРіРѕ СЃСЂРµРґСЃС‚РІР° РјР°СЃРєРёСЂРѕРІРєРё Р»РёС‡РЅРѕСЃС‚Рё. РџСЂР°РІРѕРјРµСЂРЅРѕ Р»Рё Р·Р°РґРµСЂР¶Р°РЅРёРµ РёР»Рё РЅРµС‚? РћС‚РІРµС‚ РїРѕСЏСЃРЅРёС‚СЊ.": "РћС‚РІРµС‚ РїРѕ AC",
+            "РЎРѕСЃС‚Р°РІРЅРѕР№ РІРѕРїСЂРѕСЃ. РЎС‚Р°С‚СЊСЏ 14 РђРљ СЃРѕРѕР±С‰Р°РµС‚ РЅР°Рј Рѕ РІС‹РїСѓСЃРєРµ РіСЂР°Р¶РґР°РЅ РїРѕРґ Р·Р°Р»РѕРі.  (1) Р“СЂР°Р¶РґР°РЅ, РѕСЃСѓР¶РґРµРЅРЅС‹С… РїРѕ РєР°РєРёРј Р·Р°РєРѕРЅР°Рј Рё РєРѕРґРµРєСЃР°Рј Р°РґРІРѕРєР°С‚С‹ РІРїСЂР°РІРµ РІС‹РїСѓСЃРєР°С‚СЊ Р°СЂРµСЃС‚РѕРІР°РЅРЅС‹С… РїРѕРґ Р·Р°Р»РѕРі? (2) РљР°Рє РЅР°Р·РЅР°С‡Р°РµС‚СЃСЏ СЃС‚РѕРёРјРѕСЃС‚СЊ Р·Р°Р»РѕРіР°?": "РћС‚РІРµС‚ РїРѕ F",
+            "РћР±С‰РёР№ РІРѕРїСЂРѕСЃ. РџРѕС‡РµРјСѓ Р·Р°СЏРІР»РµРЅРёРµ: вЂњСЏ РЅРµ Р·РЅР°Р», С‡С‚Рѕ С‚Р°Рє РґРµР»Р°С‚СЊ РЅРµР»СЊР·СЏвЂќ РЅРµ СЂР°Р±РѕС‚Р°РµС‚? РЎРѕС€Р»РёС‚РµСЃСЊ РЅР° РЅРѕСЂРјСѓ Р·Р°РєРѕРЅР°.": "РћС‚РІРµС‚ РїРѕ AD",
+            "Р’Р°С€ DiscordTag РґР»СЏ СЃРІСЏР·Рё? (РїСЂРёРјРµСЂ: musiksash)": "tag#0001",
+            "Р’Р°С€ РЅРѕРјРµСЂ РїР°СЃРїРѕСЂС‚Р°?": "654321",
+        }
+
+        answers = exam_sheet_service.build_exam_correct_answers_from_payload(payload)
+
+        self.assertEqual(answers["F"], "РћС‚РІРµС‚ РїРѕ F")
+        self.assertEqual(answers["AC"], "РћС‚РІРµС‚ РїРѕ AC")
+        self.assertEqual(answers["AD"], "РћС‚РІРµС‚ РїРѕ AD")
+
     def test_exam_sheet_service_skips_personal_columns_from_scoring(self):
         payload = {
             "submitted": "2026-04-08",
@@ -439,6 +459,91 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(meta["retrieval_context_mode"], "normal_context")
         self.assertEqual(meta["selected_norms_count"], 0)
 
+    def test_suggest_text_details_selects_low_confidence_model(self):
+        original_get_server_config = ai_service.get_server_config
+        original_build_context = ai_service._build_suggest_law_context
+        original_suggest = ai_service.suggest_description_with_proxy_fallback_result
+
+        class DummyServerConfig:
+            feature_flags = frozenset()
+            suggest_low_confidence_policy = "controlled_fallback"
+
+        captured: dict[str, str] = {}
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service._build_suggest_law_context = lambda **kwargs: ai_service.SuggestContextBuildResult(
+            context_text="Источник: https://laws.example\nНорма: Статья 20\nФрагмент: Проверка оснований задержания.",
+            retrieval_confidence="low",
+            retrieval_context_mode="low_confidence_context",
+            retrieval_profile="suggest",
+            bundle_status="ready",
+            bundle_generated_at="2026-04-13T00:00:00Z",
+            bundle_fingerprint="bundle-low-confidence",
+            selected_norms_count=0,
+            selected_norms=(),
+        )
+
+        def fake_suggest(**kwargs):
+            captured["model_name"] = kwargs["model_name"]
+            return ai_service.TextGenerationResult(
+                text=(
+                    "Заявитель описывает задержание и указывает на спорность его оснований. "
+                    "В правовом контексте не хватает надежной привязки к конкретной норме. "
+                    "Требуется проверка фактических обстоятельств и процессуальных действий сотрудника. "
+                    "Окончательная квалификация возможна только после дополнительной проверки материалов."
+                ),
+                usage=ai_service.AiUsageSummary(),
+                cache_hit=False,
+                attempt_path="proxy",
+                attempt_duration_ms=180,
+                route_policy="proxy_first",
+            )
+
+        ai_service.suggest_description_with_proxy_fallback_result = fake_suggest
+        payload = SuggestPayload(
+            victim_name="Victim",
+            org="LSPD",
+            subject="Officer",
+            event_dt="08.04.2026 14:30",
+            raw_desc="Сотрудник задержал меня, но законность основания неясна.",
+            complaint_basis="procedural_violation",
+            main_focus="Проверка законности задержания",
+        )
+        try:
+            result = ai_service.suggest_text_details(payload, server_code="blackberry")
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service._build_suggest_law_context = original_build_context
+            ai_service.suggest_description_with_proxy_fallback_result = original_suggest
+
+        meta = ai_service.build_suggest_metrics_meta(payload=payload, result=result, server_code="blackberry")
+        self.assertEqual(captured["model_name"], "gpt-5.4")
+        self.assertEqual(result.selected_model, "gpt-5.4")
+        self.assertEqual(result.selection_reason, "suggest_low_confidence_context")
+        self.assertEqual(result.telemetry["selected_model"], "gpt-5.4")
+        self.assertEqual(meta["model"], "gpt-5.4")
+        self.assertEqual(meta["selected_model"], "gpt-5.4")
+        self.assertEqual(meta["selection_reason"], "suggest_low_confidence_context")
+
+    def test_select_suggest_model_uses_nano_for_short_editorial_request_when_flag_enabled(self):
+        payload = SuggestPayload(
+            victim_name="Victim",
+            org="LSPD",
+            subject="Officer",
+            event_dt="08.04.2026 14:30",
+            raw_desc="Исправь текст жалобы и убери ошибки, не меняя факты.",
+        )
+        server_config = SimpleNamespace(feature_flags=frozenset({"suggest_nano_enabled"}))
+
+        selection = ai_service._select_suggest_model(
+            payload=payload,
+            retrieval_context_mode="normal_context",
+            server_config=server_config,
+        )
+
+        self.assertEqual(selection.model_name, "gpt-5.4-nano")
+        self.assertEqual(selection.reason, "suggest_short_editorial")
+
     def test_build_suggest_retrieval_query_light_formats_fields_in_expected_order(self):
         payload = SuggestPayload(
             victim_name="Victim",
@@ -474,6 +579,26 @@ class WebServiceTests(unittest.TestCase):
         self.assertIn("token0", query)
         self.assertNotIn("token20", query)
         self.assertTrue(query.endswith("…"))
+
+    def test_build_suggest_retrieval_query_light_expands_mask_exception_case(self):
+        payload = SuggestPayload(
+            victim_name="Victim",
+            org="LSPD",
+            subject="Officer",
+            event_dt="08.04.2026 14:30",
+            raw_desc=(
+                "Человека задержали на территории Maze Bank Arena из-за ношения маски, "
+                "после отказа снять её оформили задержание."
+            ),
+            complaint_basis="procedural_violation",
+            main_focus="Спорность оснований задержания",
+        )
+
+        query = ai_service.build_suggest_retrieval_query_light(payload)
+
+        self.assertIn("статья 18 административный кодекс", query.lower())
+        self.assertIn("допустимость ношения маски", query.lower())
+        self.assertIn("maze bank arena", query.lower())
 
     def test_ai_service_suggest_text_uses_lightweight_query_only_for_retrieval(self):
         captured: dict[str, str] = {}
@@ -521,6 +646,414 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(captured["provider_law_context"], "Источник: https://laws.example\nНорма: Статья 20")
         self.assertIn("wrongful_article procedural_violation LSPD Officer", captured["retrieval_query"])
         self.assertNotIn("fact100", captured["retrieval_query"])
+
+    def test_suggest_text_details_filters_prompt_law_context_to_valid_mask_exception_trigger(self):
+        captured: dict[str, str] = {}
+        original = ai_service.suggest_description_with_proxy_fallback_result
+        original_build_context = ai_service._build_suggest_law_context
+
+        def fake_suggest(**kwargs):
+            captured["provider_law_context"] = kwargs["law_context"]
+            return ai_service.TextGenerationResult(
+                text=(
+                    "Человека задержали на территории Maze Bank Arena из-за ношения маски. "
+                    "Эти обстоятельства требуют проверки. "
+                    "Действия сотрудника вызывают сомнения. "
+                    "Необходима правовая оценка по представленным материалам."
+                ),
+                usage=ai_service.AiUsageSummary(),
+                cache_hit=False,
+                attempt_path="proxy",
+                attempt_duration_ms=180,
+                route_policy="proxy_first",
+            )
+
+        ai_service.suggest_description_with_proxy_fallback_result = fake_suggest
+        ai_service._build_suggest_law_context = lambda **kwargs: ai_service.SuggestContextBuildResult(
+            context_text=(
+                "Источник: https://laws.example/admin\n"
+                "Документ: Административный кодекс\n"
+                "Норма: Статья 18\n"
+                "Фрагмент: Использование маски допустимо в Maze Bank Arena.\n\n"
+                "Источник: https://laws.example/processual\n"
+                "Документ: Процессуальный кодекс\n"
+                "Норма: Статья 23.1 Порядок наложения штрафа (тикета)\n"
+                "Фрагмент: Сотрудник обязан подготовить тикет и указать сумму штрафа."
+            ),
+            retrieval_confidence="high",
+            retrieval_context_mode="normal_context",
+            retrieval_profile="suggest",
+            bundle_status="ready",
+            bundle_generated_at="2026-04-12T00:00:00Z",
+            bundle_fingerprint="bundle-mask-test",
+            selected_norms_count=2,
+            selected_norms=(
+                {
+                    "source_url": "https://laws.example/admin",
+                    "document_title": "Административный кодекс",
+                    "article_label": "Статья 18",
+                    "excerpt": "Использование маски допускается на территории Maze Bank Arena.",
+                    "score": 92,
+                },
+                {
+                    "source_url": "https://laws.example/processual",
+                    "document_title": "Процессуальный кодекс",
+                    "article_label": "Статья 23.1 Порядок наложения штрафа (тикета)",
+                    "excerpt": "Сотрудник обязан подготовить тикет и указать сумму штрафа.",
+                    "score": 35,
+                },
+            ),
+        )
+        try:
+            result = ai_service.suggest_text_details(
+                SuggestPayload(
+                    victim_name="Victim",
+                    org="LSPD",
+                    subject="Officer",
+                    event_dt="08.04.2026 14:30",
+                    raw_desc=(
+                        "Человека задержали на территории Maze Bank Arena из-за ношения маски, "
+                        "потребовали снять её без внятного основания, а после отказа оформили задержание."
+                    ),
+                    complaint_basis="procedural_violation",
+                    main_focus="Спорность оснований задержания",
+                ),
+                server_code="blackberry",
+            )
+        finally:
+            ai_service.suggest_description_with_proxy_fallback_result = original
+            ai_service._build_suggest_law_context = original_build_context
+
+        self.assertEqual(result.policy_mode, "legal_grounded")
+        self.assertIn("Статья 18", captured["provider_law_context"])
+        self.assertNotIn("23.1", captured["provider_law_context"])
+        self.assertNotIn("тикет", captured["provider_law_context"].lower())
+        self.assertNotIn("штраф", captured["provider_law_context"].lower())
+
+    def test_build_suggest_law_context_extracts_qualifiers_and_cross_refs(self):
+        original_get_server_config = ai_service.get_server_config
+        original_load_bundle = ai_service.load_law_bundle_chunks
+        original_select_chunks = ai_service._select_law_qa_chunks
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ()
+            law_qa_bundle_path = "bundle.json"
+
+        chunk = ai_service._LawChunk(
+            url="https://laws.example/admin",
+            document_title="Административный кодекс",
+            article_label="Статья 22 ч. 2",
+            text=(
+                "Статья 22 ч. 2. Основное правило. "
+                "Исключение: допускается иной порядок при наличии отдельного основания. "
+                "Примечание: оценка производится с учетом фактических обстоятельств. "
+                "Комментарий II. Дополнительно применяется подход, описанный в статье 33 Процессуального кодекса."
+            ),
+        )
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service.load_law_bundle_chunks = lambda server_code, bundle_path: [chunk]
+        ai_service._select_law_qa_chunks = lambda chunks, question, profile="suggest": (list(chunks), "high")
+        try:
+            context = ai_service._build_suggest_law_context(
+                server_code="blackberry",
+                question="разъяснения по статье 22 части 2",
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service.load_law_bundle_chunks = original_load_bundle
+            ai_service._select_law_qa_chunks = original_select_chunks
+
+        qualifiers = context.selected_norms[0]["qualifiers"]
+        qualifier_kinds = {item["kind"] for item in qualifiers}
+        self.assertTrue({"exception", "note", "comment"}.issubset(qualifier_kinds))
+        self.assertTrue(any("33" in ref for ref in context.selected_norms[0]["cross_refs"]))
+
+    def test_build_suggest_law_context_forces_article_18_for_mask_exception_case(self):
+        original_get_server_config = ai_service.get_server_config
+        original_load_bundle = ai_service.load_law_bundle_chunks
+        original_retrieve = ai_service._retrieve_law_context
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ()
+            law_qa_bundle_path = "bundle.json"
+
+        processual_chunk = ai_service._LawChunk(
+            url="https://laws.example/processual",
+            document_title="Процессуальный кодекс",
+            article_label="Статья 29",
+            text="Личный обыск при задержании.",
+        )
+        forced_chunk = ai_service._LawChunk(
+            url="https://laws.example/admin",
+            document_title="Административный кодекс",
+            article_label="Статья 18",
+            text=(
+                "Статья 18. Ношение маски. "
+                "Исключение: ношение маски допускается на территории Maze Bank Arena и иных развлекательных учреждений."
+            ),
+        )
+
+        retrieval_result = type(
+            "RetrievalResult",
+            (),
+            {
+                "indexed_chunk_count": 2,
+                "confidence": "high",
+                "profile": "suggest",
+                "bundle_health": type(
+                    "BundleHealth",
+                    (),
+                    {"status": "ready", "generated_at": "2026-04-12T00:00:00Z", "fingerprint": "bundle-mask-force"},
+                )(),
+                "matches": [
+                    type(
+                        "Match",
+                        (),
+                        {
+                            "score": 370,
+                            "excerpt": "Личный обыск при задержании.",
+                            "chunk": processual_chunk,
+                        },
+                    )(),
+                ],
+            },
+        )()
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service.load_law_bundle_chunks = lambda server_code, bundle_path: [forced_chunk, processual_chunk]
+        ai_service._retrieve_law_context = lambda **kwargs: retrieval_result
+        try:
+            context = ai_service._build_suggest_law_context(
+                server_code="blackberry",
+                question="статья 18 маска Maze Bank Arena задержание",
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service.load_law_bundle_chunks = original_load_bundle
+            ai_service._retrieve_law_context = original_retrieve
+
+        self.assertGreaterEqual(context.selected_norms_count, 2)
+        self.assertEqual(context.selected_norms[0]["article_label"], "Статья 18")
+        self.assertIn("Maze Bank Arena", context.selected_norms[0]["excerpt"])
+
+    def test_build_suggest_law_context_penalizes_state_service_and_bolo_noise_for_missing_materials_case(self):
+        original_get_server_config = ai_service.get_server_config
+        original_retrieve = ai_service._retrieve_law_context
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ()
+            law_qa_bundle_path = "bundle.json"
+
+        article_19 = ai_service._LawChunk(
+            url="https://laws.example/processual-19",
+            document_title="Процессуальный кодекс",
+            article_label="Статья 19",
+            text="Статья 19. Порядок уведомления при задержании сотрудников государственной службы.",
+        )
+        article_39 = ai_service._LawChunk(
+            url="https://laws.example/processual-39",
+            document_title="Процессуальный кодекс",
+            article_label="Статья 39",
+            text="Статья 39. Боло-розыск и ориентировки.",
+        )
+        article_29 = ai_service._LawChunk(
+            url="https://laws.example/processual-29",
+            document_title="Процессуальный кодекс",
+            article_label="Статья 29",
+            text="Статья 29. Личный обыск при задержании и аресте.",
+        )
+
+        retrieval_result = type(
+            "RetrievalResult",
+            (),
+            {
+                "indexed_chunk_count": 3,
+                "confidence": "high",
+                "profile": "suggest",
+                "bundle_health": type(
+                    "BundleHealth",
+                    (),
+                    {"status": "ready", "generated_at": "2026-04-12T00:00:00Z", "fingerprint": "bundle-search-noise"},
+                )(),
+                "matches": [
+                    type("Match", (), {"score": 281, "excerpt": article_19.text, "chunk": article_19})(),
+                    type("Match", (), {"score": 264, "excerpt": article_39.text, "chunk": article_39})(),
+                    type("Match", (), {"score": 250, "excerpt": article_29.text, "chunk": article_29})(),
+                ],
+            },
+        )()
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service._retrieve_law_context = lambda **kwargs: retrieval_result
+        try:
+            context = ai_service._build_suggest_law_context(
+                server_code="blackberry",
+                question=(
+                    "missing_materials Отсутствие записи процессуальных действий по адвокатскому запросу "
+                    "Человека задержали, провели обыск и изъяли имущество."
+                ),
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service._retrieve_law_context = original_retrieve
+
+        self.assertGreaterEqual(context.selected_norms_count, 1)
+        self.assertEqual(context.selected_norms[0]["article_label"], "Статья 29")
+        labels = [item["article_label"] for item in context.selected_norms]
+        self.assertNotIn("Статья 19", labels[:1])
+        self.assertNotIn("Статья 39", labels[:1])
+
+    def test_filtered_prompt_law_context_limits_grounded_norms_to_two_and_keeps_qualifiers(self):
+        selected_norms = (
+            {
+                "source_url": "https://laws.example/admin",
+                "document_title": "Административный кодекс",
+                "article_label": "Статья 18",
+                "excerpt": "Ношение маски на территории Maze Bank Arena подлежит оценке по статье 18.",
+                "score": 96,
+                "qualifiers": (
+                    {
+                        "kind": "exception",
+                        "text": "Исключение: ношение маски допускается на территории Maze Bank Arena.",
+                        "related_refs": (),
+                    },
+                ),
+                "cross_refs": (),
+            },
+            {
+                "source_url": "https://laws.example/advocate",
+                "document_title": "Закон об адвокатуре",
+                "article_label": "Статья 5",
+                "excerpt": "Адвокатский запрос подлежит рассмотрению в установленном порядке.",
+                "score": 88,
+                "qualifiers": (
+                    {
+                        "kind": "note",
+                        "text": "Примечание: ответ на адвокатский запрос оценивается вместе с материалами проверки.",
+                        "related_refs": ("статье 33",),
+                    },
+                ),
+                "cross_refs": ("статье 33",),
+            },
+            {
+                "source_url": "https://laws.example/processual",
+                "document_title": "Процессуальный кодекс",
+                "article_label": "Статья 33",
+                "excerpt": "Видеозапись процессуальных действий хранится в пределах установленного срока.",
+                "score": 12,
+                "qualifiers": (
+                    {
+                        "kind": "comment",
+                        "text": "Комментарий: видеозапись относится к материалам процессуальной проверки.",
+                        "related_refs": (),
+                    },
+                ),
+                "cross_refs": (),
+            },
+        )
+        point3_context = ai_service.build_point3_pipeline_context(
+            complainant="Victim",
+            organization="LSPD",
+            target_person="Officer",
+            event_datetime="08.04.2026 14:30",
+            draft_text=(
+                "Человека задержали на территории Maze Bank Arena из-за маски, после чего был направлен "
+                "адвокатский запрос, а запись процессуальных действий так и не была предоставлена."
+            ),
+            retrieval_status="normal_context",
+            retrieval_confidence="high",
+            retrieved_law_context="law context",
+            selected_norms=selected_norms,
+        )
+        prompt_law_context = ai_service._build_filtered_prompt_law_context(
+            point3_context=point3_context,
+            suggest_context=ai_service.SuggestContextBuildResult(
+                context_text="law context",
+                retrieval_confidence="high",
+                retrieval_context_mode="normal_context",
+                retrieval_profile="suggest",
+                bundle_status="ready",
+                bundle_generated_at="2026-04-12T00:00:00Z",
+                bundle_fingerprint="bundle-qualifier-test",
+                selected_norms_count=3,
+                selected_norms=selected_norms,
+            ),
+            fallback_law_context="fallback",
+        )
+
+        self.assertEqual(prompt_law_context.count("Норма:"), 2)
+        self.assertIn("Исключение: ношение маски допускается", prompt_law_context)
+        self.assertIn("Примечание: ответ на адвокатский запрос", prompt_law_context)
+        self.assertIn("supporting only", prompt_law_context)
+        self.assertNotIn("Статья 33\nФрагмент", prompt_law_context)
+
+    def test_filtered_prompt_law_context_prefers_single_primary_norm_when_secondary_is_generic_support(self):
+        selected_norms = (
+            {
+                "source_url": "https://laws.example/admin",
+                "document_title": "Административный кодекс штата Сан-Андреас",
+                "article_label": "Статья 18",
+                "excerpt": "Ношение маски на территории Maze Bank Arena оценивается по статье 18.",
+                "score": 96,
+                "qualifiers": (
+                    {
+                        "kind": "exception",
+                        "text": "Исключение: ношение маски допускается на территории Maze Bank Arena.",
+                        "related_refs": (),
+                    },
+                ),
+                "cross_refs": (),
+            },
+            {
+                "source_url": "https://laws.example/processual",
+                "document_title": "Процессуальный кодекс штата Сан-Андреас",
+                "article_label": "Статья 59",
+                "excerpt": "Задержание как мера процессуального принуждения применяется при подозрении в совершении преступления.",
+                "score": 78,
+                "qualifiers": (),
+                "cross_refs": (),
+            },
+        )
+        point3_context = ai_service.build_point3_pipeline_context(
+            complainant="Victim",
+            organization="LSPD",
+            target_person="Officer",
+            event_datetime="08.04.2026 14:30",
+            draft_text=(
+                "Человека задержали на территории Maze Bank Arena из-за маски и потребовали снять её без внятного основания."
+            ),
+            retrieval_status="normal_context",
+            retrieval_confidence="high",
+            retrieved_law_context="law context",
+            selected_norms=selected_norms,
+        )
+        prompt_law_context = ai_service._build_filtered_prompt_law_context(
+            point3_context=point3_context,
+            suggest_context=ai_service.SuggestContextBuildResult(
+                context_text="law context",
+                retrieval_confidence="high",
+                retrieval_context_mode="normal_context",
+                retrieval_profile="suggest",
+                bundle_status="ready",
+                bundle_generated_at="2026-04-12T00:00:00Z",
+                bundle_fingerprint="bundle-primary-norm-test",
+                selected_norms_count=2,
+                selected_norms=selected_norms,
+            ),
+            fallback_law_context="fallback",
+        )
+
+        self.assertEqual(prompt_law_context.count("Норма:"), 1)
+        self.assertIn("Статья 18", prompt_law_context)
+        self.assertIn("Исключение: ношение маски допускается", prompt_law_context)
+        self.assertNotIn("Статья 59", prompt_law_context)
 
     def test_suggest_text_retries_with_compacted_context_on_context_window_error(self):
         captured_calls: list[dict[str, object]] = []
@@ -580,6 +1113,8 @@ class WebServiceTests(unittest.TestCase):
             code = "blackberry"
             name = "BlackBerry"
             law_qa_sources = ()
+            law_qa_bundle_path = "bundle.json"
+            law_qa_bundle_path = "bundle.json"
             law_qa_bundle_path = "law_bundles/blackberry.json"
 
         ai_service.get_server_config = lambda server_code: DummyServerConfig()
@@ -906,6 +1441,106 @@ class WebServiceTests(unittest.TestCase):
         self.assertEqual(scored["G"]["rationale"], "Готово через batch")
         self.assertEqual(scored["H"]["rationale"], "Case-variant key")
 
+    def test_score_exam_answers_if_needed_uses_reference_entry_answers(self):
+        original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
+        original_single = exam_import_service.score_exam_answer_with_proxy_fallback
+        captured: list[dict[str, object]] = []
+
+        def fake_batch(**kwargs):
+            captured.extend(kwargs["items"])
+            return (
+                {"F": {"score": 100, "rationale": "ok"}},
+                exam_import_service._empty_scoring_stats(),
+            )
+
+        class FakeStore:
+            def __init__(self):
+                self.saved = None
+
+            def get_reference_entry(self):
+                return {
+                    "source_row": 0,
+                    "payload": {
+                        "submitted": "",
+                        "full_name": "эталонные ответы",
+                        "discord": "",
+                        "passport": "",
+                        "format": "эталонные ответы",
+                        "QF": "reference F",
+                    },
+                }
+
+            def save_exam_scores(self, source_row: int, scores: list[dict[str, object]]):
+                self.saved = (source_row, list(scores))
+
+            def get_entry(self, source_row: int):
+                return entry
+
+        entry = {
+            "source_row": 778,
+            "full_name": "Student",
+            "exam_format": "remote",
+            "payload": {
+                "submitted": "2026-04-11",
+                "full_name": "Student",
+                "discord": "disc",
+                "passport": "123456",
+                "format": "remote",
+                "QF": "candidate F",
+            },
+            "exam_scores": [],
+        }
+
+        exam_import_service.score_exam_answers_batch_with_proxy_fallback = fake_batch
+        exam_import_service.score_exam_answer_with_proxy_fallback = lambda **kwargs: {"score": 1, "rationale": "unused"}
+        store = FakeStore()
+        try:
+            did_score, _ = exam_import_service.score_exam_answers_if_needed(
+                store=store,
+                entry=entry,
+                build_exam_score_items=exam_sheet_service.build_exam_score_items,
+            )
+        finally:
+            exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
+            exam_import_service.score_exam_answer_with_proxy_fallback = original_single
+
+        self.assertTrue(did_score)
+        self.assertEqual(captured[0]["column"], "F")
+        self.assertEqual(captured[0]["correct_answer"], "reference F")
+        self.assertEqual(store.saved[0], 778)
+
+    def test_score_exam_answers_if_needed_skips_reference_entry(self):
+        class FakeStore:
+            def save_exam_scores(self, source_row: int, scores: list[dict[str, object]]):
+                raise AssertionError("reference entry must not be scored")
+
+            def get_entry(self, source_row: int):
+                return None
+
+        entry = {
+            "source_row": 0,
+            "full_name": "эталонные ответы",
+            "exam_format": "эталонные ответы",
+            "payload": {
+                "submitted": "",
+                "full_name": "эталонные ответы",
+                "discord": "",
+                "passport": "",
+                "format": "эталонные ответы",
+                "QF": "reference F",
+            },
+            "exam_scores": [],
+        }
+
+        did_score, stats = exam_import_service.score_exam_answers_if_needed(
+            store=FakeStore(),
+            entry=entry,
+            build_exam_score_items=exam_sheet_service.build_exam_score_items,
+        )
+
+        self.assertFalse(did_score)
+        self.assertEqual(stats["llm_calls"], 0)
+
     def test_build_row_scoring_result_logs_prompt_version_meta(self):
         original_score_if_needed = exam_import_service.score_exam_answers_if_needed
 
@@ -1042,47 +1677,62 @@ https://laws.example/article
 
     def test_law_qa_uses_default_model(self):
         original_get_server_config = ai_service.get_server_config
-        original_build_index = ai_service._build_law_chunk_index_cached
+        original_retrieve = ai_service._retrieve_law_context
         original_create_client = ai_service.create_openai_client
+        original_request = ai_service._request_law_qa_text
 
         class DummyServerConfig:
             code = "blackberry"
             name = "BlackBerry"
-            law_qa_sources = ("https://laws.example/base",)
+            feature_flags = frozenset()
 
-        captured = {}
-
-        class DummyResponses:
-            def create(self, **kwargs):
-                captured.update(kwargs)
-                return type("DummyResponse", (), {"output_text": "Ответ по закону."})()
-
-        class DummyClient:
-            responses = DummyResponses()
-
-        ai_service.get_server_config = lambda server_code: DummyServerConfig()
-        ai_service._build_law_chunk_index_cached = lambda source_urls: (
-            ai_service._LawChunk(
-                url="https://laws.example/base",
-                document_title="Процессуальный кодекс",
-                article_label="Статья 1. Право на защиту",
-                text="Статья 1. Право на защиту. Каждый имеет право на защиту.",
+        chunk = ai_service._LawChunk(
+            url="https://laws.example/base",
+            document_title="Процессуальный кодекс",
+            article_label="Статья 1. Право на защиту",
+            text="Статья 1. Право на защиту. Каждый имеет право на защиту.",
+        )
+        retrieval_result = SimpleNamespace(
+            is_configured=True,
+            server_code="blackberry",
+            server_name="BlackBerry",
+            indexed_chunk_count=1,
+            confidence="high",
+            profile="law_qa",
+            matches=[SimpleNamespace(score=91, excerpt="Каждый имеет право на защиту.", chunk=chunk)],
+            bundle_health=SimpleNamespace(
+                status="fresh",
+                generated_at="2026-04-13T00:00:00Z",
+                fingerprint="bundle-default",
+                warnings=(),
             ),
         )
-        ai_service.create_openai_client = lambda **kwargs: DummyClient()
+        captured: dict[str, str] = {}
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service._retrieve_law_context = lambda **kwargs: retrieval_result
+        ai_service.create_openai_client = lambda **kwargs: object()
+
+        def fake_request(**kwargs):
+            captured["model"] = kwargs["model_name"]
+            captured["input"] = kwargs["prompt"]
+            return "Ответ по закону.", ai_service.AiUsageSummary()
+
+        ai_service._request_law_qa_text = fake_request
         try:
             text, sources, count = ai_service.answer_law_question(
                 LawQaPayload(
                     server_code="blackberry",
                     model="gpt-5.4",
-                    question="Какая статья дает право на защиту?",
+                    question="Какая норма регулирует право на защиту при задержании и какие гарантии она дает?",
                     max_answer_chars=2000,
                 )
             )
         finally:
             ai_service.get_server_config = original_get_server_config
-            ai_service._build_law_chunk_index_cached = original_build_index
+            ai_service._retrieve_law_context = original_retrieve
             ai_service.create_openai_client = original_create_client
+            ai_service._request_law_qa_text = original_request
 
         self.assertEqual(text, "Ответ по закону.")
         self.assertEqual(sources, ["https://laws.example/base"])
@@ -1090,6 +1740,80 @@ https://laws.example/article
         self.assertEqual(captured["model"], ai_service.get_default_law_qa_model())
         self.assertIn("Не используй реальные законы", captured["input"])
         self.assertIn("Право на защиту", captured["input"])
+
+    def test_law_qa_details_selects_low_confidence_model(self):
+        original_get_server_config = ai_service.get_server_config
+        original_retrieve = ai_service._retrieve_law_context
+        original_create_client = ai_service.create_openai_client
+        original_request = ai_service._request_law_qa_text
+
+        chunk = ai_service._LawChunk(
+            url="https://laws.example/base",
+            document_title="Процессуальный кодекс",
+            article_label="Статья 1. Право на защиту",
+            text="Статья 1. Право на защиту. Каждый имеет право на защиту.",
+        )
+        retrieval_result = SimpleNamespace(
+            is_configured=True,
+            server_code="blackberry",
+            server_name="BlackBerry",
+            indexed_chunk_count=1,
+            confidence="low",
+            profile="law_qa",
+            matches=[SimpleNamespace(score=91, excerpt="Каждый имеет право на защиту.", chunk=chunk)],
+            bundle_health=SimpleNamespace(
+                status="fresh",
+                generated_at="2026-04-13T00:00:00Z",
+                fingerprint="bundle-low-confidence",
+                warnings=(),
+            ),
+        )
+        captured: dict[str, str] = {}
+
+        class DummyServerConfig:
+            feature_flags = frozenset()
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service._retrieve_law_context = lambda **kwargs: retrieval_result
+        ai_service.create_openai_client = lambda **kwargs: object()
+
+        def fake_request(**kwargs):
+            captured["model_name"] = kwargs["model_name"]
+            return "Ответ по нормам.", ai_service.AiUsageSummary()
+
+        ai_service._request_law_qa_text = fake_request
+        try:
+            result = ai_service.answer_law_question_details(
+                LawQaPayload(
+                    server_code="blackberry",
+                    model="gpt-5.4-mini",
+                    question="Какая норма регулирует право на защиту при задержании?",
+                    max_answer_chars=2000,
+                )
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service._retrieve_law_context = original_retrieve
+            ai_service.create_openai_client = original_create_client
+            ai_service._request_law_qa_text = original_request
+
+        self.assertEqual(captured["model_name"], "gpt-5.4")
+        self.assertEqual(result.selected_model, "gpt-5.4")
+        self.assertEqual(result.selection_reason, "law_qa_low_confidence")
+        self.assertEqual(result.telemetry["selected_model"], "gpt-5.4")
+        self.assertEqual(result.telemetry["selection_reason"], "law_qa_low_confidence")
+
+    def test_select_law_qa_model_uses_nano_for_short_question_when_flag_enabled(self):
+        server_config = SimpleNamespace(feature_flags=frozenset({"law_qa_nano_enabled"}))
+
+        selection = ai_service._select_law_qa_model(
+            question="Статья 7?",
+            retrieval_confidence="high",
+            server_config=server_config,
+        )
+
+        self.assertEqual(selection.model_name, "gpt-5.4-nano")
+        self.assertEqual(selection.reason, "law_qa_high_confidence_short_question")
 
     def test_law_qa_details_include_retrieval_debug(self):
         original_get_server_config = ai_service.get_server_config
@@ -1134,9 +1858,65 @@ https://laws.example/article
 
         self.assertEqual(result.text, "Ответ по закону.")
         self.assertEqual(result.retrieval_profile, "law_qa")
+        self.assertEqual(result.guard_status, "pass")
         self.assertTrue(result.retrieval_confidence)
         self.assertEqual(result.selected_norms[0]["article_label"], "Статья 20")
         self.assertEqual(result.selected_norms[0]["source_url"], "https://laws.example/base")
+
+    def test_law_qa_strips_source_urls_from_model_output(self):
+        original_get_server_config = ai_service.get_server_config
+        original_build_index = ai_service._build_law_chunk_index_cached
+        original_create_client = ai_service.create_openai_client
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ("https://laws.example/base",)
+
+        class DummyResponses:
+            def create(self, **kwargs):
+                return type(
+                    "DummyResponse",
+                    (),
+                    {
+                        "output_text": (
+                            "Ответ: применяется статья 20 (Процессуальный кодекс). "
+                            "[Источник: https://laws.example/base] "
+                            "Дополнительно см. https://laws.example/base."
+                        )
+                    },
+                )()
+
+        class DummyClient:
+            responses = DummyResponses()
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service._build_law_chunk_index_cached = lambda source_urls: (
+            ai_service._LawChunk(
+                url="https://laws.example/base",
+                document_title="Процессуальный кодекс",
+                article_label="Статья 20",
+                text="Статья 20. Основания освобождения задержанного.",
+            ),
+        )
+        ai_service.create_openai_client = lambda **kwargs: DummyClient()
+        try:
+            result = ai_service.answer_law_question_details(
+                LawQaPayload(
+                    server_code="blackberry",
+                    model="gpt-5.4",
+                    question="Когда обязаны освободить задержанного?",
+                    max_answer_chars=2000,
+                )
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service._build_law_chunk_index_cached = original_build_index
+            ai_service.create_openai_client = original_create_client
+
+        self.assertNotIn("Источник:", result.text)
+        self.assertNotIn("https://", result.text)
+        self.assertEqual(result.guard_status, "pass")
 
     def test_law_qa_retries_when_model_returns_empty_text_once(self):
         original_get_server_config = ai_service.get_server_config
@@ -1427,6 +2207,117 @@ https://laws.example/article
         self.assertIn(confidence, {"medium", "high"})
         self.assertIn("Уголовный кодекс", selected[0].document_title)
 
+    def test_law_qa_prefers_advocate_rights_article_over_duties_for_short_question(self):
+        chunks = list(ai_service.load_law_bundle_chunks("blackberry", "law_bundles/blackberry.json"))
+        rights_chunk = None
+        duties_chunk = None
+        for item in chunks:
+            if "адвокатуре" not in item.document_title.lower():
+                continue
+            if item.article_label == "Статья 4":
+                rights_chunk = item
+            elif item.article_label == "Статья 6":
+                duties_chunk = item
+
+        self.assertIsNotNone(rights_chunk)
+        self.assertIsNotNone(duties_chunk)
+
+        question = "Права адвоката"
+        self.assertGreater(
+            ai_service._cheap_score_law_chunk(rights_chunk, question),
+            ai_service._cheap_score_law_chunk(duties_chunk, question),
+        )
+
+        selected, confidence = ai_service._select_law_qa_chunks(chunks, question)
+        self.assertIn(confidence, {"medium", "high"})
+        self.assertIn("адвокатуре", selected[0].document_title.lower())
+        self.assertEqual(selected[0].article_label, "Статья 4")
+
+    def test_law_qa_prompt_keeps_rights_question_narrow(self):
+        prompt = ai_service._build_law_qa_prompt(
+            server_name="BlackBerry",
+            server_code="blackberry",
+            model_name="gpt-5.4",
+            question="Права адвоката",
+            max_answer_chars=2000,
+            context_blocks=["[Документ: Закон]\n[Норма: Статья 4]\nТекст"],
+            retrieval_confidence="high",
+        )
+        self.assertIn("не добавляй обязанности", prompt)
+
+    def test_law_qa_prefers_explicit_admin_code_over_processual_noise_for_short_question(self):
+        question = "В течении какого срока допустимо привлечь правонарушителя к ответственности по Административному кодексу?"
+        chunks = [
+            ai_service._LawChunk(
+                url="https://laws.example/admin",
+                document_title="Административный кодекс",
+                article_label="Статья 12. Срок рассмотрения административного материала",
+                text="Статья 12. Административный кодекс. Срок рассмотрения административного материала составляет 48 часов.",
+            ),
+            ai_service._LawChunk(
+                url="https://laws.example/processual",
+                document_title="Процессуальный кодекс",
+                article_label="Статья 37. Срок задержания",
+                text="Статья 37. Срок задержания и иные процессуальные сроки.",
+            ),
+            ai_service._LawChunk(
+                url="https://laws.example/admin-old",
+                document_title="Административный кодекс",
+                article_label="Статья 10",
+                text="Статья 10. Норма утратила силу.",
+            ),
+        ]
+
+        selected, confidence = ai_service._select_law_qa_chunks(chunks, question)
+
+        self.assertIn(confidence, {"medium", "high"})
+        self.assertEqual(selected[0].document_title, "Административный кодекс")
+        self.assertNotIn("утратила силу", selected[0].text.lower())
+
+    def test_law_qa_prompt_marks_ambiguous_dopros_scope(self):
+        prompt = ai_service._build_law_qa_prompt(
+            server_name="BlackBerry",
+            server_code="blackberry",
+            model_name="gpt-5.4",
+            question="Может ли адвокат присутствовать на допросе?",
+            max_answer_chars=2000,
+            context_blocks=["[Документ: Закон]\n[Норма: Статья 4]\nТекст"],
+            retrieval_confidence="high",
+        )
+
+        self.assertIn("потенциально неоднозначный процессуальный термин", prompt)
+        self.assertIn("Не отвечай безусловным 'да' или 'нет'", prompt)
+        self.assertIn("вопрос требует уточнения", prompt)
+        self.assertIn("Не используй markdown", prompt)
+
+    def test_law_qa_ambiguous_dopros_focus_stays_on_advocacy_law(self):
+        focus_groups = ai_service._detect_law_qa_document_focus("Может ли адвокат присутствовать на допросе?")
+
+        self.assertEqual(focus_groups, ("advocate_law",))
+
+    def test_law_qa_ambiguous_dopros_caps_confidence_at_medium(self):
+        confidence = ai_service._classify_law_qa_confidence(
+            [85, 72, 51],
+            "Может ли адвокат присутствовать на допросе?",
+        )
+
+        self.assertEqual(confidence, "medium")
+
+    def test_normalize_law_qa_text_formatting_strips_markdown_and_list_markers(self):
+        text = (
+            "Итог: **прямого основания нет**.\n"
+            "Правовое основание:\n"
+            "- **статья 4 (Закон об адвокатуре)** — допускает конфиденциальную встречу.\n"
+            "- `статья 1` — говорит только о наблюдении.\n"
+        )
+
+        normalized = normalize_law_qa_text_formatting(text)
+
+        self.assertNotIn("**", normalized)
+        self.assertNotIn("`", normalized)
+        self.assertNotIn("\n-", normalized)
+        self.assertIn("статья 4 (Закон об адвокатуре) — допускает конфиденциальную встречу.; статья 1 — говорит только о наблюдении.", normalized)
+
     def test_law_qa_prompt_warns_about_false_premise_on_low_confidence(self):
         prompt = ai_service._build_law_qa_prompt(
             server_name="BlackBerry",
@@ -1440,6 +2331,20 @@ https://laws.example/article
         self.assertIn("неверную предпосылку", prompt)
         self.assertIn("опечатками", prompt)
         self.assertIn("Уверенность в подборе норм низкая", prompt)
+
+    def test_law_qa_prompt_forbids_source_urls_in_answer(self):
+        prompt = ai_service._build_law_qa_prompt(
+            server_name="BlackBerry",
+            server_code="blackberry",
+            model_name="gpt-5.4",
+            question="Какая норма регулирует доступ адвоката?",
+            max_answer_chars=2000,
+            context_blocks=["[Документ: Кодекс]\n[Норма: Статья 1]\nТекст"],
+            retrieval_confidence="high",
+        )
+
+        self.assertIn("Не добавляй в ответ URL", prompt)
+        self.assertIn('формат "статья N (название кодекса или закона)"', prompt)
 
     def test_normalize_ai_feedback_issues_maps_aliases_to_stable_codes(self):
         issues = ai_service.normalize_ai_feedback_issues(["wronglaw", "fact", "unknown-custom"])
@@ -1459,6 +2364,47 @@ https://laws.example/article
         )
         self.assertIn("Article 20", excerpt)
         self.assertIn("Grounds for release of a detainee", excerpt)
+
+    def test_build_suggest_law_context_prioritizes_processual_code_over_judicial_system_law(self):
+        original_get_server_config = ai_service.get_server_config
+        original_load_bundle = ai_service.load_law_bundle_chunks
+        original_select_chunks = ai_service._select_law_qa_chunks
+
+        class DummyServerConfig:
+            code = "blackberry"
+            name = "BlackBerry"
+            law_qa_sources = ()
+            law_qa_bundle_path = "bundle.json"
+
+        processual_chunk = ai_service._LawChunk(
+            url="https://laws.example/processual",
+            document_title="Важно - Процессуальный кодекс штата Сан-Андреас",
+            article_label="Статья 17",
+            text="Порядок задержания и реализация прав задержанного.",
+        )
+        judicial_chunk = ai_service._LawChunk(
+            url="https://laws.example/judicial",
+            document_title='Важно - Закон "О судебной системе и судопроизводстве"',
+            article_label="Статья 2",
+            text="Представитель истца может действовать при наличии договора.",
+        )
+
+        ai_service.get_server_config = lambda server_code: DummyServerConfig()
+        ai_service.load_law_bundle_chunks = lambda server_code, bundle_path: [processual_chunk, judicial_chunk]
+        ai_service._select_law_qa_chunks = lambda chunks, question, profile="suggest": (list(chunks), "high")
+        try:
+            context = ai_service._build_suggest_law_context(
+                server_code="blackberry",
+                question="FIB Pavel Clayton задержали за оскорбление, адвокатский запрос, запись не поступила",
+            )
+        finally:
+            ai_service.get_server_config = original_get_server_config
+            ai_service.load_law_bundle_chunks = original_load_bundle
+            ai_service._select_law_qa_chunks = original_select_chunks
+
+        self.assertGreaterEqual(context.selected_norms_count, 1)
+        self.assertIn("Процессуальный кодекс", context.selected_norms[0]["document_title"])
+        self.assertNotIn("судопроизводстве", context.selected_norms[0]["document_title"].lower())
 
 if __name__ == "__main__":
     unittest.main()

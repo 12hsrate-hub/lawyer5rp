@@ -7,6 +7,7 @@ import shutil
 import sys
 import threading
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -18,7 +19,7 @@ for candidate in (ROOT_DIR, WEB_DIR):
 
 os.environ.setdefault("OGP_DB_BACKEND", "postgres")
 
-from ogp_web.storage.exam_answers_store import ExamAnswersStore
+from ogp_web.storage.exam_answers_store import ExamAnswersStore, INVALID_BATCH_RATIONALE
 from ogp_web.storage.user_store import UserStore
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.rate_limit import PersistentRateLimiter
@@ -53,6 +54,7 @@ class PostgresBackend:
             "users": {},
             "roles": {},
             "drafts": {},
+            "auth_rate_limit_events": [],
             "clock": 0,
             "missing_tables": set(missing_tables or set()),
         }
@@ -89,12 +91,24 @@ class FakePostgresConnection:
 
         if normalized == "SELECT 1":
             return FakeCursor(rowcount=1, one={"?column?": 1})
+        if normalized == "SELECT pg_advisory_xact_lock(hashtext(%s))":
+            return FakeCursor(rowcount=1, one={"pg_advisory_xact_lock": None})
         if normalized == "SELECT to_regclass(%s) AS regclass":
             table_name = str(params[0]).split(".", 1)[-1]
             present = table_name not in self.state["missing_tables"]
             return FakeCursor(rowcount=1, one={"regclass": params[0] if present else None})
         if normalized == "SELECT COUNT(*) AS total FROM users":
             return FakeCursor(rowcount=1, one={"total": len(self.state["users"])})
+        if normalized == "DELETE FROM auth_rate_limit_events":
+            deleted = len(self.state["auth_rate_limit_events"])
+            self.state["auth_rate_limit_events"] = []
+            return FakeCursor(rowcount=deleted)
+        if normalized.startswith("DELETE FROM auth_rate_limit_events WHERE action = %s AND subject_key = %s"):
+            return self._delete_rate_limit_events(params)
+        if normalized.startswith("SELECT COUNT(*) AS total FROM auth_rate_limit_events WHERE action = %s AND subject_key = %s"):
+            return self._count_rate_limit_events(params)
+        if normalized.startswith("INSERT INTO auth_rate_limit_events (action, subject_key) VALUES (%s, %s)"):
+            return self._insert_rate_limit_event(params)
         if normalized.startswith("INSERT INTO servers"):
             code, title = params
             self.state["servers"][code] = {"code": code, "title": title}
@@ -137,12 +151,19 @@ class FakePostgresConnection:
             return self._mark_email_verified(params[0], preserve_existing=True)
         if normalized.startswith("UPDATE users SET email = %s, email_verified_at = NULL, email_verification_token_hash = NULL WHERE username = %s"):
             return self._update_email(params)
+        if normalized.startswith("UPDATE users SET deactivated_at = NOW(), deactivated_reason = %s, access_blocked_at = COALESCE(access_blocked_at, NOW()), access_blocked_reason = COALESCE(NULLIF(access_blocked_reason, ''), %s) WHERE username = %s"):
+            return self._deactivate_user(params)
+        if normalized.startswith("UPDATE users SET deactivated_at = NULL, deactivated_reason = NULL, access_blocked_at = NULL, access_blocked_reason = NULL WHERE username = %s"):
+            return self._reactivate_user(params[0])
+        if normalized.startswith("UPDATE users SET api_quota_daily = %s WHERE username = %s"):
+            return self._set_daily_quota(params)
 
         raise AssertionError(f"Unsupported fake postgres query: {normalized}")
 
     def _now(self) -> str:
         self.state["clock"] += 1
-        return f"2026-04-10T00:00:{self.state['clock']:02d}Z"
+        current = datetime.now(timezone.utc) + timedelta(seconds=self.state["clock"])
+        return current.isoformat()
 
     def _insert_user(self, params):
         username, email, salt, password_hash, created_at, token_hash, token_sent_at, profile_json = params
@@ -166,6 +187,9 @@ class FakePostgresConnection:
             "password_reset_sent_at": None,
             "access_blocked_at": None,
             "access_blocked_reason": None,
+            "deactivated_at": None,
+            "deactivated_reason": None,
+            "api_quota_daily": 0,
             "representative_profile": json.loads(profile_json),
         }
         return FakeCursor(rowcount=1, one={"id": user_id})
@@ -228,6 +252,9 @@ class FakePostgresConnection:
             "password_reset_sent_at": user["password_reset_sent_at"],
             "access_blocked_at": user["access_blocked_at"],
             "access_blocked_reason": user["access_blocked_reason"],
+            "deactivated_at": user.get("deactivated_at"),
+            "deactivated_reason": user.get("deactivated_reason"),
+            "api_quota_daily": user.get("api_quota_daily", 0),
             "server_code": role.get("server_code", server_code),
             "is_tester": role.get("is_tester", False),
             "is_gka": role.get("is_gka", False),
@@ -350,6 +377,72 @@ class FakePostgresConnection:
         user["email_verification_token_hash"] = None
         return FakeCursor(rowcount=1)
 
+    def _deactivate_user(self, params):
+        reason, block_reason, username = params
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0)
+        user["deactivated_at"] = self._now()
+        user["deactivated_reason"] = reason
+        if not user.get("access_blocked_at"):
+            user["access_blocked_at"] = self._now()
+        if not str(user.get("access_blocked_reason") or "").strip():
+            user["access_blocked_reason"] = block_reason
+        return FakeCursor(rowcount=1)
+
+    def _reactivate_user(self, username: str):
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0)
+        user["deactivated_at"] = None
+        user["deactivated_reason"] = None
+        user["access_blocked_at"] = None
+        user["access_blocked_reason"] = None
+        return FakeCursor(rowcount=1)
+
+    def _set_daily_quota(self, params):
+        daily_limit, username = params
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0)
+        user["api_quota_daily"] = int(daily_limit or 0)
+        return FakeCursor(rowcount=1)
+
+    def _insert_rate_limit_event(self, params):
+        action, subject_key = params
+        self.state["auth_rate_limit_events"].append(
+            {
+                "action": str(action),
+                "subject_key": str(subject_key),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        return FakeCursor(rowcount=1)
+
+    def _count_rate_limit_events(self, params):
+        action, subject_key = params
+        total = sum(
+            1
+            for row in self.state["auth_rate_limit_events"]
+            if row["action"] == str(action) and row["subject_key"] == str(subject_key)
+        )
+        return FakeCursor(rowcount=1, one={"total": total})
+
+    def _delete_rate_limit_events(self, params):
+        action, subject_key, _window_seconds = params
+        threshold = datetime.now(timezone.utc) - timedelta(seconds=int(_window_seconds or 0))
+        before = len(self.state["auth_rate_limit_events"])
+        self.state["auth_rate_limit_events"] = [
+            row
+            for row in self.state["auth_rate_limit_events"]
+            if not (
+                row["action"] == str(action)
+                and row["subject_key"] == str(subject_key)
+                and datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00")).astimezone(timezone.utc) < threshold
+            )
+        ]
+        return FakeCursor(rowcount=before - len(self.state["auth_rate_limit_events"]))
+
 
 class FakeAdminMetricsPostgresBackend:
     def __init__(
@@ -398,6 +491,19 @@ class FakeAdminMetricsConnection:
     def __init__(self, state):
         self.state = state
 
+    @staticmethod
+    def _percentile(values, quantile):
+        ordered = sorted(int(item) for item in values if item is not None)
+        if not ordered:
+            return None
+        if len(ordered) == 1:
+            return ordered[0]
+        index = (len(ordered) - 1) * quantile
+        lower = int(index)
+        upper = min(lower + 1, len(ordered) - 1)
+        weight = index - lower
+        return int(round((1 - weight) * ordered[lower] + weight * ordered[upper]))
+
     def commit(self) -> None:
         return None
 
@@ -425,6 +531,12 @@ class FakeAdminMetricsConnection:
             return FakeCursor(rowcount=0)
         if normalized.startswith("INSERT INTO metric_events "):
             return self._insert_event(params)
+        if normalized.startswith("SELECT COUNT(*) AS request_count, SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_count, COALESCE(SUM(CASE WHEN event_type = 'api_request' THEN 1 ELSE 0 END), 0) AS api_requests_total,"):
+            return self._performance_totals(params)
+        if normalized.startswith("SELECT BTRIM(path) AS path, COUNT(*) AS count, SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_count, COALESCE(AVG(duration_ms), 0) AS avg_ms,"):
+            return self._performance_endpoint_rows(params)
+        if normalized == "SELECT COUNT(*) AS total FROM metric_events WHERE event_type = 'api_request' AND username = %s AND created_at >= NOW() - INTERVAL '1 day'":
+            return self._count_user_api_requests_last_24h(params)
         if "COUNT(*) AS total_events" in normalized and "FROM metric_events" in normalized:
             return self._totals()
         if normalized.startswith("SELECT path, COUNT(*) AS count FROM metric_events"):
@@ -433,7 +545,7 @@ class FakeAdminMetricsConnection:
             return self._recent_events(normalized, params)
         if normalized.startswith("SELECT username, MAX(server_code) AS server_code,"):
             return self._user_metrics()
-        if normalized.startswith("SELECT event_type, meta_json FROM metric_events WHERE event_type IN"):
+        if normalized.startswith("WITH scoped_events AS ( SELECT event_type, meta_json FROM metric_events WHERE event_type IN"):
             return self._ai_exam_stats()
         if normalized.startswith("SELECT created_at, username, server_code, event_type, path, status_code, meta_json FROM metric_events WHERE event_type IN"):
             return self._latest_event(params)
@@ -442,7 +554,8 @@ class FakeAdminMetricsConnection:
 
     def _now(self) -> str:
         self.state["clock"] += 1
-        return f"2026-04-10T00:00:{self.state['clock']:02d}Z"
+        current = datetime.now(timezone.utc) + timedelta(seconds=self.state["clock"])
+        return current.isoformat()
 
     def _insert_event(self, params):
         event = {
@@ -573,12 +686,40 @@ class FakeAdminMetricsConnection:
         return FakeCursor(rowcount=len(grouped), rows=list(grouped.values()))
 
     def _ai_exam_stats(self):
-        rows = [
-            {"event_type": item["event_type"], "meta_json": item["meta_json"]}
+        scoring_events = [
+            item
             for item in self.state["metric_events"]
             if item["event_type"] in {"ai_exam_scoring", "exam_import_score_failures", "exam_import_row_score_error"}
         ]
-        return FakeCursor(rowcount=len(rows), rows=rows)
+        scoring_ms_values: list[int] = []
+        for item in scoring_events:
+            if item["event_type"] != "ai_exam_scoring":
+                continue
+            raw_scoring_ms = (item.get("meta_json") or {}).get("scoring_ms")
+            try:
+                if raw_scoring_ms is None:
+                    continue
+                scoring_ms_values.append(int(raw_scoring_ms))
+            except (TypeError, ValueError):
+                continue
+        row = {
+            "ai_exam_scoring_total": sum(1 for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_scoring_rows": sum(int((item.get("meta_json") or {}).get("rows_scored") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_scoring_answers": sum(int((item.get("meta_json") or {}).get("answer_count") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_heuristic_total": sum(int((item.get("meta_json") or {}).get("heuristic_count") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_cache_total": sum(int((item.get("meta_json") or {}).get("cache_hit_count") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_llm_total": sum(int((item.get("meta_json") or {}).get("llm_count") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_llm_calls_total": sum(int((item.get("meta_json") or {}).get("llm_calls") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_failure_total": sum(1 for item in scoring_events if item["event_type"] != "ai_exam_scoring"),
+            "ai_exam_invalid_batch_items_total": sum(int((item.get("meta_json") or {}).get("invalid_batch_item_count") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_retry_batch_items_total": sum(int((item.get("meta_json") or {}).get("retry_batch_items") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_retry_batch_calls_total": sum(int((item.get("meta_json") or {}).get("retry_batch_calls") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_retry_single_items_total": sum(int((item.get("meta_json") or {}).get("retry_single_items") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_retry_single_calls_total": sum(int((item.get("meta_json") or {}).get("retry_single_calls") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_scoring_ms_p50": self._percentile(scoring_ms_values, 0.5),
+            "ai_exam_scoring_ms_p95": self._percentile(scoring_ms_values, 0.95),
+        }
+        return FakeCursor(rowcount=1, one=row)
 
     def _latest_event(self, params):
         event_types = set(params)
@@ -598,6 +739,95 @@ class FakeAdminMetricsConnection:
                 "meta_json": item["meta_json"],
             },
         )
+
+    def _count_user_api_requests_last_24h(self, params):
+        username = str(params[0] or "").strip().lower()
+        threshold = datetime.now(timezone.utc) - timedelta(days=1)
+        total = 0
+        for item in self.state["metric_events"]:
+            if item["event_type"] != "api_request":
+                continue
+            if str(item["username"] or "").strip().lower() != username:
+                continue
+            created_at = datetime.fromisoformat(str(item["created_at"]).replace("Z", "+00:00"))
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            if created_at.astimezone(timezone.utc) >= threshold:
+                total += 1
+        return FakeCursor(rowcount=1, one={"total": total})
+
+    def _performance_totals(self, params):
+        threshold = datetime.now(timezone.utc) - timedelta(minutes=int(params[0]))
+        events = []
+        for item in self.state["metric_events"]:
+            if item["event_type"] != "api_request":
+                continue
+            created_at = datetime.fromisoformat(str(item["created_at"]).replace("Z", "+00:00"))
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            if created_at.astimezone(timezone.utc) >= threshold:
+                events.append(item)
+        request_count = len(events)
+        error_count = sum(1 for item in events if int(item.get("status_code") or 0) >= 400)
+        avg_duration_ms = (
+            sum(int(item.get("duration_ms") or 0) for item in events if item.get("duration_ms") is not None) / request_count
+            if request_count
+            else 0
+        )
+        return FakeCursor(
+            rowcount=1,
+            one={
+                "request_count": request_count,
+                "error_count": error_count,
+                "api_requests_total": request_count,
+                "avg_duration_ms": avg_duration_ms,
+                "p50_duration_ms": self._percentile([int(item["duration_ms"]) for item in events if item.get("duration_ms") is not None], 0.5),
+                "p95_duration_ms": self._percentile([int(item["duration_ms"]) for item in events if item.get("duration_ms") is not None], 0.95),
+                "request_bytes": sum(int(item.get("request_bytes") or 0) for item in events),
+                "response_bytes": sum(int(item.get("response_bytes") or 0) for item in events),
+                "resource_units": sum(int(item.get("resource_units") or 0) for item in events),
+            },
+        )
+
+    def _performance_endpoint_rows(self, params):
+        threshold = datetime.now(timezone.utc) - timedelta(minutes=int(params[0]))
+        endpoint_limit = int(params[1])
+        grouped: dict[str, dict[str, object]] = {}
+        for item in self.state["metric_events"]:
+            if item["event_type"] != "api_request" or not item.get("path"):
+                continue
+            created_at = datetime.fromisoformat(str(item["created_at"]).replace("Z", "+00:00"))
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            if created_at.astimezone(timezone.utc) < threshold:
+                continue
+            path = str(item["path"] or "").strip()
+            if not path:
+                continue
+            entry = grouped.setdefault(
+                path,
+                {"path": path, "count": 0, "error_count": 0, "durations": []},
+            )
+            entry["count"] = int(entry["count"]) + 1
+            entry["error_count"] = int(entry["error_count"]) + (1 if int(item.get("status_code") or 0) >= 400 else 0)
+            if item.get("duration_ms") is not None:
+                durations = entry["durations"]
+                assert isinstance(durations, list)
+                durations.append(int(item["duration_ms"]))
+        rows = []
+        for entry in sorted(grouped.values(), key=lambda item: (-int(item["count"]), str(item["path"])) )[:endpoint_limit]:
+            durations = [int(item) for item in entry["durations"]]
+            rows.append(
+                {
+                    "path": entry["path"],
+                    "count": int(entry["count"]),
+                    "error_count": int(entry["error_count"]),
+                    "avg_ms": (sum(durations) / len(durations)) if durations else 0,
+                    "p50_ms": self._percentile(durations, 0.5),
+                    "p95_ms": self._percentile(durations, 0.95),
+                }
+            )
+        return FakeCursor(rowcount=len(rows), rows=rows)
 
 
 class FakeExamAnswersPostgresBackend:
@@ -690,6 +920,7 @@ class FakeExamAnswersConnection:
             source_row, row_id = params
             row = self._find_by_id(int(row_id))
             if row:
+                self._ensure_unique_source_row(int(source_row), row_id=int(row_id))
                 row["import_key"] = None
                 row["source_row"] = int(source_row)
             return FakeCursor(rowcount=1 if row else 0)
@@ -700,6 +931,7 @@ class FakeExamAnswersConnection:
             source_row, row_id = params
             row = self._find_by_id(int(row_id))
             if row:
+                self._ensure_unique_source_row(int(source_row), row_id=int(row_id))
                 row["source_row"] = int(source_row)
             return FakeCursor(rowcount=1 if row else 0)
         if normalized.startswith("SELECT id, source_row, submitted_at, full_name, discord_tag, passport, exam_format, payload_json, answer_count FROM exam_answers WHERE import_key = %s"):
@@ -743,22 +975,37 @@ class FakeExamAnswersConnection:
             return self._update_row_preserve_scores(params)
         if normalized.startswith("UPDATE exam_answers SET source_row = %s, submitted_at = %s, full_name = %s, discord_tag = %s, passport = %s, exam_format = %s, payload_json = %s::jsonb, answer_count = %s, question_g_score = NULL, question_g_rationale = NULL, question_g_scored_at = NULL, exam_scores_json = NULL, exam_scores_scored_at = NULL, average_score = NULL, average_score_answer_count = NULL, average_score_scored_at = NULL, needs_rescore = %s, updated_at = NOW() WHERE id = %s"):
             return self._update_row(params)
-        if normalized.startswith("SELECT COUNT(*) AS total FROM exam_answers WHERE source_row > 0"):
-            total = sum(1 for row in self.state["rows"] if row["source_row"] > 0)
-            return FakeCursor(rowcount=1, one={"total": total})
         if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, average_score, COALESCE(average_score_answer_count, 0) AS average_score_answer_count, needs_rescore, imported_at FROM exam_answers WHERE source_row > 0 ORDER BY source_row DESC LIMIT %s"):
             return self._list_entries(int(params[0]))
+        if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, average_score, average_score_answer_count, imported_at FROM exam_answers WHERE source_row > 0 AND average_score IS NULL ORDER BY source_row ASC LIMIT %s"):
+            rows = [row for row in self.state["rows"] if row["source_row"] > 0 and row["average_score"] is None]
+            rows.sort(key=lambda item: item["source_row"])
+            rows = rows[: int(params[0])]
+            return FakeCursor(rowcount=len(rows), rows=[self._summary_row(row) for row in rows])
         if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, average_score, average_score_answer_count, imported_at FROM exam_answers WHERE source_row > 0 AND (average_score IS NULL OR needs_rescore = 1) ORDER BY source_row ASC LIMIT %s") or normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, average_score, average_score_answer_count, imported_at FROM exam_answers WHERE source_row > 0 AND (average_score IS NULL OR needs_rescore IS TRUE) ORDER BY source_row ASC LIMIT %s"):
             rows = [row for row in self.state["rows"] if row["source_row"] > 0 and (row["average_score"] is None or bool(row["needs_rescore"]))]
             rows.sort(key=lambda item: item["source_row"])
             rows = rows[: int(params[0])]
             return FakeCursor(rowcount=len(rows), rows=[self._summary_row(row) for row in rows])
+        if normalized.startswith("SELECT COUNT(*) AS total FROM exam_answers WHERE source_row > 0 AND average_score IS NULL"):
+            total = sum(1 for row in self.state["rows"] if row["source_row"] > 0 and row["average_score"] is None)
+            return FakeCursor(rowcount=1, one={"total": total})
+        if normalized.startswith("SELECT COUNT(*) AS total FROM exam_answers WHERE source_row > 0 AND (average_score IS NULL OR needs_rescore = 1)") or normalized.startswith("SELECT COUNT(*) AS total FROM exam_answers WHERE source_row > 0 AND (average_score IS NULL OR needs_rescore IS TRUE)"):
+            total = sum(
+                1
+                for row in self.state["rows"]
+                if row["source_row"] > 0 and (row["average_score"] is None or bool(row["needs_rescore"]))
+            )
+            return FakeCursor(rowcount=1, one={"total": total})
+        if normalized.startswith("SELECT COUNT(*) AS total FROM exam_answers WHERE source_row > 0"):
+            total = sum(1 for row in self.state["rows"] if row["source_row"] > 0)
+            return FakeCursor(rowcount=1, one={"total": total})
         if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, average_score, COALESCE(average_score_answer_count, 0) AS average_score_answer_count, needs_rescore, imported_at, exam_scores_json FROM exam_answers WHERE source_row > 0 AND exam_scores_json IS NOT NULL"):
             rows = [row for row in self.state["rows"] if row["source_row"] > 0 and row["exam_scores_json"] not in (None, "")]
             rows.sort(key=lambda item: item["source_row"])
             rows = rows[: int(params[0])]
             return FakeCursor(rowcount=len(rows), rows=[{**self._summary_row(row), "exam_scores_json": row["exam_scores_json"]} for row in rows])
-        if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, imported_at, updated_at, question_g_score, question_g_rationale, question_g_scored_at, exam_scores_json, exam_scores_scored_at, average_score, average_score_answer_count, average_score_scored_at, needs_rescore, payload_json FROM exam_answers WHERE source_row = %s AND source_row > 0"):
+        if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, imported_at, updated_at, question_g_score, question_g_rationale, question_g_scored_at, exam_scores_json, exam_scores_scored_at, average_score, average_score_answer_count, average_score_scored_at, needs_rescore, payload_json FROM exam_answers WHERE source_row = %s"):
             row = self._find_by_source_row(int(params[0]))
             return FakeCursor(rowcount=1 if row else 0, one=self._detail_row(row) if row else None)
         if normalized.startswith("UPDATE exam_answers SET question_g_score = %s, question_g_rationale = %s, question_g_scored_at = NOW() WHERE source_row = %s"):
@@ -771,6 +1018,10 @@ class FakeExamAnswersConnection:
             return FakeCursor(rowcount=1 if row else 0)
         if normalized.startswith("UPDATE exam_answers SET exam_scores_json = %s::jsonb, exam_scores_scored_at = NOW(), average_score = %s, average_score_answer_count = %s, average_score_scored_at = NOW(), needs_rescore = %s WHERE source_row = %s"):
             return self._save_scores(params)
+        if normalized.startswith("UPDATE exam_answers SET question_g_score = NULL, question_g_rationale = NULL, question_g_scored_at = NULL, exam_scores_json = NULL, exam_scores_scored_at = NULL, average_score = NULL, average_score_answer_count = NULL, average_score_scored_at = NULL, needs_rescore = %s, updated_at = NOW() WHERE source_row = %s"):
+            return self._reset_scores_for_row(params)
+        if normalized.startswith("UPDATE exam_answers SET question_g_score = NULL, question_g_rationale = NULL, question_g_scored_at = NULL, exam_scores_json = NULL, exam_scores_scored_at = NULL, average_score = NULL, average_score_answer_count = NULL, average_score_scored_at = NULL, needs_rescore = %s, updated_at = NOW() WHERE source_row > 0 AND "):
+            return self._reset_scores_by_user(normalized, params)
 
         raise AssertionError(f"Unsupported fake exam answers query: {normalized}")
 
@@ -787,8 +1038,22 @@ class FakeExamAnswersConnection:
     def _find_by_source_row(self, source_row: int):
         return next((row for row in self.state["rows"] if row["source_row"] == source_row), None)
 
+    def _ensure_unique_source_row(self, source_row: int, *, row_id: int | None = None) -> None:
+        source_row = int(source_row)
+        duplicate = next(
+            (
+                row
+                for row in self.state["rows"]
+                if row["source_row"] == source_row and (row_id is None or row["id"] != row_id)
+            ),
+            None,
+        )
+        if duplicate is not None:
+            raise RuntimeError(f'duplicate key value violates unique constraint "exam_answers_source_row_key": {source_row}')
+
     def _insert_row(self, params):
         source_row, submitted_at, full_name, discord_tag, passport, exam_format, payload_json, answer_count, needs_rescore, import_key = params
+        self._ensure_unique_source_row(int(source_row))
         row = {
             "id": self.state["next_id"],
             "source_row": int(source_row),
@@ -821,6 +1086,7 @@ class FakeExamAnswersConnection:
         row = self._find_by_id(int(row_id))
         if not row:
             return FakeCursor(rowcount=0)
+        self._ensure_unique_source_row(int(source_row), row_id=int(row_id))
         row.update(
             {
                 "source_row": int(source_row),
@@ -850,6 +1116,7 @@ class FakeExamAnswersConnection:
         row = self._find_by_id(int(row_id))
         if not row:
             return FakeCursor(rowcount=0)
+        self._ensure_unique_source_row(int(source_row), row_id=int(row_id))
         row.update(
             {
                 "source_row": int(source_row),
@@ -910,6 +1177,61 @@ class FakeExamAnswersConnection:
         row["average_score_answer_count"] = average_score_answer_count
         row["average_score_scored_at"] = self._now()
         row["needs_rescore"] = bool(needs_rescore)
+        return FakeCursor(rowcount=1)
+
+    def _reset_scores_by_user(self, normalized_query: str, params):
+        if not params:
+            return FakeCursor(rowcount=0)
+        needs_rescore = bool(params[0])
+        filter_values = list(params[1:])
+        where_part = normalized_query.split("WHERE source_row > 0 AND ", 1)[1]
+        filter_clauses = [part.strip() for part in where_part.split(" AND ") if part.strip()]
+        matched_rows = []
+        for row in self.state["rows"]:
+            if row["source_row"] <= 0:
+                continue
+            value_index = 0
+            is_match = True
+            for clause in filter_clauses:
+                if clause == "full_name = %s":
+                    is_match = is_match and str(row["full_name"]) == str(filter_values[value_index])
+                    value_index += 1
+                elif clause == "discord_tag = %s":
+                    is_match = is_match and str(row["discord_tag"]) == str(filter_values[value_index])
+                    value_index += 1
+                elif clause == "passport = %s":
+                    is_match = is_match and str(row["passport"]) == str(filter_values[value_index])
+                    value_index += 1
+            if is_match:
+                matched_rows.append(row)
+        for row in matched_rows:
+            row["question_g_score"] = None
+            row["question_g_rationale"] = None
+            row["question_g_scored_at"] = None
+            row["exam_scores_json"] = None
+            row["exam_scores_scored_at"] = None
+            row["average_score"] = None
+            row["average_score_answer_count"] = None
+            row["average_score_scored_at"] = None
+            row["needs_rescore"] = needs_rescore
+            row["updated_at"] = self._now()
+        return FakeCursor(rowcount=len(matched_rows))
+
+    def _reset_scores_for_row(self, params):
+        needs_rescore, source_row = params
+        row = self._find_by_source_row(int(source_row))
+        if row is None:
+            return FakeCursor(rowcount=0)
+        row["question_g_score"] = None
+        row["question_g_rationale"] = None
+        row["question_g_scored_at"] = None
+        row["exam_scores_json"] = None
+        row["exam_scores_scored_at"] = None
+        row["average_score"] = None
+        row["average_score_answer_count"] = None
+        row["average_score_scored_at"] = None
+        row["needs_rescore"] = bool(needs_rescore)
+        row["updated_at"] = self._now()
         return FakeCursor(rowcount=1)
 
 
@@ -1203,6 +1525,292 @@ class WebStorageTests(unittest.TestCase):
             gc.collect()
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_exam_answers_store_releases_source_row_before_inserting_new_shifted_entry(self):
+        tmpdir = make_temp_dir()
+        try:
+            root = Path(tmpdir)
+            store = ExamAnswersStore(root / "exam_answers.db", backend=FakeExamAnswersPostgresBackend())
+            original_row = {
+                "source_row": 7,
+                "submitted_at": "2026-04-08 12:00:00",
+                "full_name": "Existing User",
+                "discord_tag": "existing",
+                "passport": "700001",
+                "exam_format": "remote",
+                "payload": {
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "full_name": "Existing User",
+                    "discord_tag": "existing",
+                    "passport": "700001",
+                    "exam_format": "remote",
+                    "Question F": "Answer F",
+                    "Question G": "Answer G",
+                },
+                "answer_count": 2,
+            }
+            store.import_rows([original_row])
+
+            shifted_rows = [
+                {
+                    "source_row": 7,
+                    "submitted_at": "2026-04-09 09:00:00",
+                    "full_name": "New User",
+                    "discord_tag": "new",
+                    "passport": "700002",
+                    "exam_format": "remote",
+                    "payload": {
+                        "submitted_at": "2026-04-09 09:00:00",
+                        "full_name": "New User",
+                        "discord_tag": "new",
+                        "passport": "700002",
+                        "exam_format": "remote",
+                        "Question F": "Other F",
+                        "Question G": "Other G",
+                    },
+                    "answer_count": 2,
+                },
+                {
+                    "source_row": 8,
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "full_name": "Existing User",
+                    "discord_tag": "existing",
+                    "passport": "700001",
+                    "exam_format": "remote",
+                    "payload": {
+                        "submitted_at": "2026-04-08 12:00:00",
+                        "full_name": "Existing User",
+                        "discord_tag": "existing",
+                        "passport": "700001",
+                        "exam_format": "remote",
+                        "Question F": "Answer F",
+                        "Question G": "Answer G",
+                    },
+                    "answer_count": 2,
+                },
+            ]
+
+            result = store.import_rows(shifted_rows)
+
+            self.assertEqual(result["inserted_count"], 1)
+            self.assertEqual(result["updated_count"], 1)
+            self.assertIsNotNone(store.get_entry(7))
+            self.assertIsNotNone(store.get_entry(8))
+            self.assertEqual(store.get_entry(7)["full_name"], "New User")
+            self.assertEqual(store.get_entry(8)["full_name"], "Existing User")
+        finally:
+            del store
+            gc.collect()
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_exam_answers_store_keeps_reference_answers_in_reserved_slot(self):
+        tmpdir = make_temp_dir()
+        try:
+            root = Path(tmpdir)
+            store = ExamAnswersStore(root / "exam_answers.db", backend=FakeExamAnswersPostgresBackend())
+            result = store.import_rows(
+                [
+                    {
+                        "source_row": 2,
+                        "submitted_at": "2026-04-08 12:00:00",
+                        "full_name": "Candidate User",
+                        "discord_tag": "candidate",
+                        "passport": "700010",
+                        "exam_format": "remote",
+                        "payload": {
+                            "submitted_at": "2026-04-08 12:00:00",
+                            "full_name": "Candidate User",
+                            "discord_tag": "candidate",
+                            "passport": "700010",
+                            "format": "remote",
+                            "Question F": "Answer F",
+                        },
+                        "answer_count": 1,
+                    },
+                    {
+                        "source_row": 9,
+                        "submitted_at": "",
+                        "full_name": "эталонные ответы",
+                        "discord_tag": "",
+                        "passport": "",
+                        "exam_format": "эталонные ответы",
+                        "payload": {
+                            "submitted_at": "",
+                            "full_name": "эталонные ответы",
+                            "discord_tag": "эталонные ответы",
+                            "passport": "",
+                            "format": "эталонные ответы",
+                            "Question F": "Reference F",
+                        },
+                        "answer_count": 1,
+                    },
+                ]
+            )
+
+            self.assertEqual(result["inserted_count"], 1)
+            self.assertEqual(result["updated_count"], 0)
+            self.assertEqual(result["total_rows"], 1)
+            self.assertIsNotNone(store.get_entry(2))
+            self.assertIsNone(store.get_entry(9))
+            self.assertEqual(len(store.list_entries(limit=10)), 1)
+            self.assertEqual(len(store.list_entries_needing_scores(limit=10)), 1)
+
+            reference_entry = store.get_reference_entry()
+            self.assertIsNotNone(reference_entry)
+            self.assertEqual(reference_entry["source_row"], 0)
+            self.assertEqual(reference_entry["full_name"], "эталонные ответы")
+            self.assertFalse(reference_entry["needs_rescore"])
+        finally:
+            del store
+            gc.collect()
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_exam_answers_store_migrates_legacy_reference_row_to_reserved_slot(self):
+        tmpdir = make_temp_dir()
+        try:
+            root = Path(tmpdir)
+            backend = FakeExamAnswersPostgresBackend()
+            store = ExamAnswersStore(root / "exam_answers.db", backend=backend)
+            legacy_conn = FakeExamAnswersConnection(backend._state)
+            legacy_payload = {
+                "submitted_at": "",
+                "full_name": "эталонные ответы",
+                "discord_tag": "эталонные ответы",
+                "passport": "",
+                "format": "эталонные ответы",
+                "Question F": "Reference F",
+            }
+            legacy_conn._insert_row(
+                (
+                    9,
+                    "",
+                    "эталонные ответы",
+                    "",
+                    "",
+                    "эталонные ответы",
+                    json.dumps(legacy_payload, ensure_ascii=False),
+                    1,
+                    True,
+                    "legacy-reference",
+                )
+            )
+            backend._state["rows"][0]["exam_scores_json"] = json.dumps(
+                [{"column": "F", "score": 50, "rationale": "legacy"}],
+                ensure_ascii=False,
+            )
+            backend._state["rows"][0]["average_score"] = 50.0
+
+            result = store.import_rows(
+                [
+                    {
+                        "source_row": 2,
+                        "submitted_at": "2026-04-09 09:00:00",
+                        "full_name": "Candidate User",
+                        "discord_tag": "candidate",
+                        "passport": "700011",
+                        "exam_format": "remote",
+                        "payload": {
+                            "submitted_at": "2026-04-09 09:00:00",
+                            "full_name": "Candidate User",
+                            "discord_tag": "candidate",
+                            "passport": "700011",
+                            "format": "remote",
+                            "Question F": "Answer F",
+                        },
+                        "answer_count": 1,
+                    }
+                ]
+            )
+
+            self.assertEqual(result["inserted_count"], 1)
+            self.assertEqual(result["total_rows"], 1)
+            self.assertIsNone(store.get_entry(9))
+            reference_entry = store.get_reference_entry()
+            self.assertIsNotNone(reference_entry)
+            self.assertEqual(reference_entry["source_row"], 0)
+            self.assertEqual(reference_entry["full_name"], "эталонные ответы")
+            self.assertFalse(reference_entry["needs_rescore"])
+            self.assertEqual(reference_entry["exam_scores"], [])
+            self.assertIsNone(reference_entry["average_score"])
+        finally:
+            del store
+            gc.collect()
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_exam_answers_store_frees_legacy_reference_row_before_inserting_new_candidate(self):
+        tmpdir = make_temp_dir()
+        try:
+            root = Path(tmpdir)
+            backend = FakeExamAnswersPostgresBackend()
+            store = ExamAnswersStore(root / "exam_answers.db", backend=backend)
+            legacy_conn = FakeExamAnswersConnection(backend._state)
+            legacy_payload = {
+                "submitted_at": "",
+                "full_name": "эталонные ответы",
+                "discord_tag": "эталонные ответы",
+                "passport": "",
+                "format": "эталонные ответы",
+                "Question F": "Reference F",
+            }
+            legacy_conn._insert_row(
+                (
+                    9,
+                    "",
+                    "эталонные ответы",
+                    "эталонные ответы",
+                    "",
+                    "эталонные ответы",
+                    json.dumps(legacy_payload, ensure_ascii=False),
+                    1,
+                    True,
+                    "legacy-reference",
+                )
+            )
+
+            result = store.import_rows(
+                [
+                    {
+                        "source_row": 9,
+                        "submitted_at": "2026-04-10 10:00:00",
+                        "full_name": "New Candidate",
+                        "discord_tag": "candidate",
+                        "passport": "700012",
+                        "exam_format": "remote",
+                        "payload": {
+                            "submitted_at": "2026-04-10 10:00:00",
+                            "full_name": "New Candidate",
+                            "discord_tag": "candidate",
+                            "passport": "700012",
+                            "format": "remote",
+                            "Question F": "Candidate F",
+                        },
+                        "answer_count": 1,
+                    },
+                    {
+                        "source_row": 10,
+                        "submitted_at": "",
+                        "full_name": "эталонные ответы",
+                        "discord_tag": "эталонные ответы",
+                        "passport": "",
+                        "exam_format": "эталонные ответы",
+                        "payload": legacy_payload,
+                        "answer_count": 1,
+                    },
+                ]
+            )
+
+            self.assertEqual(result["inserted_count"], 1)
+            self.assertEqual(result["total_rows"], 1)
+            self.assertEqual(store.get_entry(9)["full_name"], "New Candidate")
+            self.assertIsNone(store.get_entry(10))
+            reference_entry = store.get_reference_entry()
+            self.assertIsNotNone(reference_entry)
+            self.assertEqual(reference_entry["source_row"], 0)
+            self.assertEqual(reference_entry["full_name"], "эталонные ответы")
+        finally:
+            del store
+            gc.collect()
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_exam_answers_store_preserves_scores_when_identity_fields_change_but_answers_match(self):
         tmpdir = make_temp_dir()
         try:
@@ -1334,6 +1942,72 @@ class WebStorageTests(unittest.TestCase):
             self.assertEqual(rescored["average_score"], 90.0)
             self.assertEqual(rescored["average_score_answer_count"], 2)
             self.assertEqual(rescored["needs_rescore"], 0)
+        finally:
+            del store
+            gc.collect()
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_exam_answers_store_preserves_scores_when_payload_order_changes_but_answers_match(self):
+        tmpdir = make_temp_dir()
+        try:
+            root = Path(tmpdir)
+            store = ExamAnswersStore(root / "exam_answers.db", backend=FakeExamAnswersPostgresBackend())
+            original = {
+                "source_row": 2,
+                "submitted_at": "2026-04-08 12:00:00",
+                "full_name": "Student One",
+                "discord_tag": "student1",
+                "passport": "111111",
+                "exam_format": "remote",
+                "payload": {
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "full_name": "Student One",
+                    "discord_tag": "student1",
+                    "passport": "111111",
+                    "exam_format": "remote",
+                    "Question F": "Answer F",
+                    "Question G": "Answer G",
+                },
+                "answer_count": 2,
+            }
+            reordered = {
+                "source_row": 2,
+                "submitted_at": "2026-04-08 12:00:00",
+                "full_name": "Student One",
+                "discord_tag": "student1",
+                "passport": "111111",
+                "exam_format": "remote",
+                "payload": {
+                    "Question G": "Answer G",
+                    "exam_format": "remote",
+                    "passport": "111111",
+                    "Question F": "Answer F",
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "discord_tag": "student1",
+                    "full_name": "Student One",
+                },
+                "answer_count": 2,
+            }
+
+            store.import_rows([original])
+            store.save_exam_scores(
+                2,
+                [
+                    {"column": "F", "score": 80},
+                    {"column": "G", "score": 100},
+                ],
+            )
+
+            result = store.import_rows([reordered])
+            rescored = store.get_entry(2)
+
+            self.assertEqual(result["inserted_count"], 0)
+            self.assertEqual(result["updated_count"], 1)
+            self.assertIsNotNone(rescored)
+            self.assertEqual(rescored["average_score"], 90.0)
+            self.assertEqual(rescored["average_score_answer_count"], 2)
+            self.assertEqual(rescored["needs_rescore"], 0)
+            self.assertEqual(len(store.list_entries_needing_scores(limit=10)), 0)
         finally:
             del store
             gc.collect()
@@ -1717,6 +2391,83 @@ class PostgresAdminMetricsStoreTests(unittest.TestCase):
         self.assertIn("created_at,username,event_type,path", events_csv)
         self.assertIn("/api/generate", events_csv)
 
+    def test_postgres_admin_metrics_store_keeps_full_history_for_ai_exam_totals(self):
+        store = self.make_store()
+
+        self.assertTrue(
+            store.log_event(
+                event_type="ai_exam_scoring",
+                username="alpha",
+                server_code="blackberry",
+                path="/api/exam-import/score",
+                method="POST",
+                status_code=200,
+                meta={"rows_scored": 1, "answer_count": 4, "scoring_ms": 120},
+            )
+        )
+        self.assertTrue(
+            store.log_event(
+                event_type="ai_exam_scoring",
+                username="alpha",
+                server_code="blackberry",
+                path="/api/exam-import/score",
+                method="POST",
+                status_code=200,
+                meta={"rows_scored": 2, "answer_count": 8, "scoring_ms": 180},
+            )
+        )
+        store.backend._state["metric_events"][0]["created_at"] = "2026-03-01T00:00:00+00:00"
+
+        overview = store.get_overview(users=[])
+
+        self.assertEqual(overview["totals"]["ai_exam_scoring_total"], 2)
+        self.assertEqual(overview["totals"]["ai_exam_scoring_rows"], 3)
+        self.assertEqual(overview["totals"]["ai_exam_scoring_answers"], 12)
+
+    def test_postgres_admin_metrics_store_trims_and_deduplicates_endpoint_paths(self):
+        store = self.make_store()
+
+        self.assertTrue(
+            store.log_event(
+                event_type="api_request",
+                username="alpha",
+                server_code="blackberry",
+                path="  /api/test  ",
+                method="POST",
+                status_code=200,
+                duration_ms=100,
+            )
+        )
+        self.assertTrue(
+            store.log_event(
+                event_type="api_request",
+                username="alpha",
+                server_code="blackberry",
+                path="/api/test",
+                method="POST",
+                status_code=500,
+                duration_ms=200,
+            )
+        )
+        self.assertTrue(
+            store.log_event(
+                event_type="api_request",
+                username="alpha",
+                server_code="blackberry",
+                path="   ",
+                method="POST",
+                status_code=200,
+                duration_ms=300,
+            )
+        )
+
+        overview = store.get_performance_overview(window_minutes=60, top_endpoints=10)
+
+        self.assertEqual(len(overview["endpoint_overview"]), 1)
+        self.assertEqual(overview["endpoint_overview"][0]["path"], "/api/test")
+        self.assertEqual(overview["endpoint_overview"][0]["count"], 2)
+        self.assertEqual(overview["endpoint_overview"][0]["error_count"], 1)
+
 
 class PostgresAdminMetricsStoreSchemaMigrationTests(unittest.TestCase):
     def test_store_initialization_migrates_old_metric_events_schema_without_required_columns(self):
@@ -1825,6 +2576,103 @@ class PostgresExamAnswersStoreTests(unittest.TestCase):
 
         pending = store.list_entries_needing_scores(limit=10)
         self.assertEqual(pending, [])
+
+    def test_postgres_exam_answers_store_needs_scores_targets_new_rows_only_by_default(self):
+        store = self.make_store()
+        store.import_rows(
+            [
+                {
+                    "source_row": 2,
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "full_name": "Needs Score",
+                    "discord_tag": "needs-score",
+                    "passport": "123123",
+                    "exam_format": "remote",
+                    "payload": {"Question F": "Answer"},
+                    "answer_count": 1,
+                }
+            ]
+        )
+        store.save_exam_scores(2, [{"column": "F", "score": 1, "rationale": INVALID_BATCH_RATIONALE}])
+
+        self.assertEqual(store.count_entries_needing_scores(), 0)
+        self.assertEqual(len(store.list_entries_needing_scores(limit=10)), 0)
+        self.assertEqual(store.count_entries_needing_scores(include_rescore=True), 1)
+        self.assertEqual(len(store.list_entries_needing_scores(limit=10, include_rescore=True)), 1)
+
+    def test_postgres_exam_answers_store_can_reset_scores_for_specific_user(self):
+        store = self.make_store()
+        store.import_rows(
+            [
+                {
+                    "source_row": 2,
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "full_name": "Target User",
+                    "discord_tag": "target#1",
+                    "passport": "456456",
+                    "exam_format": "remote",
+                    "payload": {"Question F": "Answer A"},
+                    "answer_count": 1,
+                },
+                {
+                    "source_row": 3,
+                    "submitted_at": "2026-04-08 12:05:00",
+                    "full_name": "Other User",
+                    "discord_tag": "other#1",
+                    "passport": "789789",
+                    "exam_format": "remote",
+                    "payload": {"Question F": "Answer B"},
+                    "answer_count": 1,
+                },
+            ]
+        )
+        store.save_exam_scores(2, [{"column": "F", "score": 91, "rationale": "ok"}])
+        store.save_exam_scores(3, [{"column": "F", "score": 93, "rationale": "ok"}])
+
+        reset_count = store.reset_scores_for_user(discord_tag="target#1")
+        self.assertEqual(reset_count, 1)
+
+        target = store.get_entry(2)
+        other = store.get_entry(3)
+        self.assertIsNotNone(target)
+        self.assertIsNone(target["average_score"])
+        self.assertEqual(target["exam_scores"], [])
+        self.assertTrue(bool(target["needs_rescore"]))
+        self.assertIsNotNone(other)
+        self.assertEqual(other["average_score"], 93.0)
+
+    def test_postgres_exam_answers_store_inserts_new_attempt_when_same_row_is_reused_later(self):
+        store = self.make_store()
+
+        first = {
+            "source_row": 2,
+            "submitted_at": "2026-04-08 12:00:00",
+            "full_name": "First User",
+            "discord_tag": "first",
+            "passport": "123456",
+            "exam_format": "remote",
+            "payload": {"name": "First User", "Question F": "Answer F"},
+            "answer_count": 1,
+        }
+        replacement = {
+            "source_row": 2,
+            "submitted_at": "2026-04-09 09:00:00",
+            "full_name": "Second User",
+            "discord_tag": "second",
+            "passport": "654321",
+            "exam_format": "remote",
+            "payload": {"name": "Second User", "Question F": "Other F"},
+            "answer_count": 1,
+        }
+
+        first_result = store.import_rows([first])
+        replacement_result = store.import_rows([replacement])
+
+        self.assertEqual(first_result["inserted_count"], 1)
+        self.assertEqual(replacement_result["inserted_count"], 1)
+        self.assertEqual(replacement_result["updated_count"], 0)
+        self.assertEqual(store.count(), 1)
+        self.assertEqual(store.get_entry(2)["full_name"], "Second User")
 
     def test_postgres_exam_answers_store_preserves_scores_when_identity_fields_change_but_answers_match(self):
         store = self.make_store()

@@ -20,6 +20,7 @@ EXAM_SHEET_CSV_URL = (
     f"?tqx=out:csv&sheet={quote(EXAM_SHEET_NAME)}"
 )
 EXAM_BASE_COLUMNS = 5
+EXAM_REFERENCE_ROW_MARKER = "эталонные ответы"
 EXAM_ANSWER_KEY_PATH = Path(__file__).resolve().parents[1] / "exam_answer_key.json"
 EXAM_QUESTION_COLUMNS_PATH = Path(__file__).resolve().parents[1] / "exam_question_columns.json"
 EXAM_SHEET_CACHE_TTL = 300  # секунд
@@ -67,7 +68,12 @@ def _column_to_index(column: str) -> int:
 
 
 def _normalize_match_text(value: str) -> str:
-    text = str(value or "").lower().replace("ё", "е")
+    text = str(value or "")
+    try:
+        text = text.encode("cp1251").decode("utf-8")
+    except Exception:
+        pass
+    text = text.lower().replace("ё", "е")
     normalized_chars: list[str] = []
     for char in text:
         if char.isalnum() or char.isspace():
@@ -79,14 +85,18 @@ def _normalize_match_text(value: str) -> str:
 
 def _detect_question_start_index(headers: list[str]) -> int:
     for index, header in enumerate(headers):
-        normalized = str(header or "").strip().lower()
-        if normalized in {"формат экзамена", "format", "exam_format"}:
+        normalized = _normalize_match_text(str(header))
+        if normalized in {"формат экзамена", "format", "exam format", "exam_format"}:
             return index + 1
     return EXAM_BASE_COLUMNS
 
 
+def _is_reference_marker(value: object) -> bool:
+    return _normalize_match_text(str(value or "")) == _normalize_match_text(EXAM_REFERENCE_ROW_MARKER)
+
+
 def _is_non_scoring_header(header: str) -> bool:
-    normalized = str(header or "").strip().lower()
+    normalized = _normalize_match_text(str(header))
     if not normalized:
         return True
     blocked_fragments = (
@@ -95,36 +105,70 @@ def _is_non_scoring_header(header: str) -> bool:
         "time",
         "ваше имя",
         "имя/фамилия",
-        "full_name",
+        "имя фамилия",
+        "full name",
         "discord",
         "passport",
         "номер паспорта",
         "формат экзамена",
-        "exam_format",
-        "exam_type",
+        "exam format",
+        "exam type",
+        "exam type extra",
         "format",
     )
     return any(fragment in normalized for fragment in blocked_fragments)
 
 
 def build_exam_correct_answers_from_payload(payload: dict[str, str]) -> dict[str, str]:
-    items = list((payload or {}).items())
-    question_start_index = _detect_question_start_index([str(header) for header, _ in items])
     answers: dict[str, str] = {}
-    question_offset = 0
-    for index, (header, answer) in enumerate(items):
-        if index < question_start_index:
+    answer_key = dict(load_exam_correct_answers())
+    ordered_columns = sorted(answer_key.keys(), key=_column_to_index)
+    mapped_answers = _map_payload_answers_by_column(payload or {}, ordered_columns)
+    for column in ordered_columns:
+        mapped_item = mapped_answers.get(column)
+        if mapped_item is None:
             continue
-        if _is_non_scoring_header(str(header)):
-            continue
-        logical_index = EXAM_BASE_COLUMNS + question_offset
-        question_offset += 1
+        _, answer = mapped_item
         value = str(answer or "").strip()
-        if not value:
-            continue
-        column = _column_letter(logical_index).upper()
-        answers[column] = value
+        if value:
+            answers[column] = value
     return answers
+
+
+def is_exam_reference_payload(
+    payload: dict[str, object] | None,
+    *,
+    full_name: object = "",
+    exam_format: object = "",
+) -> bool:
+    candidates: list[object] = [full_name, exam_format]
+    if isinstance(payload, dict):
+        for key in ("full_name", "exam_format", "format", "exam_type_extra"):
+            candidates.append(payload.get(key))
+        for header, value in payload.items():
+            normalized_header = _normalize_match_text(str(header))
+            if not normalized_header:
+                continue
+            if normalized_header in {"full name", "exam format", "format", "exam type extra"}:
+                candidates.append(value)
+                continue
+            if "ваше имя" in normalized_header or "имя фамилия" in normalized_header:
+                candidates.append(value)
+                continue
+            if "формат экзамена" in normalized_header:
+                candidates.append(value)
+    return any(_is_reference_marker(candidate) for candidate in candidates)
+
+
+def is_exam_reference_row(row: dict[str, object] | None) -> bool:
+    if not isinstance(row, dict):
+        return False
+    payload = row.get("payload") if isinstance(row.get("payload"), dict) else None
+    return is_exam_reference_payload(
+        payload,
+        full_name=row.get("full_name"),
+        exam_format=row.get("exam_format"),
+    )
 
 
 @lru_cache(maxsize=1)
@@ -222,7 +266,7 @@ def _column_letter(index: int) -> str:
 
 def normalize_exam_type(raw_value: object) -> str:
     value = str(raw_value or "").strip()
-    lowered = value.lower()
+    lowered = _normalize_match_text(value)
     if "государ" in lowered:
         return EXAM_STATE_TYPE
     if "лиценз" in lowered:

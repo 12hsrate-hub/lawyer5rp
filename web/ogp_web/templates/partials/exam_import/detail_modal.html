@@ -1,5 +1,5 @@
 <div id="exam-detail-modal" class="modal-backdrop" hidden>
-  <div class="modal-card modal-card--wide" role="dialog" aria-modal="true" aria-labelledby="exam-detail-title">
+  <div class="modal-card modal-card--wide exam-detail-modal-card" role="dialog" aria-modal="true" aria-labelledby="exam-detail-title">
     <button id="exam-detail-close" class="modal-close" type="button" aria-label="Закрыть окно">×</button>
     <p class="eyebrow">Импортированная строка</p>
     <h2 id="exam-detail-title">Детальный разбор ответа</h2>
@@ -10,11 +10,10 @@
       <div class="legal-subcard__header">
         <div>
           <h3 class="legal-subcard__title">Прозрачность проверки</h3>
-          <p class="legal-subcard__description">Ниже видны все исходные поля строки. Можно быстро сверить, что пришло из таблицы и как это сопоставилось с оценкой.</p>
         </div>
       </div>
-      <div class="legal-table-shell exam-detail-shell">
-        <table class="legal-table">
+      <div class="legal-table-shell exam-detail-shell exam-detail-shell--payload">
+        <table class="legal-table exam-detail-table exam-detail-table--payload">
           <thead>
             <tr>
               <th>Столбец / Поле</th>

@@ -1,13 +1,12 @@
 thresholds:
-  t1_high_relevance:
-    min_score: 0.85
-    mode: factual_plus_legal
-  t2_low_relevance:
-    min_score: 0.60
-    mode: factual_only
+  valid_trigger_confident:
+    min_score: 0.70
+    mode: legal_grounded
+  borderline_trigger_low_confidence:
+    min_score: 0.65
+    mode: factual_fallback_expanded
 
 routing_rules:
-  below_t2: factual_only
-  between_t2_and_t1: factual_only
-  at_or_above_t1: factual_plus_legal
-
+  below_borderline: factual_fallback_expanded
+  between_borderline_and_valid: factual_fallback_expanded
+  at_or_above_valid: legal_grounded

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import os
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from threading import BoundedSemaphore, Lock
+from time import monotonic
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
@@ -23,15 +27,7 @@ from ogp_web.schemas import (
     SuggestResponse,
 )
 from ogp_web.server_config import build_permission_set, get_server_config
-from ogp_web.services.ai_service import (
-    answer_law_question_details,
-    build_law_qa_metrics_meta,
-    build_suggest_metrics_meta,
-    extract_principal_scan,
-    get_default_law_qa_model,
-    normalize_ai_feedback_issues,
-    suggest_text_details,
-)
+from ogp_web.services import ai_service
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -84,6 +80,78 @@ SUGGEST_CONCURRENCY_LIMITER = SuggestConcurrencyLimiter(
     max_concurrency=_env_positive_int("OGP_SUGGEST_MAX_CONCURRENCY", 4),
     retry_after_seconds=_env_positive_int("OGP_SUGGEST_RETRY_AFTER_SECONDS", 3),
 )
+
+
+def _build_heavy_ai_executor() -> ThreadPoolExecutor | None:
+    max_workers = _env_positive_int("OGP_AI_HEAVY_MAX_WORKERS", 0)
+    if max_workers <= 0:
+        return None
+    return ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ogp-ai-heavy")
+
+
+HEAVY_AI_EXECUTOR = _build_heavy_ai_executor()
+
+
+async def _run_sync_io(func, /, *args, **kwargs):
+    return await run_in_threadpool(partial(func, *args, **kwargs))
+
+
+async def _run_ai_task(
+    *,
+    metrics_store: AdminMetricsStore,
+    user: AuthUser,
+    path: str,
+    operation: str,
+    func,
+    use_heavy_executor: bool = False,
+    **kwargs,
+):
+    enqueued_at = monotonic()
+    executor = HEAVY_AI_EXECUTOR if use_heavy_executor else None
+    queue_size = -1
+    if executor is not None:
+        queue = getattr(executor, "_work_queue", None)
+        if queue is not None and hasattr(queue, "qsize"):
+            try:
+                queue_size = int(queue.qsize())
+            except Exception:  # noqa: BLE001
+                queue_size = -1
+
+    def _invoke() -> tuple[object, float, float]:
+        started_at = monotonic()
+        wait_ms = (started_at - enqueued_at) * 1000.0
+        result = func(**kwargs)
+        finished_at = monotonic()
+        run_ms = (finished_at - started_at) * 1000.0
+        return result, wait_ms, run_ms
+
+    loop = asyncio.get_running_loop()
+    if executor is None:
+        started_at = monotonic()
+        result = await run_in_threadpool(func, **kwargs)
+        finished_at = monotonic()
+        wait_ms = 0.0
+        run_ms = (finished_at - started_at) * 1000.0
+    else:
+        result, wait_ms, run_ms = await loop.run_in_executor(executor, _invoke)
+
+    metrics_store.log_event(
+        event_type="threadpool_wait",
+        username=user.username,
+        server_code=user.server_code,
+        path=path,
+        method="POST",
+        status_code=200,
+        meta={
+            "server_code": user.server_code,
+            "operation": operation,
+            "executor": "ai_heavy" if executor is not None else "default",
+            "queue_size": queue_size,
+            "wait_ms": round(wait_ms, 2),
+            "run_ms": round(run_ms, 2),
+        },
+    )
+    return result
 
 
 def _server_config_for_user(store: UserStore, user: AuthUser):
@@ -258,9 +326,20 @@ async def suggest(
             headers={"Retry-After": retry_after},
         )
     try:
-        result = await run_in_threadpool(suggest_text_details, payload, server_code=user.server_code)
+        result = await _run_ai_task(
+            metrics_store=metrics_store,
+            user=user,
+            path="/api/ai/suggest",
+            operation="suggest_text_details",
+            func=ai_service.suggest_text_details,
+            use_heavy_executor=True,
+            payload=payload,
+            server_code=user.server_code,
+        )
     finally:
         SUGGEST_CONCURRENCY_LIMITER.release()
+    result_selected_model = str(getattr(result, "selected_model", "") or getattr(result, "telemetry", {}).get("model") or "").strip()
+    result_selection_reason = str(getattr(result, "selection_reason", "") or "").strip()
     metrics_store.log_event(
         event_type="ai_suggest",
         username=user.username,
@@ -270,6 +349,9 @@ async def suggest(
         resource_units=len(payload.raw_desc or "") + len(result.text),
         meta={
             "server_code": user.server_code,
+            "model": result_selected_model,
+            "selected_model": result_selected_model,
+            "selection_reason": result_selection_reason,
             "complaint_basis": payload.complaint_basis,
             "main_focus": payload.main_focus,
             "input_chars": len(payload.raw_desc or ""),
@@ -282,7 +364,7 @@ async def suggest(
         flow="suggest",
         generation_id=result.generation_id,
         path="/api/ai/suggest",
-        meta=build_suggest_metrics_meta(payload=payload, result=result, server_code=user.server_code),
+        meta=ai_service.build_suggest_metrics_meta(payload=payload, result=result, server_code=user.server_code),
     )
     return SuggestResponse(
         text=result.text,
@@ -299,7 +381,15 @@ async def extract_principal(
     user: AuthUser = Depends(require_user),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> PrincipalScanResult:
-    result = extract_principal_scan(payload)
+    result = await _run_ai_task(
+        metrics_store=metrics_store,
+        user=user,
+        path="/api/ai/extract-principal",
+        operation="extract_principal_scan",
+        func=ai_service.extract_principal_scan,
+        use_heavy_executor=True,
+        payload=payload,
+    )
     metrics_store.log_event(
         event_type="ai_extract_principal",
         username=user.username,
@@ -326,8 +416,19 @@ async def law_qa_test(
 ) -> LawQaResponse:
     _ensure_law_qa_permission(store, user)
     effective_server_code = payload.server_code or user.server_code or store.get_server_code(user.username)
-    payload = payload.model_copy(update={"server_code": effective_server_code, "model": get_default_law_qa_model()})
-    result = await run_in_threadpool(answer_law_question_details, payload)
+    payload = payload.model_copy(update={"server_code": effective_server_code})
+    result = await _run_ai_task(
+        metrics_store=metrics_store,
+        user=user,
+        path="/api/ai/law-qa-test",
+        operation="answer_law_question_details",
+        func=ai_service.answer_law_question_details,
+        use_heavy_executor=True,
+        payload=payload,
+    )
+    result_selected_model = str(getattr(result, "selected_model", "") or getattr(result, "telemetry", {}).get("model") or "").strip()
+    result_selection_reason = str(getattr(result, "selection_reason", "") or "").strip()
+    result_requested_model = str(getattr(result, "requested_model", "") or payload.model or "").strip()
     metrics_store.log_event(
         event_type="ai_law_qa_test",
         username=user.username,
@@ -337,7 +438,10 @@ async def law_qa_test(
         resource_units=len(payload.question or "") + len(result.text),
         meta={
             "server_code": effective_server_code,
-            "model": get_default_law_qa_model(),
+            "model": result_selected_model or ai_service.get_default_law_qa_model(),
+            "selected_model": result_selected_model,
+            "selection_reason": result_selection_reason,
+            "requested_model": result_requested_model,
             "indexed_documents": result.indexed_documents,
             "used_sources_count": len(result.used_sources),
             "retrieval_confidence": result.retrieval_confidence,
@@ -351,7 +455,7 @@ async def law_qa_test(
         flow="law_qa",
         generation_id=result.generation_id,
         path="/api/ai/law-qa-test",
-        meta=build_law_qa_metrics_meta(payload=payload, result=result, used_sources=result.used_sources),
+        meta=ai_service.build_law_qa_metrics_meta(payload=payload, result=result, used_sources=result.used_sources),
     )
     return LawQaResponse(
         text=result.text,
@@ -390,7 +494,7 @@ async def ai_feedback(
             detail=["flow must be law_qa or suggest."],
         )
 
-    normalized_issues = list(normalize_ai_feedback_issues(payload.issues))
+    normalized_issues = list(ai_service.normalize_ai_feedback_issues(payload.issues))
     if not normalized_issues and not str(payload.note or "").strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -398,7 +502,8 @@ async def ai_feedback(
         )
 
     feedback_id = f"fb_{generation_id[:8]}"
-    metrics_store.log_ai_feedback(
+    await _run_sync_io(
+        metrics_store.log_ai_feedback,
         username=user.username,
         server_code=user.server_code,
         generation_id=generation_id,

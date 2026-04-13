@@ -11,7 +11,6 @@ from ogp_web.storage.user_store import UserStore
 
 router = APIRouter(tags=["profile"])
 
-
 @router.get("/api/profile", response_model=ProfileResponse)
 async def profile_get(
     user: AuthUser = Depends(require_user),

@@ -16,12 +16,14 @@ for candidate in (ROOT_DIR, WEB_DIR):
 
 os.environ.setdefault("OGP_WEB_SECRET", "test-secret")
 os.environ.setdefault("OGP_DB_BACKEND", "postgres")
+os.environ.setdefault("OGP_SKIP_DEFAULT_APP_INIT", "1")
 
 from fastapi.testclient import TestClient
 
 from ogp_web.app import create_app
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
+from ogp_web.routes import admin as admin_route
 from ogp_web.routes import complaint as complaint_route
 from ogp_web.routes import admin as admin_route
 from ogp_web.routes import exam_import as exam_import_route
@@ -52,7 +54,14 @@ class WebApiTests(unittest.TestCase):
         )
         self.exam_store = ExamAnswersStore(root / "exam_answers.db", backend=FakeExamAnswersPostgresBackend())
         self.admin_store = AdminMetricsStore(root / "admin_metrics.db", backend=FakeAdminMetricsPostgresBackend())
-        self.client = TestClient(create_app(self.store, self.exam_store, self.admin_store), base_url="https://testserver")
+        self.task_registry = ExamImportTaskRegistry(
+            root / "exam_import_tasks.db",
+            backend=FakeExamImportTasksPostgresBackend(),
+        )
+        self.client = TestClient(
+            create_app(self.store, self.exam_store, self.admin_store, self.task_registry),
+            base_url="https://testserver",
+        )
         reset_rate_limit(self.client.app.state.rate_limiter)
 
     def tearDown(self):
@@ -349,7 +358,10 @@ class WebApiTests(unittest.TestCase):
             def log_event(self, *args, **kwargs) -> bool:
                 return False
 
-        client = TestClient(create_app(self.store, self.exam_store, UnhealthyAdminMetricsStore()), base_url="https://testserver")
+        client = TestClient(
+            create_app(self.store, self.exam_store, UnhealthyAdminMetricsStore(), self.task_registry),
+            base_url="https://testserver",
+        )
         try:
             response = client.get("/health")
             self.assertEqual(response.status_code, 503)
@@ -498,7 +510,10 @@ class WebApiTests(unittest.TestCase):
         self._register_verify_and_login("sessionuser", "sessionuser@example.com")
         session_client = self.client
 
-        admin_client = TestClient(create_app(self.store, self.exam_store, self.admin_store), base_url="https://testserver")
+        admin_client = TestClient(
+            create_app(self.store, self.exam_store, self.admin_store, self.task_registry),
+            base_url="https://testserver",
+        )
         try:
             response = admin_client.post(
                 "/api/auth/register",
@@ -556,6 +571,57 @@ class WebApiTests(unittest.TestCase):
         login_response = self.client.post("/api/auth/login", json={"username": "emailnew@example.com", "password": "NewPassword456!"})
         self.assertEqual(login_response.status_code, 200)
 
+    def test_admin_can_reset_exam_scores_for_specific_user(self):
+        self.exam_store.import_rows(
+            [
+                {
+                    "source_row": 2,
+                    "submitted_at": "2026-04-10 10:00:00",
+                    "full_name": "User One",
+                    "discord_tag": "user.one#1",
+                    "passport": "111111",
+                    "exam_format": "remote",
+                    "payload": {"Question F": "Ответ"},
+                    "answer_count": 1,
+                },
+                {
+                    "source_row": 3,
+                    "submitted_at": "2026-04-10 10:01:00",
+                    "full_name": "User Two",
+                    "discord_tag": "user.two#2",
+                    "passport": "222222",
+                    "exam_format": "remote",
+                    "payload": {"Question F": "Ответ"},
+                    "answer_count": 1,
+                },
+            ]
+        )
+        self.exam_store.save_exam_scores(2, [{"column": "F", "score": 88, "rationale": "ok"}])
+        self.exam_store.save_exam_scores(3, [{"column": "F", "score": 92, "rationale": "ok"}])
+
+        self._register_verify_and_login("12345", "admin-reset@example.com")
+        response = self.client.post(
+            "/api/admin/exam-import/reset-scores",
+            json={"discord_tag": "user.one#1"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["reset_count"], 1)
+
+        target = self.exam_store.get_entry(2)
+        other = self.exam_store.get_entry(3)
+        self.assertIsNotNone(target)
+        self.assertEqual(target.get("exam_scores"), [])
+        self.assertIsNone(target.get("average_score"))
+        self.assertIsNotNone(other)
+        self.assertEqual(other.get("average_score"), 92.0)
+
+    def test_admin_reset_exam_scores_requires_filter(self):
+        self._register_verify_and_login("12345", "admin-reset-empty@example.com")
+        response = self.client.post("/api/admin/exam-import/reset-scores", json={})
+        self.assertEqual(response.status_code, 400)
+
     def test_generate_flow_survives_admin_metrics_write_failure(self):
         tmp_path = Path(self.tmpdir.name)
 
@@ -567,7 +633,10 @@ class WebApiTests(unittest.TestCase):
                 raise RuntimeError("attempt to write a readonly database")
 
         broken_admin_store = BrokenAdminMetricsStore()
-        client = TestClient(create_app(self.store, self.exam_store, broken_admin_store), base_url="https://testserver")
+        client = TestClient(
+            create_app(self.store, self.exam_store, broken_admin_store, self.task_registry),
+            base_url="https://testserver",
+        )
         try:
             response = client.post(
                 "/api/auth/register",
@@ -769,7 +838,7 @@ class WebApiTests(unittest.TestCase):
         self._register_verify_and_login("tester_suggest_threadpool", "tester_suggest_threadpool@example.com")
 
         original_run_in_threadpool = complaint_route.run_in_threadpool
-        original_suggest_details = complaint_route.suggest_text_details
+        original_suggest_details = complaint_route.ai_service.suggest_text_details
         original_limiter = complaint_route.SUGGEST_CONCURRENCY_LIMITER
         complaint_route.SUGGEST_CONCURRENCY_LIMITER = complaint_route.SuggestConcurrencyLimiter(max_concurrency=2, retry_after_seconds=5)
         captured: dict[str, object] = {}
@@ -802,7 +871,7 @@ class WebApiTests(unittest.TestCase):
             captured["kwargs"] = kwargs
             return func(*args, **kwargs)
 
-        complaint_route.suggest_text_details = fake_suggest_details
+        complaint_route.ai_service.suggest_text_details = fake_suggest_details
         complaint_route.run_in_threadpool = fake_run_in_threadpool
         try:
             response = self.client.post(
@@ -819,7 +888,7 @@ class WebApiTests(unittest.TestCase):
             )
         finally:
             complaint_route.run_in_threadpool = original_run_in_threadpool
-            complaint_route.suggest_text_details = original_suggest_details
+            complaint_route.ai_service.suggest_text_details = original_suggest_details
             complaint_route.SUGGEST_CONCURRENCY_LIMITER = original_limiter
 
         self.assertEqual(response.status_code, 200)
@@ -832,7 +901,7 @@ class WebApiTests(unittest.TestCase):
         self._register_verify_and_login("tester_suggest_overload", "tester_suggest_overload@example.com")
 
         original_limiter = complaint_route.SUGGEST_CONCURRENCY_LIMITER
-        original_suggest_details = complaint_route.suggest_text_details
+        original_suggest_details = complaint_route.ai_service.suggest_text_details
         complaint_route.SUGGEST_CONCURRENCY_LIMITER = complaint_route.SuggestConcurrencyLimiter(max_concurrency=1, retry_after_seconds=7)
         called = {"suggest": False}
 
@@ -840,7 +909,7 @@ class WebApiTests(unittest.TestCase):
             called["suggest"] = True
             return original_suggest_details(payload, server_code=server_code)
 
-        complaint_route.suggest_text_details = fake_suggest_details
+        complaint_route.ai_service.suggest_text_details = fake_suggest_details
         try:
             self.assertTrue(complaint_route.SUGGEST_CONCURRENCY_LIMITER.try_acquire())
             response = self.client.post(
@@ -858,7 +927,7 @@ class WebApiTests(unittest.TestCase):
         finally:
             complaint_route.SUGGEST_CONCURRENCY_LIMITER.release()
             complaint_route.SUGGEST_CONCURRENCY_LIMITER = original_limiter
-            complaint_route.suggest_text_details = original_suggest_details
+            complaint_route.ai_service.suggest_text_details = original_suggest_details
 
         self.assertEqual(response.status_code, 429)
         self.assertEqual(response.headers.get("Retry-After"), "7")
@@ -868,8 +937,8 @@ class WebApiTests(unittest.TestCase):
     def test_law_qa_test_endpoint_returns_text_and_sources(self):
         self._register_verify_and_login("tester", "tester_law@example.com")
 
-        original = complaint_route.answer_law_question_details
-        complaint_route.answer_law_question_details = lambda payload: type(
+        original = complaint_route.ai_service.answer_law_question_details
+        complaint_route.ai_service.answer_law_question_details = lambda payload: type(
             "LawQaAnswerResult",
             (),
             {
@@ -918,7 +987,7 @@ class WebApiTests(unittest.TestCase):
                 },
             )
         finally:
-            complaint_route.answer_law_question_details = original
+            complaint_route.ai_service.answer_law_question_details = original
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -1000,7 +1069,8 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(payload["quality_summary"]["validation_retry_rate"], 100.0)
         self.assertEqual(payload["quality_summary"]["safe_fallback_rate"], 100.0)
         self.assertEqual(payload["quality_summary"]["bands"]["wrong_law_rate"], "red")
-        self.assertEqual(payload["quality_summary"]["bands"]["wrong_fact_rate"], "red")
+        self.assertEqual(payload["quality_summary"]["wrong_fact_rate"], 0.0)
+        self.assertEqual(payload["quality_summary"]["bands"]["wrong_fact_rate"], "green")
         self.assertEqual(payload["quality_summary"]["bands"]["new_fact_validation_rate"], "red")
         self.assertEqual(payload["cost_tables"]["by_flow"][0]["flow"], "law_qa")
         self.assertEqual(payload["top_inaccurate_generations"][0]["generation_id"], "gen_admin_1")
@@ -1088,6 +1158,50 @@ class WebApiTests(unittest.TestCase):
         self.assertTrue(any("generation_id=gen_empty" in item for item in captured.output))
         self.assertTrue(any("generation_id=gen_na" in item for item in captured.output))
         self.assertTrue(any("generation_id=gen_obj" in item for item in captured.output))
+
+    def test_admin_ai_pipeline_quality_summary_does_not_count_cache_as_fallback(self):
+        generations = [
+            {"meta": {"attempt_path": "cache", "guard_status": "pass"}},
+            {"meta": {"attempt_path": "direct_after_proxy", "guard_status": "warn"}},
+            {"meta": {"context_compacted": True, "guard_status": "pass"}},
+        ]
+
+        payload = admin_route._build_ai_pipeline_quality_summary(generations=generations, feedback=[])
+
+        self.assertEqual(payload["generation_samples"], 3)
+        self.assertEqual(payload["fallback_rate"], 66.67)
+        self.assertEqual(payload["guard_warn_rate"], 33.33)
+
+    def test_admin_ai_pipeline_recent_filter_excludes_old_rows_from_flow_summary(self):
+        recent_generation = {
+            "created_at": "2026-04-13T10:00:00+00:00",
+            "meta": {
+                "model": "gpt-5.4-mini",
+                "latency_ms": 100,
+                "estimated_cost_usd": "0.02",
+                "total_tokens": 100,
+            },
+        }
+        old_generation = {
+            "created_at": "2026-04-10T10:00:00+00:00",
+            "meta": {
+                "model": "gpt-5.4",
+                "latency_ms": 9999,
+                "estimated_cost_usd": "n/a",
+                "total_tokens": "bad",
+            },
+        }
+
+        filtered = admin_route._filter_recent_metric_items(
+            [recent_generation, old_generation],
+            since_hours=24,
+        )
+        summary = admin_route._summarize_generation_rows(filtered)
+
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(summary["total_generations"], 1)
+        self.assertEqual(summary["latency_ms_p95"], 100)
+        self.assertEqual(summary["estimated_cost_total_usd"], 0.02)
 
     def test_law_qa_test_page_available_for_tester(self):
         self._register_verify_and_login("tester", "tester_law_page@example.com")
@@ -1404,6 +1518,54 @@ class WebApiTests(unittest.TestCase):
         finally:
             exam_import_route.score_exam_answers_batch_with_proxy_fallback = original_score
             exam_import_route.score_exam_answer_with_proxy_fallback = original_single_score
+
+    def test_exam_import_can_clear_all_scores_for_row(self):
+        self._register_verify_and_login("tester", "tester-clear-scores@example.com")
+        self.exam_store.import_rows(
+            [
+                {
+                    "source_row": 2,
+                    "submitted_at": "2026-04-08 12:00:00",
+                    "full_name": "Student One",
+                    "discord_tag": "student1",
+                    "passport": "111111",
+                    "exam_format": "Очнo",
+                    "payload": {
+                        "Вопрос F": "Ответ F",
+                        "Вопрос G": "Ответ G",
+                    },
+                    "answer_count": 2,
+                },
+            ]
+        )
+        self.exam_store.save_exam_scores(
+            2,
+            [
+                {
+                    "column": "F",
+                    "header": "Вопрос F",
+                    "user_answer": "Ответ F",
+                    "correct_answer": "Эталон F",
+                    "score": 60,
+                    "rationale": "ok",
+                },
+                {
+                    "column": "G",
+                    "header": "Вопрос G",
+                    "user_answer": "Ответ G",
+                    "correct_answer": "Эталон G",
+                    "score": 90,
+                    "rationale": "ok",
+                },
+            ],
+        )
+
+        response = self.client.delete("/api/exam-import/rows/2/scores")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["source_row"], 2)
+        self.assertEqual(payload["exam_scores"], [])
+        self.assertIsNone(payload["average_score"])
 
     def test_exam_import_task_concurrency_limit_is_enforced(self):
         self._register_verify_and_login("tester", "tester13@example.com")

@@ -1,4 +1,22 @@
 window.OGPExamImportView = {
+  normalizePayloadText(value) {
+    if (value == null) {
+      return "";
+    }
+    const technicalEmpty = /^(?:null|undefined|none|nan|n\/a|#n\/a|—|-)?$/i;
+    return String(value)
+      .replace(/\r/g, "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && !technicalEmpty.test(line))
+      .join(" ");
+  },
+
+  formatMultilineValue(value, escapeHtml) {
+    const normalized = value == null || value === "" ? "—" : String(value);
+    return escapeHtml(normalized).replace(/\r?\n/g, "<br>");
+  },
+
   getEntryStatus(entry) {
     const average = Number(entry?.average_score);
     if (entry?.average_score == null || Number.isNaN(average)) {
@@ -60,7 +78,7 @@ window.OGPExamImportView = {
   renderEmptyRows() {
     return `
       <tr>
-        <td colspan="11" class="legal-table__empty">База пока пустая. Первый импорт создаст записи из Google Sheets.</td>
+        <td colspan="10" class="legal-table__empty">База пока пустая. Первый импорт создаст записи из Google Sheets.</td>
       </tr>
     `;
   },
@@ -86,7 +104,6 @@ window.OGPExamImportView = {
             data-row-discord="${escapeHtml(String(entry.discord_tag ?? "").toLowerCase())}"
             data-row-passport="${escapeHtml(String(entry.passport ?? "").toLowerCase())}"
           >
-            <td>${escapeHtml(entry.source_row ?? "")}</td>
             <td>${escapeHtml(entry.submitted_at ?? "")}</td>
             <td>${escapeHtml(entry.full_name ?? "")}</td>
             <td>${escapeHtml(entry.discord_tag ?? "")}</td>
@@ -94,7 +111,7 @@ window.OGPExamImportView = {
             <td>${escapeHtml(entry.exam_format ?? "")}</td>
             <td>${escapeHtml(entry.answer_count ?? 0)}</td>
             <td class="exam-average-cell">${escapeHtml(this.formatAverage(entry))}</td>
-            <td><span class="exam-status-badge exam-status-badge--${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span></td>
+            <td class="exam-status-cell"><span class="exam-status-badge exam-status-badge--${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span></td>
             <td>${escapeHtml(entry.imported_at ?? "")}</td>
             <td>${this.renderRowActions(entry, escapeHtml)}</td>
           </tr>
@@ -112,7 +129,7 @@ window.OGPExamImportView = {
     `;
   },
 
-  renderScoreTable(host, examScores, averageText, escapeHtml) {
+  renderScoreTable(host, examScores, averageText, escapeHtml, options = {}) {
     if (!host) {
       return;
     }
@@ -129,6 +146,8 @@ window.OGPExamImportView = {
     const goodCount = scores.filter((value) => value >= 73).length;
     const mediumCount = scores.filter((value) => value > 55 && value < 73).length;
     const poorCount = scores.filter((value) => value <= 55).length;
+    const sourceRow = Number(options?.sourceRow || 0);
+    const allowDelete = Boolean(options?.allowDelete && Number.isFinite(sourceRow) && sourceRow > 0);
 
     host.innerHTML = `
       <div class="legal-section__header">
@@ -155,9 +174,17 @@ window.OGPExamImportView = {
           <span class="legal-status-card__label">Слабый уровень</span>
           <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(poorCount))}</strong>
         </article>
+        ${allowDelete
+          ? `<article class="legal-status-card">
+              <span class="legal-status-card__label">Действие со строкой</span>
+              <strong class="legal-status-card__value legal-status-card__value--small">
+                <button type="button" class="ghost-button exam-score-reset-btn" data-source-row="${escapeHtml(sourceRow)}">Очистить все оценки</button>
+              </strong>
+            </article>`
+          : ""}
       </div>
-      <div class="legal-table-shell exam-detail-shell">
-        <table class="legal-table">
+      <div class="legal-table-shell exam-detail-shell exam-detail-shell--scores">
+        <table class="legal-table exam-detail-table exam-detail-table--scores">
           <thead>
             <tr>
               <th>Столбец</th>
@@ -174,13 +201,13 @@ window.OGPExamImportView = {
               .map(
                 (item) => `
                   <tr>
-                    <td>${escapeHtml(item.column || "")}</td>
-                    <td>${escapeHtml(item.header || "")}</td>
-                    <td>${escapeHtml(item.user_answer || "—")}</td>
-                    <td>${escapeHtml(item.correct_answer || "—")}</td>
-                    <td>${escapeHtml(Array.isArray(item.key_points) && item.key_points.length ? item.key_points.join("; ") : "—")}</td>
-                    <td>${this.renderScoreBadge(item.score, escapeHtml)}</td>
-                    <td>${escapeHtml(item.rationale || "—")}</td>
+                    <td class="exam-detail-table__col exam-detail-table__col--column">${escapeHtml(item.column || "")}</td>
+                    <td class="exam-detail-table__col exam-detail-table__col--question"><div class="exam-table-cell exam-table-cell--question">${this.formatMultilineValue(item.header || "—", escapeHtml)}</div></td>
+                    <td class="exam-detail-table__col exam-detail-table__col--answer"><div class="exam-table-cell exam-table-cell--answer">${this.formatMultilineValue(item.user_answer || "—", escapeHtml)}</div></td>
+                    <td class="exam-detail-table__col exam-detail-table__col--correct"><div class="exam-table-cell exam-table-cell--correct">${this.formatMultilineValue(item.correct_answer || "—", escapeHtml)}</div></td>
+                    <td class="exam-detail-table__col exam-detail-table__col--keypoints"><div class="exam-table-cell exam-table-cell--keypoints">${this.formatMultilineValue(Array.isArray(item.key_points) && item.key_points.length ? item.key_points.join("\n") : "—", escapeHtml)}</div></td>
+                    <td class="exam-detail-table__col exam-detail-table__col--score">${this.renderScoreBadge(item.score, escapeHtml)}</td>
+                    <td class="exam-detail-table__col exam-detail-table__col--rationale"><div class="exam-table-cell exam-table-cell--rationale">${this.formatMultilineValue(item.rationale || "—", escapeHtml)}</div></td>
                   </tr>
                 `,
               )
@@ -196,21 +223,26 @@ window.OGPExamImportView = {
       return;
     }
 
-    const rows = Object.entries(payload || {});
+    const rows = Object.entries(payload || {})
+      .map(([column, value]) => ({
+        column: String(column || "").trim(),
+        value: this.normalizePayloadText(value),
+      }))
+      .filter((item) => item.column && item.value);
     host.innerHTML = rows.length
       ? rows
           .map(
-            ([column, value]) => `
+            ({ column, value }) => `
               <tr>
-                <td>${escapeHtml(column)}</td>
-                <td>${escapeHtml(value || "—")}</td>
+                <td class="exam-detail-table__col exam-detail-table__col--field">${escapeHtml(column)}</td>
+                <td class="exam-detail-table__col exam-detail-table__col--value"><div class="exam-table-cell exam-table-cell--value">${this.formatMultilineValue(value, escapeHtml)}</div></td>
               </tr>
             `,
           )
           .join("")
       : `
           <tr>
-            <td colspan="2" class="legal-table__empty">По этой строке нет сохраненных столбцов.</td>
+            <td colspan="2" class="legal-table__empty">Нет полезных данных для отображения.</td>
           </tr>
         `;
   },

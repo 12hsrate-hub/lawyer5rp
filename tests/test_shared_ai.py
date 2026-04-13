@@ -205,6 +205,52 @@ class SharedAiTests(unittest.TestCase):
 
         self.assertEqual(payload["score"], 100)
 
+    def test_exam_scoring_rubric_exact_match_skips_model_call(self):
+        class DummyClient:
+            def __init__(self):
+                self.responses = self
+
+            def create(self, **kwargs):
+                raise AssertionError(f"model should not be called: {kwargs}")
+
+        payload = ogp_ai.score_exam_answer(
+            DummyClient(),
+            user_answer="Статья 7 АК",
+            correct_answer="Статья 7 АК",
+            column="H",
+            question="Назовите нужную норму",
+            exam_type="legal",
+            question_type="exact_ref",
+            rubric_version="gta5rp_legal_v3",
+            key_points=["статья 7 ак"],
+            must_not_include=["статья 8 ак"],
+            fatal_errors=["статья 8 ак"],
+        )
+
+        self.assertEqual(payload["score"], 100)
+
+    def test_exam_scoring_exact_match_ignores_reference_boilerplate(self):
+        class DummyClient:
+            def __init__(self):
+                self.responses = self
+
+            def create(self, **kwargs):
+                raise AssertionError(f"model should not be called: {kwargs}")
+
+        payload = ogp_ai.score_exam_answer(
+            DummyClient(),
+            user_answer="Выпуск под залог запрещен",
+            correct_answer="Вопрос с выбором ответа.\nПравильный ответ — Выпуск под залог запрещен",
+            column="H",
+            question="Что делать при отсутствии суммы залога?",
+            exam_type="legal",
+            question_type="exact_ref",
+            rubric_version="gta5rp_legal_v3",
+            key_points=["выпуск под залог запрещен"],
+        )
+
+        self.assertEqual(payload["score"], 100)
+
     def test_exam_scoring_batch_returns_exact_match_without_model_call(self):
         class DummyClient:
             def __init__(self):
@@ -232,6 +278,82 @@ class SharedAiTests(unittest.TestCase):
             ogp_ai.create_openai_client = original_create
 
         self.assertEqual(payload["G"]["score"], 100)
+
+    def test_exam_scoring_batch_ignores_reference_boilerplate_for_exact_match(self):
+        class DummyClient:
+            def __init__(self):
+                self.responses = self
+
+            def create(self, **kwargs):
+                raise AssertionError(f"model should not be called: {kwargs}")
+
+        original_create = ogp_ai.create_openai_client
+        ogp_ai.create_openai_client = lambda api_key, proxy_url="": DummyClient()
+        try:
+            payload, stats = ogp_ai.score_exam_answers_batch_with_proxy_fallback(
+                api_key="key",
+                proxy_url="",
+                items=[
+                    {
+                        "column": "H",
+                        "header": "question",
+                        "question": "Что делать при отсутствии суммы залога?",
+                        "exam_type": "legal",
+                        "question_type": "exact_ref",
+                        "rubric_version": "gta5rp_legal_v3",
+                        "user_answer": "Выпуск под залог запрещен",
+                        "correct_answer": "Вопрос с выбором ответа.\nПравильный ответ — Выпуск под залог запрещен",
+                        "key_points": ["выпуск под залог запрещен"],
+                    }
+                ],
+                return_stats=True,
+            )
+        finally:
+            ogp_ai.create_openai_client = original_create
+
+        self.assertEqual(payload["H"]["score"], 100)
+        self.assertEqual(stats["heuristic_count"], 1)
+        self.assertEqual(stats["llm_count"], 0)
+        self.assertEqual(stats["llm_calls"], 0)
+
+    def test_exam_scoring_batch_rubric_exact_match_skips_model_call(self):
+        class DummyClient:
+            def __init__(self):
+                self.responses = self
+
+            def create(self, **kwargs):
+                raise AssertionError(f"model should not be called: {kwargs}")
+
+        original_create = ogp_ai.create_openai_client
+        ogp_ai.create_openai_client = lambda api_key, proxy_url="": DummyClient()
+        try:
+            payload, stats = ogp_ai.score_exam_answers_batch_with_proxy_fallback(
+                api_key="key",
+                proxy_url="",
+                items=[
+                    {
+                        "column": "G",
+                        "header": "question",
+                        "question": "Назовите нужную норму",
+                        "exam_type": "legal",
+                        "question_type": "exact_ref",
+                        "rubric_version": "gta5rp_legal_v3",
+                        "user_answer": "Статья 7 АК",
+                        "correct_answer": "Статья 7 АК",
+                        "key_points": ["статья 7 ак"],
+                        "must_not_include": ["статья 8 ак"],
+                        "fatal_errors": ["статья 8 ак"],
+                    }
+                ],
+                return_stats=True,
+            )
+        finally:
+            ogp_ai.create_openai_client = original_create
+
+        self.assertEqual(payload["G"]["score"], 100)
+        self.assertEqual(stats["heuristic_count"], 1)
+        self.assertEqual(stats["llm_count"], 0)
+        self.assertEqual(stats["llm_calls"], 0)
 
     def test_exam_scoring_batch_can_return_stats(self):
         class DummyClient:
@@ -1054,6 +1176,32 @@ class SharedAiTests(unittest.TestCase):
 
         self.assertEqual(compact_config.exam_scoring_prompt_mode, "compact")
         self.assertEqual(fallback_config.exam_scoring_prompt_mode, "full")
+
+    def test_load_openai_config_defaults_ocr_model_to_gpt_5_4_mini(self):
+        previous = os.environ.get("OPENAI_OCR_MODEL")
+        try:
+            os.environ.pop("OPENAI_OCR_MODEL", None)
+            config = load_openai_config()
+        finally:
+            if previous is None:
+                os.environ.pop("OPENAI_OCR_MODEL", None)
+            else:
+                os.environ["OPENAI_OCR_MODEL"] = previous
+
+        self.assertEqual(config.ocr_model, "gpt-5.4-mini")
+
+    def test_load_openai_config_defaults_exam_scoring_model_to_gpt_5_4_mini(self):
+        previous = os.environ.get("OPENAI_EXAM_SCORING_MODEL")
+        try:
+            os.environ.pop("OPENAI_EXAM_SCORING_MODEL", None)
+            config = load_openai_config()
+        finally:
+            if previous is None:
+                os.environ.pop("OPENAI_EXAM_SCORING_MODEL", None)
+            else:
+                os.environ["OPENAI_EXAM_SCORING_MODEL"] = previous
+
+        self.assertEqual(config.exam_scoring_model, "gpt-5.4-mini")
 
     def test_runtime_exam_scoring_prompt_mode_uses_override_file_without_restart(self):
         previous_mode = os.environ.get("OPENAI_EXAM_SCORING_PROMPT_MODE")

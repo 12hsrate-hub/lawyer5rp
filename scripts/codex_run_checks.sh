@@ -24,8 +24,22 @@ run_optional() {
 }
 
 if command -v python >/dev/null 2>&1; then
-  run_step "python syntax checks" python -m py_compile tests/test_point3_contract.py tests/test_mode_router.py tests/test_validator_retry.py tests/test_point3_article_policy.py
-  run_step "pytest point3" python -m pytest -q tests/test_point3_contract.py tests/test_mode_router.py tests/test_validator_retry.py tests/test_point3_article_policy.py
+  run_step "python syntax checks" python -m py_compile \
+    tests/test_point3_contract.py \
+    tests/test_mode_router.py \
+    tests/test_validator_retry.py \
+    tests/test_policy_router.py \
+    tests/test_validator_blockers.py \
+    tests/test_generation_modes.py \
+    tests/test_no_new_facts.py
+  run_step "pytest point3" python -m pytest -q \
+    tests/test_point3_contract.py \
+    tests/test_mode_router.py \
+    tests/test_validator_retry.py \
+    tests/test_policy_router.py \
+    tests/test_validator_blockers.py \
+    tests/test_generation_modes.py \
+    tests/test_no_new_facts.py
 else
   echo "[codex-checks] error: python is required"
   exit 1

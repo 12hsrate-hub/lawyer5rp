@@ -23,6 +23,9 @@ FEEDBACK_ISSUE_ALIASES: dict[str, tuple[str, ...]] = {
 _SOURCE_CITATION_PATTERN = re.compile(r"\[\s*Источник\s*:\s*(https?://[^\]\s]+)\s*\]", flags=re.IGNORECASE)
 _URL_PATTERN = re.compile(r"https?://[^\s)\]]+", flags=re.IGNORECASE)
 _META_SECTION_PATTERN = re.compile(r"^\s*\[[a-z_]+\]\s*$", flags=re.IGNORECASE | re.MULTILINE)
+_MARKDOWN_EMPHASIS_PATTERN = re.compile(r"(?<!\*)\*\*(.+?)\*\*(?!\*)|(?<!_)__(.+?)__(?!_)")
+_MARKDOWN_INLINE_PATTERN = re.compile(r"(?<!\*)\*(.+?)\*(?!\*)|(?<!_)_(.+?)_(?!_)|`([^`]+)`")
+_LIST_MARKER_PATTERN = re.compile(r"^\s*(?:[-*•]+|\d+[.)])\s+")
 
 
 @dataclass(frozen=True)
@@ -91,6 +94,62 @@ def parse_urls(text: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(match.strip(".,;") for match in _URL_PATTERN.findall(str(text or "")) if match.strip()))
 
 
+def strip_law_qa_source_urls(text: str) -> str:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return ""
+
+    cleaned = _SOURCE_CITATION_PATTERN.sub("", normalized)
+    cleaned = _URL_PATTERN.sub("", cleaned)
+    cleaned = re.sub(r"\[\s*Источник\s*:\s*\]", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\(\s*\)", "", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r" *\n *", "\n", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = re.sub(r"\s+([,.;:])", r"\1", cleaned)
+    return cleaned.strip()
+
+
+def normalize_law_qa_text_formatting(text: str) -> str:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return ""
+
+    cleaned = _MARKDOWN_EMPHASIS_PATTERN.sub(lambda match: match.group(1) or match.group(2) or "", normalized)
+    cleaned = _MARKDOWN_INLINE_PATTERN.sub(lambda match: match.group(1) or match.group(2) or match.group(3) or "", cleaned)
+    cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n")
+
+    lines = [line.strip() for line in cleaned.split("\n")]
+    paragraphs: list[str] = []
+    list_items: list[str] = []
+
+    def flush_list_items() -> None:
+        if not list_items:
+            return
+        paragraphs.append("; ".join(item.strip().rstrip(" ;") for item in list_items if item.strip()))
+        list_items.clear()
+
+    for line in lines:
+        if not line:
+            flush_list_items()
+            continue
+        stripped = _LIST_MARKER_PATTERN.sub("", line).strip()
+        if stripped != line:
+            if stripped:
+                list_items.append(stripped)
+            continue
+        flush_list_items()
+        paragraphs.append(line)
+
+    flush_list_items()
+
+    cleaned = "\n".join(part for part in paragraphs if part)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+([,.;:])", r"\1", cleaned)
+    return cleaned.strip()
+
+
 def build_bundle_health(
     *,
     generated_at: str = "",
@@ -144,33 +203,47 @@ def guard_law_qa_answer(
         issues.append(GuardIssue(code="empty_output", severity="fail", message="The model returned an empty answer."))
         return GuardResult(status="fail", issues=tuple(issues), retryable=True)
 
-    allowed = {str(item or "").strip() for item in allowed_source_urls if str(item or "").strip()}
     cited_sources = set(parse_source_citations(normalized_text))
-    external_urls = {url for url in parse_urls(normalized_text) if url not in allowed}
+    leaked_urls = set(parse_urls(normalized_text))
 
-    if not cited_sources:
+    if cited_sources:
         issues.append(
             GuardIssue(
-                code="missing_source_citations",
+                code="source_citation_leak",
                 severity="warn",
-                message="The answer does not include inline source citations.",
+                message="The answer still contains inline source citations.",
             )
         )
-    unknown_citations = cited_sources - allowed
-    if unknown_citations:
+    if leaked_urls:
         issues.append(
             GuardIssue(
-                code="unknown_source_citation",
-                severity="fail",
-                message="The answer cites sources outside the selected law base.",
+                code="source_url_leak",
+                severity="warn",
+                message="The answer still contains raw source URLs.",
             )
         )
-    if external_urls:
+    if "```" in normalized_text:
         issues.append(
             GuardIssue(
-                code="external_url_leak",
-                severity="fail",
-                message="The answer references URLs outside the selected law base.",
+                code="code_block_leak",
+                severity="warn",
+                message="The answer still contains fenced formatting.",
+            )
+        )
+    if "\n-" in normalized_text or "\n*" in normalized_text or re.search(r"\n\s*\d+[.)]\s+", normalized_text):
+        issues.append(
+            GuardIssue(
+                code="list_format_leak",
+                severity="warn",
+                message="The answer still contains list formatting.",
+            )
+        )
+    if "**" in normalized_text or "__" in normalized_text or re.search(r"`[^`]+`", normalized_text):
+        issues.append(
+            GuardIssue(
+                code="markdown_format_leak",
+                severity="warn",
+                message="The answer still contains markdown emphasis.",
             )
         )
     if bundle_health.status == "stale":

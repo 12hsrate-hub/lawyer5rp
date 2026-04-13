@@ -1704,8 +1704,8 @@ function renderExamEntryDetailModal(entry) {
           <p class="legal-section__description">Ниже видно, какие данные пришли из таблицы и с чем сравнивалась проверка.</p>
         </div>
       </div>
-      <div class="legal-table-shell exam-detail-shell">
-        <table class="legal-table admin-table admin-table--compact">
+      <div class="legal-table-shell exam-detail-shell exam-detail-shell--payload">
+        <table class="legal-table admin-table admin-table--compact exam-detail-table exam-detail-table--payload">
           <thead>
             <tr>
               <th>Столбец / Поле</th>
