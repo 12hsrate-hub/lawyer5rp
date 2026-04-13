@@ -1117,8 +1117,8 @@ class FakeExamAnswersConnection:
     def _reset_scores_by_user(self, normalized_query: str, params):
         if not params:
             return FakeCursor(rowcount=0)
-        needs_rescore = bool(params[-1])
-        filter_values = list(params[:-1])
+        needs_rescore = bool(params[0])
+        filter_values = list(params[1:])
         where_part = normalized_query.split("WHERE source_row > 0 AND ", 1)[1]
         filter_clauses = [part.strip() for part in where_part.split(" AND ") if part.strip()]
         matched_rows = []
