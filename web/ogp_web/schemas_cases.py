@@ -84,6 +84,7 @@ class DocumentVersionResponse(BaseModel):
     version_number: int
     content_json: Any
     created_by: int
+    generation_snapshot_id: int | None = None
     created_at: str = ""
 
 
