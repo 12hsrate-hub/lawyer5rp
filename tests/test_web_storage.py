@@ -51,12 +51,20 @@ class PostgresBackend:
         self._state = {
             "next_user_id": 1,
             "next_generated_document_id": 1,
+            "next_case_id": 1,
+            "next_case_event_id": 1,
+            "next_case_document_id": 1,
+            "next_document_version_id": 1,
             "servers": {},
             "users": {},
             "roles": {},
             "selected_servers": {},
             "drafts": {},
             "generated_documents": [],
+            "cases": {},
+            "case_events": [],
+            "case_documents": {},
+            "document_versions": {},
             "auth_rate_limit_events": [],
             "clock": 0,
             "missing_tables": set(missing_tables or set()),
@@ -128,6 +136,26 @@ class FakePostgresConnection:
             return self._save_draft(params)
         if normalized.startswith("INSERT INTO generated_documents ("):
             return self._insert_generated_document(params)
+        if normalized.startswith("INSERT INTO cases (server_id, owner_user_id, title, case_type, status, metadata_json)"):
+            return self._insert_case(params)
+        if normalized.startswith("SELECT id, server_id, owner_user_id, title, case_type, status, CAST(metadata_json AS TEXT) AS metadata_json, created_at, updated_at FROM cases WHERE id = %s LIMIT 1"):
+            return self._fetch_case(params[0])
+        if normalized.startswith("INSERT INTO case_events (case_id, server_id, event_type, actor_user_id, payload_json)"):
+            return self._insert_case_event(params)
+        if normalized.startswith("INSERT INTO case_documents (case_id, server_id, document_type, status, created_by, metadata_json)"):
+            return self._insert_case_document(params)
+        if normalized.startswith("SELECT id, case_id, server_id, document_type, status, created_by, latest_version_id, CAST(metadata_json AS TEXT) AS metadata_json, created_at, updated_at FROM case_documents WHERE case_id = %s ORDER BY created_at DESC, id DESC"):
+            return self._list_case_documents(params[0])
+        if normalized.startswith("SELECT id, case_id, server_id, document_type, status, created_by, latest_version_id, CAST(metadata_json AS TEXT) AS metadata_json, created_at, updated_at FROM case_documents WHERE id = %s LIMIT 1"):
+            return self._fetch_case_document(params[0])
+        if normalized.startswith("SELECT version_number FROM document_versions WHERE document_id = %s ORDER BY version_number DESC LIMIT 1"):
+            return self._last_document_version(params[0])
+        if normalized.startswith("INSERT INTO document_versions (document_id, version_number, content_json, created_by)"):
+            return self._insert_document_version(params)
+        if normalized.startswith("UPDATE case_documents SET latest_version_id = %s, updated_at = NOW() WHERE id = %s"):
+            return self._update_case_document_latest_version(params)
+        if normalized.startswith("SELECT id, document_id, version_number, CAST(content_json AS TEXT) AS content_json, created_by, created_at FROM document_versions WHERE document_id = %s ORDER BY version_number ASC"):
+            return self._list_document_versions(params[0])
         if (
             (
                 "FROM users u LEFT JOIN user_server_roles usr" in normalized
@@ -276,6 +304,133 @@ class FakePostgresConnection:
         }
         self.state["generated_documents"].append(row)
         return FakeCursor(rowcount=1, one={"id": document_id})
+
+    def _insert_case(self, params):
+        server_id, owner_user_id, title, case_type = params
+        case_id = self.state["next_case_id"]
+        self.state["next_case_id"] += 1
+        row = {
+            "id": case_id,
+            "server_id": str(server_id),
+            "owner_user_id": int(owner_user_id),
+            "title": str(title),
+            "case_type": str(case_type),
+            "status": "draft",
+            "metadata_json": {},
+            "created_at": self._now(),
+            "updated_at": self._now(),
+        }
+        self.state["cases"][case_id] = row
+        return FakeCursor(rowcount=1, one={**row, "metadata_json": "{}"})
+
+    def _fetch_case(self, case_id: int):
+        row = self.state["cases"].get(int(case_id))
+        if row is None:
+            return FakeCursor(rowcount=0, one=None)
+        return FakeCursor(rowcount=1, one={**row, "metadata_json": json.dumps(row["metadata_json"], ensure_ascii=False)})
+
+    def _insert_case_event(self, params):
+        case_id, server_id, event_type, actor_user_id, payload_json = params
+        event = {
+            "id": self.state["next_case_event_id"],
+            "case_id": int(case_id),
+            "server_id": str(server_id),
+            "event_type": str(event_type),
+            "actor_user_id": int(actor_user_id),
+            "payload_json": json.loads(payload_json),
+            "created_at": self._now(),
+        }
+        self.state["next_case_event_id"] += 1
+        self.state["case_events"].append(event)
+        return FakeCursor(rowcount=1)
+
+    def _insert_case_document(self, params):
+        case_id, server_id, document_type, created_by = params
+        if int(case_id) not in self.state["cases"]:
+            return FakeCursor(rowcount=0, one=None)
+        document_id = self.state["next_case_document_id"]
+        self.state["next_case_document_id"] += 1
+        row = {
+            "id": document_id,
+            "case_id": int(case_id),
+            "server_id": str(server_id),
+            "document_type": str(document_type),
+            "status": "draft",
+            "created_by": int(created_by),
+            "latest_version_id": None,
+            "metadata_json": {},
+            "created_at": self._now(),
+            "updated_at": self._now(),
+        }
+        self.state["case_documents"][document_id] = row
+        return FakeCursor(rowcount=1, one={**row, "metadata_json": "{}"})
+
+    def _list_case_documents(self, case_id: int):
+        rows = [
+            row for row in self.state["case_documents"].values()
+            if int(row["case_id"]) == int(case_id)
+        ]
+        rows.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
+        payload = [{**row, "metadata_json": json.dumps(row["metadata_json"], ensure_ascii=False)} for row in rows]
+        return FakeCursor(rowcount=len(payload), rows=payload)
+
+    def _fetch_case_document(self, document_id: int):
+        row = self.state["case_documents"].get(int(document_id))
+        if row is None:
+            return FakeCursor(rowcount=0, one=None)
+        return FakeCursor(rowcount=1, one={**row, "metadata_json": json.dumps(row["metadata_json"], ensure_ascii=False)})
+
+    def _last_document_version(self, document_id: int):
+        versions = [
+            row for row in self.state["document_versions"].values()
+            if int(row["document_id"]) == int(document_id)
+        ]
+        if not versions:
+            return FakeCursor(rowcount=0, one=None)
+        versions.sort(key=lambda item: int(item["version_number"]), reverse=True)
+        return FakeCursor(rowcount=1, one={"version_number": int(versions[0]["version_number"])})
+
+    def _insert_document_version(self, params):
+        document_id, version_number, content_json, created_by = params
+        existing = [
+            row for row in self.state["document_versions"].values()
+            if int(row["document_id"]) == int(document_id) and int(row["version_number"]) == int(version_number)
+        ]
+        if existing:
+            raise UniqueViolation("duplicate document version")
+        version_id = self.state["next_document_version_id"]
+        self.state["next_document_version_id"] += 1
+        row = {
+            "id": version_id,
+            "document_id": int(document_id),
+            "version_number": int(version_number),
+            "content_json": json.loads(content_json),
+            "created_by": int(created_by),
+            "created_at": self._now(),
+        }
+        self.state["document_versions"][version_id] = row
+        return FakeCursor(
+            rowcount=1,
+            one={**row, "content_json": json.dumps(row["content_json"], ensure_ascii=False)},
+        )
+
+    def _update_case_document_latest_version(self, params):
+        latest_version_id, document_id = params
+        row = self.state["case_documents"].get(int(document_id))
+        if row is None:
+            return FakeCursor(rowcount=0)
+        row["latest_version_id"] = int(latest_version_id)
+        row["updated_at"] = self._now()
+        return FakeCursor(rowcount=1)
+
+    def _list_document_versions(self, document_id: int):
+        rows = [
+            row for row in self.state["document_versions"].values()
+            if int(row["document_id"]) == int(document_id)
+        ]
+        rows.sort(key=lambda item: int(item["version_number"]))
+        payload = [{**row, "content_json": json.dumps(row["content_json"], ensure_ascii=False)} for row in rows]
+        return FakeCursor(rowcount=len(payload), rows=payload)
 
     def _find_by(self, field: str, value: str):
         for user in self.state["users"].values():

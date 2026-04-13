@@ -217,6 +217,71 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("validation_rules_version", snapshot)
         self.assertIn("feature_flags", snapshot)
 
+    def test_cases_flow_creates_events_and_append_only_versions(self):
+        self._register_verify_and_login("cases_user", "cases_user@example.com")
+
+        create_case = self.client.post(
+            "/api/cases",
+            json={"server_id": "blackberry", "title": "Case A", "case_type": "complaint"},
+        )
+        self.assertEqual(create_case.status_code, 200)
+        case_id = int(create_case.json()["id"])
+
+        create_document = self.client.post(
+            f"/api/cases/{case_id}/documents",
+            json={"document_type": "complaint_draft"},
+        )
+        self.assertEqual(create_document.status_code, 200)
+        document_id = int(create_document.json()["id"])
+
+        version_1 = self.client.post(
+            f"/api/documents/{document_id}/versions",
+            json={"content_json": {"text": "v1"}},
+        )
+        self.assertEqual(version_1.status_code, 200)
+        self.assertEqual(version_1.json()["version_number"], 1)
+
+        version_2 = self.client.post(
+            f"/api/documents/{document_id}/versions",
+            json={"content_json": {"text": "v2"}},
+        )
+        self.assertEqual(version_2.status_code, 200)
+        self.assertEqual(version_2.json()["version_number"], 2)
+
+        versions = self.client.get(f"/api/documents/{document_id}/versions")
+        self.assertEqual(versions.status_code, 200)
+        self.assertEqual([item["version_number"] for item in versions.json()["items"]], [1, 2])
+
+        backend_state = self.store.repository.backend._state
+        event_types = [item["event_type"] for item in backend_state["case_events"]]
+        self.assertIn("case_created", event_types)
+        self.assertIn("document_added", event_types)
+        self.assertIn("document_version_created", event_types)
+
+    def test_cannot_create_case_without_server_id(self):
+        self._register_verify_and_login("no_server_user", "no_server@example.com")
+        response = self.client.post(
+            "/api/cases",
+            json={"title": "Case A", "case_type": "complaint"},
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_cannot_add_document_to_non_existing_case(self):
+        self._register_verify_and_login("missing_case_user", "missing_case@example.com")
+        response = self.client.post(
+            "/api/cases/999999/documents",
+            json={"document_type": "complaint_draft"},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_cannot_use_hidden_default_server_scope(self):
+        self._register_verify_and_login("scope_user", "scope_user@example.com")
+        response = self.client.post(
+            "/api/cases",
+            json={"server_id": "linden", "title": "Case A", "case_type": "complaint"},
+        )
+        self.assertEqual(response.status_code, 403)
+
     def test_admin_overview_returns_metrics_for_admin_user(self):
         self._register_verify_and_login("12345", "admin@example.com")
 
