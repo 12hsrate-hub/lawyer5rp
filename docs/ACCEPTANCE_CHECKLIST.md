@@ -41,3 +41,34 @@
 - [ ] Scripts owner assigned.
 - [ ] Tests owner assigned.
 - [ ] Release owner assigned.
+
+## Release Checklist by Legal Workflow Stage
+
+### Stage 1 — MVP Foundation
+- [ ] Все новые сущности server-scoped или explicit global с documented rationale.
+- [ ] Для новых API отсутствует hidden default server.
+- [ ] `/api/generate` и `/api/complaint-draft` покрыты compatibility-тестами.
+- [ ] `LawVersion`, `TemplateVersion`, `DocumentVersion`, `ValidationRun` не изменяются in-place (append-only подтверждено).
+
+### Stage 2 — Unified Verifier
+- [ ] complaint + law QA используют общий verifier и единый decision mode contract.
+- [ ] Включён backward-compatible first rollout для schema/API изменений этапа.
+- [ ] Для изменённых storage-путей активировано dual-read/dual-write окно.
+- [ ] Метрики консистентности dual-read/dual-write зафиксированы до cutover.
+
+### Stage 3 — Feedback Loop
+- [ ] Feedback API/UI поддерживает категоризацию (`wrong_fact`, `wrong_law`, `unsupported_inference`, `bad_format`, `other`).
+- [ ] Логирование и retention соответствуют policy (masked-by-default, controlled raw access).
+- [ ] Legacy compatibility layer остаётся стабильной для внешних интеграций.
+- [ ] Перед любыми destructive changes оформлен cutover decision + rollback plan.
+
+### Stage 4 — Multi-Server Expansion
+- [ ] Для каждого нового сервера проверены scope-инварианты (нет скрытой global-связанности).
+- [ ] Per-server quality/cost monitoring включён и валидирован.
+- [ ] Dual-read/dual-write окно завершено и задокументировано перед destructive cleanup.
+- [ ] Destructive changes выполнены только после подтверждённой backward-compatible фазы.
+
+## Migration Policy (Release Gate)
+- [ ] Любое изменение начинается с backward-compatible first.
+- [ ] Destructive schema/API changes запрещены до завершения dual-read/dual-write окна.
+- [ ] Перед destructive changes зафиксированы: consistency report, cutover decision, rollback window.
