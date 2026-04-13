@@ -190,7 +190,7 @@ async def get_complaint_draft(
     user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ) -> ComplaintDraftResponse:
-    draft = store.get_complaint_draft(user.username)
+    draft = store.get_complaint_draft(user.username, server_code=user.server_code)
     return ComplaintDraftResponse(
         draft=draft.get("draft", {}),
         updated_at=str(draft.get("updated_at", "") or ""),
@@ -205,7 +205,7 @@ async def save_complaint_draft(
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ComplaintDraftResponse:
-    draft = store.save_complaint_draft(user.username, payload.draft)
+    draft = store.save_complaint_draft(user.username, payload.draft, server_code=user.server_code)
     metrics_store.log_event(
         event_type="complaint_draft_saved",
         username=user.username,
@@ -228,7 +228,7 @@ async def clear_complaint_draft(
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ComplaintDraftResponse:
-    store.clear_complaint_draft(user.username)
+    store.clear_complaint_draft(user.username, server_code=user.server_code)
     metrics_store.log_event(
         event_type="complaint_draft_cleared",
         username=user.username,

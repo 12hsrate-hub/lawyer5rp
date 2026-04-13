@@ -23,7 +23,7 @@ from ogp_web.storage.profile_codec import dump_profile_json, load_profile_json
 from ogp_web.storage.user_repository import UserRepository
 
 
-DEFAULT_SERVER_CODE = "blackberry"
+from ogp_web.server_config.registry import DEFAULT_SERVER_CODE, get_server_config
 
 
 _USERS_COLUMNS = frozenset({
@@ -75,7 +75,7 @@ _POSTGRES_SELECT_COLUMNS = {
     "deactivated_at": "u.deactivated_at AS deactivated_at",
     "deactivated_reason": "u.deactivated_reason AS deactivated_reason",
     "api_quota_daily": "COALESCE(u.api_quota_daily, 0) AS api_quota_daily",
-    "server_code": f"COALESCE(usr.server_code, '{DEFAULT_SERVER_CODE}') AS server_code",
+    "server_code": "usr.server_code AS server_code",
     "is_tester": "COALESCE(usr.is_tester, FALSE) AS is_tester",
     "is_gka": "COALESCE(usr.is_gka, FALSE) AS is_gka",
     "representative_profile": "CAST(u.representative_profile AS TEXT) AS representative_profile",
@@ -115,6 +115,29 @@ class UserStore:
     @property
     def backend(self) -> DatabaseBackend:
         return self.repository.backend
+
+    @staticmethod
+    def _normalize_server_context(server_code: str | None) -> str:
+        normalized = str(server_code or "").strip().lower()
+        return normalized or DEFAULT_SERVER_CODE
+
+    def _resolve_user_server_code(self, username: str, preferred_server_code: str | None = None) -> str:
+        normalized_username = _normalize_username(username)
+        selected = self._normalize_server_context(preferred_server_code)
+        row = self._pg_fetchone(
+            """
+            SELECT uss.server_code AS selected_server_code
+            FROM users u
+            LEFT JOIN user_selected_servers uss ON uss.user_id = u.id
+            WHERE u.username = %s
+            LIMIT 1
+            """,
+            (normalized_username,),
+        )
+        if row and str(row.get("selected_server_code") or "").strip():
+            selected = str(row["selected_server_code"]).strip().lower()
+        get_server_config(selected)
+        return selected
 
 
     @property
@@ -195,7 +218,15 @@ class UserStore:
             names = [name.strip() for name in validated.split(",") if name.strip()]
         return ", ".join(_POSTGRES_SELECT_COLUMNS[name] for name in names)
 
-    def _pg_fetch_user(self, where_clause: str, params: tuple[Any, ...], *, columns: str = "*"):
+    def _pg_fetch_user(
+        self,
+        where_clause: str,
+        params: tuple[Any, ...],
+        *,
+        columns: str = "*",
+        server_code: str | None = None,
+    ):
+        normalized_server = self._normalize_server_context(server_code)
         query = f"""
             SELECT {self._pg_select_list(columns)}
             FROM users u
@@ -206,21 +237,31 @@ class UserStore:
             WHERE {where_clause}
             LIMIT 1
         """
-        return self._pg_fetchone(query, (DEFAULT_SERVER_CODE, DEFAULT_SERVER_CODE, *params))
+        return self._pg_fetchone(query, (normalized_server, normalized_server, *params))
 
     def _auth_user_from_row(self, row) -> AuthUser:
         keys = set(row.keys())
         return AuthUser(
             username=str(row["username"]),
             email=str(row["email"] or ""),
-            server_code=str(row["server_code"] or DEFAULT_SERVER_CODE) if "server_code" in keys else DEFAULT_SERVER_CODE,
+            server_code=str(row["server_code"] or "").strip().lower() if "server_code" in keys else "",
         )
 
-    def _fetch_user_by_username(self, username: str, columns: str = "*"):
-        return self._pg_fetch_user("u.username = %s", (_normalize_username(username),), columns=columns)
+    def _fetch_user_by_username(self, username: str, columns: str = "*", *, server_code: str | None = None):
+        return self._pg_fetch_user(
+            "u.username = %s",
+            (_normalize_username(username),),
+            columns=columns,
+            server_code=server_code,
+        )
 
-    def _fetch_user_by_email(self, email: str, columns: str = "*"):
-        return self._pg_fetch_user("u.email = %s", (_normalize_email(email),), columns=columns)
+    def _fetch_user_by_email(self, email: str, columns: str = "*", *, server_code: str | None = None):
+        return self._pg_fetch_user(
+            "u.email = %s",
+            (_normalize_email(email),),
+            columns=columns,
+            server_code=server_code,
+        )
 
     def _ensure_schema(self) -> None:
         return
@@ -306,15 +347,18 @@ class UserStore:
     def _pg_authenticate(self, username: str, password: str) -> AuthUser:
         normalized = (username or "").strip().lower()
         valid_password = _validate_password(password)
+        selected_server = self._resolve_user_server_code(normalized, DEFAULT_SERVER_CODE)
         if "@" in normalized:
             row = self._fetch_user_by_email(
                 normalized,
                 "username, email, server_code, salt, password_hash, email_verified_at, access_blocked_at",
+                server_code=selected_server,
             )
         else:
             row = self._fetch_user_by_username(
                 normalized,
                 "username, email, server_code, salt, password_hash, email_verified_at, access_blocked_at",
+                server_code=selected_server,
             )
         if row is None:
             raise AuthError("Неверный логин/email или пароль.")
@@ -324,7 +368,9 @@ class UserStore:
             raise AuthError("Доступ к аккаунту заблокирован администратором.")
         if not str(row["email_verified_at"] or "").strip():
             raise AuthError("Сначала подтвердите email по ссылке из письма.")
-        return self._auth_user_from_row(row)
+        user = self._auth_user_from_row(row)
+        user.server_code = selected_server
+        return user
 
     def _pg_confirm_email(self, token: str) -> AuthUser:
         raw_token = (token or "").strip()
@@ -439,14 +485,15 @@ class UserStore:
         )
         return self._auth_user_from_row(row)
 
-    def _pg_set_role_flag(self, username: str, flag_column: str, enabled: bool) -> dict[str, Any]:
+    def _pg_set_role_flag(self, username: str, flag_column: str, enabled: bool, *, server_code: str) -> dict[str, Any]:
         normalized = _normalize_username(username)
+        normalized_server = self._normalize_server_context(server_code)
         if flag_column not in {"is_tester", "is_gka"}:
             raise ValueError(f"Unsupported role flag: {flag_column!r}")
         user_row = self._pg_fetchone("SELECT id FROM users WHERE username = %s", (normalized,))
         if user_row is None:
             raise AuthError("Пользователь не найден.")
-        current = self._fetch_user_by_username(normalized, "is_tester, is_gka")
+        current = self._fetch_user_by_username(normalized, "is_tester, is_gka", server_code=normalized_server)
         current_tester = bool(current["is_tester"]) if current else False
         current_gka = bool(current["is_gka"]) if current else False
         if flag_column == "is_tester":
@@ -463,11 +510,12 @@ class UserStore:
                 is_gka = EXCLUDED.is_gka,
                 updated_at = NOW()
             """,
-            (int(user_row["id"]), DEFAULT_SERVER_CODE, current_tester, current_gka),
+            (int(user_row["id"]), normalized_server, current_tester, current_gka),
         )
         row = self._fetch_user_by_username(
             normalized,
             "username, email, created_at, email_verified_at, access_blocked_at, access_blocked_reason, deactivated_at, deactivated_reason, api_quota_daily, server_code, is_tester, is_gka",
+            server_code=normalized_server,
         )
         return dict(row) if row else {}
 
@@ -489,13 +537,13 @@ class UserStore:
     def reset_password(self, token: str, new_password: str) -> AuthUser:
         return self._pg_reset_password(token, new_password)
 
-    def get_representative_profile(self, username: str) -> dict[str, str]:
-        row = self._fetch_user_by_username(username, "representative_profile")
+    def get_representative_profile(self, username: str, *, server_code: str) -> dict[str, str]:
+        row = self._fetch_user_by_username(username, "representative_profile", server_code=server_code)
         if row is None:
             raise AuthError("Пользователь не найден.")
         return load_profile_json(str(row["representative_profile"] or ""), REPRESENTATIVE_PROFILE_DEFAULTS)
 
-    def save_representative_profile(self, username: str, profile: dict[str, Any]) -> dict[str, str]:
+    def save_representative_profile(self, username: str, profile: dict[str, Any], *, server_code: str) -> dict[str, str]:
         normalized = _normalize_username(username)
         sanitized = {
             key: str(profile.get(key, "") or "").strip()
@@ -513,10 +561,11 @@ class UserStore:
     def change_password(self, username: str, current_password: str, new_password: str) -> AuthUser:
         return self._pg_change_password(username, current_password, new_password)
 
-    def get_complaint_draft(self, username: str) -> dict[str, Any]:
+    def get_complaint_draft(self, username: str, *, server_code: str) -> dict[str, Any]:
         row = self._fetch_user_by_username(
             username,
             "complaint_draft_json, complaint_draft_updated_at",
+            server_code=server_code,
         )
         if row is None:
             raise AuthError("Пользователь не найден.")
@@ -534,8 +583,9 @@ class UserStore:
             "updated_at": str(row["complaint_draft_updated_at"] or ""),
         }
 
-    def save_complaint_draft(self, username: str, draft: dict[str, Any]) -> dict[str, Any]:
+    def save_complaint_draft(self, username: str, draft: dict[str, Any], *, server_code: str) -> dict[str, Any]:
         normalized = _normalize_username(username)
+        normalized_server = self._normalize_server_context(server_code)
         if not isinstance(draft, dict):
             raise AuthError("Черновик жалобы должен быть объектом.")
         rowcount = self._pg_execute(
@@ -547,14 +597,15 @@ class UserStore:
             ON CONFLICT (user_id, server_code)
             DO UPDATE SET draft_json = EXCLUDED.draft_json, updated_at = NOW()
             """,
-            (DEFAULT_SERVER_CODE, json.dumps(draft, ensure_ascii=False), normalized),
+            (normalized_server, json.dumps(draft, ensure_ascii=False), normalized),
         )
         if rowcount <= 0:
             raise AuthError("Пользователь не найден.")
-        return self.get_complaint_draft(normalized)
+        return self.get_complaint_draft(normalized, server_code=normalized_server)
 
-    def clear_complaint_draft(self, username: str) -> None:
+    def clear_complaint_draft(self, username: str, *, server_code: str) -> None:
         normalized = _normalize_username(username)
+        normalized_server = self._normalize_server_context(server_code)
         rowcount = self._pg_execute(
             """
             UPDATE complaint_drafts cd
@@ -565,7 +616,7 @@ class UserStore:
               AND cd.server_code = %s
               AND u.username = %s
             """,
-            (DEFAULT_SERVER_CODE, normalized),
+            (normalized_server, normalized),
         )
         if rowcount <= 0:
             raise AuthError("Пользователь не найден.")
@@ -584,9 +635,9 @@ class UserStore:
             limit_clause = ""
             if safe_limit:
                 limit_clause = " LIMIT %s"
-                params: tuple[Any, ...] = (DEFAULT_SERVER_CODE, safe_limit)
+                params: tuple[Any, ...] = (safe_limit,)
             else:
-                params = (DEFAULT_SERVER_CODE,)
+                params = ()
             rows = self._pg_fetchall(
                 f"""
                 SELECT
@@ -599,12 +650,16 @@ class UserStore:
                     u.deactivated_at AS deactivated_at,
                     u.deactivated_reason AS deactivated_reason,
                     COALESCE(u.api_quota_daily, 0) AS api_quota_daily,
-                    COALESCE(usr.server_code, '{DEFAULT_SERVER_CODE}') AS server_code,
+                    COALESCE(uss.server_code, usr.server_code) AS server_code,
                     COALESCE(usr.is_tester, FALSE) AS is_tester,
                     COALESCE(usr.is_gka, FALSE) AS is_gka
                 FROM users u
+                LEFT JOIN user_selected_servers uss
+                    ON uss.user_id = u.id
                 LEFT JOIN user_server_roles usr
-                    ON usr.user_id = u.id AND usr.server_code = %s
+                    ON usr.user_id = u.id
+                   AND uss.server_code IS NOT NULL
+                   AND usr.server_code = uss.server_code
                 ORDER BY u.created_at DESC, u.username ASC
                 {limit_clause}
                 """,
@@ -639,7 +694,7 @@ class UserStore:
 
     def is_tester_user(self, username: str, *, server_code: str | None = None) -> bool:
         if self.is_postgres_backend:
-            row = self._fetch_user_by_username(username, "is_tester, server_code")
+            row = self._fetch_user_by_username(username, "is_tester, server_code", server_code=server_code)
             if row is None:
                 return False
             if server_code and str(row["server_code"] or "").strip().lower() != str(server_code).strip().lower():
@@ -651,7 +706,7 @@ class UserStore:
 
     def is_gka_user(self, username: str, *, server_code: str | None = None) -> bool:
         if self.is_postgres_backend:
-            row = self._fetch_user_by_username(username, "is_gka, server_code")
+            row = self._fetch_user_by_username(username, "is_gka, server_code", server_code=server_code)
             if row is None:
                 return False
             if server_code and str(row["server_code"] or "").strip().lower() != str(server_code).strip().lower():
@@ -662,20 +717,34 @@ class UserStore:
         return is_gka_user(self, username, server_code=server_code)
 
     def get_server_code(self, username: str) -> str:
-        row = self._fetch_user_by_username(username, "server_code")
+        return self._resolve_user_server_code(username)
+
+    def set_selected_server_code(self, username: str, server_code: str) -> str:
+        normalized_username = _normalize_username(username)
+        normalized_server = self._normalize_server_context(server_code)
+        get_server_config(normalized_server)
+        row = self._pg_fetchone("SELECT id FROM users WHERE username = %s", (normalized_username,))
         if row is None:
             raise AuthError("Пользователь не найден.")
-        code = str(row["server_code"] or DEFAULT_SERVER_CODE).strip().lower() or DEFAULT_SERVER_CODE
-        from ogp_web.server_config.registry import get_server_config
-
-        get_server_config(code)
-        return code
+        self._pg_execute(
+            """
+            INSERT INTO user_selected_servers (user_id, server_code, updated_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (user_id)
+            DO UPDATE SET server_code = EXCLUDED.server_code, updated_at = NOW()
+            """,
+            (int(row["id"]), normalized_server),
+        )
+        return normalized_server
 
     def get_auth_user(self, username: str) -> AuthUser:
-        row = self._fetch_user_by_username(username, "username, email, server_code")
+        resolved_server = self._resolve_user_server_code(username)
+        row = self._fetch_user_by_username(username, "username, email, server_code", server_code=resolved_server)
         if row is None:
             raise AuthError("Пользователь не найден.")
-        return self._auth_user_from_row(row)
+        user = self._auth_user_from_row(row)
+        user.server_code = resolved_server
+        return user
 
     def admin_mark_email_verified(self, username: str) -> dict[str, Any]:
         if self.is_postgres_backend:
@@ -748,14 +817,14 @@ class UserStore:
 
     def admin_set_tester_status(self, username: str, is_tester: bool) -> dict[str, Any]:
         if self.is_postgres_backend:
-            return self._pg_set_role_flag(username, "is_tester", is_tester)
+            return self._pg_set_role_flag(username, "is_tester", is_tester, server_code=self.get_server_code(username))
         from ogp_web.services.user_admin_store_service import admin_set_tester_status
 
         return admin_set_tester_status(self, username, is_tester)
 
     def admin_set_gka_status(self, username: str, is_gka: bool) -> dict[str, Any]:
         if self.is_postgres_backend:
-            return self._pg_set_role_flag(username, "is_gka", is_gka)
+            return self._pg_set_role_flag(username, "is_gka", is_gka, server_code=self.get_server_code(username))
         from ogp_web.services.user_admin_store_service import admin_set_gka_status
 
         return admin_set_gka_status(self, username, is_gka)
