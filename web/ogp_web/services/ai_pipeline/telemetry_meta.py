@@ -17,13 +17,19 @@ def build_law_qa_metrics_meta(
     short_text_hash: Callable[[str], str],
     mask_text_preview: Callable[[str], str],
 ) -> dict[str, object]:
+    selected_model = str(getattr(result, "selected_model", "") or "").strip()
+    selection_reason = str(getattr(result, "selection_reason", "") or "").strip()
+    requested_model = str(getattr(result, "requested_model", "") or payload.model or "").strip()
     return {
         "generation_id": result.generation_id,
         "flow": "law_qa",
         "contract_version": result.contract_version,
         "prompt_version": LAW_QA_PROMPT_VERSION,
         "server_code": payload.server_code,
-        "model": payload.model,
+        "model": selected_model or payload.model,
+        "selected_model": selected_model,
+        "selection_reason": selection_reason,
+        "requested_model": requested_model,
         "input_chars": len(payload.question or ""),
         "input_hash": short_text_hash(payload.question or ""),
         "input_preview": mask_text_preview(payload.question or "", max_chars=180),
@@ -55,6 +61,9 @@ def build_suggest_metrics_meta(
     short_text_hash: Callable[[str], str],
     mask_text_preview: Callable[[str], str],
 ) -> dict[str, object]:
+    telemetry = dict(getattr(result, "telemetry", {}) or {})
+    selected_model = str(getattr(result, "selected_model", "") or telemetry.get("model") or "").strip()
+    selection_reason = str(getattr(result, "selection_reason", "") or "").strip()
     return {
         "generation_id": result.generation_id,
         "flow": "suggest",
@@ -70,6 +79,9 @@ def build_suggest_metrics_meta(
         "output_chars": len(result.text or ""),
         "output_hash": short_text_hash(result.text or ""),
         "output_preview": mask_text_preview(result.text or "", max_chars=220),
+        "model": selected_model,
+        "selected_model": selected_model,
+        "selection_reason": selection_reason,
         "guard_status": result.guard_status,
         "guard_warnings": list(result.warnings),
         "budget_status": result.budget_status,
@@ -93,6 +105,6 @@ def build_suggest_metrics_meta(
         "retrieval_ms": int(getattr(result, "retrieval_ms", 0) or 0),
         "openai_ms": int(getattr(result, "openai_ms", 0) or 0),
         "total_suggest_ms": int(getattr(result, "total_suggest_ms", 0) or 0),
-        **dict(getattr(result, "telemetry", {}) or {}),
+        **telemetry,
         "shadow": getattr(result, "shadow", {}),
     }

@@ -52,6 +52,9 @@ class LawQaAnswerResult:
     budget_status: str
     budget_warnings: list[str]
     budget_policy: dict[str, object]
+    selected_model: str = ""
+    selection_reason: str = ""
+    requested_model: str = ""
 
 
 @dataclass(frozen=True)
@@ -85,6 +88,8 @@ class SuggestTextResult:
     safe_fallback_used: bool = False
     input_warning_codes: tuple[str, ...] = ()
     protected_terms: tuple[str, ...] = ()
+    selected_model: str = ""
+    selection_reason: str = ""
 
 
 @dataclass(frozen=True)
