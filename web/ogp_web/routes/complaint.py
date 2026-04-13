@@ -298,45 +298,17 @@ async def generate(
     context_snapshot = build_generation_context_snapshot(store, user, document_kind="complaint")
     context_snapshot["citations_policy_gate"] = {"mode": "shadow", "status": "flagged_no_citations"}
     bbcode = generate_bbcode_text(store, payload, user)
-    document_id = store.save_generated_document(
+    orchestrator = GenerationOrchestrator(store)
+    bridge_result = orchestrator.write_generation_bridge(
         username=user.username,
         server_code=user.server_code,
         document_kind="complaint",
         payload=payload.model_dump(),
         result_text=bbcode,
         context_snapshot=context_snapshot,
+        legacy_generated_document_id=None,
     )
-    orchestrator = GenerationOrchestrator(store)
-    bridge_result = None
-    if orchestrator.bridge_mode() != "off" and cases_flag.use_new_flow and docs_flag.use_new_flow:
-        try:
-            bridge_result = orchestrator.write_generation_bridge(
-                username=user.username,
-                server_code=user.server_code,
-                document_kind="complaint",
-                payload=payload.model_dump(),
-                result_text=bbcode,
-                context_snapshot=context_snapshot,
-                legacy_generated_document_id=document_id,
-            )
-        except Exception:
-            if orchestrator.bridge_mode() == "strict":
-                raise
-    else:
-        metrics_store.log_event(
-            event_type="rollout_fallback_to_legacy",
-            username=user.username,
-            path="/api/generate",
-            method="POST",
-            status_code=200,
-            meta={
-                "server_id": user.server_code,
-                "flow_type": "generate",
-                "feature_flag": "documents_v2",
-                "rollout_mode": docs_flag.mode.value,
-                "rollout_cohort": docs_flag.cohort.value,
-            },
-        )
+    document_id = int(bridge_result.generated_document_id)
     if bridge_result is not None:
         try:
             if validation_flag.use_new_flow:
@@ -405,14 +377,16 @@ async def generate_rehab(
 ) -> GenerateResponse:
     context_snapshot = build_generation_context_snapshot(store, user, document_kind="rehab")
     bbcode = generate_rehab_bbcode_text(store, payload, user)
-    document_id = store.save_generated_document(
+    bridge_result = GenerationOrchestrator(store).write_generation_bridge(
         username=user.username,
         server_code=user.server_code,
         document_kind="rehab",
         payload=payload.model_dump(),
         result_text=bbcode,
         context_snapshot=context_snapshot,
+        legacy_generated_document_id=None,
     )
+    document_id = int(bridge_result.generated_document_id)
     metrics_store.log_event(
         event_type="rehab_generated",
         username=user.username,
@@ -436,19 +410,7 @@ async def generated_documents_history(
     user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ) -> GeneratedDocumentHistoryResponse:
-    orchestrator = GenerationOrchestrator(store)
-    try:
-        new_domain_items = orchestrator.list_history(username=user.username, limit=limit)
-    except Exception:  # noqa: BLE001
-        new_domain_items = []
-    bridged_legacy_ids = {int(item.get("id") or 0) for item in new_domain_items}
-    fallback_items = [
-        item
-        for item in store.list_generated_documents(user.username, limit=limit)
-        if int(item.get("id") or 0) not in bridged_legacy_ids
-    ]
-    items = (new_domain_items + fallback_items)[: max(1, min(200, int(limit or 30)))]
-    items = _normalize_history_items(items)
+    items = _normalize_history_items(GenerationOrchestrator(store).list_history(username=user.username, limit=limit))
     return GeneratedDocumentHistoryResponse(items=items)
 
 
@@ -458,15 +420,10 @@ async def generated_document_snapshot(
     user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ) -> GeneratedDocumentSnapshotResponse:
-    snapshot = store.get_generated_document_snapshot(user.username, document_id)
-    if snapshot is None:
-        try:
-            snapshot = GenerationOrchestrator(store).get_snapshot_by_legacy_id(
-                username=user.username,
-                legacy_generated_document_id=document_id,
-            )
-        except Exception:  # noqa: BLE001
-            snapshot = None
+    snapshot = GenerationOrchestrator(store).get_snapshot_by_legacy_id(
+        username=user.username,
+        legacy_generated_document_id=document_id,
+    )
     if snapshot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Документ не найден."])
     return GeneratedDocumentSnapshotResponse(**snapshot)

@@ -14,9 +14,12 @@ class BridgeWriteResult:
     case_document_id: int
     document_version_id: int
     generation_snapshot_id: int
+    generated_document_id: int
 
 
 class GenerationOrchestrator:
+    SYNTHETIC_GENERATED_DOCUMENT_ID_OFFSET = 1_000_000_000_000
+
     def __init__(self, store: UserStore):
         self.store = store
         self.backend = store.backend
@@ -102,8 +105,8 @@ class GenerationOrchestrator:
         payload: dict[str, Any],
         result_text: str,
         context_snapshot: dict[str, Any],
-        legacy_generated_document_id: int,
-    ) -> int:
+        legacy_generated_document_id: int | None,
+    ) -> tuple[int, int]:
         row = self._fetchone(
             conn,
             """
@@ -129,7 +132,19 @@ class GenerationOrchestrator:
                 legacy_generated_document_id,
             ),
         )
-        return int(row["id"])
+        snapshot_id = int(row["id"])
+        resolved_generated_document_id = int(legacy_generated_document_id or 0)
+        if resolved_generated_document_id <= 0:
+            resolved_generated_document_id = self.SYNTHETIC_GENERATED_DOCUMENT_ID_OFFSET + snapshot_id
+            conn.execute(
+                """
+                UPDATE generation_snapshots
+                SET legacy_generated_document_id = %s
+                WHERE id = %s
+                """,
+                (resolved_generated_document_id, snapshot_id),
+            )
+        return snapshot_id, resolved_generated_document_id
 
     def write_generation_bridge(
         self,
@@ -140,7 +155,7 @@ class GenerationOrchestrator:
         payload: dict[str, Any],
         result_text: str,
         context_snapshot: dict[str, Any],
-        legacy_generated_document_id: int,
+        legacy_generated_document_id: int | None,
     ) -> BridgeWriteResult:
         conn = self._connect()
         try:
@@ -151,7 +166,7 @@ class GenerationOrchestrator:
                 server_code=server_code,
                 document_kind=document_kind,
             )
-            snapshot_id = self._create_generation_snapshot(
+            snapshot_id, generated_document_id = self._create_generation_snapshot(
                 conn,
                 user_id=user_id,
                 server_code=server_code,
@@ -187,7 +202,7 @@ class GenerationOrchestrator:
                         {
                             "bbcode": result_text,
                             "payload": payload or {},
-                            "legacy_generated_document_id": legacy_generated_document_id,
+                            "legacy_generated_document_id": generated_document_id,
                         },
                         ensure_ascii=False,
                     ),
@@ -214,7 +229,7 @@ class GenerationOrchestrator:
                     )
                 WHERE id = %s
                 """,
-                (int(version_row["id"]), legacy_generated_document_id, case_document_id),
+                (int(version_row["id"]), generated_document_id, case_document_id),
             )
             conn.commit()
             return BridgeWriteResult(
@@ -222,6 +237,7 @@ class GenerationOrchestrator:
                 case_document_id=case_document_id,
                 document_version_id=int(version_row["id"]),
                 generation_snapshot_id=snapshot_id,
+                generated_document_id=generated_document_id,
             )
         except Exception:
             conn.rollback()

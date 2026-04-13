@@ -52,6 +52,7 @@ class WebApiTests(unittest.TestCase):
         self.prev_cases_flag_mode = os.environ.get("OGP_FEATURE_FLAG_CASES_V1_MODE")
         self.prev_documents_flag_mode = os.environ.get("OGP_FEATURE_FLAG_DOCUMENTS_V2_MODE")
         self.prev_validation_flag_mode = os.environ.get("OGP_FEATURE_FLAG_VALIDATION_GATE_V1_MODE")
+        self.prev_generation_legacy_write = os.environ.get("OGP_GENERATION_LEGACY_WRITE")
         os.environ["OGP_WEB_TEST_USERS"] = "tester"
         os.environ["OGP_GENERATION_BRIDGE_MODE"] = "shadow_write"
         os.environ["OGP_FEATURE_FLAG_CASES_V1_MODE"] = "all"
@@ -100,6 +101,10 @@ class WebApiTests(unittest.TestCase):
             os.environ.pop("OGP_FEATURE_FLAG_VALIDATION_GATE_V1_MODE", None)
         else:
             os.environ["OGP_FEATURE_FLAG_VALIDATION_GATE_V1_MODE"] = self.prev_validation_flag_mode
+        if self.prev_generation_legacy_write is None:
+            os.environ.pop("OGP_GENERATION_LEGACY_WRITE", None)
+        else:
+            os.environ["OGP_GENERATION_LEGACY_WRITE"] = self.prev_generation_legacy_write
         self.tmpdir.cleanup()
 
     def _extract_token(self, url: str) -> str:
@@ -341,7 +346,7 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(payload["target_type"], "document_version")
         self.assertEqual(int(payload["target_id"]), int(version_id))
 
-    def test_generate_shadow_write_failure_keeps_legacy_response(self):
+    def test_generate_bridge_failure_returns_error_without_legacy_fallback(self):
         self._register_verify_and_login("shadow_user", "shadow_user@example.com")
         self.client.put(
             "/api/profile",
@@ -357,38 +362,90 @@ class WebApiTests(unittest.TestCase):
         original = GenerationOrchestrator.write_generation_bridge
         try:
             GenerationOrchestrator.write_generation_bridge = lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
-            response = self.client.post(
-                "/api/generate",
-                json={
-                    "appeal_no": "1234",
-                    "org": "LSPD",
-                    "subject_names": "John Doe",
-                    "situation_description": "Описание",
-                    "violation_short": "Нарушение",
-                    "event_dt": "08.04.2026 14:30",
-                    "today_date": "08.04.2026",
-                    "victim": {
-                        "name": "Victim",
-                        "passport": "BB",
-                        "address": "Addr",
-                        "phone": "7654321",
-                        "discord": "victim",
-                        "passport_scan_url": "https://example.com/victim",
+            with self.assertRaises(RuntimeError):
+                self.client.post(
+                    "/api/generate",
+                    json={
+                        "appeal_no": "1234",
+                        "org": "LSPD",
+                        "subject_names": "John Doe",
+                        "situation_description": "Описание",
+                        "violation_short": "Нарушение",
+                        "event_dt": "08.04.2026 14:30",
+                        "today_date": "08.04.2026",
+                        "victim": {
+                            "name": "Victim",
+                            "passport": "BB",
+                            "address": "Addr",
+                            "phone": "7654321",
+                            "discord": "victim",
+                            "passport_scan_url": "https://example.com/victim",
+                        },
+                        "contract_url": "https://example.com/contract",
+                        "bar_request_url": "",
+                        "official_answer_url": "",
+                        "mail_notice_url": "",
+                        "arrest_record_url": "",
+                        "personnel_file_url": "",
+                        "video_fix_urls": [],
+                        "provided_video_urls": [],
                     },
-                    "contract_url": "https://example.com/contract",
-                    "bar_request_url": "",
-                    "official_answer_url": "",
-                    "mail_notice_url": "",
-                    "arrest_record_url": "",
-                    "personnel_file_url": "",
-                    "video_fix_urls": [],
-                    "provided_video_urls": [],
-                },
-            )
+                )
         finally:
             GenerationOrchestrator.write_generation_bridge = original
+
+    def test_generate_uses_new_domain_id_and_snapshot_lookup(self):
+        self._register_verify_and_login("new_only_user", "new_only_user@example.com")
+        self.client.put(
+            "/api/profile",
+            json={
+                "name": "Rep",
+                "passport": "AA",
+                "address": "Addr",
+                "phone": "1234567",
+                "discord": "disc",
+                "passport_scan_url": "https://example.com/rep",
+            },
+        )
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "appeal_no": "1234",
+                "org": "LSPD",
+                "subject_names": "John Doe",
+                "situation_description": "Описание",
+                "violation_short": "Нарушение",
+                "event_dt": "08.04.2026 14:30",
+                "today_date": "08.04.2026",
+                "victim": {
+                    "name": "Victim",
+                    "passport": "BB",
+                    "address": "Addr",
+                    "phone": "7654321",
+                    "discord": "victim",
+                    "passport_scan_url": "https://example.com/victim",
+                },
+                "contract_url": "https://example.com/contract",
+                "bar_request_url": "",
+                "official_answer_url": "",
+                "mail_notice_url": "",
+                "arrest_record_url": "",
+                "personnel_file_url": "",
+                "video_fix_urls": [],
+                "provided_video_urls": [],
+            },
+        )
         self.assertEqual(response.status_code, 200)
-        self.assertIsInstance(response.json().get("generated_document_id"), int)
+        generated_id = int(response.json()["generated_document_id"])
+        self.assertGreaterEqual(
+            generated_id,
+            GenerationOrchestrator.SYNTHETIC_GENERATED_DOCUMENT_ID_OFFSET + 1,
+        )
+        self.assertEqual(len(self.store.repository.backend._state["generated_documents"]), 0)
+
+        snapshot_response = self.client.get(f"/api/generated-documents/{generated_id}/snapshot")
+        self.assertEqual(snapshot_response.status_code, 200)
+        self.assertEqual(int(snapshot_response.json()["id"]), generated_id)
 
     def test_history_prefers_new_domain_and_deduplicates_legacy(self):
         self._register_verify_and_login("history_bridge_user", "history_bridge_user@example.com")
