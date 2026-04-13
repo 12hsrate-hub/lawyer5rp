@@ -1414,7 +1414,14 @@ def _request_law_qa_text(*, client, model_name: str, prompt: str, max_output_tok
     )
 
 
-def _retrieve_law_context(*, server_code: str, query: str, excerpt_chars: int, profile: str = "law_qa"):
+def _retrieve_law_context(
+    *,
+    server_code: str,
+    query: str,
+    excerpt_chars: int,
+    profile: str = "law_qa",
+    law_version_id: int | None = None,
+):
     return retrieve_law_context(
         server_code=server_code,
         query=query,
@@ -1427,6 +1434,7 @@ def _retrieve_law_context(*, server_code: str, query: str, excerpt_chars: int, p
         score_chunk_func=_score_law_chunk,
         extract_excerpt_func=_extract_relevant_law_excerpt,
         default_server_code=DEFAULT_SERVER_CODE,
+        law_version_id=law_version_id,
     )
 
 
@@ -1897,7 +1905,12 @@ def _rerank_suggest_matches(matches, query: str):
     return reranked
 
 
-def _build_suggest_forced_norms(*, server_code: str, query: str) -> tuple[dict[str, object], ...]:
+def _build_suggest_forced_norms(
+    *,
+    server_code: str,
+    query: str,
+    law_version_id: int | None = None,
+) -> tuple[dict[str, object], ...]:
     if not _suggest_is_mask_exception_case(query):
         return ()
     try:
@@ -1905,7 +1918,10 @@ def _build_suggest_forced_norms(*, server_code: str, query: str) -> tuple[dict[s
         bundle_path = str(getattr(server_config, "law_qa_bundle_path", "") or "").strip()
         if not bundle_path:
             return ()
-        chunks = load_law_bundle_chunks(server_code, bundle_path)
+        if law_version_id is None:
+            chunks = load_law_bundle_chunks(server_code, bundle_path)
+        else:
+            chunks = load_law_bundle_chunks(server_code, bundle_path, law_version_id)
     except Exception:
         return ()
 
@@ -1934,7 +1950,13 @@ def _build_suggest_forced_norms(*, server_code: str, query: str) -> tuple[dict[s
     return tuple(forced_norms)
 
 
-def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: int = 4) -> SuggestContextBuildResult:
+def _build_suggest_law_context(
+    *,
+    server_code: str,
+    question: str,
+    max_chunks: int = 4,
+    law_version_id: int | None = None,
+) -> SuggestContextBuildResult:
     retrieval_query = str(question or "").strip()
     if not retrieval_query:
         return SuggestContextBuildResult(
@@ -1957,6 +1979,7 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
         query=retrieval_query,
         excerpt_chars=900,
         profile="suggest",
+        law_version_id=law_version_id,
     )
     if not retrieval_result.indexed_chunk_count:
         return SuggestContextBuildResult(
@@ -1998,7 +2021,11 @@ def _build_suggest_law_context(*, server_code: str, question: str, max_chunks: i
     parts: list[str] = []
     selected_norms: list[dict[str, object]] = []
     seen_norm_keys: set[tuple[str, str, str]] = set()
-    forced_norms = _build_suggest_forced_norms(server_code=server_code, query=retrieval_query)
+    forced_norms = _build_suggest_forced_norms(
+        server_code=server_code,
+        query=retrieval_query,
+        law_version_id=law_version_id,
+    )
     for norm in forced_norms:
         key = (
             str(norm.get("source_url", "") or "").strip(),
@@ -2270,6 +2297,7 @@ def _answer_law_question_details_impl(payload: LawQaPayload) -> LawQaAnswerResul
         query=question,
         excerpt_chars=1800,
         profile="law_qa",
+        law_version_id=payload.law_version_id,
     )
     if not retrieval_result.is_configured:
         raise HTTPException(
@@ -2309,6 +2337,7 @@ def _answer_law_question_details_impl(payload: LawQaPayload) -> LawQaAnswerResul
                 query=question,
                 excerpt_chars=1800,
                 profile=shadow_profile,
+                law_version_id=payload.law_version_id,
             )
             shadow = build_shadow_comparison(
                 enabled=True,
@@ -2473,6 +2502,7 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
     suggest_context_raw = _build_suggest_law_context(
         server_code=server_code,
         question=suggest_query,
+        law_version_id=payload.law_version_id,
     )
     if isinstance(suggest_context_raw, SuggestContextBuildResult):
         suggest_context = suggest_context_raw
@@ -2516,12 +2546,14 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
                 query=suggest_query,
                 excerpt_chars=900,
                 profile="suggest",
+                law_version_id=payload.law_version_id,
             )
             shadow_result = _retrieve_law_context(
                 server_code=server_code,
                 query=suggest_query,
                 excerpt_chars=900,
                 profile=shadow_profile,
+                law_version_id=payload.law_version_id,
             )
             shadow = build_shadow_comparison(
                 enabled=True,

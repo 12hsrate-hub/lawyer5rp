@@ -13,11 +13,13 @@ for candidate in (ROOT_DIR, WEB_DIR):
 
 from ogp_web.server_config import get_server_config
 from ogp_web.services.law_bundle_service import build_law_bundle, resolve_law_bundle_path, write_law_bundle
+from ogp_web.services.law_version_service import import_law_snapshot
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build structured local law bundle for a configured server.")
     parser.add_argument("--server", default="blackberry", help="Server code, for example: blackberry")
+    parser.add_argument("--import-db", action="store_true", help="Persist generated snapshot as new DB law version.")
     args = parser.parse_args()
 
     server_config = get_server_config(args.server)
@@ -31,6 +33,13 @@ def main() -> int:
     print(f"Bundle: {bundle_path}")
     print(f"Sources processed: {len(sources)}")
     print(f"Articles stored: {len(articles)}")
+    if args.import_db:
+        version_id = import_law_snapshot(
+            server_code=server_config.code,
+            payload=bundle,
+            source_ref=str(bundle_path),
+        )
+        print(f"DB version imported: {version_id}")
     return 0
 
 

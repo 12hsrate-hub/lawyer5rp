@@ -5,6 +5,7 @@ from fastapi import Depends, HTTPException, Request, status
 from ogp_web.server_config import PermissionSet, build_permission_set, get_server_config
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore, get_default_admin_metrics_store
+from ogp_web.storage.admin_catalog_store import AdminCatalogStore, get_default_admin_catalog_store
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
 from ogp_web.storage.exam_answers_store import ExamAnswersStore, get_default_exam_answers_store
 from ogp_web.storage.user_store import UserStore, get_default_user_store
@@ -31,6 +32,13 @@ def get_admin_metrics_store(request: Request) -> AdminMetricsStore:
     return store
 
 
+
+
+def get_admin_catalog_store(request: Request) -> AdminCatalogStore:
+    store = getattr(request.app.state, "admin_catalog_store", None)
+    if store is None:
+        return get_default_admin_catalog_store()
+    return store
 def get_exam_import_task_registry(request: Request) -> ExamImportTaskRegistry:
     return request.app.state.exam_import_task_registry
 

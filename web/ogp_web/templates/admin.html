@@ -34,6 +34,11 @@
     <nav class="segmented-tabs segmented-tabs--section" aria-label="Режим админки">
       <a class="segmented-tabs__item{% if admin_focus != 'users' %} is-active{% endif %}" href="/admin/dashboard">Dashboard</a>
       <a class="segmented-tabs__item{% if admin_focus == 'users' %} is-active{% endif %}" href="/admin/users">Пользователи и аудит</a>
+      <a class="segmented-tabs__item{% if admin_focus == 'servers' %} is-active{% endif %}" href="/admin/servers">Servers</a>
+      <a class="segmented-tabs__item{% if admin_focus == 'laws' %} is-active{% endif %}" href="/admin/laws">Laws</a>
+      <a class="segmented-tabs__item{% if admin_focus == 'templates' %} is-active{% endif %}" href="/admin/templates">Templates</a>
+      <a class="segmented-tabs__item{% if admin_focus == 'features' %} is-active{% endif %}" href="/admin/features">Features</a>
+      <a class="segmented-tabs__item{% if admin_focus == 'rules' %} is-active{% endif %}" href="/admin/rules">Rules</a>
     </nav>
     <nav class="legal-section-jump" aria-label="Навигация по разделам админ-панели">
       <a class="legal-section-jump__link" href="#admin-section-filters">Фильтры</a>
@@ -455,6 +460,28 @@
         </div>
       </section>
       {% endif %}
+
+      <section class="legal-subcard admin-collapsible" data-collapsible-section="catalog-workflow">
+        <div class="legal-subcard__header admin-collapsible__header">
+          <div>
+            <span class="legal-field__label">Publication workflow (draft → review → publish → rollback)</span>
+            <p class="legal-section__description">CRUD для servers/laws/templates/features/rules с аудитом автора и diff.</p>
+          </div>
+          <button
+            type="button"
+            class="ghost-button admin-collapsible__toggle"
+            data-collapsible-target="admin-catalog-content"
+            data-expanded-default="true"
+            aria-expanded="true"
+            aria-controls="admin-catalog-content"
+          >
+            Скрыть
+          </button>
+        </div>
+        <div id="admin-catalog-content" class="admin-collapsible__content">
+          <div id="admin-catalog"></div>
+        </div>
+      </section>
     </section>
   </div>
 
