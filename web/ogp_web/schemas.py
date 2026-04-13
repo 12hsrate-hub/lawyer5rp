@@ -356,3 +356,16 @@ class ExamImportTaskStatus(BaseModel):
     error: str = ""
     progress: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
+
+
+class AdminCatalogItemPayload(BaseModel):
+    title: str = ""
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminCatalogWorkflowPayload(BaseModel):
+    target_state: str = ""
+
+
+class AdminCatalogRollbackPayload(BaseModel):
+    version: int = 0
