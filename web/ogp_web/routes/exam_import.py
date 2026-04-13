@@ -381,53 +381,19 @@ async def clear_exam_import_row_scores(
     store: ExamAnswersStore = Depends(get_exam_answers_store),
 ) -> ExamImportDetail:
     if not is_test_user(user.username):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["РўРµСЃС‚РѕРІР°СЏ СЃС‚СЂР°РЅРёС†Р° РЅРµРґРѕСЃС‚СѓРїРЅР°."])
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
     entry = await _run_sync_io(store.get_entry, source_row)
     if entry is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["РЎС‚СЂРѕРєР° РЅРµ РЅР°Р№РґРµРЅР° РІ Р±Р°Р·Рµ РёРјРїРѕСЂС‚Р°."])
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Строка не найдена в базе импорта."])
 
     cleared = await _run_sync_io(store.clear_scores_for_row, source_row)
     if not cleared:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["РЎС‚СЂРѕРєР° РЅРµ РЅР°Р№РґРµРЅР° РІ Р±Р°Р·Рµ РёРјРїРѕСЂС‚Р°."])
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Строка не найдена в базе импорта."])
 
     refreshed = await _run_sync_io(store.get_entry, source_row)
     if refreshed is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["РЎС‚СЂРѕРєР° РЅРµ РЅР°Р№РґРµРЅР° РІ Р±Р°Р·Рµ РёРјРїРѕСЂС‚Р°."])
-    if refreshed.get("exam_scores"):
-        _fill_question_g_fields(refreshed)
-    refreshed["exam_scores"] = [ExamAnswerScore(**item).model_dump() for item in (refreshed.get("exam_scores") or [])]
-    return ExamImportDetail(**_normalize_entry(refreshed))
-
-
-@router.delete("/api/exam-import/rows/{source_row}/scores/{column}", response_model=ExamImportDetail)
-async def delete_exam_import_row_score(
-    source_row: int,
-    column: str,
-    user: AuthUser = Depends(require_user),
-    store: ExamAnswersStore = Depends(get_exam_answers_store),
-) -> ExamImportDetail:
-    if not is_test_user(user.username):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["РўРµСЃС‚РѕРІР°СЏ СЃС‚СЂР°РЅРёС†Р° РЅРµРґРѕСЃС‚СѓРїРЅР°."])
-
-    normalized_column = str(column or "").strip().upper()
-    if not normalized_column:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ СЃС‚РѕР»Р±РµС† РґР»СЏ СѓРґР°Р»РµРЅРёСЏ."])
-
-    entry = await _run_sync_io(store.get_entry, source_row)
-    if entry is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["РЎС‚СЂРѕРєР° РЅРµ РЅР°Р№РґРµРЅР° РІ Р±Р°Р·Рµ РёРјРїРѕСЂС‚Р°."])
-
-    deleted = await _run_sync_io(store.delete_exam_score, source_row, normalized_column)
-    if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=[f"РћС†РµРЅРєР° РїРѕ СЃС‚РѕР»Р±С†Сѓ {normalized_column} РЅРµ РЅР°Р№РґРµРЅР°."],
-        )
-
-    refreshed = await _run_sync_io(store.get_entry, source_row)
-    if refreshed is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["РЎС‚СЂРѕРєР° РЅРµ РЅР°Р№РґРµРЅР° РІ Р±Р°Р·Рµ РёРјРїРѕСЂС‚Р°."])
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Строка не найдена в базе импорта."])
     if refreshed.get("exam_scores"):
         _fill_question_g_fields(refreshed)
     refreshed["exam_scores"] = [ExamAnswerScore(**item).model_dump() for item in (refreshed.get("exam_scores") or [])]

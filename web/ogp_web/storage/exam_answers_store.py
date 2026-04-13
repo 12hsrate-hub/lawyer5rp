@@ -986,26 +986,6 @@ class ExamAnswersStore:
             conn.commit()
         return int(getattr(row, "rowcount", 0) or 0) > 0
 
-    def delete_exam_score(self, source_row: int, column: str) -> bool:
-        normalized_column = str(column or "").strip().upper()
-        if int(source_row or 0) <= 0 or not normalized_column:
-            return False
-
-        entry = self.get_entry(source_row)
-        if entry is None:
-            return False
-
-        scores = list(entry.get("exam_scores") or [])
-        filtered_scores = [
-            item
-            for item in scores
-            if str(item.get("column") or "").strip().upper() != normalized_column
-        ]
-        if len(filtered_scores) == len(scores):
-            return False
-
-        self.save_exam_scores(source_row=source_row, scores=filtered_scores)
-        return True
 
 
 _DEFAULT_EXAM_ANSWERS_STORE: ExamAnswersStore | None = None

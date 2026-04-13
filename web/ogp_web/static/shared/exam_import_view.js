@@ -60,7 +60,7 @@ window.OGPExamImportView = {
   renderEmptyRows() {
     return `
       <tr>
-        <td colspan="11" class="legal-table__empty">База пока пустая. Первый импорт создаст записи из Google Sheets.</td>
+        <td colspan="10" class="legal-table__empty">База пока пустая. Первый импорт создаст записи из Google Sheets.</td>
       </tr>
     `;
   },
@@ -86,7 +86,6 @@ window.OGPExamImportView = {
             data-row-discord="${escapeHtml(String(entry.discord_tag ?? "").toLowerCase())}"
             data-row-passport="${escapeHtml(String(entry.passport ?? "").toLowerCase())}"
           >
-            <td>${escapeHtml(entry.source_row ?? "")}</td>
             <td>${escapeHtml(entry.submitted_at ?? "")}</td>
             <td>${escapeHtml(entry.full_name ?? "")}</td>
             <td>${escapeHtml(entry.discord_tag ?? "")}</td>
@@ -94,7 +93,7 @@ window.OGPExamImportView = {
             <td>${escapeHtml(entry.exam_format ?? "")}</td>
             <td>${escapeHtml(entry.answer_count ?? 0)}</td>
             <td class="exam-average-cell">${escapeHtml(this.formatAverage(entry))}</td>
-            <td><span class="exam-status-badge exam-status-badge--${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span></td>
+            <td class="exam-status-cell"><span class="exam-status-badge exam-status-badge--${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span></td>
             <td>${escapeHtml(entry.imported_at ?? "")}</td>
             <td>${this.renderRowActions(entry, escapeHtml)}</td>
           </tr>

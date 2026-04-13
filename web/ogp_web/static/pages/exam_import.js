@@ -241,14 +241,14 @@ function ensureInitialEntries() {
     const cells = Array.from(row.querySelectorAll("td"));
     return {
       source_row: Number(row.dataset.sourceRow || 0),
-      submitted_at: cells[1]?.textContent?.trim() || "",
-      full_name: cells[2]?.textContent?.trim() || "",
-      discord_tag: cells[3]?.textContent?.trim() || "",
-      passport: cells[4]?.textContent?.trim() || "",
-      exam_format: cells[5]?.textContent?.trim() || "",
-      answer_count: Number(cells[6]?.textContent?.trim() || 0),
-      average_score: parseAverageText(cells[7]?.textContent?.trim() || ""),
-      imported_at: cells[9]?.textContent?.trim() || "",
+      submitted_at: cells[0]?.textContent?.trim() || "",
+      full_name: cells[1]?.textContent?.trim() || "",
+      discord_tag: cells[2]?.textContent?.trim() || "",
+      passport: cells[3]?.textContent?.trim() || "",
+      exam_format: cells[4]?.textContent?.trim() || "",
+      answer_count: Number(cells[5]?.textContent?.trim() || 0),
+      average_score: parseAverageText(cells[6]?.textContent?.trim() || ""),
+      imported_at: cells[8]?.textContent?.trim() || "",
     };
   });
 }
@@ -307,7 +307,7 @@ function renderRows(entries) {
   if (!filtered.length && entries.length) {
     rowsHost.innerHTML = `
       <tr>
-        <td colspan="11" class="legal-table__empty">По текущим фильтрам строки не найдены. Снимите фильтры или измените запрос.</td>
+        <td colspan="10" class="legal-table__empty">По текущим фильтрам строки не найдены. Снимите фильтры или измените запрос.</td>
       </tr>
     `;
   } else {
@@ -356,7 +356,6 @@ function renderDetail(entry) {
   }
 
   detailMeta.innerHTML = [
-    ExamView.renderStatusCard("Строка", entry.source_row ?? "", escapeHtml),
     ExamView.renderStatusCard("Имя", entry.full_name ?? "", escapeHtml),
     ExamView.renderStatusCard("Формат", entry.exam_format ?? "", escapeHtml),
     ExamView.renderStatusCard("Средний балл", ExamView.formatAverage(entry), escapeHtml),
@@ -378,7 +377,7 @@ function updateRowAverage(sourceRow, averageText) {
   if (averageCell) {
     averageCell.textContent = averageText;
   }
-  const statusCell = row?.children?.[8];
+  const statusCell = row?.querySelector(".exam-status-cell");
   if (statusCell) {
     const average = parseAverageText(averageText);
     const entryStatus = ExamView.getEntryStatus({ average_score: average });

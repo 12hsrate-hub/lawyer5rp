@@ -1519,58 +1519,6 @@ class WebApiTests(unittest.TestCase):
             exam_import_route.score_exam_answers_batch_with_proxy_fallback = original_score
             exam_import_route.score_exam_answer_with_proxy_fallback = original_single_score
 
-    def test_exam_import_can_delete_single_score_from_row(self):
-        self._register_verify_and_login("tester", "tester-delete-score@example.com")
-        self.exam_store.import_rows(
-            [
-                {
-                    "source_row": 2,
-                    "submitted_at": "2026-04-08 12:00:00",
-                    "full_name": "Student One",
-                    "discord_tag": "student1",
-                    "passport": "111111",
-                    "exam_format": "Очнo",
-                    "payload": {
-                        "Вопрос F": "Ответ F",
-                        "Вопрос G": "Ответ G",
-                    },
-                    "answer_count": 2,
-                },
-            ]
-        )
-        self.exam_store.save_exam_scores(
-            2,
-            [
-                {
-                    "column": "F",
-                    "header": "Вопрос F",
-                    "user_answer": "Ответ F",
-                    "correct_answer": "Эталон F",
-                    "score": 60,
-                    "rationale": "ok",
-                },
-                {
-                    "column": "G",
-                    "header": "Вопрос G",
-                    "user_answer": "Ответ G",
-                    "correct_answer": "Эталон G",
-                    "score": 90,
-                    "rationale": "ok",
-                },
-            ],
-        )
-
-        response = self.client.delete("/api/exam-import/rows/2/scores/F")
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(payload["source_row"], 2)
-        self.assertEqual(len(payload["exam_scores"]), 1)
-        self.assertEqual(payload["exam_scores"][0]["column"], "G")
-        self.assertEqual(payload["average_score"], 90.0)
-
-        missing = self.client.delete("/api/exam-import/rows/2/scores/Z")
-        self.assertEqual(missing.status_code, 404)
-
     def test_exam_import_can_clear_all_scores_for_row(self):
         self._register_verify_and_login("tester", "tester-clear-scores@example.com")
         self.exam_store.import_rows(
