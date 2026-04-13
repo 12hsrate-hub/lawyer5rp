@@ -72,7 +72,7 @@ class DocumentRepository:
     def list_document_versions(self, *, document_id: int):
         return self._fetchall(
             """
-            SELECT id, document_id, version_number, CAST(content_json AS TEXT) AS content_json, created_by, created_at
+            SELECT id, document_id, version_number, CAST(content_json AS TEXT) AS content_json, created_by, generation_snapshot_id, created_at
             FROM document_versions
             WHERE document_id = %s
             ORDER BY version_number ASC
@@ -80,7 +80,7 @@ class DocumentRepository:
             (document_id,),
         )
 
-    def create_document_version(self, *, document_id: int, content_json: Any, created_by: int):
+    def create_document_version(self, *, document_id: int, content_json: Any, created_by: int, generation_snapshot_id: int | None = None):
         conn = self._connect()
         try:
             last = conn.execute(
@@ -96,11 +96,11 @@ class DocumentRepository:
             next_version = int(last["version_number"]) + 1 if last else 1
             row = conn.execute(
                 """
-                INSERT INTO document_versions (document_id, version_number, content_json, created_by)
-                VALUES (%s, %s, %s::jsonb, %s)
-                RETURNING id, document_id, version_number, CAST(content_json AS TEXT) AS content_json, created_by, created_at
+                INSERT INTO document_versions (document_id, version_number, content_json, created_by, generation_snapshot_id)
+                VALUES (%s, %s, %s::jsonb, %s, %s)
+                RETURNING id, document_id, version_number, CAST(content_json AS TEXT) AS content_json, created_by, generation_snapshot_id, created_at
                 """,
-                (document_id, next_version, json.dumps(content_json, ensure_ascii=False), created_by),
+                (document_id, next_version, json.dumps(content_json, ensure_ascii=False), created_by, generation_snapshot_id),
             ).fetchone()
             conn.execute(
                 """
