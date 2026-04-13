@@ -80,6 +80,20 @@ function renderCatalog(payload) {
   activeCatalogEntity = entityType;
   const items = Array.isArray(payload?.items) ? payload.items : [];
   const audit = Array.isArray(payload?.audit) ? payload.audit : [];
+  const entityLabels = {
+    servers: "Серверы",
+    laws: "Законы",
+    templates: "Шаблоны",
+    features: "Функции",
+    rules: "Правила",
+  };
+  const entityDescriptions = {
+    servers: "Серверные профили и базовые настройки окружения.",
+    laws: "Правовые источники и наборы норм, на которые опирается система.",
+    templates: "Шаблоны документов и заготовки для генерации.",
+    features: "Переключатели функций и rollout-настройки.",
+    rules: "Правила публикации, редактирования и governance-политики.",
+  };
   const auditByEntityId = new Map();
   audit.forEach((row) => {
     const entityId = String(row?.entity_id || "").trim();
@@ -90,18 +104,19 @@ function renderCatalog(payload) {
   });
   catalogHost.innerHTML = `
     <div class="admin-section-toolbar">
-      <label class="legal-field"><span class="legal-field__label">Entity</span>
+      <label class="legal-field"><span class="legal-field__label">Раздел</span>
         <select id="catalog-entity">
           ${["servers", "laws", "templates", "features", "rules"]
-            .map((name) => `<option value="${name}" ${name === entityType ? "selected" : ""}>${name}</option>`)
+            .map((name) => `<option value="${name}" ${name === entityType ? "selected" : ""}>${entityLabels[name]}</option>`)
             .join("")}
         </select>
       </label>
-      <button type="button" id="catalog-create" class="primary-button">Create</button>
+      <button type="button" id="catalog-create" class="primary-button">Создать</button>
     </div>
+    <p class="legal-section__description">${escapeHtml(entityDescriptions[entityType] || "")}</p>
     <div class="legal-table-wrap">
       <table class="legal-table">
-        <thead><tr><th>Title</th><th>State</th><th>Version</th><th>Author</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Название</th><th>Статус</th><th>Версия</th><th>Автор</th><th>Действия</th></tr></thead>
         <tbody>
           ${items.length
             ? items
@@ -120,10 +135,10 @@ function renderCatalog(payload) {
                 <td>${escapeHtml(String(version))}</td>
                 <td>${escapeHtml(author)}</td>
                 <td>
-                  <button type="button" class="ghost-button" data-catalog-edit="${escapeHtml(String(item.id || ""))}">Edit</button>
-                  <button type="button" class="ghost-button" data-catalog-next="${escapeHtml(String(item.id || ""))}">Next</button>
-                  <button type="button" class="ghost-button" data-catalog-rollback="${escapeHtml(String(item.id || ""))}">Rollback</button>
-                  <button type="button" class="ghost-button" data-catalog-delete="${escapeHtml(String(item.id || ""))}">Delete</button>
+                  <button type="button" class="ghost-button" data-catalog-edit="${escapeHtml(String(item.id || ""))}">Изменить</button>
+                  <button type="button" class="ghost-button" data-catalog-next="${escapeHtml(String(item.id || ""))}">Далее</button>
+                  <button type="button" class="ghost-button" data-catalog-rollback="${escapeHtml(String(item.id || ""))}">Откат</button>
+                  <button type="button" class="ghost-button" data-catalog-delete="${escapeHtml(String(item.id || ""))}">Удалить</button>
                 </td>
               </tr>
             `;
@@ -133,7 +148,7 @@ function renderCatalog(payload) {
         </tbody>
       </table>
     </div>
-    <p class="legal-section__description">Audit log (author + diff):</p>
+    <p class="legal-section__description">Журнал изменений (автор и diff):</p>
     <pre class="legal-field__hint">${escapeHtml(audit.slice(0, 8).map((row) => `${row.created_at} ${row.author} ${row.action} ${row.workflow_from || ""}->${row.workflow_to || ""}\n${row.diff || ""}`).join("\n\n"))}</pre>
   `;
 }
