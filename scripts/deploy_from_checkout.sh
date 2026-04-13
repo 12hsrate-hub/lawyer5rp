@@ -96,6 +96,11 @@ chown -R "${RUN_AS_USER}:${RUN_AS_USER}" "${APP_ROOT}/config" "${APP_ROOT}/share
 
 "${PYTHON_BIN}" "${APP_ROOT}/scripts/run_db_migrations.py" --backend postgres
 
+if [[ -f "${APP_ROOT}/scripts/import_law_snapshot.py" ]]; then
+  echo "Ensuring active DB law snapshot for blackberry..."
+  "${PYTHON_BIN}" "${APP_ROOT}/scripts/import_law_snapshot.py" --server blackberry --skip-if-current
+fi
+
 if [[ -f "${APP_ROOT}/scripts/seed_admin_catalog_workflow.py" ]]; then
   echo "Seeding admin catalog workflow..."
   "${PYTHON_BIN}" "${APP_ROOT}/scripts/seed_admin_catalog_workflow.py"

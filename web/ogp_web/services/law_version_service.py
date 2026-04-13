@@ -179,6 +179,10 @@ def import_law_snapshot(
     return law_version_id
 
 
+def build_law_snapshot_fingerprint(*, server_code: str, payload: dict[str, Any]) -> str:
+    return _build_snapshot_fingerprint(server_code=server_code, payload=payload)
+
+
 def _build_snapshot_fingerprint(*, server_code: str, payload: dict[str, Any]) -> str:
     digest_payload = json.dumps(
         {
