@@ -493,11 +493,25 @@ class AdminMetricsStore:
                 COALESCE(SUM(CASE WHEN event_type = 'ai_exam_scoring' THEN COALESCE(NULLIF(meta_json->>'retry_single_items', ''), '0')::bigint ELSE 0 END), 0) AS ai_exam_retry_single_items_total,
                 COALESCE(SUM(CASE WHEN event_type = 'ai_exam_scoring' THEN COALESCE(NULLIF(meta_json->>'retry_single_calls', ''), '0')::bigint ELSE 0 END), 0) AS ai_exam_retry_single_calls_total,
                 percentile_cont(0.5) WITHIN GROUP (
-                    ORDER BY NULLIF(meta_json->>'scoring_ms', '')::numeric
-                ) FILTER (WHERE event_type = 'ai_exam_scoring' AND NULLIF(meta_json->>'scoring_ms', '') IS NOT NULL) AS ai_exam_scoring_ms_p50,
+                    ORDER BY CASE
+                        WHEN COALESCE(meta_json->>'scoring_ms', '') ~ '^[0-9]+(?:\\.[0-9]+)?$'
+                            THEN (meta_json->>'scoring_ms')::numeric
+                        ELSE NULL
+                    END
+                ) FILTER (
+                    WHERE event_type = 'ai_exam_scoring'
+                      AND COALESCE(meta_json->>'scoring_ms', '') ~ '^[0-9]+(?:\\.[0-9]+)?$'
+                ) AS ai_exam_scoring_ms_p50,
                 percentile_cont(0.95) WITHIN GROUP (
-                    ORDER BY NULLIF(meta_json->>'scoring_ms', '')::numeric
-                ) FILTER (WHERE event_type = 'ai_exam_scoring' AND NULLIF(meta_json->>'scoring_ms', '') IS NOT NULL) AS ai_exam_scoring_ms_p95
+                    ORDER BY CASE
+                        WHEN COALESCE(meta_json->>'scoring_ms', '') ~ '^[0-9]+(?:\\.[0-9]+)?$'
+                            THEN (meta_json->>'scoring_ms')::numeric
+                        ELSE NULL
+                    END
+                ) FILTER (
+                    WHERE event_type = 'ai_exam_scoring'
+                      AND COALESCE(meta_json->>'scoring_ms', '') ~ '^[0-9]+(?:\\.[0-9]+)?$'
+                ) AS ai_exam_scoring_ms_p95
             FROM scoped_events
             """,
             (scoped_window_hours, scoped_row_limit),

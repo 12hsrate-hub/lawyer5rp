@@ -491,6 +491,19 @@ class FakeAdminMetricsConnection:
     def __init__(self, state):
         self.state = state
 
+    @staticmethod
+    def _percentile(values, quantile):
+        ordered = sorted(int(item) for item in values if item is not None)
+        if not ordered:
+            return None
+        if len(ordered) == 1:
+            return ordered[0]
+        index = (len(ordered) - 1) * quantile
+        lower = int(index)
+        upper = min(lower + 1, len(ordered) - 1)
+        weight = index - lower
+        return int(round((1 - weight) * ordered[lower] + weight * ordered[upper]))
+
     def commit(self) -> None:
         return None
 
@@ -520,7 +533,7 @@ class FakeAdminMetricsConnection:
             return self._insert_event(params)
         if normalized.startswith("SELECT COUNT(*) AS request_count, SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_count, COALESCE(SUM(CASE WHEN event_type = 'api_request' THEN 1 ELSE 0 END), 0) AS api_requests_total,"):
             return self._performance_totals(params)
-        if normalized.startswith("SELECT path, duration_ms, status_code FROM metric_events WHERE event_type = 'api_request' AND path IS NOT NULL AND created_at >= %s"):
+        if normalized.startswith("SELECT path, COUNT(*) AS count, SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_count, COALESCE(AVG(duration_ms), 0) AS avg_ms,"):
             return self._performance_endpoint_rows(params)
         if normalized == "SELECT COUNT(*) AS total FROM metric_events WHERE event_type = 'api_request' AND username = %s AND created_at >= NOW() - INTERVAL '1 day'":
             return self._count_user_api_requests_last_24h(params)
@@ -532,7 +545,7 @@ class FakeAdminMetricsConnection:
             return self._recent_events(normalized, params)
         if normalized.startswith("SELECT username, MAX(server_code) AS server_code,"):
             return self._user_metrics()
-        if normalized.startswith("SELECT event_type, meta_json FROM metric_events WHERE event_type IN"):
+        if normalized.startswith("WITH scoped_events AS ( SELECT event_type, meta_json FROM metric_events WHERE event_type IN"):
             return self._ai_exam_stats()
         if normalized.startswith("SELECT created_at, username, server_code, event_type, path, status_code, meta_json FROM metric_events WHERE event_type IN"):
             return self._latest_event(params)
@@ -673,12 +686,40 @@ class FakeAdminMetricsConnection:
         return FakeCursor(rowcount=len(grouped), rows=list(grouped.values()))
 
     def _ai_exam_stats(self):
-        rows = [
-            {"event_type": item["event_type"], "meta_json": item["meta_json"]}
+        scoring_events = [
+            item
             for item in self.state["metric_events"]
             if item["event_type"] in {"ai_exam_scoring", "exam_import_score_failures", "exam_import_row_score_error"}
         ]
-        return FakeCursor(rowcount=len(rows), rows=rows)
+        scoring_ms_values: list[int] = []
+        for item in scoring_events:
+            if item["event_type"] != "ai_exam_scoring":
+                continue
+            raw_scoring_ms = (item.get("meta_json") or {}).get("scoring_ms")
+            try:
+                if raw_scoring_ms is None:
+                    continue
+                scoring_ms_values.append(int(raw_scoring_ms))
+            except (TypeError, ValueError):
+                continue
+        row = {
+            "ai_exam_scoring_total": sum(1 for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_scoring_rows": sum(int((item.get("meta_json") or {}).get("rows_scored") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_scoring_answers": sum(int((item.get("meta_json") or {}).get("answer_count") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_heuristic_total": sum(int((item.get("meta_json") or {}).get("heuristic_count") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_cache_total": sum(int((item.get("meta_json") or {}).get("cache_hit_count") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_llm_total": sum(int((item.get("meta_json") or {}).get("llm_count") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_llm_calls_total": sum(int((item.get("meta_json") or {}).get("llm_calls") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_failure_total": sum(1 for item in scoring_events if item["event_type"] != "ai_exam_scoring"),
+            "ai_exam_invalid_batch_items_total": sum(int((item.get("meta_json") or {}).get("invalid_batch_item_count") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_retry_batch_items_total": sum(int((item.get("meta_json") or {}).get("retry_batch_items") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_retry_batch_calls_total": sum(int((item.get("meta_json") or {}).get("retry_batch_calls") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_retry_single_items_total": sum(int((item.get("meta_json") or {}).get("retry_single_items") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_retry_single_calls_total": sum(int((item.get("meta_json") or {}).get("retry_single_calls") or 0) for item in scoring_events if item["event_type"] == "ai_exam_scoring"),
+            "ai_exam_scoring_ms_p50": self._percentile(scoring_ms_values, 0.5),
+            "ai_exam_scoring_ms_p95": self._percentile(scoring_ms_values, 0.95),
+        }
+        return FakeCursor(rowcount=1, one=row)
 
     def _latest_event(self, params):
         event_types = set(params)
@@ -716,7 +757,7 @@ class FakeAdminMetricsConnection:
         return FakeCursor(rowcount=1, one={"total": total})
 
     def _performance_totals(self, params):
-        threshold = datetime.fromisoformat(str(params[0]).replace("Z", "+00:00")).astimezone(timezone.utc)
+        threshold = datetime.now(timezone.utc) - timedelta(minutes=int(params[0]))
         events = []
         for item in self.state["metric_events"]:
             if item["event_type"] != "api_request":
@@ -740,6 +781,8 @@ class FakeAdminMetricsConnection:
                 "error_count": error_count,
                 "api_requests_total": request_count,
                 "avg_duration_ms": avg_duration_ms,
+                "p50_duration_ms": self._percentile([int(item["duration_ms"]) for item in events if item.get("duration_ms") is not None], 0.5),
+                "p95_duration_ms": self._percentile([int(item["duration_ms"]) for item in events if item.get("duration_ms") is not None], 0.95),
                 "request_bytes": sum(int(item.get("request_bytes") or 0) for item in events),
                 "response_bytes": sum(int(item.get("response_bytes") or 0) for item in events),
                 "resource_units": sum(int(item.get("resource_units") or 0) for item in events),
@@ -747,8 +790,9 @@ class FakeAdminMetricsConnection:
         )
 
     def _performance_endpoint_rows(self, params):
-        threshold = datetime.fromisoformat(str(params[0]).replace("Z", "+00:00")).astimezone(timezone.utc)
-        rows = []
+        threshold = datetime.now(timezone.utc) - timedelta(minutes=int(params[0]))
+        endpoint_limit = int(params[1])
+        grouped: dict[str, dict[str, object]] = {}
         for item in self.state["metric_events"]:
             if item["event_type"] != "api_request" or not item.get("path"):
                 continue
@@ -757,11 +801,27 @@ class FakeAdminMetricsConnection:
                 created_at = created_at.replace(tzinfo=timezone.utc)
             if created_at.astimezone(timezone.utc) < threshold:
                 continue
+            entry = grouped.setdefault(
+                str(item["path"]),
+                {"path": str(item["path"]), "count": 0, "error_count": 0, "durations": []},
+            )
+            entry["count"] = int(entry["count"]) + 1
+            entry["error_count"] = int(entry["error_count"]) + (1 if int(item.get("status_code") or 0) >= 400 else 0)
+            if item.get("duration_ms") is not None:
+                durations = entry["durations"]
+                assert isinstance(durations, list)
+                durations.append(int(item["duration_ms"]))
+        rows = []
+        for entry in sorted(grouped.values(), key=lambda item: (-int(item["count"]), str(item["path"])) )[:endpoint_limit]:
+            durations = [int(item) for item in entry["durations"]]
             rows.append(
                 {
-                    "path": item["path"],
-                    "duration_ms": item["duration_ms"],
-                    "status_code": item["status_code"],
+                    "path": entry["path"],
+                    "count": int(entry["count"]),
+                    "error_count": int(entry["error_count"]),
+                    "avg_ms": (sum(durations) / len(durations)) if durations else 0,
+                    "p50_ms": self._percentile(durations, 0.5),
+                    "p95_ms": self._percentile(durations, 0.95),
                 }
             )
         return FakeCursor(rowcount=len(rows), rows=rows)
