@@ -5,6 +5,7 @@ import threading
 import sys
 import time
 import unittest
+from datetime import datetime, UTC
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -435,6 +436,27 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(history.status_code, 200)
         ids = [int(item["id"]) for item in history.json()["items"]]
         self.assertEqual(len(ids), len(set(ids)))
+
+    def test_generated_documents_history_normalizes_datetime_created_at(self):
+        self._register_verify_and_login("history_datetime_user", "history_datetime@example.com")
+        original = GenerationOrchestrator.list_history
+        try:
+            GenerationOrchestrator.list_history = lambda *args, **kwargs: [
+                {
+                    "id": 42,
+                    "document_kind": "complaint",
+                    "result_text": "text",
+                    "created_at": datetime(2026, 4, 14, 1, 0, tzinfo=UTC),
+                    "source": "new_domain",
+                }
+            ]
+            response = self.client.get("/api/generated-documents/history")
+        finally:
+            GenerationOrchestrator.list_history = original
+        self.assertEqual(response.status_code, 200)
+        item = response.json()["items"][0]
+        self.assertIsInstance(item["created_at"], str)
+        self.assertTrue(item["created_at"].startswith("2026-04-14T01:00:00"))
 
     def test_cases_flow_creates_events_and_append_only_versions(self):
         self._register_verify_and_login("cases_user", "cases_user@example.com")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from functools import partial
 from threading import BoundedSemaphore, Lock
 from time import monotonic
@@ -53,6 +54,17 @@ from ogp_web.storage.validation_repository import ValidationRepository
 
 
 router = APIRouter(tags=["complaint"])
+
+
+def _normalize_history_items(items: list[dict[str, object]]) -> list[dict[str, object]]:
+    normalized: list[dict[str, object]] = []
+    for item in items:
+        row = dict(item)
+        created_at = row.get("created_at")
+        if isinstance(created_at, datetime):
+            row["created_at"] = created_at.isoformat()
+        normalized.append(row)
+    return normalized
 
 
 def _env_positive_int(name: str, default: int) -> int:
@@ -436,6 +448,7 @@ async def generated_documents_history(
         if int(item.get("id") or 0) not in bridged_legacy_ids
     ]
     items = (new_domain_items + fallback_items)[: max(1, min(200, int(limit or 30)))]
+    items = _normalize_history_items(items)
     return GeneratedDocumentHistoryResponse(items=items)
 
 
