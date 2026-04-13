@@ -48,12 +48,13 @@ def _load_codes_from_config_repo() -> set[str]:
 
 
 def _load_server_rows_from_db() -> list[dict[str, object]]:
-    backend = create_database_backend()
-    conn = backend.connect()
     try:
-        rows = conn.execute(
-            "SELECT code, title, is_active FROM servers"
-        ).fetchall()
+        backend = create_database_backend()
+        conn = backend.connect()
+    except Exception:
+        return []
+    try:
+        rows = conn.execute("SELECT code, title, is_active FROM servers").fetchall()
         return [dict(row) for row in rows]
     except Exception:
         return []

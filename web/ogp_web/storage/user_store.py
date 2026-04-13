@@ -122,7 +122,14 @@ class UserStore:
         return normalized or DEFAULT_SERVER_CODE
 
     def _resolve_user_server_code(self, username: str, preferred_server_code: str | None = None) -> str:
-        normalized_username = _normalize_username(username)
+        raw_username = str(username or "").strip().lower()
+        if "@" in raw_username:
+            row = self._fetch_user_by_email(raw_username, "username")
+            if row is None:
+                raise AuthError("Пользователь не найден.")
+            normalized_username = str(row["username"] or "").strip().lower()
+        else:
+            normalized_username = _normalize_username(raw_username)
         selected = self._normalize_server_context(preferred_server_code)
         row = self._pg_fetchone(
             """
@@ -537,13 +544,14 @@ class UserStore:
     def reset_password(self, token: str, new_password: str) -> AuthUser:
         return self._pg_reset_password(token, new_password)
 
-    def get_representative_profile(self, username: str, *, server_code: str) -> dict[str, str]:
-        row = self._fetch_user_by_username(username, "representative_profile", server_code=server_code)
+    def get_representative_profile(self, username: str, *, server_code: str | None = None) -> dict[str, str]:
+        resolved_server = self._normalize_server_context(server_code)
+        row = self._fetch_user_by_username(username, "representative_profile", server_code=resolved_server)
         if row is None:
             raise AuthError("Пользователь не найден.")
         return load_profile_json(str(row["representative_profile"] or ""), REPRESENTATIVE_PROFILE_DEFAULTS)
 
-    def save_representative_profile(self, username: str, profile: dict[str, Any], *, server_code: str) -> dict[str, str]:
+    def save_representative_profile(self, username: str, profile: dict[str, Any], *, server_code: str | None = None) -> dict[str, str]:
         normalized = _normalize_username(username)
         sanitized = {
             key: str(profile.get(key, "") or "").strip()
@@ -561,11 +569,12 @@ class UserStore:
     def change_password(self, username: str, current_password: str, new_password: str) -> AuthUser:
         return self._pg_change_password(username, current_password, new_password)
 
-    def get_complaint_draft(self, username: str, *, server_code: str) -> dict[str, Any]:
+    def get_complaint_draft(self, username: str, *, server_code: str | None = None) -> dict[str, Any]:
+        resolved_server = self._normalize_server_context(server_code)
         row = self._fetch_user_by_username(
             username,
             "complaint_draft_json, complaint_draft_updated_at",
-            server_code=server_code,
+            server_code=resolved_server,
         )
         if row is None:
             raise AuthError("Пользователь не найден.")
@@ -583,7 +592,7 @@ class UserStore:
             "updated_at": str(row["complaint_draft_updated_at"] or ""),
         }
 
-    def save_complaint_draft(self, username: str, draft: dict[str, Any], *, server_code: str) -> dict[str, Any]:
+    def save_complaint_draft(self, username: str, draft: dict[str, Any], *, server_code: str | None = None) -> dict[str, Any]:
         normalized = _normalize_username(username)
         normalized_server = self._normalize_server_context(server_code)
         if not isinstance(draft, dict):
@@ -603,7 +612,7 @@ class UserStore:
             raise AuthError("Пользователь не найден.")
         return self.get_complaint_draft(normalized, server_code=normalized_server)
 
-    def clear_complaint_draft(self, username: str, *, server_code: str) -> None:
+    def clear_complaint_draft(self, username: str, *, server_code: str | None = None) -> None:
         normalized = _normalize_username(username)
         normalized_server = self._normalize_server_context(server_code)
         rowcount = self._pg_execute(
