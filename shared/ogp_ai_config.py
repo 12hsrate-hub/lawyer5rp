@@ -95,7 +95,7 @@ def load_openai_config() -> OpenAIConfig:
     return OpenAIConfig(
         text_model=os.getenv("OPENAI_TEXT_MODEL", "gpt-5.4-mini").strip() or "gpt-5.4-mini",
         ocr_model=os.getenv("OPENAI_OCR_MODEL", "gpt-5.4-mini").strip() or "gpt-5.4-mini",
-        exam_scoring_model=os.getenv("OPENAI_EXAM_SCORING_MODEL", "gpt-5-mini").strip() or "gpt-5-mini",
+        exam_scoring_model=os.getenv("OPENAI_EXAM_SCORING_MODEL", "gpt-5.4-mini").strip() or "gpt-5.4-mini",
         exam_scoring_prompt_mode=_resolve_exam_scoring_prompt_mode(os.getenv("OPENAI_EXAM_SCORING_PROMPT_MODE", "")),
         timeout_seconds=float(os.getenv("OPENAI_TIMEOUT_SECONDS", "120").strip() or "120"),
         connect_timeout_seconds=float(os.getenv("OPENAI_CONNECT_TIMEOUT_SECONDS", "30").strip() or "30"),
