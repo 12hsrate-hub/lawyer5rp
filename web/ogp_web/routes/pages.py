@@ -107,7 +107,11 @@ async def verify_email_page(
             message = "Email подтвержден. Теперь можно войти в аккаунт."
         except AuthError as exc:
             message = str(exc)
-    server_code = store.get_server_code(username) if username else getattr(request.app.state.server_config, "code", "blackberry")
+    server_code = (
+        store.get_server_code(username)
+        if username
+        else getattr(request.app.state.server_config, "code", "blackberry")
+    )
     server_config = get_server_config(server_code)
     return templates.TemplateResponse(
         request,

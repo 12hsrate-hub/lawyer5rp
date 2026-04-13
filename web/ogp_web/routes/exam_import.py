@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import logging
+from functools import partial
+from threading import Lock
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.concurrency import run_in_threadpool
 
 from ogp_web.dependencies import get_admin_metrics_store, get_exam_answers_store, get_exam_import_task_registry
 from ogp_web.env import is_test_user
@@ -22,6 +25,11 @@ from shared.ogp_ai import score_exam_answer_with_proxy_fallback, score_exam_answ
 router = APIRouter(tags=["exam-import"])
 logger = logging.getLogger(__name__)
 _SERVICE_SCORE_EXAM_ANSWERS_IF_NEEDED = exam_import_service.score_exam_answers_if_needed
+_SCORING_WRAPPER_LOCK = Lock()
+
+
+async def _run_sync_io(func, /, *args, **kwargs):
+    return await run_in_threadpool(partial(func, *args, **kwargs))
 
 
 def _fill_question_g_fields(entry: dict[str, object]) -> None:
@@ -88,25 +96,26 @@ def _build_bulk_scoring_result(
     metrics_store: AdminMetricsStore,
     progress_callback=None,
 ) -> dict[str, object]:
-    original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
-    original_single = exam_import_service.score_exam_answer_with_proxy_fallback
-    original_score = exam_import_service.score_exam_answers_if_needed
-    exam_import_service.score_exam_answers_batch_with_proxy_fallback = score_exam_answers_batch_with_proxy_fallback
-    exam_import_service.score_exam_answer_with_proxy_fallback = score_exam_answer_with_proxy_fallback
-    exam_import_service.score_exam_answers_if_needed = lambda store_arg, entry_arg, **_: _score_exam_answers_if_needed(store_arg, entry_arg)
-    try:
-        return exam_import_service.build_bulk_scoring_result(
-            user=user,
-            store=store,
-            metrics_store=metrics_store,
-            exam_sheet_url=EXAM_SHEET_URL,
-            build_exam_score_items=build_exam_score_items,
-            progress_callback=progress_callback,
-        )
-    finally:
-        exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
-        exam_import_service.score_exam_answer_with_proxy_fallback = original_single
-        exam_import_service.score_exam_answers_if_needed = original_score
+    with _SCORING_WRAPPER_LOCK:
+        original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
+        original_single = exam_import_service.score_exam_answer_with_proxy_fallback
+        original_score = exam_import_service.score_exam_answers_if_needed
+        exam_import_service.score_exam_answers_batch_with_proxy_fallback = score_exam_answers_batch_with_proxy_fallback
+        exam_import_service.score_exam_answer_with_proxy_fallback = score_exam_answer_with_proxy_fallback
+        exam_import_service.score_exam_answers_if_needed = lambda store_arg, entry_arg, **_: _score_exam_answers_if_needed(store_arg, entry_arg)
+        try:
+            return exam_import_service.build_bulk_scoring_result(
+                user=user,
+                store=store,
+                metrics_store=metrics_store,
+                exam_sheet_url=EXAM_SHEET_URL,
+                build_exam_score_items=build_exam_score_items,
+                progress_callback=progress_callback,
+            )
+        finally:
+            exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
+            exam_import_service.score_exam_answer_with_proxy_fallback = original_single
+            exam_import_service.score_exam_answers_if_needed = original_score
 
 
 def _build_row_scoring_result(
@@ -117,25 +126,26 @@ def _build_row_scoring_result(
     metrics_store: AdminMetricsStore,
     force_rescore: bool = False,
 ) -> dict[str, object]:
-    original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
-    original_single = exam_import_service.score_exam_answer_with_proxy_fallback
-    original_score = exam_import_service.score_exam_answers_if_needed
-    exam_import_service.score_exam_answers_batch_with_proxy_fallback = score_exam_answers_batch_with_proxy_fallback
-    exam_import_service.score_exam_answer_with_proxy_fallback = score_exam_answer_with_proxy_fallback
-    exam_import_service.score_exam_answers_if_needed = lambda store_arg, entry_arg, **_: _score_exam_answers_if_needed(store_arg, entry_arg)
-    try:
-        return exam_import_service.build_row_scoring_result(
-            source_row=source_row,
-            user=user,
-            store=store,
-            metrics_store=metrics_store,
-            build_exam_score_items=build_exam_score_items,
-            force_rescore=force_rescore,
-        )
-    finally:
-        exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
-        exam_import_service.score_exam_answer_with_proxy_fallback = original_single
-        exam_import_service.score_exam_answers_if_needed = original_score
+    with _SCORING_WRAPPER_LOCK:
+        original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
+        original_single = exam_import_service.score_exam_answer_with_proxy_fallback
+        original_score = exam_import_service.score_exam_answers_if_needed
+        exam_import_service.score_exam_answers_batch_with_proxy_fallback = score_exam_answers_batch_with_proxy_fallback
+        exam_import_service.score_exam_answer_with_proxy_fallback = score_exam_answer_with_proxy_fallback
+        exam_import_service.score_exam_answers_if_needed = lambda store_arg, entry_arg, **_: _score_exam_answers_if_needed(store_arg, entry_arg)
+        try:
+            return exam_import_service.build_row_scoring_result(
+                source_row=source_row,
+                user=user,
+                store=store,
+                metrics_store=metrics_store,
+                build_exam_score_items=build_exam_score_items,
+                force_rescore=force_rescore,
+            )
+        finally:
+            exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
+            exam_import_service.score_exam_answer_with_proxy_fallback = original_single
+            exam_import_service.score_exam_answers_if_needed = original_score
 
 
 def _build_failed_rescoring_result(
@@ -145,25 +155,26 @@ def _build_failed_rescoring_result(
     metrics_store: AdminMetricsStore,
     progress_callback=None,
 ) -> dict[str, object]:
-    original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
-    original_single = exam_import_service.score_exam_answer_with_proxy_fallback
-    original_score = exam_import_service.score_exam_answers_if_needed
-    exam_import_service.score_exam_answers_batch_with_proxy_fallback = score_exam_answers_batch_with_proxy_fallback
-    exam_import_service.score_exam_answer_with_proxy_fallback = score_exam_answer_with_proxy_fallback
-    exam_import_service.score_exam_answers_if_needed = lambda store_arg, entry_arg, **_: _score_exam_answers_if_needed(store_arg, entry_arg)
-    try:
-        return exam_import_service.build_failed_rescoring_result(
-            user=user,
-            store=store,
-            metrics_store=metrics_store,
-            exam_sheet_url=EXAM_SHEET_URL,
-            build_exam_score_items=build_exam_score_items,
-            progress_callback=progress_callback,
-        )
-    finally:
-        exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
-        exam_import_service.score_exam_answer_with_proxy_fallback = original_single
-        exam_import_service.score_exam_answers_if_needed = original_score
+    with _SCORING_WRAPPER_LOCK:
+        original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
+        original_single = exam_import_service.score_exam_answer_with_proxy_fallback
+        original_score = exam_import_service.score_exam_answers_if_needed
+        exam_import_service.score_exam_answers_batch_with_proxy_fallback = score_exam_answers_batch_with_proxy_fallback
+        exam_import_service.score_exam_answer_with_proxy_fallback = score_exam_answer_with_proxy_fallback
+        exam_import_service.score_exam_answers_if_needed = lambda store_arg, entry_arg, **_: _score_exam_answers_if_needed(store_arg, entry_arg)
+        try:
+            return exam_import_service.build_failed_rescoring_result(
+                user=user,
+                store=store,
+                metrics_store=metrics_store,
+                exam_sheet_url=EXAM_SHEET_URL,
+                build_exam_score_items=build_exam_score_items,
+                progress_callback=progress_callback,
+            )
+        finally:
+            exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
+            exam_import_service.score_exam_answer_with_proxy_fallback = original_single
+            exam_import_service.score_exam_answers_if_needed = original_score
 
 
 @router.post("/api/exam-import/sync", response_model=ExamImportResponse)
@@ -176,8 +187,8 @@ async def sync_exam_import(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
     try:
-        rows = fetch_exam_sheet_rows(force_refresh=True)
-        stats = store.import_rows(rows)
+        rows = await _run_sync_io(fetch_exam_sheet_rows, force_refresh=True)
+        stats = await _run_sync_io(store.import_rows, rows)
     except Exception as exc:
         logger.exception("Exam import sync failed for user=%s", user.username)
         metrics_store.log_event(
@@ -205,7 +216,7 @@ async def sync_exam_import(
         updated_count=stats["updated_count"],
         skipped_count=int(stats.get("skipped_count", 0)),
         scored_count=0,
-        latest_entries=_build_entries_response(store),
+        latest_entries=await _run_sync_io(_build_entries_response, store),
     )
 
 
@@ -219,7 +230,7 @@ async def score_exam_import(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
     try:
-        payload = _build_bulk_scoring_result(user=user, store=store, metrics_store=metrics_store)
+        payload = await _run_sync_io(_build_bulk_scoring_result, user=user, store=store, metrics_store=metrics_store)
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=[str(exc)]) from exc
     return ExamImportResponse(**payload)
@@ -236,7 +247,8 @@ async def score_exam_import_row(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
     try:
-        payload = _build_row_scoring_result(
+        payload = await _run_sync_io(
+            _build_row_scoring_result,
             source_row=source_row,
             user=user,
             store=store,
@@ -310,7 +322,7 @@ async def create_exam_import_row_score_task(
     if not is_test_user(user.username):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
-    if store.get_entry(source_row) is None:
+    if await _run_sync_io(store.get_entry, source_row) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Строка не найдена в базе импорта."])
 
     try:
@@ -353,7 +365,7 @@ async def exam_import_detail(
     if not is_test_user(user.username):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Тестовая страница недоступна."])
 
-    entry = store.get_entry(source_row)
+    entry = await _run_sync_io(store.get_entry, source_row)
     if entry is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Строка не найдена в базе импорта."])
     if entry.get("exam_scores"):
