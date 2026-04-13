@@ -201,6 +201,11 @@ def create_app(
     _configure_web_logging()
     _get_secret_key()
 
+    # Keep older positional calls working after adding admin_catalog_store.
+    if isinstance(admin_catalog_store, ExamImportTaskRegistry) and exam_import_task_registry is None:
+        exam_import_task_registry = admin_catalog_store
+        admin_catalog_store = None
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         yield
