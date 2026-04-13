@@ -10,7 +10,43 @@ WEB_HOST="${WEB_HOST:-127.0.0.1}"
 WEB_PORT="${WEB_PORT:-8000}"
 PYTHON_BIN="${PYTHON_BIN:-${APP_ROOT}/web/.venv/bin/python}"
 HEALTH_URL="${HEALTH_URL:-http://${WEB_HOST}:${WEB_PORT}/health}"
-SERVER_CMD="${PYTHON_BIN} ${APP_ROOT}/web/server.py --host ${WEB_HOST} --port ${WEB_PORT}"
+SERVICE_NAME="${SERVICE_NAME:-lawyer5rp.service}"
+
+is_port_busy() {
+  ss -ltn "( sport = :${WEB_PORT} )" | grep -q LISTEN
+}
+
+wait_for_port_release() {
+  local attempts="${1:-30}"
+  local delay="${2:-1}"
+  local attempt=1
+
+  while (( attempt <= attempts )); do
+    if ! is_port_busy; then
+      return 0
+    fi
+    sleep "${delay}"
+    attempt=$((attempt + 1))
+  done
+
+  return 1
+}
+
+wait_for_health() {
+  local attempts="${1:-30}"
+  local delay="${2:-1}"
+  local attempt=1
+
+  while (( attempt <= attempts )); do
+    if curl -fsS "${HEALTH_URL}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "${delay}"
+    attempt=$((attempt + 1))
+  done
+
+  return 1
+}
 
 if [[ ! -d "${REPO_ROOT}/config" || ! -d "${REPO_ROOT}/shared" || ! -d "${REPO_ROOT}/web" || ! -d "${REPO_ROOT}/scripts" ]]; then
   echo "Repository root is incomplete: ${REPO_ROOT}" >&2
@@ -60,12 +96,29 @@ chown -R "${RUN_AS_USER}:${RUN_AS_USER}" "${APP_ROOT}/config" "${APP_ROOT}/share
 
 "${PYTHON_BIN}" "${APP_ROOT}/scripts/run_db_migrations.py" --backend postgres
 
+systemctl stop "${SERVICE_NAME}" || true
 pkill -f "${APP_ROOT}/web/server.py" || true
-sleep 2
 
-su -s /bin/bash -c "nohup ${SERVER_CMD} >${APP_ROOT}/web/data/logs/server.out 2>&1 </dev/null &" "${RUN_AS_USER}"
+if ! wait_for_port_release 10 1; then
+  pids="$(pgrep -f "${APP_ROOT}/web/server.py" || true)"
+  if [[ -n "${pids}" ]]; then
+    kill -9 ${pids} || true
+  fi
+  if ! wait_for_port_release 10 1; then
+    echo "Port ${WEB_PORT} is still busy after stopping ${APP_ROOT}/web/server.py" >&2
+    ss -ltnp "( sport = :${WEB_PORT} )" || true
+    exit 1
+  fi
+fi
 
-sleep 5
+systemctl start "${SERVICE_NAME}"
+
+if ! wait_for_health 30 1; then
+  echo "Application did not become healthy at ${HEALTH_URL}" >&2
+  systemctl status "${SERVICE_NAME}" --no-pager || true
+  tail -n 50 "${APP_ROOT}/web/data/logs/server.out" || true
+  exit 1
+fi
 
 echo "Deployed commit: $(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
 echo "Health:"
