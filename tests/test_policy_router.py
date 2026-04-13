@@ -241,6 +241,41 @@ def test_policy_router_falls_back_for_personal_conflict_with_only_generic_proces
     assert context.policy_decision.reason == "personal_conflict_requires_factual_fallback"
 
 
+def test_policy_router_falls_back_for_personal_conflict_with_generic_and_complaint_triggers() -> None:
+    context = build_point3_pipeline_context(
+        complainant="Test Principal 3",
+        organization="LSPD",
+        target_person="Test Officer 3",
+        event_datetime="12.04.2026 18:30",
+        draft_text=(
+            "Между человеком и сотрудником сначала произошёл личный конфликт, "
+            "а спустя короткое время тот же сотрудник уже в служебном статусе вернулся и оформил задержание."
+        ),
+        retrieval_status="normal_context",
+        retrieval_confidence="high",
+        retrieved_law_context="Источник: https://laws.example/processual\nНорма: Статья 9\nИсточник: https://laws.example/processual\nНорма: Статья 17",
+        selected_norms=(
+            {
+                "source_url": "https://laws.example/processual",
+                "document_title": "Процессуальный кодекс",
+                "article_label": "Статья 9",
+                "excerpt": "Статья 9. Право на обжалование действий государственного сотрудника путем подачи жалобы в ОГП.",
+                "score": 94,
+            },
+            {
+                "source_url": "https://laws.example/processual",
+                "document_title": "Процессуальный кодекс",
+                "article_label": "Статья 17",
+                "excerpt": "Статья 17. Общий порядок задержания и разъяснения оснований задержания.",
+                "score": 92,
+            },
+        ),
+    )
+
+    assert context.policy_decision.mode == MODE_FACTUAL_FALLBACK_EXPANDED
+    assert context.policy_decision.reason == "personal_conflict_requires_factual_fallback"
+
+
 def test_policy_router_ignores_advocate_and_precedent_noise_in_personal_conflict_case() -> None:
     context = build_point3_pipeline_context(
         complainant="Test Principal 3",

@@ -1277,6 +1277,13 @@ def _is_generic_processual_trigger(trigger: NormTrigger) -> bool:
     return _primary_article_number(trigger.norm_ref) in {"17", "19", "29", "59"}
 
 
+def _is_supporting_complaint_trigger(trigger: NormTrigger) -> bool:
+    group_key = _document_group_key(trigger.document_title)
+    if group_key == "processual_code" and _primary_article_number(trigger.norm_ref) == "9":
+        return True
+    return False
+
+
 def _should_force_factual_fallback_for_personal_conflict(
     *,
     normalized_input: NormalizedSuggestInput,
@@ -1284,7 +1291,10 @@ def _should_force_factual_fallback_for_personal_conflict(
 ) -> bool:
     if not valid_triggers or not _is_personal_conflict_case(normalized_input.draft_text):
         return False
-    return all(_is_generic_processual_trigger(item) and not item.matched_in_input for item in valid_triggers)
+    return all(
+        (_is_generic_processual_trigger(item) or _is_supporting_complaint_trigger(item)) and not item.matched_in_input
+        for item in valid_triggers
+    )
 
 
 def _extract_protected_terms(lowered_draft: str) -> list[str]:
