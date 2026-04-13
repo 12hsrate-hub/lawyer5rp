@@ -1068,6 +1068,19 @@ class SharedAiTests(unittest.TestCase):
 
         self.assertEqual(config.ocr_model, "gpt-5.4-mini")
 
+    def test_load_openai_config_defaults_exam_scoring_model_to_gpt_5_4_mini(self):
+        previous = os.environ.get("OPENAI_EXAM_SCORING_MODEL")
+        try:
+            os.environ.pop("OPENAI_EXAM_SCORING_MODEL", None)
+            config = load_openai_config()
+        finally:
+            if previous is None:
+                os.environ.pop("OPENAI_EXAM_SCORING_MODEL", None)
+            else:
+                os.environ["OPENAI_EXAM_SCORING_MODEL"] = previous
+
+        self.assertEqual(config.exam_scoring_model, "gpt-5.4-mini")
+
     def test_runtime_exam_scoring_prompt_mode_uses_override_file_without_restart(self):
         previous_mode = os.environ.get("OPENAI_EXAM_SCORING_PROMPT_MODE")
         previous_file = os.environ.get("OPENAI_EXAM_SCORING_PROMPT_MODE_FILE")
