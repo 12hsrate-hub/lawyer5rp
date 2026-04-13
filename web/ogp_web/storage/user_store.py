@@ -58,6 +58,7 @@ REPRESENTATIVE_PROFILE_DEFAULTS = {
     "discord": "",
     "passport_scan_url": "",
 }
+_SYNTHETIC_GENERATED_DOCUMENT_ID_OFFSET = 1_000_000_000_000
 
 _POSTGRES_SELECT_COLUMNS = {
     "username": "u.username AS username",
@@ -165,7 +166,10 @@ class UserStore:
             "role_permissions",
             "user_roles",
             "complaint_drafts",
-            "generated_documents",
+            "generation_snapshots",
+            "cases",
+            "case_documents",
+            "document_versions",
         )
         conn = self._connect()
         missing: list[str] = []
@@ -650,13 +654,14 @@ class UserStore:
         normalized_kind = str(document_kind or "").strip().lower() or "complaint"
         row = self._pg_fetchone(
             """
-            INSERT INTO generated_documents (
+            INSERT INTO generation_snapshots (
                 user_id,
-                server_code,
+                server_id,
                 document_kind,
                 payload_json,
                 result_text,
-                context_snapshot_json
+                context_snapshot_json,
+                legacy_generated_document_id
             )
             SELECT
                 u.id,
@@ -664,7 +669,8 @@ class UserStore:
                 %s,
                 %s::jsonb,
                 %s,
-                %s::jsonb
+                %s::jsonb,
+                NULL
             FROM users u
             WHERE u.username = %s
             RETURNING id
@@ -680,7 +686,13 @@ class UserStore:
         )
         if row is None:
             raise AuthError("Пользователь не найден.")
-        return int(row["id"])
+        snapshot_id = int(row["id"])
+        generated_document_id = _SYNTHETIC_GENERATED_DOCUMENT_ID_OFFSET + snapshot_id
+        self._pg_execute(
+            "UPDATE generation_snapshots SET legacy_generated_document_id = %s WHERE id = %s",
+            (generated_document_id, snapshot_id),
+        )
+        return generated_document_id
 
     def list_generated_documents(self, username: str, *, limit: int = 30) -> list[dict[str, Any]]:
         normalized_username = _normalize_username(username)
@@ -688,19 +700,20 @@ class UserStore:
         rows = self._pg_fetchall(
             """
             SELECT
-                gd.id AS id,
-                gd.server_code AS server_code,
-                gd.document_kind AS document_kind,
-                gd.created_at AS created_at
-            FROM generated_documents gd
-            JOIN users u ON u.id = gd.user_id
+                gs.legacy_generated_document_id AS id,
+                gs.server_id AS server_code,
+                gs.document_kind AS document_kind,
+                gs.created_at AS created_at
+            FROM generation_snapshots gs
+            JOIN users u ON u.id = gs.user_id
             WHERE u.username = %s
-            ORDER BY gd.created_at DESC, gd.id DESC
+              AND gs.legacy_generated_document_id IS NOT NULL
+            ORDER BY gs.created_at DESC, gs.id DESC
             LIMIT %s
             """,
             (normalized_username, safe_limit),
         )
-        return [dict(row) for row in rows]
+        return [dict(row) for row in rows if int(row.get("id") or 0) > 0]
 
     def get_generated_document_snapshot(self, username: str, document_id: int) -> dict[str, Any] | None:
         normalized_username = _normalize_username(username)
@@ -710,15 +723,16 @@ class UserStore:
         row = self._pg_fetchone(
             """
             SELECT
-                gd.id AS id,
-                gd.server_code AS server_code,
-                gd.document_kind AS document_kind,
-                gd.created_at AS created_at,
-                CAST(gd.context_snapshot_json AS TEXT) AS context_snapshot_json
-            FROM generated_documents gd
-            JOIN users u ON u.id = gd.user_id
+                gs.legacy_generated_document_id AS id,
+                gs.server_id AS server_code,
+                gs.document_kind AS document_kind,
+                gs.created_at AS created_at,
+                CAST(gs.context_snapshot_json AS TEXT) AS context_snapshot_json
+            FROM generation_snapshots gs
+            JOIN users u ON u.id = gs.user_id
             WHERE u.username = %s
-              AND gd.id = %s
+              AND gs.legacy_generated_document_id = %s
+            ORDER BY gs.id DESC
             LIMIT 1
             """,
             (normalized_username, normalized_document_id),
