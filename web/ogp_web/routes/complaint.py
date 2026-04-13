@@ -23,15 +23,7 @@ from ogp_web.schemas import (
     SuggestResponse,
 )
 from ogp_web.server_config import build_permission_set, get_server_config
-from ogp_web.services.ai_service import (
-    answer_law_question_details,
-    build_law_qa_metrics_meta,
-    build_suggest_metrics_meta,
-    extract_principal_scan,
-    get_default_law_qa_model,
-    normalize_ai_feedback_issues,
-    suggest_text_details,
-)
+from ogp_web.services import ai_service
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -258,7 +250,7 @@ async def suggest(
             headers={"Retry-After": retry_after},
         )
     try:
-        result = await run_in_threadpool(suggest_text_details, payload, server_code=user.server_code)
+        result = await run_in_threadpool(ai_service.suggest_text_details, payload, server_code=user.server_code)
     finally:
         SUGGEST_CONCURRENCY_LIMITER.release()
     result_selected_model = str(getattr(result, "selected_model", "") or getattr(result, "telemetry", {}).get("model") or "").strip()
@@ -287,7 +279,7 @@ async def suggest(
         flow="suggest",
         generation_id=result.generation_id,
         path="/api/ai/suggest",
-        meta=build_suggest_metrics_meta(payload=payload, result=result, server_code=user.server_code),
+        meta=ai_service.build_suggest_metrics_meta(payload=payload, result=result, server_code=user.server_code),
     )
     return SuggestResponse(
         text=result.text,
@@ -304,7 +296,7 @@ async def extract_principal(
     user: AuthUser = Depends(require_user),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> PrincipalScanResult:
-    result = extract_principal_scan(payload)
+    result = ai_service.extract_principal_scan(payload)
     metrics_store.log_event(
         event_type="ai_extract_principal",
         username=user.username,
@@ -332,7 +324,7 @@ async def law_qa_test(
     _ensure_law_qa_permission(store, user)
     effective_server_code = payload.server_code or user.server_code or store.get_server_code(user.username)
     payload = payload.model_copy(update={"server_code": effective_server_code})
-    result = await run_in_threadpool(answer_law_question_details, payload)
+    result = await run_in_threadpool(ai_service.answer_law_question_details, payload)
     result_selected_model = str(getattr(result, "selected_model", "") or getattr(result, "telemetry", {}).get("model") or "").strip()
     result_selection_reason = str(getattr(result, "selection_reason", "") or "").strip()
     result_requested_model = str(getattr(result, "requested_model", "") or payload.model or "").strip()
@@ -345,7 +337,7 @@ async def law_qa_test(
         resource_units=len(payload.question or "") + len(result.text),
         meta={
             "server_code": effective_server_code,
-            "model": result_selected_model or get_default_law_qa_model(),
+            "model": result_selected_model or ai_service.get_default_law_qa_model(),
             "selected_model": result_selected_model,
             "selection_reason": result_selection_reason,
             "requested_model": result_requested_model,
@@ -362,7 +354,7 @@ async def law_qa_test(
         flow="law_qa",
         generation_id=result.generation_id,
         path="/api/ai/law-qa-test",
-        meta=build_law_qa_metrics_meta(payload=payload, result=result, used_sources=result.used_sources),
+        meta=ai_service.build_law_qa_metrics_meta(payload=payload, result=result, used_sources=result.used_sources),
     )
     return LawQaResponse(
         text=result.text,
@@ -401,7 +393,7 @@ async def ai_feedback(
             detail=["flow must be law_qa or suggest."],
         )
 
-    normalized_issues = list(normalize_ai_feedback_issues(payload.issues))
+    normalized_issues = list(ai_service.normalize_ai_feedback_issues(payload.issues))
     if not normalized_issues and not str(payload.note or "").strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

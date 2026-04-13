@@ -838,7 +838,7 @@ class WebApiTests(unittest.TestCase):
         self._register_verify_and_login("tester_suggest_threadpool", "tester_suggest_threadpool@example.com")
 
         original_run_in_threadpool = complaint_route.run_in_threadpool
-        original_suggest_details = complaint_route.suggest_text_details
+        original_suggest_details = complaint_route.ai_service.suggest_text_details
         original_limiter = complaint_route.SUGGEST_CONCURRENCY_LIMITER
         complaint_route.SUGGEST_CONCURRENCY_LIMITER = complaint_route.SuggestConcurrencyLimiter(max_concurrency=2, retry_after_seconds=5)
         captured: dict[str, object] = {}
@@ -871,7 +871,7 @@ class WebApiTests(unittest.TestCase):
             captured["kwargs"] = kwargs
             return func(*args, **kwargs)
 
-        complaint_route.suggest_text_details = fake_suggest_details
+        complaint_route.ai_service.suggest_text_details = fake_suggest_details
         complaint_route.run_in_threadpool = fake_run_in_threadpool
         try:
             response = self.client.post(
@@ -888,7 +888,7 @@ class WebApiTests(unittest.TestCase):
             )
         finally:
             complaint_route.run_in_threadpool = original_run_in_threadpool
-            complaint_route.suggest_text_details = original_suggest_details
+            complaint_route.ai_service.suggest_text_details = original_suggest_details
             complaint_route.SUGGEST_CONCURRENCY_LIMITER = original_limiter
 
         self.assertEqual(response.status_code, 200)
@@ -901,7 +901,7 @@ class WebApiTests(unittest.TestCase):
         self._register_verify_and_login("tester_suggest_overload", "tester_suggest_overload@example.com")
 
         original_limiter = complaint_route.SUGGEST_CONCURRENCY_LIMITER
-        original_suggest_details = complaint_route.suggest_text_details
+        original_suggest_details = complaint_route.ai_service.suggest_text_details
         complaint_route.SUGGEST_CONCURRENCY_LIMITER = complaint_route.SuggestConcurrencyLimiter(max_concurrency=1, retry_after_seconds=7)
         called = {"suggest": False}
 
@@ -909,7 +909,7 @@ class WebApiTests(unittest.TestCase):
             called["suggest"] = True
             return original_suggest_details(payload, server_code=server_code)
 
-        complaint_route.suggest_text_details = fake_suggest_details
+        complaint_route.ai_service.suggest_text_details = fake_suggest_details
         try:
             self.assertTrue(complaint_route.SUGGEST_CONCURRENCY_LIMITER.try_acquire())
             response = self.client.post(
@@ -927,7 +927,7 @@ class WebApiTests(unittest.TestCase):
         finally:
             complaint_route.SUGGEST_CONCURRENCY_LIMITER.release()
             complaint_route.SUGGEST_CONCURRENCY_LIMITER = original_limiter
-            complaint_route.suggest_text_details = original_suggest_details
+            complaint_route.ai_service.suggest_text_details = original_suggest_details
 
         self.assertEqual(response.status_code, 429)
         self.assertEqual(response.headers.get("Retry-After"), "7")
@@ -937,8 +937,8 @@ class WebApiTests(unittest.TestCase):
     def test_law_qa_test_endpoint_returns_text_and_sources(self):
         self._register_verify_and_login("tester", "tester_law@example.com")
 
-        original = complaint_route.answer_law_question_details
-        complaint_route.answer_law_question_details = lambda payload: type(
+        original = complaint_route.ai_service.answer_law_question_details
+        complaint_route.ai_service.answer_law_question_details = lambda payload: type(
             "LawQaAnswerResult",
             (),
             {
@@ -987,7 +987,7 @@ class WebApiTests(unittest.TestCase):
                 },
             )
         finally:
-            complaint_route.answer_law_question_details = original
+            complaint_route.ai_service.answer_law_question_details = original
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
