@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from functools import partial
+from threading import Lock
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
@@ -24,6 +25,7 @@ from shared.ogp_ai import score_exam_answer_with_proxy_fallback, score_exam_answ
 router = APIRouter(tags=["exam-import"])
 logger = logging.getLogger(__name__)
 _SERVICE_SCORE_EXAM_ANSWERS_IF_NEEDED = exam_import_service.score_exam_answers_if_needed
+_SCORING_WRAPPER_LOCK = Lock()
 
 
 async def _run_sync_io(func, /, *args, **kwargs):
@@ -94,25 +96,26 @@ def _build_bulk_scoring_result(
     metrics_store: AdminMetricsStore,
     progress_callback=None,
 ) -> dict[str, object]:
-    original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
-    original_single = exam_import_service.score_exam_answer_with_proxy_fallback
-    original_score = exam_import_service.score_exam_answers_if_needed
-    exam_import_service.score_exam_answers_batch_with_proxy_fallback = score_exam_answers_batch_with_proxy_fallback
-    exam_import_service.score_exam_answer_with_proxy_fallback = score_exam_answer_with_proxy_fallback
-    exam_import_service.score_exam_answers_if_needed = lambda store_arg, entry_arg, **_: _score_exam_answers_if_needed(store_arg, entry_arg)
-    try:
-        return exam_import_service.build_bulk_scoring_result(
-            user=user,
-            store=store,
-            metrics_store=metrics_store,
-            exam_sheet_url=EXAM_SHEET_URL,
-            build_exam_score_items=build_exam_score_items,
-            progress_callback=progress_callback,
-        )
-    finally:
-        exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
-        exam_import_service.score_exam_answer_with_proxy_fallback = original_single
-        exam_import_service.score_exam_answers_if_needed = original_score
+    with _SCORING_WRAPPER_LOCK:
+        original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
+        original_single = exam_import_service.score_exam_answer_with_proxy_fallback
+        original_score = exam_import_service.score_exam_answers_if_needed
+        exam_import_service.score_exam_answers_batch_with_proxy_fallback = score_exam_answers_batch_with_proxy_fallback
+        exam_import_service.score_exam_answer_with_proxy_fallback = score_exam_answer_with_proxy_fallback
+        exam_import_service.score_exam_answers_if_needed = lambda store_arg, entry_arg, **_: _score_exam_answers_if_needed(store_arg, entry_arg)
+        try:
+            return exam_import_service.build_bulk_scoring_result(
+                user=user,
+                store=store,
+                metrics_store=metrics_store,
+                exam_sheet_url=EXAM_SHEET_URL,
+                build_exam_score_items=build_exam_score_items,
+                progress_callback=progress_callback,
+            )
+        finally:
+            exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
+            exam_import_service.score_exam_answer_with_proxy_fallback = original_single
+            exam_import_service.score_exam_answers_if_needed = original_score
 
 
 def _build_row_scoring_result(
@@ -123,25 +126,26 @@ def _build_row_scoring_result(
     metrics_store: AdminMetricsStore,
     force_rescore: bool = False,
 ) -> dict[str, object]:
-    original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
-    original_single = exam_import_service.score_exam_answer_with_proxy_fallback
-    original_score = exam_import_service.score_exam_answers_if_needed
-    exam_import_service.score_exam_answers_batch_with_proxy_fallback = score_exam_answers_batch_with_proxy_fallback
-    exam_import_service.score_exam_answer_with_proxy_fallback = score_exam_answer_with_proxy_fallback
-    exam_import_service.score_exam_answers_if_needed = lambda store_arg, entry_arg, **_: _score_exam_answers_if_needed(store_arg, entry_arg)
-    try:
-        return exam_import_service.build_row_scoring_result(
-            source_row=source_row,
-            user=user,
-            store=store,
-            metrics_store=metrics_store,
-            build_exam_score_items=build_exam_score_items,
-            force_rescore=force_rescore,
-        )
-    finally:
-        exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
-        exam_import_service.score_exam_answer_with_proxy_fallback = original_single
-        exam_import_service.score_exam_answers_if_needed = original_score
+    with _SCORING_WRAPPER_LOCK:
+        original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
+        original_single = exam_import_service.score_exam_answer_with_proxy_fallback
+        original_score = exam_import_service.score_exam_answers_if_needed
+        exam_import_service.score_exam_answers_batch_with_proxy_fallback = score_exam_answers_batch_with_proxy_fallback
+        exam_import_service.score_exam_answer_with_proxy_fallback = score_exam_answer_with_proxy_fallback
+        exam_import_service.score_exam_answers_if_needed = lambda store_arg, entry_arg, **_: _score_exam_answers_if_needed(store_arg, entry_arg)
+        try:
+            return exam_import_service.build_row_scoring_result(
+                source_row=source_row,
+                user=user,
+                store=store,
+                metrics_store=metrics_store,
+                build_exam_score_items=build_exam_score_items,
+                force_rescore=force_rescore,
+            )
+        finally:
+            exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
+            exam_import_service.score_exam_answer_with_proxy_fallback = original_single
+            exam_import_service.score_exam_answers_if_needed = original_score
 
 
 def _build_failed_rescoring_result(
@@ -151,25 +155,26 @@ def _build_failed_rescoring_result(
     metrics_store: AdminMetricsStore,
     progress_callback=None,
 ) -> dict[str, object]:
-    original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
-    original_single = exam_import_service.score_exam_answer_with_proxy_fallback
-    original_score = exam_import_service.score_exam_answers_if_needed
-    exam_import_service.score_exam_answers_batch_with_proxy_fallback = score_exam_answers_batch_with_proxy_fallback
-    exam_import_service.score_exam_answer_with_proxy_fallback = score_exam_answer_with_proxy_fallback
-    exam_import_service.score_exam_answers_if_needed = lambda store_arg, entry_arg, **_: _score_exam_answers_if_needed(store_arg, entry_arg)
-    try:
-        return exam_import_service.build_failed_rescoring_result(
-            user=user,
-            store=store,
-            metrics_store=metrics_store,
-            exam_sheet_url=EXAM_SHEET_URL,
-            build_exam_score_items=build_exam_score_items,
-            progress_callback=progress_callback,
-        )
-    finally:
-        exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
-        exam_import_service.score_exam_answer_with_proxy_fallback = original_single
-        exam_import_service.score_exam_answers_if_needed = original_score
+    with _SCORING_WRAPPER_LOCK:
+        original_batch = exam_import_service.score_exam_answers_batch_with_proxy_fallback
+        original_single = exam_import_service.score_exam_answer_with_proxy_fallback
+        original_score = exam_import_service.score_exam_answers_if_needed
+        exam_import_service.score_exam_answers_batch_with_proxy_fallback = score_exam_answers_batch_with_proxy_fallback
+        exam_import_service.score_exam_answer_with_proxy_fallback = score_exam_answer_with_proxy_fallback
+        exam_import_service.score_exam_answers_if_needed = lambda store_arg, entry_arg, **_: _score_exam_answers_if_needed(store_arg, entry_arg)
+        try:
+            return exam_import_service.build_failed_rescoring_result(
+                user=user,
+                store=store,
+                metrics_store=metrics_store,
+                exam_sheet_url=EXAM_SHEET_URL,
+                build_exam_score_items=build_exam_score_items,
+                progress_callback=progress_callback,
+            )
+        finally:
+            exam_import_service.score_exam_answers_batch_with_proxy_fallback = original_batch
+            exam_import_service.score_exam_answer_with_proxy_fallback = original_single
+            exam_import_service.score_exam_answers_if_needed = original_score
 
 
 @router.post("/api/exam-import/sync", response_model=ExamImportResponse)
