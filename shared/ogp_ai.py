@@ -1114,10 +1114,12 @@ def suggest_description_with_proxy_fallback_result(
     retrieval_context_mode: str = "normal_context",
     bundle_fingerprint: str = "",
     retrieval_profile: str = "suggest",
+    validation_error: str = "",
     *,
     route_policy: str | None = None,
     status_callback: Callable[[str], None] | None = None,
 ) -> TextGenerationResult:
+    _ = validation_error
     attempt_meta: dict[str, object] = {}
     result = _run_with_proxy_fallback(
         api_key=api_key,
