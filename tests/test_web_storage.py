@@ -56,6 +56,11 @@ class PostgresBackend:
             "next_case_document_id": 1,
             "next_document_version_id": 1,
             "next_generation_snapshot_id": 1,
+            "next_law_qa_run_id": 1,
+            "next_validation_requirement_id": 1,
+            "next_readiness_gate_id": 1,
+            "next_validation_run_id": 1,
+            "next_validation_issue_id": 1,
             "servers": {},
             "users": {},
             "roles": {},
@@ -67,6 +72,11 @@ class PostgresBackend:
             "case_documents": {},
             "document_versions": {},
             "generation_snapshots": {},
+            "law_qa_runs": {},
+            "validation_requirements": {},
+            "readiness_gates": {},
+            "validation_runs": {},
+            "validation_issues": {},
             "auth_rate_limit_events": [],
             "clock": 0,
             "missing_tables": set(missing_tables or set()),
@@ -183,6 +193,28 @@ class FakePostgresConnection:
         if normalized.startswith("SELECT id FROM users WHERE username = %s"):
             user = self.state["users"].get(params[0])
             return FakeCursor(rowcount=1 if user else 0, one={"id": user["id"]} if user else None)
+        if normalized.startswith("SELECT dv.id, dv.document_id, dv.version_number, CAST(dv.content_json AS TEXT) AS content_json, cd.server_id, cd.document_type FROM document_versions dv JOIN case_documents cd ON cd.id = dv.document_id WHERE dv.id = %s LIMIT 1"):
+            return self._get_document_version_target(params[0])
+        if normalized.startswith("SELECT id, server_id, question, answer_text, CAST(used_sources_json AS TEXT) AS used_sources_json, CAST(selected_norms_json AS TEXT) AS selected_norms_json, CAST(metadata_json AS TEXT) AS metadata_json FROM law_qa_runs WHERE id = %s LIMIT 1"):
+            return self._get_law_qa_run(params[0])
+        if normalized.startswith("INSERT INTO law_qa_runs ( server_id, user_id, question, answer_text, used_sources_json, selected_norms_json, metadata_json ) VALUES"):
+            return self._insert_law_qa_run(params)
+        if normalized.startswith("SELECT id, server_scope, server_id, target_type, target_subtype, field_key, CAST(rule_json AS TEXT) AS rule_json, is_required, is_active, created_at, updated_at FROM validation_requirements WHERE is_active = TRUE"):
+            return self._list_validation_requirements(params)
+        if normalized.startswith("SELECT id, server_scope, server_id, target_type, target_subtype, gate_code, enforcement_mode, CAST(threshold_json AS TEXT) AS threshold_json, is_active, created_at, updated_at FROM readiness_gates WHERE is_active = TRUE"):
+            return self._list_readiness_gates(params)
+        if normalized.startswith("INSERT INTO validation_runs ( target_type, target_id, server_id, status, risk_score, coverage_score, readiness_status, summary_json, score_breakdown_json, gate_decisions_json ) VALUES"):
+            return self._insert_validation_run(params)
+        if normalized.startswith("INSERT INTO validation_issues ( validation_run_id, issue_code, severity, message, field_ref, details_json ) VALUES"):
+            return self._insert_validation_issue(params)
+        if normalized.startswith("SELECT id, target_type, target_id, server_id, status, risk_score, coverage_score, readiness_status, CAST(summary_json AS TEXT) AS summary_json, CAST(score_breakdown_json AS TEXT) AS score_breakdown_json, CAST(gate_decisions_json AS TEXT) AS gate_decisions_json, created_at FROM validation_runs WHERE id = %s LIMIT 1"):
+            return self._get_validation_run(params[0])
+        if normalized.startswith("SELECT id, target_type, target_id, server_id, status, risk_score, coverage_score, readiness_status, CAST(summary_json AS TEXT) AS summary_json, CAST(score_breakdown_json AS TEXT) AS score_breakdown_json, CAST(gate_decisions_json AS TEXT) AS gate_decisions_json, created_at FROM validation_runs WHERE target_type = %s AND target_id = %s ORDER BY created_at DESC, id DESC LIMIT 1"):
+            return self._get_latest_validation_run(params)
+        if normalized.startswith("SELECT id, target_type, target_id, server_id, status, risk_score, coverage_score, readiness_status, CAST(summary_json AS TEXT) AS summary_json, CAST(score_breakdown_json AS TEXT) AS score_breakdown_json, CAST(gate_decisions_json AS TEXT) AS gate_decisions_json, created_at FROM validation_runs WHERE target_type = %s AND target_id = %s ORDER BY created_at DESC, id DESC"):
+            return self._list_validation_runs(params)
+        if normalized.startswith("SELECT id, validation_run_id, issue_code, severity, message, field_ref, CAST(details_json AS TEXT) AS details_json, created_at FROM validation_issues WHERE validation_run_id = %s ORDER BY created_at ASC, id ASC"):
+            return self._list_validation_issues(params[0])
         if normalized.startswith("UPDATE users SET email_verified_at = NOW(), email_verification_token_hash = NULL WHERE username = %s"):
             return self._mark_email_verified(params[0])
         if normalized.startswith("UPDATE users SET email_verification_token_hash = %s, email_verification_sent_at = NOW() WHERE email = %s"):
@@ -831,6 +863,124 @@ class FakePostgresConnection:
                 "context_snapshot_json": json.dumps(row["context_snapshot_json"], ensure_ascii=False),
             },
         )
+
+    def _insert_law_qa_run(self, params):
+        server_id, user_id, question, answer_text, used_sources_json, selected_norms_json, metadata_json = params
+        run_id = self.state["next_law_qa_run_id"]
+        self.state["next_law_qa_run_id"] += 1
+        row = {
+            "id": run_id,
+            "server_id": server_id,
+            "user_id": int(user_id),
+            "question": question,
+            "answer_text": answer_text,
+            "used_sources_json": json.loads(used_sources_json),
+            "selected_norms_json": json.loads(selected_norms_json),
+            "metadata_json": json.loads(metadata_json),
+            "created_at": self._now(),
+        }
+        self.state["law_qa_runs"][run_id] = row
+        return FakeCursor(rowcount=1, one={"id": run_id, "server_id": server_id, "question": question, "answer_text": answer_text, "created_at": row["created_at"]})
+
+    def _get_law_qa_run(self, run_id: int):
+        row = self.state["law_qa_runs"].get(int(run_id))
+        if row is None:
+            return FakeCursor(rowcount=0, one=None)
+        return FakeCursor(rowcount=1, one={**row, "used_sources_json": json.dumps(row["used_sources_json"], ensure_ascii=False), "selected_norms_json": json.dumps(row["selected_norms_json"], ensure_ascii=False), "metadata_json": json.dumps(row["metadata_json"], ensure_ascii=False)})
+
+    def _get_document_version_target(self, version_id: int):
+        row = self.state["document_versions"].get(int(version_id))
+        if row is None:
+            return FakeCursor(rowcount=0, one=None)
+        document = self.state["case_documents"].get(int(row["document_id"]))
+        if document is None:
+            return FakeCursor(rowcount=0, one=None)
+        return FakeCursor(rowcount=1, one={"id": row["id"], "document_id": row["document_id"], "version_number": row["version_number"], "content_json": json.dumps(row.get("content_json") or {}, ensure_ascii=False), "server_id": document["server_id"], "document_type": document["document_type"]})
+
+    def _list_validation_requirements(self, params):
+        target_type, target_subtype, server_id = params
+        rows = []
+        for row in self.state["validation_requirements"].values():
+            if not row["is_active"] or row["target_type"] != target_type:
+                continue
+            if row["target_subtype"] not in {"", target_subtype}:
+                continue
+            if not ((row["server_scope"] == "global" and row["server_id"] is None) or (row["server_scope"] == "server" and row["server_id"] == server_id)):
+                continue
+            rows.append({**row, "rule_json": json.dumps(row["rule_json"], ensure_ascii=False)})
+        rows.sort(key=lambda item: (0 if item["server_scope"] == "server" else 1, item["id"]))
+        return FakeCursor(rowcount=len(rows), rows=rows)
+
+    def _list_readiness_gates(self, params):
+        target_type, target_subtype, server_id = params
+        rows = []
+        for row in self.state["readiness_gates"].values():
+            if not row["is_active"] or row["target_type"] != target_type:
+                continue
+            if row["target_subtype"] not in {"", target_subtype}:
+                continue
+            if not ((row["server_scope"] == "global" and row["server_id"] is None) or (row["server_scope"] == "server" and row["server_id"] == server_id)):
+                continue
+            rows.append({**row, "threshold_json": json.dumps(row["threshold_json"], ensure_ascii=False)})
+        rows.sort(key=lambda item: (0 if item["server_scope"] == "server" else 1, item["id"]))
+        return FakeCursor(rowcount=len(rows), rows=rows)
+
+    def _insert_validation_run(self, params):
+        target_type, target_id, server_id, status, risk_score, coverage_score, readiness_status, summary_json, score_breakdown_json, gate_decisions_json = params
+        run_id = self.state["next_validation_run_id"]
+        self.state["next_validation_run_id"] += 1
+        row = {
+            "id": run_id,
+            "target_type": target_type,
+            "target_id": int(target_id),
+            "server_id": server_id,
+            "status": status,
+            "risk_score": float(risk_score),
+            "coverage_score": float(coverage_score),
+            "readiness_status": readiness_status,
+            "summary_json": json.loads(summary_json),
+            "score_breakdown_json": json.loads(score_breakdown_json),
+            "gate_decisions_json": json.loads(gate_decisions_json),
+            "created_at": self._now(),
+        }
+        self.state["validation_runs"][run_id] = row
+        return FakeCursor(rowcount=1, one={**row, "summary_json": json.dumps(row["summary_json"], ensure_ascii=False), "score_breakdown_json": json.dumps(row["score_breakdown_json"], ensure_ascii=False), "gate_decisions_json": json.dumps(row["gate_decisions_json"], ensure_ascii=False)})
+
+    def _insert_validation_issue(self, params):
+        validation_run_id, issue_code, severity, message, field_ref, details_json = params
+        issue_id = self.state["next_validation_issue_id"]
+        self.state["next_validation_issue_id"] += 1
+        row = {"id": issue_id, "validation_run_id": int(validation_run_id), "issue_code": issue_code, "severity": severity, "message": message, "field_ref": field_ref, "details_json": json.loads(details_json), "created_at": self._now()}
+        self.state["validation_issues"][issue_id] = row
+        return FakeCursor(rowcount=1, one={**row, "details_json": json.dumps(row["details_json"], ensure_ascii=False)})
+
+    def _get_validation_run(self, run_id: int):
+        row = self.state["validation_runs"].get(int(run_id))
+        if row is None:
+            return FakeCursor(rowcount=0, one=None)
+        return FakeCursor(rowcount=1, one={**row, "summary_json": json.dumps(row["summary_json"], ensure_ascii=False), "score_breakdown_json": json.dumps(row["score_breakdown_json"], ensure_ascii=False), "gate_decisions_json": json.dumps(row["gate_decisions_json"], ensure_ascii=False)})
+
+    def _get_latest_validation_run(self, params):
+        target_type, target_id = params
+        rows = [row for row in self.state["validation_runs"].values() if row["target_type"] == target_type and int(row["target_id"]) == int(target_id)]
+        if not rows:
+            return FakeCursor(rowcount=0, one=None)
+        rows.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
+        row = rows[0]
+        return FakeCursor(rowcount=1, one={**row, "summary_json": json.dumps(row["summary_json"], ensure_ascii=False), "score_breakdown_json": json.dumps(row["score_breakdown_json"], ensure_ascii=False), "gate_decisions_json": json.dumps(row["gate_decisions_json"], ensure_ascii=False)})
+
+    def _list_validation_runs(self, params):
+        target_type, target_id = params
+        rows = [row for row in self.state["validation_runs"].values() if row["target_type"] == target_type and int(row["target_id"]) == int(target_id)]
+        rows.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
+        payload = [{**row, "summary_json": json.dumps(row["summary_json"], ensure_ascii=False), "score_breakdown_json": json.dumps(row["score_breakdown_json"], ensure_ascii=False), "gate_decisions_json": json.dumps(row["gate_decisions_json"], ensure_ascii=False)} for row in rows]
+        return FakeCursor(rowcount=len(payload), rows=payload)
+
+    def _list_validation_issues(self, validation_run_id: int):
+        rows = [row for row in self.state["validation_issues"].values() if int(row["validation_run_id"]) == int(validation_run_id)]
+        rows.sort(key=lambda item: (item["created_at"], item["id"]))
+        payload = [{**row, "details_json": json.dumps(row["details_json"], ensure_ascii=False)} for row in rows]
+        return FakeCursor(rowcount=len(payload), rows=payload)
 
     def _insert_rate_limit_event(self, params):
         action, subject_key = params
@@ -3255,3 +3405,53 @@ class PostgresExamImportTaskRegistryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ValidationDomainTests(unittest.TestCase):
+    def setUp(self):
+        self.backend = PostgresBackend()
+        self.validation_repo = __import__('ogp_web.storage.validation_repository', fromlist=['ValidationRepository']).ValidationRepository(self.backend)
+        self.validation_service = __import__('ogp_web.services.validation_service', fromlist=['ValidationService']).ValidationService(self.validation_repo)
+        self.backend._state["users"]["validator"] = {"id": 1, "username": "validator", "email": "validator@example.com"}
+        self.backend._state["cases"][1] = {"id": 1, "server_id": "blackberry", "owner_user_id": 1}
+        self.backend._state["case_documents"][1] = {"id": 1, "case_id": 1, "server_id": "blackberry", "document_type": "complaint"}
+        self.backend._state["document_versions"][1] = {"id": 1, "document_id": 1, "version_number": 1, "content_json": {"bbcode": "no citations"}, "created_by": 1, "generation_snapshot_id": None, "created_at": "2026-01-01T00:00:00+00:00"}
+
+    def test_validation_scoring_and_immutability(self):
+        self.backend._state['validation_requirements'][1] = {
+            'id': 1, 'server_scope': 'server', 'server_id': 'blackberry', 'target_type': 'document_version', 'target_subtype': 'complaint',
+            'field_key': 'bbcode', 'rule_json': {'expected_type': 'str'}, 'is_required': True, 'is_active': True, 'created_at': '', 'updated_at': ''
+        }
+        first = self.validation_service.run_validation(target_type='document_version', target_id=1)
+        second = self.validation_service.run_validation(target_type='document_version', target_id=1)
+        self.assertNotEqual(first.run['id'], second.run['id'])
+        self.assertGreaterEqual(second.run['risk_score'], 0)
+        self.assertLessEqual(second.run['coverage_score'], 100)
+
+    def test_gate_warn_vs_hard_block(self):
+        self.backend._state['readiness_gates'][1] = {
+            'id': 1, 'server_scope': 'server', 'server_id': 'blackberry', 'target_type': 'document_version', 'target_subtype': 'complaint',
+            'gate_code': 'coverage_gate', 'enforcement_mode': 'warn', 'threshold_json': {'min_coverage_score': 101}, 'is_active': True, 'created_at': '', 'updated_at': ''
+        }
+        self.validation_service.run_validation(target_type='document_version', target_id=1)
+        allowed, messages = self.validation_service.assert_action_allowed(target_type='document_version', target_id=1, action='export')
+        self.assertTrue(allowed)
+        self.assertTrue(any('warn' in item for item in messages))
+        self.backend._state['readiness_gates'][1]['enforcement_mode'] = 'hard_block'
+        self.validation_service.run_validation(target_type='document_version', target_id=1)
+        allowed2, _ = self.validation_service.assert_action_allowed(target_type='document_version', target_id=1, action='publish')
+        self.assertFalse(allowed2)
+
+    def test_law_qa_validation_binding(self):
+        qa_run = self.validation_repo.create_law_qa_run(
+            server_id='blackberry', user_id=1, question='Q?', answer_text='A', used_sources=[], selected_norms=[], metadata={}
+        )
+        result = self.validation_service.run_validation(target_type='law_qa_run', target_id=int(qa_run['id']))
+        self.assertEqual(result.run['target_type'], 'law_qa_run')
+        self.assertEqual(result.run['target_id'], int(qa_run['id']))
+
+    def test_new_version_requires_new_validation(self):
+        self.validation_service.run_validation(target_type='document_version', target_id=1)
+        self.backend.connect().execute("INSERT INTO document_versions (document_id, version_number, content_json, created_by, generation_snapshot_id) VALUES (%s, %s, %s::jsonb, %s, %s)", (1, 2, json.dumps({'bbcode': 'v2'}), 1, None))
+        allowed, _ = self.validation_service.assert_action_allowed(target_type='document_version', target_id=2, action='export')
+        self.assertFalse(allowed)

@@ -32,6 +32,7 @@ from ogp_web.routes.cases import router as cases_router
 from ogp_web.routes.exam_import import router as exam_import_router
 from ogp_web.routes.pages import router as pages_router
 from ogp_web.routes.profile import router as profile_router
+from ogp_web.routes.validation import router as validation_router
 from ogp_web.server_config import get_server_config
 from ogp_web.services.auth_service import _get_secret_key, get_current_user, is_admin_user
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
@@ -413,6 +414,7 @@ def create_app(
     app.include_router(profile_router)
     app.include_router(complaint_router)
     app.include_router(cases_router)
+    app.include_router(validation_router)
     app.include_router(exam_import_router)
     app.include_router(admin_router)
     return app
