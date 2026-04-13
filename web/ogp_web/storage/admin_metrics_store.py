@@ -143,7 +143,7 @@ class AdminMetricsStore:
             endpoint_rows = conn.execute(
                 f"""
                 SELECT
-                    path,
+                    BTRIM(path) AS path,
                     COUNT(*) AS count,
                     SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_count,
                     COALESCE(AVG(duration_ms), 0) AS avg_ms,
@@ -154,9 +154,9 @@ class AdminMetricsStore:
                 FROM metric_events
                 WHERE event_type = 'api_request'
                   AND path IS NOT NULL
-                  AND path <> ''
+                  AND BTRIM(path) <> ''
                   AND {created_at_filter}
-                GROUP BY path
+                GROUP BY BTRIM(path)
                 ORDER BY count DESC, path ASC
                 LIMIT {self._placeholder()}
                 """,
@@ -167,6 +167,8 @@ class AdminMetricsStore:
         top_endpoints_payload: list[dict[str, Any]] = []
         for row in endpoint_rows:
             path = str(row["path"] or "").strip()
+            if not path:
+                continue
             endpoint_errors = self._safe_request_count(row["error_count"])
             endpoint_count = self._safe_request_count(row["count"])
             top_endpoints_payload.append(
@@ -445,8 +447,8 @@ class AdminMetricsStore:
         self,
         conn,
         *,
-        window_hours: int = 24,
-        row_limit: int = 5000,
+        window_hours: int = 0,
+        row_limit: int = 0,
     ) -> dict[str, object]:
         stats = {
             "ai_exam_scoring_total": 0,
@@ -465,8 +467,8 @@ class AdminMetricsStore:
             "ai_exam_scoring_ms_p50": None,
             "ai_exam_scoring_ms_p95": None,
         }
-        scoped_window_hours = max(1, int(window_hours or 24))
-        scoped_row_limit = max(100, int(row_limit or 5000))
+        scoped_window_hours = max(0, int(window_hours or 0))
+        scoped_row_limit = max(0, int(row_limit or 0))
 
         row = conn.execute(
             """
@@ -474,9 +476,9 @@ class AdminMetricsStore:
                 SELECT event_type, meta_json
                 FROM metric_events
                 WHERE event_type IN ('ai_exam_scoring', 'exam_import_score_failures', 'exam_import_row_score_error')
-                  AND created_at >= NOW() - (%s::int * INTERVAL '1 hour')
+                  AND (%s::int <= 0 OR created_at >= NOW() - (%s::int * INTERVAL '1 hour'))
                 ORDER BY created_at DESC
-                LIMIT %s
+                LIMIT CASE WHEN %s::int > 0 THEN %s::int ELSE 2147483647 END
             )
             SELECT
                 SUM(CASE WHEN event_type = 'ai_exam_scoring' THEN 1 ELSE 0 END) AS ai_exam_scoring_total,
@@ -514,7 +516,7 @@ class AdminMetricsStore:
                 ) AS ai_exam_scoring_ms_p95
             FROM scoped_events
             """,
-            (scoped_window_hours, scoped_row_limit),
+            (scoped_window_hours, scoped_window_hours, scoped_row_limit, scoped_row_limit),
         ).fetchone()
         if row:
             for key in (

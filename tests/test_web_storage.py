@@ -533,7 +533,7 @@ class FakeAdminMetricsConnection:
             return self._insert_event(params)
         if normalized.startswith("SELECT COUNT(*) AS request_count, SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_count, COALESCE(SUM(CASE WHEN event_type = 'api_request' THEN 1 ELSE 0 END), 0) AS api_requests_total,"):
             return self._performance_totals(params)
-        if normalized.startswith("SELECT path, COUNT(*) AS count, SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_count, COALESCE(AVG(duration_ms), 0) AS avg_ms,"):
+        if normalized.startswith("SELECT BTRIM(path) AS path, COUNT(*) AS count, SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_count, COALESCE(AVG(duration_ms), 0) AS avg_ms,"):
             return self._performance_endpoint_rows(params)
         if normalized == "SELECT COUNT(*) AS total FROM metric_events WHERE event_type = 'api_request' AND username = %s AND created_at >= NOW() - INTERVAL '1 day'":
             return self._count_user_api_requests_last_24h(params)
@@ -801,9 +801,12 @@ class FakeAdminMetricsConnection:
                 created_at = created_at.replace(tzinfo=timezone.utc)
             if created_at.astimezone(timezone.utc) < threshold:
                 continue
+            path = str(item["path"] or "").strip()
+            if not path:
+                continue
             entry = grouped.setdefault(
-                str(item["path"]),
-                {"path": str(item["path"]), "count": 0, "error_count": 0, "durations": []},
+                path,
+                {"path": path, "count": 0, "error_count": 0, "durations": []},
             )
             entry["count"] = int(entry["count"]) + 1
             entry["error_count"] = int(entry["error_count"]) + (1 if int(item.get("status_code") or 0) >= 400 else 0)
@@ -2368,6 +2371,83 @@ class PostgresAdminMetricsStoreTests(unittest.TestCase):
         events_csv = store.export_events_csv()
         self.assertIn("created_at,username,event_type,path", events_csv)
         self.assertIn("/api/generate", events_csv)
+
+    def test_postgres_admin_metrics_store_keeps_full_history_for_ai_exam_totals(self):
+        store = self.make_store()
+
+        self.assertTrue(
+            store.log_event(
+                event_type="ai_exam_scoring",
+                username="alpha",
+                server_code="blackberry",
+                path="/api/exam-import/score",
+                method="POST",
+                status_code=200,
+                meta={"rows_scored": 1, "answer_count": 4, "scoring_ms": 120},
+            )
+        )
+        self.assertTrue(
+            store.log_event(
+                event_type="ai_exam_scoring",
+                username="alpha",
+                server_code="blackberry",
+                path="/api/exam-import/score",
+                method="POST",
+                status_code=200,
+                meta={"rows_scored": 2, "answer_count": 8, "scoring_ms": 180},
+            )
+        )
+        store.backend._state["metric_events"][0]["created_at"] = "2026-03-01T00:00:00+00:00"
+
+        overview = store.get_overview(users=[])
+
+        self.assertEqual(overview["totals"]["ai_exam_scoring_total"], 2)
+        self.assertEqual(overview["totals"]["ai_exam_scoring_rows"], 3)
+        self.assertEqual(overview["totals"]["ai_exam_scoring_answers"], 12)
+
+    def test_postgres_admin_metrics_store_trims_and_deduplicates_endpoint_paths(self):
+        store = self.make_store()
+
+        self.assertTrue(
+            store.log_event(
+                event_type="api_request",
+                username="alpha",
+                server_code="blackberry",
+                path="  /api/test  ",
+                method="POST",
+                status_code=200,
+                duration_ms=100,
+            )
+        )
+        self.assertTrue(
+            store.log_event(
+                event_type="api_request",
+                username="alpha",
+                server_code="blackberry",
+                path="/api/test",
+                method="POST",
+                status_code=500,
+                duration_ms=200,
+            )
+        )
+        self.assertTrue(
+            store.log_event(
+                event_type="api_request",
+                username="alpha",
+                server_code="blackberry",
+                path="   ",
+                method="POST",
+                status_code=200,
+                duration_ms=300,
+            )
+        )
+
+        overview = store.get_performance_overview(window_minutes=60, top_endpoints=10)
+
+        self.assertEqual(len(overview["endpoint_overview"]), 1)
+        self.assertEqual(overview["endpoint_overview"][0]["path"], "/api/test")
+        self.assertEqual(overview["endpoint_overview"][0]["count"], 2)
+        self.assertEqual(overview["endpoint_overview"][0]["error_count"], 1)
 
 
 class PostgresAdminMetricsStoreSchemaMigrationTests(unittest.TestCase):
