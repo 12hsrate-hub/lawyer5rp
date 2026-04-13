@@ -667,6 +667,21 @@
   overflow: auto;
 }
 
+.exam-detail-shell .legal-table {
+  min-width: 1080px;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.exam-detail-shell .legal-table th,
+.exam-detail-shell .legal-table td {
+  padding: 12px 14px;
+}
+
+.exam-detail-shell .legal-table th {
+  letter-spacing: 0.04em;
+}
+
 .exam-import-toolbar {
   gap: 14px;
 }

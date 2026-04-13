@@ -1,4 +1,17 @@
 window.OGPExamImportView = {
+  normalizePayloadText(value) {
+    if (value == null) {
+      return "";
+    }
+    const technicalEmpty = /^(?:null|undefined|none|nan|n\/a|#n\/a|—|-)?$/i;
+    return String(value)
+      .replace(/\r/g, "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && !technicalEmpty.test(line))
+      .join(" ");
+  },
+
   getEntryStatus(entry) {
     const average = Number(entry?.average_score);
     if (entry?.average_score == null || Number.isNaN(average)) {
@@ -196,21 +209,26 @@ window.OGPExamImportView = {
       return;
     }
 
-    const rows = Object.entries(payload || {});
+    const rows = Object.entries(payload || {})
+      .map(([column, value]) => ({
+        column: String(column || "").trim(),
+        value: this.normalizePayloadText(value),
+      }))
+      .filter((item) => item.column && item.value);
     host.innerHTML = rows.length
       ? rows
           .map(
-            ([column, value]) => `
+            ({ column, value }) => `
               <tr>
                 <td>${escapeHtml(column)}</td>
-                <td>${escapeHtml(value || "—")}</td>
+                <td>${escapeHtml(value)}</td>
               </tr>
             `,
           )
           .join("")
       : `
           <tr>
-            <td colspan="2" class="legal-table__empty">По этой строке нет сохраненных столбцов.</td>
+            <td colspan="2" class="legal-table__empty">Нет полезных данных для отображения.</td>
           </tr>
         `;
   },
