@@ -644,6 +644,9 @@ def _detect_law_qa_document_focus(question: str) -> tuple[str, ...]:
     normalized_question = _normalize_law_text(question)
     tokens = set(_tokenize_normalized_text(normalized_question))
     groups: list[str] = []
+    ambiguous_scope = _law_qa_requires_scope_clarification(question)
+    processual_markers = ("задерж", "обыск", "досмотр", "арест", "процессуальн", "следств")
+    judicial_markers = ("суд", "заседан", "ходатайств", "апелляц", "кассац", "свидетел")
 
     if "адвокат" in normalized_question:
         groups.append("advocate_law")
@@ -651,14 +654,12 @@ def _detect_law_qa_document_focus(question: str) -> tuple[str, ...]:
         groups.append("administrative_code")
     if "ук" in tokens or "уголовн" in normalized_question or "преступ" in normalized_question:
         groups.append("criminal_code")
-    if "пк" in tokens or any(
-        marker in normalized_question
-        for marker in ("задерж", "обыск", "досмотр", "арест", "процессуальн", "следств", "допрос")
+    if "пк" in tokens or any(marker in normalized_question for marker in processual_markers) or (
+        "допрос" in normalized_question and not ambiguous_scope
     ):
         groups.append("processual_code")
-    if any(
-        marker in normalized_question
-        for marker in ("суд", "заседан", "ходатайств", "апелляц", "кассац", "свидетел", "допрос")
+    if any(marker in normalized_question for marker in judicial_markers) or (
+        "допрос" in normalized_question and not ambiguous_scope
     ):
         groups.append("judicial_system_law")
     if "fib" in normalized_question or "фиб" in normalized_question:
@@ -1025,6 +1026,12 @@ def _classify_law_qa_confidence(scores: list[int], question: str) -> str:
     terms = _expand_question_terms(question)
     article_numbers = _extract_article_numbers(question)
     focus_groups = _detect_law_qa_document_focus(question)
+    if _law_qa_requires_scope_clarification(question):
+        if article_numbers and top >= 40:
+            return "medium"
+        if top >= 26 and nonzero >= 1:
+            return "medium"
+        return "low"
     if article_numbers and top >= 40:
         return "high"
     if top >= 48 and nonzero >= 3:
@@ -1196,7 +1203,8 @@ def _build_law_qa_prompt(
     focus_guidance_block = f"9. {focus_guidance}\n\n" if focus_guidance else "\n"
     ambiguity_guidance = (
         "10. Вопрос содержит потенциально неоднозначный процессуальный термин. "
-        "Сначала кратко обозначь, какой именно контекст прямо подтверждается нормами, и не отвечай безусловным 'да' или 'нет', "
+        "Начни ответ с оговорки о том, какой именно контекст прямо подтверждается нормами, либо прямо скажи, что вопрос требует уточнения. "
+        "Не отвечай безусловным 'да' или 'нет', "
         "если для ответа пришлось бы додумывать недостающий процессуальный контекст."
         if _law_qa_requires_scope_clarification(question)
         else ""

@@ -2110,7 +2110,21 @@ https://laws.example/article
         )
 
         self.assertIn("потенциально неоднозначный процессуальный термин", prompt)
-        self.assertIn("не отвечай безусловным 'да' или 'нет'", prompt)
+        self.assertIn("Не отвечай безусловным 'да' или 'нет'", prompt)
+        self.assertIn("вопрос требует уточнения", prompt)
+
+    def test_law_qa_ambiguous_dopros_focus_stays_on_advocacy_law(self):
+        focus_groups = ai_service._detect_law_qa_document_focus("Может ли адвокат присутствовать на допросе?")
+
+        self.assertEqual(focus_groups, ("advocate_law",))
+
+    def test_law_qa_ambiguous_dopros_caps_confidence_at_medium(self):
+        confidence = ai_service._classify_law_qa_confidence(
+            [85, 72, 51],
+            "Может ли адвокат присутствовать на допросе?",
+        )
+
+        self.assertEqual(confidence, "medium")
 
     def test_law_qa_prompt_warns_about_false_premise_on_low_confidence(self):
         prompt = ai_service._build_law_qa_prompt(
