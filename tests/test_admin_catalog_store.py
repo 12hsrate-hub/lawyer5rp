@@ -1,4 +1,11 @@
+import sys
 from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+WEB_DIR = ROOT_DIR / "web"
+for candidate in (ROOT_DIR, WEB_DIR):
+    if str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
 
 from ogp_web.storage.admin_catalog_store import AdminCatalogStore
 
