@@ -10,7 +10,7 @@ from time import monotonic
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 
-from ogp_web.dependencies import get_admin_metrics_store, get_user_store
+from ogp_web.dependencies import get_admin_metrics_store, get_user_store, requires_permission
 from ogp_web.schemas import (
     AiFeedbackPayload,
     AiFeedbackResponse,
@@ -26,9 +26,9 @@ from ogp_web.schemas import (
     SuggestPayload,
     SuggestResponse,
 )
-from ogp_web.server_config import build_permission_set, get_server_config
+from ogp_web.server_config import get_server_config
 from ogp_web.services import ai_service
-from ogp_web.services.auth_service import AuthUser, require_user
+from ogp_web.services.auth_service import AuthUser
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.user_store import UserStore
@@ -158,16 +158,6 @@ def _server_config_for_user(store: UserStore, user: AuthUser):
     return get_server_config(user.server_code or store.get_server_code(user.username))
 
 
-def _ensure_law_qa_permission(store: UserStore, user: AuthUser) -> None:
-    server_config = _server_config_for_user(store, user)
-    permissions = build_permission_set(store, user.username, server_config)
-    if not permissions.can_access_court_claims:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=["Недостаточно прав для доступа к тестовому Q&A по законам."],
-        )
-
-
 def _validate_server_payload(store: UserStore, user: AuthUser, *, org: str = "", complaint_basis: str = "") -> None:
     server_config = _server_config_for_user(store, user)
     normalized_org = str(org or "").strip()
@@ -187,7 +177,7 @@ def _validate_server_payload(store: UserStore, user: AuthUser, *, org: str = "",
 
 @router.get("/api/complaint-draft", response_model=ComplaintDraftResponse)
 async def get_complaint_draft(
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ) -> ComplaintDraftResponse:
     draft = store.get_complaint_draft(user.username)
@@ -201,7 +191,7 @@ async def get_complaint_draft(
 @router.put("/api/complaint-draft", response_model=ComplaintDraftResponse)
 async def save_complaint_draft(
     payload: ComplaintDraftPayload,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ComplaintDraftResponse:
@@ -224,7 +214,7 @@ async def save_complaint_draft(
 
 @router.delete("/api/complaint-draft", response_model=ComplaintDraftResponse)
 async def clear_complaint_draft(
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ComplaintDraftResponse:
@@ -243,7 +233,7 @@ async def clear_complaint_draft(
 @router.post("/api/generate", response_model=GenerateResponse)
 async def generate(
     payload: ComplaintPayload,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> GenerateResponse:
@@ -271,7 +261,7 @@ async def generate(
 @router.post("/api/generate-rehab", response_model=GenerateResponse)
 async def generate_rehab(
     payload: RehabPayload,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> GenerateResponse:
@@ -296,7 +286,7 @@ async def generate_rehab(
 @router.post("/api/ai/suggest", response_model=SuggestResponse)
 async def suggest(
     payload: SuggestPayload,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> SuggestResponse:
@@ -378,7 +368,7 @@ async def suggest(
 @router.post("/api/ai/extract-principal", response_model=PrincipalScanResult)
 async def extract_principal(
     payload: PrincipalScanPayload,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission()),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> PrincipalScanResult:
     result = await _run_ai_task(
@@ -410,11 +400,10 @@ async def extract_principal(
 @router.post("/api/ai/law-qa-test", response_model=LawQaResponse)
 async def law_qa_test(
     payload: LawQaPayload,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission("court_claims")),
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> LawQaResponse:
-    _ensure_law_qa_permission(store, user)
     effective_server_code = payload.server_code or user.server_code or store.get_server_code(user.username)
     payload = payload.model_copy(update={"server_code": effective_server_code})
     result = await _run_ai_task(
@@ -478,7 +467,7 @@ async def law_qa_test(
 @router.post("/api/ai/feedback", response_model=AiFeedbackResponse)
 async def ai_feedback(
     payload: AiFeedbackPayload,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(requires_permission()),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> AiFeedbackResponse:
     generation_id = str(payload.generation_id or "").strip()

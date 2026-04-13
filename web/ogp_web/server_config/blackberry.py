@@ -104,7 +104,7 @@ BLACKBERRY_SERVER_CONFIG = ServerConfig(
             href="/exam-import-test",
             permission="exam_import",
         ),
-        NavItemConfig(key="admin", label="Админ", href="/admin", permission="admin"),
+        NavItemConfig(key="admin", label="Админ", href="/admin", permission="manage_servers"),
     ),
     complaint_nav_items=(
         NavItemConfig(key="complaint", label="Жалоба", href="/complaint"),
