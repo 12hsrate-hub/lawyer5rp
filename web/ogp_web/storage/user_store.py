@@ -739,6 +739,378 @@ class UserStore:
             "context_snapshot": snapshot,
         }
 
+
+    def get_user_id(self, username: str) -> int | None:
+        normalized_username = _normalize_username(username)
+        row = self._pg_fetchone(
+            """
+            SELECT id
+            FROM users
+            WHERE username = %s
+            LIMIT 1
+            """,
+            (normalized_username,),
+        )
+        if row is None:
+            return None
+        return int(row["id"])
+
+    def create_retrieval_run(
+        self,
+        *,
+        server_id: str,
+        run_type: str,
+        actor_user_id: int,
+        query_text: str,
+        effective_versions: dict[str, Any],
+        retrieved_sources: list[dict[str, Any]],
+        policy_status: str,
+    ) -> int:
+        row = self._pg_fetchone(
+            """
+            INSERT INTO retrieval_runs (
+                server_id,
+                run_type,
+                actor_user_id,
+                query_text,
+                effective_versions_json,
+                retrieved_sources_json,
+                policy_status
+            )
+            VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s)
+            RETURNING id
+            """,
+            (
+                str(server_id or "").strip().lower(),
+                str(run_type or "").strip().lower(),
+                int(actor_user_id),
+                str(query_text or "").strip(),
+                json.dumps(effective_versions or {}, ensure_ascii=False),
+                json.dumps(retrieved_sources or [], ensure_ascii=False),
+                str(policy_status or "pending").strip().lower() or "pending",
+            ),
+        )
+        return int(row["id"])
+
+    def create_law_qa_run(
+        self,
+        *,
+        server_id: str,
+        user_id: int,
+        question: str,
+        answer_text: str,
+        retrieval_run_id: int,
+        snapshot_id: str,
+    ) -> int:
+        row = self._pg_fetchone(
+            """
+            INSERT INTO law_qa_runs (
+                server_id,
+                user_id,
+                question,
+                answer_text,
+                retrieval_run_id,
+                snapshot_id
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                str(server_id or "").strip().lower(),
+                int(user_id),
+                str(question or "").strip(),
+                str(answer_text or "").strip(),
+                int(retrieval_run_id),
+                str(snapshot_id or "").strip(),
+            ),
+        )
+        return int(row["id"])
+
+    def validate_citation_source_scope(self, *, server_id: str, source_type: str, source_id: int, source_version_id: int) -> bool:
+        normalized_server = str(server_id or "").strip().lower()
+        normalized_type = str(source_type or "").strip().lower()
+        if normalized_type == "law_article":
+            row = self._pg_fetchone(
+                """
+                SELECT 1
+                FROM law_articles a
+                JOIN law_versions v ON v.id = a.law_version_id
+                WHERE a.id = %s
+                  AND a.law_version_id = %s
+                  AND v.server_code = %s
+                LIMIT 1
+                """,
+                (int(source_id), int(source_version_id), normalized_server),
+            )
+            return row is not None
+        if normalized_type == "template":
+            row = self._pg_fetchone(
+                """
+                SELECT 1
+                FROM template_versions tv
+                JOIN templates t ON t.id = tv.template_id
+                WHERE t.id = %s
+                  AND tv.id = %s
+                  AND t.server_code = %s
+                LIMIT 1
+                """,
+                (int(source_id), int(source_version_id), normalized_server),
+            )
+            return row is not None
+        return False
+
+    def resolve_law_article_source(
+        self,
+        *,
+        server_id: str,
+        law_version_id: int,
+        article_label: str,
+        document_title: str,
+        source_url: str,
+    ) -> dict[str, Any] | None:
+        row = self._pg_fetchone(
+            """
+            SELECT
+                a.id AS source_id,
+                a.law_version_id AS source_version_id
+            FROM law_articles a
+            JOIN law_documents d ON d.id = a.law_document_id
+            JOIN law_versions v ON v.id = a.law_version_id
+            WHERE v.server_code = %s
+              AND a.law_version_id = %s
+              AND a.article_label = %s
+              AND d.document_title = %s
+              AND d.source_url = %s
+            ORDER BY a.id ASC
+            LIMIT 1
+            """,
+            (
+                str(server_id or "").strip().lower(),
+                int(law_version_id),
+                str(article_label or "").strip(),
+                str(document_title or "").strip(),
+                str(source_url or "").strip(),
+            ),
+        )
+        return dict(row) if row else None
+
+    def create_document_version_citation(
+        self,
+        *,
+        server_id: str,
+        document_version_id: int,
+        retrieval_run_id: int,
+        citation_type: str,
+        source_type: str,
+        source_id: int,
+        source_version_id: int,
+        canonical_ref: str,
+        quoted_text: str,
+        usage_type: str,
+    ) -> int:
+        row = self._pg_fetchone(
+            """
+            INSERT INTO document_version_citations (
+                document_version_id,
+                retrieval_run_id,
+                citation_type,
+                source_type,
+                source_id,
+                source_version_id,
+                canonical_ref,
+                quoted_text,
+                usage_type
+            )
+            SELECT
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s
+            FROM document_versions dv
+            JOIN case_documents d ON d.id = dv.document_id
+            JOIN retrieval_runs rr ON rr.id = %s
+            WHERE dv.id = %s
+              AND d.server_id = %s
+              AND rr.server_id = %s
+            RETURNING id
+            """,
+            (
+                int(document_version_id),
+                int(retrieval_run_id),
+                str(citation_type or "norm").strip().lower(),
+                str(source_type or "").strip().lower(),
+                int(source_id),
+                int(source_version_id),
+                str(canonical_ref or "").strip(),
+                str(quoted_text or "").strip(),
+                str(usage_type or "supporting").strip().lower(),
+                int(retrieval_run_id),
+                int(document_version_id),
+                str(server_id or "").strip().lower(),
+                str(server_id or "").strip().lower(),
+            ),
+        )
+        return int(row["id"])
+
+    def create_answer_citation(
+        self,
+        *,
+        server_id: str,
+        law_qa_run_id: int,
+        retrieval_run_id: int,
+        citation_type: str,
+        source_type: str,
+        source_id: int,
+        source_version_id: int,
+        canonical_ref: str,
+        quoted_text: str,
+        usage_type: str,
+    ) -> int:
+        row = self._pg_fetchone(
+            """
+            INSERT INTO answer_citations (
+                law_qa_run_id,
+                retrieval_run_id,
+                citation_type,
+                source_type,
+                source_id,
+                source_version_id,
+                canonical_ref,
+                quoted_text,
+                usage_type
+            )
+            SELECT
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s
+            FROM law_qa_runs lr
+            JOIN retrieval_runs rr ON rr.id = %s
+            WHERE lr.id = %s
+              AND lr.server_id = %s
+              AND rr.server_id = %s
+            RETURNING id
+            """,
+            (
+                int(law_qa_run_id),
+                int(retrieval_run_id),
+                str(citation_type or "norm").strip().lower(),
+                str(source_type or "").strip().lower(),
+                int(source_id),
+                int(source_version_id),
+                str(canonical_ref or "").strip(),
+                str(quoted_text or "").strip(),
+                str(usage_type or "supporting").strip().lower(),
+                int(retrieval_run_id),
+                int(law_qa_run_id),
+                str(server_id or "").strip().lower(),
+                str(server_id or "").strip().lower(),
+            ),
+        )
+        return int(row["id"])
+
+    def get_document_version_citations(self, *, document_version_id: int, server_id: str | None = None) -> list[dict[str, Any]]:
+        if server_id:
+            rows = self._pg_fetchall(
+                """
+                SELECT
+                    c.id,
+                    c.document_version_id,
+                    c.retrieval_run_id,
+                    c.citation_type,
+                    c.source_type,
+                    c.source_id,
+                    c.source_version_id,
+                    c.canonical_ref,
+                    c.quoted_text,
+                    c.usage_type,
+                    c.created_at
+                FROM document_version_citations c
+                JOIN document_versions dv ON dv.id = c.document_version_id
+                JOIN case_documents d ON d.id = dv.document_id
+                WHERE c.document_version_id = %s AND d.server_id = %s
+                ORDER BY c.id ASC
+                """,
+                (int(document_version_id), str(server_id).strip().lower()),
+            )
+        else:
+            rows = self._pg_fetchall(
+                """
+                SELECT
+                    id,
+                    document_version_id,
+                    retrieval_run_id,
+                    citation_type,
+                    source_type,
+                    source_id,
+                    source_version_id,
+                    canonical_ref,
+                    quoted_text,
+                    usage_type,
+                    created_at
+                FROM document_version_citations
+                WHERE document_version_id = %s
+                ORDER BY id ASC
+                """,
+                (int(document_version_id),),
+            )
+        return [dict(row) for row in rows]
+
+    def get_law_qa_run_citations(self, *, law_qa_run_id: int, server_id: str | None = None) -> list[dict[str, Any]]:
+        if server_id:
+            rows = self._pg_fetchall(
+                """
+                SELECT
+                    c.id,
+                    c.law_qa_run_id,
+                    c.retrieval_run_id,
+                    c.citation_type,
+                    c.source_type,
+                    c.source_id,
+                    c.source_version_id,
+                    c.canonical_ref,
+                    c.quoted_text,
+                    c.usage_type,
+                    c.created_at
+                FROM answer_citations c
+                JOIN law_qa_runs lr ON lr.id = c.law_qa_run_id
+                WHERE c.law_qa_run_id = %s AND lr.server_id = %s
+                ORDER BY c.id ASC
+                """,
+                (int(law_qa_run_id), str(server_id).strip().lower()),
+            )
+        else:
+            rows = self._pg_fetchall(
+                """
+                SELECT
+                    id,
+                    law_qa_run_id,
+                    retrieval_run_id,
+                    citation_type,
+                    source_type,
+                    source_id,
+                    source_version_id,
+                    canonical_ref,
+                    quoted_text,
+                    usage_type,
+                    created_at
+                FROM answer_citations
+                WHERE law_qa_run_id = %s
+                ORDER BY id ASC
+                """,
+                (int(law_qa_run_id),),
+            )
+        return [dict(row) for row in rows]
     def list_users(self, *, limit: int | None = None) -> list[dict[str, Any]]:
         safe_limit = None
         if limit is not None:

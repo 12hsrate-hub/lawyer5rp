@@ -181,6 +181,27 @@ class LawQaPayload(BaseModel):
         return normalized
 
 
+class CitationRecord(BaseModel):
+    id: int
+    retrieval_run_id: int
+    citation_type: str = ""
+    source_type: str = ""
+    source_id: int
+    source_version_id: int
+    canonical_ref: str = ""
+    quoted_text: str = ""
+    usage_type: str = ""
+    created_at: str = ""
+
+
+class DocumentVersionCitationsResponse(BaseModel):
+    items: List[CitationRecord] = Field(default_factory=list)
+
+
+class LawQaRunCitationsResponse(BaseModel):
+    items: List[CitationRecord] = Field(default_factory=list)
+
+
 class LawQaResponse(BaseModel):
     text: str
     generation_id: str = ""
@@ -197,6 +218,9 @@ class LawQaResponse(BaseModel):
     warnings: List[str] = Field(default_factory=list)
     shadow: dict[str, Any] = Field(default_factory=dict)
     selected_norms: List[dict[str, Any]] = Field(default_factory=list)
+    retrieval_run_id: int | None = None
+    law_qa_run_id: int | None = None
+    citations: List[CitationRecord] = Field(default_factory=list)
 
 
 class AiFeedbackPayload(BaseModel):
