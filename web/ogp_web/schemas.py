@@ -136,6 +136,8 @@ class SuggestPayload(BaseModel):
     raw_desc: str = ""
     complaint_basis: str = ""
     main_focus: str = ""
+    law_version_id: int | None = None
+    template_version_id: int | None = None
 
     @field_validator("complaint_basis")
     @classmethod
@@ -156,6 +158,7 @@ class LawQaPayload(BaseModel):
     model: str = ""
     question: str = ""
     max_answer_chars: int = 2200
+    law_version_id: int | None = None
 
     @field_validator("server_code")
     @classmethod
@@ -190,6 +193,7 @@ class LawQaResponse(BaseModel):
     bundle_status: str = ""
     bundle_generated_at: str = ""
     bundle_fingerprint: str = ""
+    law_version_id: int | None = None
     warnings: List[str] = Field(default_factory=list)
     shadow: dict[str, Any] = Field(default_factory=dict)
     selected_norms: List[dict[str, Any]] = Field(default_factory=list)
