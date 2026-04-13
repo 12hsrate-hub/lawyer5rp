@@ -148,6 +148,104 @@ def _band_from_thresholds(value: float | None, *, green_max: float, yellow_max: 
     return "red"
 
 
+AI_PIPELINE_RECENT_WINDOW_HOURS = 24
+AI_PIPELINE_RECENT_HISTORY_LIMIT = 5000
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        if value in (None, ""):
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _is_generation_fallback(meta: dict[str, Any]) -> bool:
+    attempt_path = str(meta.get("attempt_path") or "").strip().lower()
+    if meta.get("context_compacted"):
+        return True
+    return bool(attempt_path) and attempt_path not in {"direct", "proxy", "cache"}
+
+
+def _summarize_generation_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    input_tokens: list[int] = []
+    output_tokens: list[int] = []
+    total_tokens: list[int] = []
+    latency_values: list[int] = []
+    retrieval_values: list[int] = []
+    openai_values: list[int] = []
+    total_suggest_values: list[int] = []
+    estimated_cost_total = 0.0
+    estimated_cost_count = 0
+    budget_warning_count = 0
+    models: dict[str, int] = {}
+    retrieval_context_mode_counts: dict[str, int] = {}
+
+    for row in rows:
+        meta = row.get("meta") or {}
+        model = str(meta.get("model") or "").strip()
+        if model:
+            models[model] = models.get(model, 0) + 1
+        context_mode = str(meta.get("retrieval_context_mode") or "").strip().lower()
+        if context_mode:
+            retrieval_context_mode_counts[context_mode] = retrieval_context_mode_counts.get(context_mode, 0) + 1
+
+        input_value = _safe_int(meta.get("input_tokens"))
+        output_value = _safe_int(meta.get("output_tokens"))
+        total_value = _safe_int(meta.get("total_tokens"))
+        latency_value = _safe_int(meta.get("latency_ms"), default=-1)
+        retrieval_value = _safe_int(meta.get("retrieval_ms"), default=-1)
+        openai_value = _safe_int(meta.get("openai_ms"), default=-1)
+        total_suggest_value = _safe_int(meta.get("total_suggest_ms"), default=-1)
+
+        if input_value > 0:
+            input_tokens.append(input_value)
+        if output_value > 0:
+            output_tokens.append(output_value)
+        if total_value > 0:
+            total_tokens.append(total_value)
+        if latency_value >= 0:
+            latency_values.append(latency_value)
+        if retrieval_value >= 0:
+            retrieval_values.append(retrieval_value)
+        if openai_value >= 0:
+            openai_values.append(openai_value)
+        if total_suggest_value >= 0:
+            total_suggest_values.append(total_suggest_value)
+
+        if meta.get("estimated_cost_usd") not in (None, ""):
+            cost_value = _safe_float(meta.get("estimated_cost_usd"), default=0.0)
+            estimated_cost_total += cost_value
+            estimated_cost_count += 1
+
+        warnings = meta.get("budget_warnings") or ()
+        if isinstance(warnings, list) and warnings:
+            budget_warning_count += 1
+
+    return {
+        "total_generations": len(rows),
+        "models": models,
+        "retrieval_context_mode_counts": retrieval_context_mode_counts,
+        "input_tokens_total": sum(input_tokens),
+        "output_tokens_total": sum(output_tokens),
+        "total_tokens_total": sum(total_tokens),
+        "input_tokens_p50": AdminMetricsStore._percentile(input_tokens, 0.5),
+        "total_tokens_p95": AdminMetricsStore._percentile(total_tokens, 0.95),
+        "latency_ms_p50": AdminMetricsStore._percentile(latency_values, 0.5),
+        "latency_ms_p95": AdminMetricsStore._percentile(latency_values, 0.95),
+        "retrieval_ms_p50": AdminMetricsStore._percentile(retrieval_values, 0.5),
+        "retrieval_ms_p95": AdminMetricsStore._percentile(retrieval_values, 0.95),
+        "openai_ms_p50": AdminMetricsStore._percentile(openai_values, 0.5),
+        "openai_ms_p95": AdminMetricsStore._percentile(openai_values, 0.95),
+        "total_suggest_ms_p50": AdminMetricsStore._percentile(total_suggest_values, 0.5),
+        "total_suggest_ms_p95": AdminMetricsStore._percentile(total_suggest_values, 0.95),
+        "estimated_cost_total_usd": round(estimated_cost_total, 6),
+        "estimated_cost_samples": estimated_cost_count,
+        "budget_warning_count": budget_warning_count,
+    }
+
+
 def _build_ai_pipeline_quality_summary(
     *,
     generations: list[dict[str, Any]],
@@ -177,7 +275,7 @@ def _build_ai_pipeline_quality_summary(
             guard_fail_count += 1
         elif guard_status == "warn":
             guard_warn_count += 1
-        if meta.get("context_compacted") or meta.get("attempt_path") not in (None, "", "direct", "proxy"):
+        if _is_generation_fallback(meta):
             fallback_count += 1
         validation_errors = {str(value or "").strip().lower() for value in meta.get("validation_errors") or []}
         for issue_key in ("unsupported_article_reference", "new_fact_detected", "format_violation"):
@@ -283,7 +381,7 @@ def _build_ai_pipeline_cost_tables(generations: list[dict[str, Any]]) -> dict[st
             generation_id=generation_id,
             field="estimated_cost_usd",
         )
-        token_value = int(meta.get("total_tokens") or 0)
+        token_value = _safe_int(meta.get("total_tokens"), default=0)
 
         model_item = by_model.setdefault(model, {"model": model, "requests": 0, "estimated_cost_total_usd": 0.0, "total_tokens": 0})
         model_item["requests"] += 1
@@ -804,7 +902,7 @@ async def admin_ai_pipeline_data(
     normalized_issue_type = str(issue_type or "").strip().lower()
     normalized_context_mode = str(retrieval_context_mode or "").strip().lower()
     normalized_guard_warning = str(guard_warning or "").strip().lower()
-    safe_history_limit = min(limit * 6, 500)
+    safe_history_limit = AI_PIPELINE_RECENT_HISTORY_LIMIT
 
     partial_errors: list[dict[str, str]] = []
     failed_blocks: set[str] = set()
@@ -855,13 +953,19 @@ async def admin_ai_pipeline_data(
         feedback = []
 
     try:
-        recent_generations = _filter_recent_metric_items(generations, since_hours=24)
-        recent_feedback = _filter_recent_metric_items(feedback, since_hours=24)
-        law_qa_summary = metrics_store.summarize_ai_generation_logs(flow="law_qa", limit=300)
-        suggest_summary = metrics_store.summarize_ai_generation_logs(flow="suggest", limit=300)
+        recent_generations = _filter_recent_metric_items(generations, since_hours=AI_PIPELINE_RECENT_WINDOW_HOURS)
+        recent_feedback = _filter_recent_metric_items(feedback, since_hours=AI_PIPELINE_RECENT_WINDOW_HOURS)
+        recent_law_qa_generations = _filter_recent_metric_items(
+            metrics_store.list_ai_generation_logs(flow="law_qa", limit=safe_history_limit),
+            since_hours=AI_PIPELINE_RECENT_WINDOW_HOURS,
+        )
+        recent_suggest_generations = _filter_recent_metric_items(
+            metrics_store.list_ai_generation_logs(flow="suggest", limit=safe_history_limit),
+            since_hours=AI_PIPELINE_RECENT_WINDOW_HOURS,
+        )
         flow_summaries = {
-            "law_qa": law_qa_summary,
-            "suggest": suggest_summary,
+            "law_qa": _summarize_generation_rows(recent_law_qa_generations),
+            "suggest": _summarize_generation_rows(recent_suggest_generations),
         }
         quality_summary = _build_ai_pipeline_quality_summary(
             generations=recent_generations,
@@ -875,8 +979,8 @@ async def admin_ai_pipeline_data(
     except Exception as exc:  # noqa: BLE001
         partial_errors.append(_normalize_api_error(exc, source="quality"))
         failed_blocks.add("quality")
-        recent_generations = _filter_recent_metric_items(generations, since_hours=24)
-        recent_feedback = _filter_recent_metric_items(feedback, since_hours=24)
+        recent_generations = _filter_recent_metric_items(generations, since_hours=AI_PIPELINE_RECENT_WINDOW_HOURS)
+        recent_feedback = _filter_recent_metric_items(feedback, since_hours=AI_PIPELINE_RECENT_WINDOW_HOURS)
         quality_summary = _build_ai_pipeline_quality_summary(generations=[], feedback=[])
         top_inaccurate_generations = []
         flow_summaries = {"law_qa": {}, "suggest": {}}
