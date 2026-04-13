@@ -644,6 +644,16 @@ def _normalize_exam_text_soft(value: str) -> str:
     return text
 
 
+def _strip_exam_reference_boilerplate(value: str) -> str:
+    text = _normalize_exam_text_soft(value)
+    if not text:
+        return text
+    text = re.sub(r"^\s*вопрос с выбором ответа\.?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^\s*правильный ответ\s*[—:-]?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^\s*правильные ответы\s*:?\s*", "", text, flags=re.IGNORECASE)
+    return _normalize_exam_text_soft(text)
+
+
 def _tokenize_exam_answer(value: str) -> list[str]:
     return [token for token in _normalize_exam_answer(value).split() if token]
 
@@ -828,7 +838,7 @@ def _build_exam_batches_by_budget(items: list[dict[str, object]], *, hard_item_l
 
 def _estimate_exam_score_without_llm(*, user_answer: str, correct_answer: str) -> dict[str, object] | None:
     normalized_user = _normalize_exam_answer(user_answer)
-    normalized_correct = _normalize_exam_answer(correct_answer)
+    normalized_correct = _normalize_exam_answer(_strip_exam_reference_boilerplate(correct_answer))
     if not normalized_user:
         return {
             "score": 1,
@@ -885,7 +895,7 @@ def _should_try_exam_heuristic(
     must_not_include: list[str] | None = None,
     fatal_errors: list[str] | None = None,
 ) -> bool:
-    if _normalize_exam_answer(user_answer) == _normalize_exam_answer(correct_answer):
+    if _normalize_exam_answer(user_answer) == _normalize_exam_answer(_strip_exam_reference_boilerplate(correct_answer)):
         return True
     return not (
         str(question).strip()

@@ -229,6 +229,28 @@ class SharedAiTests(unittest.TestCase):
 
         self.assertEqual(payload["score"], 100)
 
+    def test_exam_scoring_exact_match_ignores_reference_boilerplate(self):
+        class DummyClient:
+            def __init__(self):
+                self.responses = self
+
+            def create(self, **kwargs):
+                raise AssertionError(f"model should not be called: {kwargs}")
+
+        payload = ogp_ai.score_exam_answer(
+            DummyClient(),
+            user_answer="Выпуск под залог запрещен",
+            correct_answer="Вопрос с выбором ответа.\nПравильный ответ — Выпуск под залог запрещен",
+            column="H",
+            question="Что делать при отсутствии суммы залога?",
+            exam_type="legal",
+            question_type="exact_ref",
+            rubric_version="gta5rp_legal_v3",
+            key_points=["выпуск под залог запрещен"],
+        )
+
+        self.assertEqual(payload["score"], 100)
+
     def test_exam_scoring_batch_returns_exact_match_without_model_call(self):
         class DummyClient:
             def __init__(self):
@@ -256,6 +278,43 @@ class SharedAiTests(unittest.TestCase):
             ogp_ai.create_openai_client = original_create
 
         self.assertEqual(payload["G"]["score"], 100)
+
+    def test_exam_scoring_batch_ignores_reference_boilerplate_for_exact_match(self):
+        class DummyClient:
+            def __init__(self):
+                self.responses = self
+
+            def create(self, **kwargs):
+                raise AssertionError(f"model should not be called: {kwargs}")
+
+        original_create = ogp_ai.create_openai_client
+        ogp_ai.create_openai_client = lambda api_key, proxy_url="": DummyClient()
+        try:
+            payload, stats = ogp_ai.score_exam_answers_batch_with_proxy_fallback(
+                api_key="key",
+                proxy_url="",
+                items=[
+                    {
+                        "column": "H",
+                        "header": "question",
+                        "question": "Что делать при отсутствии суммы залога?",
+                        "exam_type": "legal",
+                        "question_type": "exact_ref",
+                        "rubric_version": "gta5rp_legal_v3",
+                        "user_answer": "Выпуск под залог запрещен",
+                        "correct_answer": "Вопрос с выбором ответа.\nПравильный ответ — Выпуск под залог запрещен",
+                        "key_points": ["выпуск под залог запрещен"],
+                    }
+                ],
+                return_stats=True,
+            )
+        finally:
+            ogp_ai.create_openai_client = original_create
+
+        self.assertEqual(payload["H"]["score"], 100)
+        self.assertEqual(stats["heuristic_count"], 1)
+        self.assertEqual(stats["llm_count"], 0)
+        self.assertEqual(stats["llm_calls"], 0)
 
     def test_exam_scoring_batch_rubric_exact_match_skips_model_call(self):
         class DummyClient:
