@@ -56,7 +56,16 @@ def build_permission_set(store: UserStore, username: str, server_config: ServerC
     codes = set(store.get_permission_codes(normalized_username, server_code=server_config.code))
 
     if is_admin_user(normalized_username):
-        codes.update({"manage_servers", "manage_laws", "view_analytics"})
+        codes.update(
+            {
+                "manage_servers",
+                "manage_laws",
+                "view_analytics",
+                "manage_runtime_servers",
+                "manage_law_sets",
+                "publish_law_sets",
+            }
+        )
     if is_test_user(normalized_username):
         codes.update({"court_claims", "exam_import", "complaint_presets"})
 

@@ -560,5 +560,87 @@ class AdminCatalogRollbackPayload(BaseModel):
 
 
 class AdminLawSourcesPayload(BaseModel):
+    server_code: str = ""
     source_urls: list[str] = Field(default_factory=list)
     persist_sources: bool = True
+
+    @field_validator("server_code")
+    @classmethod
+    def validate_server_code(cls, value: str) -> str:
+        return str(value or "").strip().lower()
+
+
+class AdminLawSourceRegistryPayload(BaseModel):
+    name: str = ""
+    kind: str = "url"
+    url: str = ""
+    is_active: bool = True
+
+    @field_validator("name", "url")
+    @classmethod
+    def validate_non_empty_text(cls, value: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("value_required")
+        return normalized
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower() or "url"
+        if normalized not in {"url", "registry", "api"}:
+            raise ValueError("law_source_kind_invalid")
+        return normalized
+
+
+class AdminLawSetItemPayload(BaseModel):
+    law_code: str = ""
+    effective_from: str = ""
+    priority: int = 100
+    source_id: int | None = None
+
+    @field_validator("law_code")
+    @classmethod
+    def validate_law_code(cls, value: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("law_code_required")
+        return normalized
+
+
+class AdminLawSetPayload(BaseModel):
+    name: str = ""
+    is_active: bool = True
+    items: list[AdminLawSetItemPayload] = Field(default_factory=list)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("law_set_name_required")
+        return normalized
+
+
+class AdminLawSetRebuildPayload(BaseModel):
+    dry_run: bool = False
+
+
+class AdminLawSetRollbackPayload(BaseModel):
+    law_version_id: int | None = None
+
+
+class AdminServerLawBindingPayload(BaseModel):
+    law_code: str = ""
+    source_id: int
+    effective_from: str = ""
+    priority: int = 100
+    law_set_id: int | None = None
+
+    @field_validator("law_code")
+    @classmethod
+    def validate_law_code(cls, value: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("law_code_required")
+        return normalized
