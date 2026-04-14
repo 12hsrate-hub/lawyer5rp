@@ -67,6 +67,18 @@ def _as_string(value: object) -> str:
     return str(value or "").strip()
 
 
+def _ensure_switchable_server(store: UserStore, username: str, target_server_id: str) -> str:
+    normalized_target = str(target_server_id or "").strip().lower()
+    if not normalized_target:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Укажите целевой сервер."])
+    if normalized_target not in set(store.list_accessible_server_codes(username)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=["Недостаточно прав для переключения на выбранный сервер."],
+        )
+    return normalized_target
+
+
 def _normalize_switch_draft(source: dict[str, Any], *, target_server_id: str) -> tuple[dict[str, Any], DocumentBuilderSwitchDiff]:
     target_config = get_server_config(target_server_id)
     allowed_orgs = set(target_config.organizations)
@@ -157,7 +169,10 @@ async def profile_selected_server(
     store: UserStore = Depends(get_user_store),
 ) -> SelectedServerResponse:
     try:
-        selected = store.set_selected_server_code(user.username, payload.server_code)
+        selected = store.set_selected_server_code(
+            user.username,
+            _ensure_switchable_server(store, user.username, payload.server_code),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     return SelectedServerResponse(
@@ -172,13 +187,13 @@ async def document_builder_preview_switch(
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ) -> DocumentBuilderSwitchPreviewResponse:
-    _ = store
-    normalized_draft, diff = _normalize_switch_draft(payload.draft, target_server_id=payload.server_id)
+    target_server_id = _ensure_switchable_server(store, user.username, payload.server_id)
+    normalized_draft, diff = _normalize_switch_draft(payload.draft, target_server_id=target_server_id)
     return DocumentBuilderSwitchPreviewResponse(
-        server_id=payload.server_id,
+        server_id=target_server_id,
         draft=normalized_draft,
         diff=diff,
-        bundle=_bundle_for_server(payload.server_id),
+        bundle=_bundle_for_server(target_server_id),
         message="Предпросмотр переключения сервера готов.",
     )
 
@@ -190,20 +205,21 @@ async def document_builder_confirm_switch(
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> DocumentBuilderSwitchPreviewResponse:
+    target_server_id = _ensure_switchable_server(store, user.username, payload.server_id)
     old_server_id = user.server_code
-    normalized_draft, diff = _normalize_switch_draft(payload.draft, target_server_id=payload.server_id)
-    store.set_selected_server_code(user.username, payload.server_id)
-    saved = store.save_complaint_draft(user.username, normalized_draft, server_code=payload.server_id)
+    normalized_draft, diff = _normalize_switch_draft(payload.draft, target_server_id=target_server_id)
+    store.set_selected_server_code(user.username, target_server_id)
+    saved = store.save_complaint_draft(user.username, normalized_draft, server_code=target_server_id)
     metrics_store.log_event(
         event_type="document_builder_server_switch_confirmed",
         username=user.username,
-        server_code=payload.server_id,
+        server_code=target_server_id,
         path="/api/document-builder/confirm-switch",
         method="POST",
         status_code=200,
         meta={
             "old_server_id": old_server_id,
-            "new_server_id": payload.server_id,
+            "new_server_id": target_server_id,
             "keeps_count": len(diff.keeps),
             "clears_count": len(diff.clears),
             "new_required_count": len(diff.new_required_fields),
@@ -211,9 +227,9 @@ async def document_builder_confirm_switch(
         },
     )
     return DocumentBuilderSwitchPreviewResponse(
-        server_id=payload.server_id,
+        server_id=target_server_id,
         draft=dict(saved.get("draft") or {}),
         diff=diff,
-        bundle=_bundle_for_server(payload.server_id),
+        bundle=_bundle_for_server(target_server_id),
         message="Сервер переключён. Черновик пересчитан и сохранён.",
     )

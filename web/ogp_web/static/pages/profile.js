@@ -19,6 +19,7 @@ const serverSwitchClearHost = document.getElementById("server-switch-preview-cle
 const serverSwitchAttentionHost = document.getElementById("server-switch-preview-attention");
 const serverSwitchConfirmBtn = document.getElementById("server-switch-confirm-btn");
 const serverSwitchCancelBtn = document.getElementById("server-switch-cancel-btn");
+const serverSwitchModalCloseBtn = document.getElementById("server-switch-modal-close");
 
 const { apiFetch, parsePayload, setStateError, setStateIdle, setStateSuccess, redirectIfUnauthorized } = window.OGPWeb;
 const { bindLogout } = window.OGPPage;
@@ -268,7 +269,7 @@ passwordForm?.addEventListener("submit", async (event) => {
 
 bindLogout(logoutBtn);
 bindDigitsOnly(profileForm, "phone", 7);
-serverSwitchModal.bind(serverSwitchCancelBtn);
+serverSwitchModal.bind(serverSwitchCancelBtn, serverSwitchModalCloseBtn);
 switchServerBtn?.addEventListener("click", previewServerSwitch);
 serverSwitchConfirmBtn?.addEventListener("click", confirmServerSwitch);
 loadProfile();

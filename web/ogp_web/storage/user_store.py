@@ -1260,6 +1260,38 @@ class UserStore:
     def get_server_code(self, username: str) -> str:
         return self._resolve_user_server_code(username)
 
+    def list_accessible_server_codes(self, username: str) -> tuple[str, ...]:
+        normalized_username = _normalize_username(username)
+        try:
+            rows = self._pg_fetchall(
+                """
+                SELECT DISTINCT source.server_code AS server_code
+                FROM (
+                    SELECT usr.server_code AS server_code
+                    FROM users u
+                    JOIN user_server_roles usr ON usr.user_id = u.id
+                    WHERE u.username = %s
+                      AND usr.is_active = TRUE
+                    UNION
+                    SELECT uss.server_code AS server_code
+                    FROM users u
+                    JOIN user_selected_servers uss ON uss.user_id = u.id
+                    WHERE u.username = %s
+                ) AS source
+                WHERE source.server_code IS NOT NULL
+                """,
+                (normalized_username, normalized_username),
+            )
+        except Exception:
+            rows = []
+        codes = {
+            self._normalize_server_context(str(row.get("server_code") or ""))
+            for row in rows
+            if str(row.get("server_code") or "").strip()
+        }
+        codes.add(self.get_server_code(normalized_username))
+        return tuple(sorted(codes))
+
     def set_selected_server_code(self, username: str, server_code: str) -> str:
         normalized_username = _normalize_username(username)
         normalized_server = self._normalize_server_context(server_code)

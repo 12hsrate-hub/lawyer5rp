@@ -289,6 +289,7 @@ async def profile_page(
     store: UserStore = Depends(get_user_store),
 ):
     server_config, permissions = _server_context(store, user.username)
+    accessible_codes = set(store.list_accessible_server_codes(user.username))
     return templates.TemplateResponse(
         request,
         "profile.html",
@@ -297,6 +298,10 @@ async def profile_page(
             server_config=server_config,
             permissions=permissions,
             nav_active="profile",
-            available_servers=[{"code": item.code, "name": item.name} for item in list_server_configs()],
+            available_servers=[
+                {"code": item.code, "name": item.name}
+                for item in list_server_configs()
+                if item.code in accessible_codes
+            ],
         ),
     )

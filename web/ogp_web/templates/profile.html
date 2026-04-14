@@ -114,8 +114,9 @@
   </div>
 </div>
 
-<div id="server-switch-modal" class="modal" hidden>
-  <div class="modal-content legal-modal-card">
+<div id="server-switch-modal" class="modal-backdrop" hidden>
+  <div class="modal-card legal-modal-card" role="dialog" aria-modal="true" aria-labelledby="server-switch-modal-title">
+    <button type="button" id="server-switch-modal-close" class="modal-close" aria-label="Закрыть">×</button>
     <h3>Подтвердите переключение сервера</h3>
     <div id="server-switch-preview-keep" class="legal-message ui-state ui-state--success">Сохранится: —</div>
     <div id="server-switch-preview-clear" class="legal-message ui-state ui-state--empty">Очистится: —</div>
