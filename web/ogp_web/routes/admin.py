@@ -699,6 +699,16 @@ def _claim_law_rebuild_task(*, server_code: str) -> tuple[dict[str, Any] | None,
         return None, deepcopy(task)
 
 
+def _get_content_workflow_service_for_request(request: Request) -> ContentWorkflowService:
+    override = getattr(request.app, "dependency_overrides", {}).get(get_content_workflow_service)
+    if override is None:
+        return get_content_workflow_service(request)
+    try:
+        return override()
+    except TypeError:
+        return override(request)
+
+
 _load_admin_tasks_from_disk()
 
 
@@ -1403,9 +1413,9 @@ async def admin_law_sources_rebuild_async(
 
     def _runner() -> None:
         _patch_admin_task(task_id, status="running", started_at=datetime.now(timezone.utc).isoformat())
-        workflow_service = get_content_workflow_service()
-        service = LawAdminService(workflow_service)
         try:
+            workflow_service = _get_content_workflow_service_for_request(request)
+            service = LawAdminService(workflow_service)
             result = service.rebuild_index(
                 server_code=user.server_code,
                 source_urls=payload.source_urls,
