@@ -1652,6 +1652,56 @@ function renderKeyValueField(label, value) {
   `;
 }
 
+function compactLegacyRefValue(value) {
+  const safeDash = "вЂ”";
+  if (value === null || value === undefined || value === "") {
+    return safeDash;
+  }
+  if (Array.isArray(value)) {
+    const parts = value.map((item) => compactLegacyRefValue(item)).filter((item) => item && item !== safeDash);
+    return parts.length ? parts.join(", ") : safeDash;
+  }
+  if (typeof value === "object") {
+    const summaryParts = [];
+    if (value.id) summaryParts.push(`id=${String(value.id)}`);
+    if (value.version) summaryParts.push(`version=${String(value.version)}`);
+    if (value.version_number) summaryParts.push(`version=${String(value.version_number)}`);
+    if (value.hash) summaryParts.push(`hash=${String(value.hash)}`);
+    if (value.code) summaryParts.push(`code=${String(value.code)}`);
+    if (value.name) summaryParts.push(`name=${String(value.name)}`);
+    if (value.title) summaryParts.push(`title=${String(value.title)}`);
+    return summaryParts.length ? summaryParts.join(", ") : safeDash;
+  }
+
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return safeDash;
+  }
+  if (!(normalized.startsWith("{") && normalized.endsWith("}"))) {
+    return normalized;
+  }
+
+  const matches = [
+    [/['"]id['"]:\s*['"]([^'"]+)['"]/i, "id"],
+    [/['"]version(?:_number)?['"]:\s*['"]?([^,'"}\]]+)['"]?/i, "version"],
+    [/['"]hash['"]:\s*['"]([^'"]+)['"]/i, "hash"],
+    [/['"]code['"]:\s*['"]([^'"]+)['"]/i, "code"],
+    [/['"]name['"]:\s*['"]([^'"]+)['"]/i, "name"],
+    [/['"]title['"]:\s*['"]([^'"]+)['"]/i, "title"],
+  ];
+  const extracted = matches
+    .map(([pattern, key]) => {
+      const match = normalized.match(pattern);
+      return match?.[1] ? `${key}=${match[1]}` : "";
+    })
+    .filter(Boolean);
+  return extracted.length ? extracted.join(", ") : normalized;
+}
+
+function renderNormalizedKeyValueField(label, value) {
+  return renderKeyValueField(label, compactLegacyRefValue(value));
+}
+
 function renderProvenanceTraceMarkup(trace) {
   if (!trace) {
     return '<p class="legal-section__description">Trace не найден.</p>';
@@ -1687,22 +1737,22 @@ function renderProvenanceTraceMarkup(trace) {
       <div class="legal-field">
         <span class="legal-field__label">Configuration lineage</span>
         <div class="legal-field-grid">
-          ${renderKeyValueField("Server config version", config.server_config_version)}
-          ${renderKeyValueField("Procedure version", config.procedure_version)}
-          ${renderKeyValueField("Template version", config.template_version)}
-          ${renderKeyValueField("Law set version", config.law_set_version)}
-          ${renderKeyValueField("Law version id", config.law_version_id)}
+          ${renderNormalizedKeyValueField("Server config version", config.server_config_version)}
+          ${renderNormalizedKeyValueField("Procedure version", config.procedure_version)}
+          ${renderNormalizedKeyValueField("Template version", config.template_version)}
+          ${renderNormalizedKeyValueField("Law set version", config.law_set_version)}
+          ${renderNormalizedKeyValueField("Law version id", config.law_version_id)}
         </div>
       </div>
       <div class="legal-field">
         <span class="legal-field__label">Execution lineage</span>
         <div class="legal-field-grid">
-          ${renderKeyValueField("AI provider", ai.provider)}
-          ${renderKeyValueField("Model id", ai.model_id)}
-          ${renderKeyValueField("Prompt version", ai.prompt_version)}
-          ${renderKeyValueField("Retrieval run id", retrieval.retrieval_run_id)}
+          ${renderNormalizedKeyValueField("AI provider", ai.provider)}
+          ${renderNormalizedKeyValueField("Model id", ai.model_id)}
+          ${renderNormalizedKeyValueField("Prompt version", ai.prompt_version)}
+          ${renderNormalizedKeyValueField("Retrieval run id", retrieval.retrieval_run_id)}
           ${renderKeyValueField("Citation ids", Array.isArray(retrieval.citation_ids) && retrieval.citation_ids.length ? retrieval.citation_ids.join(", ") : "—")}
-          ${renderKeyValueField("Latest validation run", validation.latest_run_id)}
+          ${renderNormalizedKeyValueField("Latest validation run", validation.latest_run_id)}
         </div>
       </div>
     </div>
@@ -1791,12 +1841,12 @@ function renderGeneratedDocumentContextMarkup(payload) {
       <div class="legal-field">
         <span class="legal-field__label">Snapshot summary</span>
         <div class="legal-field-grid">
-          ${renderKeyValueField("Server", generatedDocument.server_code)}
-          ${renderKeyValueField("Procedure", snapshotSummary.procedure)}
-          ${renderKeyValueField("Template version", snapshotSummary.template_version)}
-          ${renderKeyValueField("Law version set", snapshotSummary.law_version_set)}
-          ${renderKeyValueField("Validation rules", snapshotSummary.validation_rules_version)}
-          ${renderKeyValueField("Prompt version", snapshotSummary.prompt_version)}
+          ${renderNormalizedKeyValueField("Server", generatedDocument.server_code)}
+          ${renderNormalizedKeyValueField("Procedure", snapshotSummary.procedure)}
+          ${renderNormalizedKeyValueField("Template version", snapshotSummary.template_version)}
+          ${renderNormalizedKeyValueField("Law version set", snapshotSummary.law_version_set)}
+          ${renderNormalizedKeyValueField("Validation rules", snapshotSummary.validation_rules_version)}
+          ${renderNormalizedKeyValueField("Prompt version", snapshotSummary.prompt_version)}
         </div>
       </div>
       <div class="legal-field">
@@ -1839,12 +1889,12 @@ function renderGeneratedDocumentContextMarkup(payload) {
       <div class="legal-field-grid legal-field-grid--two">
         ${renderKeyValueField("Linkage mode", workflowLinkage.linkage_mode || "вЂ”")}
         ${renderKeyValueField("Direct catalog mapping", workflowLinkage.direct_catalog_mapping_available ? "yes" : "no")}
-        ${renderKeyValueField("Procedure ref", workflowLinkage.procedure_ref)}
-        ${renderKeyValueField("Template ref", workflowLinkage.template_ref)}
-        ${renderKeyValueField("Prompt version", workflowLinkage.prompt_version)}
-        ${renderKeyValueField("Server config version", workflowLinkage.server_config_version)}
-        ${renderKeyValueField("Law set version", workflowLinkage.law_set_version)}
-        ${renderKeyValueField("Validation run anchor", workflowLinkage.latest_validation_run_id)}
+        ${renderNormalizedKeyValueField("Procedure ref", workflowLinkage.procedure_ref)}
+        ${renderNormalizedKeyValueField("Template ref", workflowLinkage.template_ref)}
+        ${renderNormalizedKeyValueField("Prompt version", workflowLinkage.prompt_version)}
+        ${renderNormalizedKeyValueField("Server config version", workflowLinkage.server_config_version)}
+        ${renderNormalizedKeyValueField("Law set version", workflowLinkage.law_set_version)}
+        ${renderNormalizedKeyValueField("Validation run anchor", workflowLinkage.latest_validation_run_id)}
       </div>
       <div class="admin-user-cell__secondary">This block shows confirmed snapshot/workflow refs only. Direct change request linkage is not claimed yet.</div>
     </div>
