@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from ogp_web.services.content_contracts import normalize_content_type, validate_payload_contract
 from ogp_web.storage.admin_catalog_store import AdminCatalogStore
 from ogp_web.storage.content_workflow_repository import ContentWorkflowRepository
 
@@ -44,20 +45,17 @@ class ContentWorkflowService:
         server_scope: str,
         server_id: str | None,
         content_type: str | None = None,
-        include_legacy_fallback: bool = True,
+        include_legacy_fallback: bool = False,
     ) -> dict[str, Any]:
         scope = self._validate_scope(server_scope=server_scope, server_id=server_id)
+        normalized_content_type = normalize_content_type(content_type) if content_type else None
         items = self.repository.list_content_items(
             server_scope=scope.server_scope,
             server_id=scope.server_id,
-            content_type=content_type,
+            content_type=normalized_content_type,
         )
+        _ = include_legacy_fallback
         fallback_items: list[dict[str, Any]] = []
-        if include_legacy_fallback and self.legacy_store is not None and not items and content_type:
-            try:
-                fallback_items = self.legacy_store.list_items(content_type)
-            except Exception:  # noqa: BLE001
-                fallback_items = []
         return {
             "items": items,
             "legacy_fallback": fallback_items,
@@ -83,10 +81,11 @@ class ContentWorkflowService:
         request_id: str,
     ) -> dict[str, Any]:
         scope = self._validate_scope(server_scope=server_scope, server_id=server_id)
+        normalized_content_type = normalize_content_type(content_type)
         existing = self.repository.get_content_item_by_identity(
             server_scope=scope.server_scope,
             server_id=scope.server_id,
-            content_type=content_type,
+            content_type=normalized_content_type,
             content_key=content_key,
         )
         if existing:
@@ -94,7 +93,7 @@ class ContentWorkflowService:
         item = self.repository.create_content_item(
             server_scope=scope.server_scope,
             server_id=scope.server_id,
-            content_type=content_type,
+            content_type=normalized_content_type,
             content_key=content_key,
             title=title,
             status="draft",
@@ -110,7 +109,7 @@ class ContentWorkflowService:
             after_json=item,
             diff_json={"created": True},
             request_id=request_id,
-            metadata_json={"content_type": content_type, "content_key": content_key},
+            metadata_json={"content_type": normalized_content_type, "content_key": content_key},
         )
         return item
 
@@ -136,9 +135,14 @@ class ContentWorkflowService:
         comment: str = "",
     ) -> dict[str, Any]:
         item = self.get_content_item(content_item_id=content_item_id, server_scope=server_scope, server_id=server_id)
+        content_type = normalize_content_type(str(item.get("content_type") or ""))
+        payload = dict(payload_json or {})
+        validation = validate_payload_contract(content_type=content_type, payload_json=payload)
+        if not validation.ok:
+            raise ValueError(f"content_payload_contract_violation:{';'.join(validation.errors)}")
         version = self.repository.create_content_version(
             content_item_id=content_item_id,
-            payload_json=payload_json,
+            payload_json=payload,
             schema_version=max(1, int(schema_version or 1)),
             created_by=actor_user_id,
         )

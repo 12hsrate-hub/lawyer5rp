@@ -20,30 +20,31 @@ from ogp_web.storage.user_store import get_default_user_store
 
 
 SEED_ITEMS: dict[str, list[dict[str, object]]] = {
-    "servers": [
+    "bb_catalogs": [
         {
             "key": "blackberry_core",
             "title": "Blackberry core server",
             "config": {
-                "code": "blackberry",
-                "label": "Blackberry",
-                "app_title": "OGP Builder Web",
-                "is_active": True,
+                "catalog_code": "blackberry_core",
+                "title": "Blackberry core server",
+                "entries": [
+                    {"code": "blackberry", "label": "Blackberry", "is_active": True}
+                ],
                 "notes": "Primary production server profile for admin workflow.",
             },
         },
     ],
-    "laws": [
+    "procedures": [
         {
             "key": "complaint_law_index",
             "title": "Complaint law index",
             "config": {
-                "bundle": "complaint_base",
-                "document_kind": "complaint",
-                "sources": [
+                "procedure_code": "complaint_law_index",
+                "title": "Complaint law index",
+                "steps": [
                     "procedural_code",
                     "administrative_code",
-                    "advocate_rules",
+                    "advocate_rules"
                 ],
                 "notes": "Base legal corpus used by complaint generation and law QA.",
             },
@@ -52,11 +53,11 @@ SEED_ITEMS: dict[str, list[dict[str, object]]] = {
             "key": "rehab_law_index",
             "title": "Rehabilitation law index",
             "config": {
-                "bundle": "rehab_base",
-                "document_kind": "rehab",
-                "sources": [
+                "procedure_code": "rehab_law_index",
+                "title": "Rehabilitation law index",
+                "steps": [
                     "rehabilitation_rules",
-                    "appeal_rules",
+                    "appeal_rules"
                 ],
                 "notes": "Initial legal corpus for rehabilitation documents.",
             },
@@ -67,8 +68,10 @@ SEED_ITEMS: dict[str, list[dict[str, object]]] = {
             "key": "complaint_template_v1",
             "title": "Complaint template v1",
             "config": {
-                "document_kind": "complaint",
-                "template_family": "base",
+                "template_code": "complaint_template_v1",
+                "title": "Complaint template v1",
+                "body": "[b]Complaint template[/b]",
+                "format": "bbcode",
                 "status": "active",
                 "notes": "Starter versioned complaint template.",
             },
@@ -77,8 +80,10 @@ SEED_ITEMS: dict[str, list[dict[str, object]]] = {
             "key": "rehab_template_v1",
             "title": "Rehabilitation template v1",
             "config": {
-                "document_kind": "rehab",
-                "template_family": "base",
+                "template_code": "rehab_template_v1",
+                "title": "Rehabilitation template v1",
+                "body": "[b]Rehabilitation template[/b]",
+                "format": "bbcode",
                 "status": "active",
                 "notes": "Starter versioned rehabilitation template.",
             },
@@ -89,6 +94,8 @@ SEED_ITEMS: dict[str, list[dict[str, object]]] = {
             "key": "admin_catalog_workflow",
             "title": "Admin catalog workflow",
             "config": {
+                "feature_code": "admin_catalog_workflow",
+                "title": "Admin catalog workflow",
                 "enabled": True,
                 "rollout": "admin_only",
                 "owner": "admin",
@@ -99,6 +106,8 @@ SEED_ITEMS: dict[str, list[dict[str, object]]] = {
             "key": "law_qa_retrieval",
             "title": "Law QA retrieval",
             "config": {
+                "feature_code": "law_qa_retrieval",
+                "title": "Law QA retrieval",
                 "enabled": True,
                 "rollout": "server_default",
                 "owner": "legal_ai",
@@ -106,17 +115,21 @@ SEED_ITEMS: dict[str, list[dict[str, object]]] = {
             },
         },
     ],
-    "rules": [
+    "validation_rules": [
         {
             "key": "publication_workflow_v1",
             "title": "Publication workflow v1",
             "config": {
-                "states": ["draft", "in_review", "approved", "published", "rolled_back"],
-                "transitions": {
-                    "draft": ["in_review"],
-                    "in_review": ["approved", "draft", "rejected"],
-                    "approved": ["published"],
-                    "published": ["rolled_back"],
+                "rule_code": "publication_workflow_v1",
+                "title": "Publication workflow v1",
+                "ruleset": {
+                    "states": ["draft", "in_review", "approved", "published", "rolled_back"],
+                    "transitions": {
+                        "draft": ["in_review"],
+                        "in_review": ["approved", "draft", "rejected"],
+                        "approved": ["published"],
+                        "published": ["rolled_back"]
+                    }
                 },
                 "notes": "Base publication workflow for versioned admin catalog.",
             },
@@ -125,9 +138,13 @@ SEED_ITEMS: dict[str, list[dict[str, object]]] = {
             "key": "admin_editing_policy",
             "title": "Admin editing policy",
             "config": {
-                "require_review_before_publish": True,
-                "allow_delete": False,
-                "audit_required": True,
+                "rule_code": "admin_editing_policy",
+                "title": "Admin editing policy",
+                "ruleset": {
+                    "require_review_before_publish": True,
+                    "allow_delete": False,
+                    "audit_required": True
+                },
                 "notes": "Starter governance rules for catalog changes.",
             },
         },
