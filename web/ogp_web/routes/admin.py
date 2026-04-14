@@ -1313,6 +1313,123 @@ async def admin_law_sources_rebuild(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     return result
 
+
+@router.post("/api/admin/law-sources/rebuild-async")
+async def admin_law_sources_rebuild_async(
+    payload: AdminLawSourcesPayload,
+    request: Request,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    user_store: UserStore = Depends(get_user_store),
+):
+    actor_user_id = _resolve_actor_user_id(user_store, user.username)
+    request_id = getattr(request.state, "request_id", "")
+    task_id = f"law-rebuild-{uuid.uuid4().hex}"
+    created_at = datetime.now(timezone.utc).isoformat()
+    _put_admin_task(
+        {
+            "task_id": task_id,
+            "scope": "law_sources_rebuild",
+            "server_code": user.server_code,
+            "status": "queued",
+            "created_at": created_at,
+            "started_at": "",
+            "finished_at": "",
+            "progress": {"done": 0, "total": 1},
+            "result": None,
+            "error": "",
+        }
+    )
+
+    def _runner() -> None:
+        _patch_admin_task(task_id, status="running", started_at=datetime.now(timezone.utc).isoformat())
+        service = LawAdminService(workflow_service)
+        try:
+            result = service.rebuild_index(
+                server_code=user.server_code,
+                source_urls=payload.source_urls,
+                actor_user_id=actor_user_id,
+                request_id=request_id,
+                persist_sources=bool(payload.persist_sources),
+            )
+            _patch_admin_task(
+                task_id,
+                status="finished",
+                finished_at=datetime.now(timezone.utc).isoformat(),
+                progress={"done": 1, "total": 1},
+                result=result,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _patch_admin_task(
+                task_id,
+                status="failed",
+                finished_at=datetime.now(timezone.utc).isoformat(),
+                error=str(exc),
+            )
+
+    threading.Thread(target=_runner, daemon=True).start()
+    return {"ok": True, "task_id": task_id, "status": "queued"}
+
+
+@router.post("/api/admin/law-sources/save")
+async def admin_law_sources_save(
+    payload: AdminLawSourcesPayload,
+    request: Request,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    user_store: UserStore = Depends(get_user_store),
+):
+    actor_user_id = _resolve_actor_user_id(user_store, user.username)
+    service = LawAdminService(workflow_service)
+    try:
+        result = service.publish_sources_manifest(
+            server_code=user.server_code,
+            source_urls=payload.source_urls,
+            actor_user_id=actor_user_id,
+            request_id=getattr(request.state, "request_id", ""),
+            comment="law_sources_save_only",
+        )
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    return result
+
+
+@router.post("/api/admin/law-sources/preview")
+async def admin_law_sources_preview(
+    payload: AdminLawSourcesPayload,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+):
+    _ = user
+    service = LawAdminService(workflow_service)
+    return service.preview_sources(source_urls=payload.source_urls)
+
+
+@router.get("/api/admin/law-sources/history")
+async def admin_law_sources_history(
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    limit: int = Query(default=10, ge=1, le=100),
+):
+    service = LawAdminService(workflow_service)
+    return service.list_recent_versions(server_code=user.server_code, limit=limit)
+
+
+@router.get("/api/admin/law-sources/tasks/{task_id}")
+async def admin_law_sources_task_status(
+    task_id: str,
+    user: AuthUser = Depends(require_admin_user),
+):
+    task = _load_admin_task(task_id)
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Задача не найдена."])
+    if task.get("scope") != "law_sources_rebuild":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Задача не найдена."])
+    if str(task.get("server_code") or "") != user.server_code:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Доступ запрещён."])
+    return task
+
+
 @router.get("/api/admin/dashboard")
 async def admin_dashboard_data(
     user: AuthUser = Depends(requires_permission("view_analytics")),

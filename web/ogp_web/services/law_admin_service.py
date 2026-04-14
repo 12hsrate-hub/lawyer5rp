@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 from ogp_web.server_config import get_server_config
 from ogp_web.services.content_workflow_service import ContentWorkflowService
@@ -11,7 +12,11 @@ from ogp_web.services.law_bundle_service import (
     resolve_law_bundle_path,
     write_law_bundle,
 )
-from ogp_web.services.law_version_service import import_law_snapshot, resolve_active_law_version
+from ogp_web.services.law_version_service import (
+    import_law_snapshot,
+    list_recent_law_versions,
+    resolve_active_law_version,
+)
 
 
 LAW_SOURCES_CONTENT_TYPE = "laws"
@@ -29,6 +34,16 @@ class LawSourcesSnapshot:
     bundle_meta: dict[str, Any] | None
 
 
+@dataclass(frozen=True)
+class LawSourcesValidation:
+    normalized_urls: tuple[str, ...]
+    accepted_urls: tuple[str, ...]
+    invalid_urls: tuple[str, ...]
+    invalid_details: tuple[dict[str, str], ...]
+    duplicate_count: int
+    duplicate_urls: tuple[str, ...]
+
+
 def normalize_source_urls(source_urls: list[str] | tuple[str, ...]) -> tuple[str, ...]:
     normalized: list[str] = []
     seen: set[str] = set()
@@ -41,6 +56,62 @@ def normalize_source_urls(source_urls: list[str] | tuple[str, ...]) -> tuple[str
         seen.add(value)
         normalized.append(value)
     return tuple(normalized)
+
+
+def is_valid_source_url(value: str) -> bool:
+    return source_url_error(value) is None
+
+
+def canonicalize_source_url(value: str) -> str:
+    parsed = urlparse(value)
+    normalized_path = parsed.path.rstrip("/")
+    canonical = parsed._replace(path=normalized_path, params="", query="", fragment="").geturl()
+    return canonical
+
+
+def source_url_error(value: str) -> str | None:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"}:
+        return "unsupported_scheme"
+    if not parsed.netloc:
+        return "missing_host"
+    return None
+
+
+def validate_source_urls(source_urls: list[str] | tuple[str, ...]) -> LawSourcesValidation:
+    normalized = tuple(canonicalize_source_url(item) for item in normalize_source_urls(source_urls))
+    accepted: list[str] = []
+    invalid: list[str] = []
+    invalid_details: list[dict[str, str]] = []
+    seen: set[str] = set()
+    duplicate_count = 0
+    duplicate_urls: list[str] = []
+
+    for raw in source_urls:
+        raw_value = str(raw or "").strip()
+        if not raw_value:
+            continue
+        error_code = source_url_error(raw_value)
+        if error_code:
+            invalid.append(raw_value)
+            invalid_details.append({"url": raw_value, "reason": error_code})
+            continue
+        value = canonicalize_source_url(raw_value)
+        if value in seen:
+            duplicate_count += 1
+            duplicate_urls.append(value)
+            continue
+        seen.add(value)
+        accepted.append(value)
+
+    return LawSourcesValidation(
+        normalized_urls=normalized,
+        accepted_urls=tuple(accepted),
+        invalid_urls=tuple(invalid),
+        invalid_details=tuple(invalid_details),
+        duplicate_count=duplicate_count,
+        duplicate_urls=tuple(duplicate_urls),
+    )
 
 
 class LawAdminService:
@@ -125,9 +196,12 @@ class LawAdminService:
         request_id: str,
         comment: str = "",
     ) -> dict[str, Any]:
-        normalized_urls = normalize_source_urls(source_urls)
+        validation = validate_source_urls(source_urls)
+        normalized_urls = validation.accepted_urls
         if not normalized_urls:
             raise ValueError("source_urls_required")
+        if validation.invalid_urls:
+            raise ValueError("source_urls_invalid")
 
         item = self.repository.get_content_item_by_identity(
             server_scope="server",
@@ -205,9 +279,12 @@ class LawAdminService:
         request_id: str,
         persist_sources: bool = True,
     ) -> dict[str, Any]:
-        effective_urls = normalize_source_urls(source_urls or list(self.get_effective_sources(server_code=server_code).source_urls))
+        validation = validate_source_urls(source_urls or list(self.get_effective_sources(server_code=server_code).source_urls))
+        effective_urls = validation.accepted_urls
         if not effective_urls:
             raise ValueError("source_urls_required")
+        if validation.invalid_urls:
+            raise ValueError("source_urls_invalid")
 
         manifest_result = None
         if persist_sources:
@@ -237,4 +314,29 @@ class LawAdminService:
             "article_count": len(bundle.get("articles", []) if isinstance(bundle, dict) else []),
             "law_version_id": version_id,
             "manifest": manifest_result,
+        }
+
+    def preview_sources(
+        self,
+        *,
+        source_urls: list[str],
+    ) -> dict[str, Any]:
+        validation = validate_source_urls(source_urls)
+        return {
+            "ok": True,
+            "accepted_urls": list(validation.accepted_urls),
+            "invalid_urls": list(validation.invalid_urls),
+            "invalid_details": list(validation.invalid_details),
+            "duplicate_count": validation.duplicate_count,
+            "duplicate_urls": list(validation.duplicate_urls),
+            "accepted_count": len(validation.accepted_urls),
+            "invalid_count": len(validation.invalid_urls),
+        }
+
+    def list_recent_versions(self, *, server_code: str, limit: int = 10) -> dict[str, Any]:
+        rows = list_recent_law_versions(server_code=server_code, limit=limit)
+        return {
+            "ok": True,
+            "items": [row.__dict__ for row in rows],
+            "count": len(rows),
         }
