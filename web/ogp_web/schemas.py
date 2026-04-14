@@ -376,9 +376,16 @@ class SelectedServerPayload(BaseModel):
         return normalized
 
 
+class DraftSwitchAction(BaseModel):
+    semantic_key: str = ""
+    action: str = ""
+    detail: str = ""
+
+
 class SelectedServerResponse(BaseModel):
     server_code: str = ""
     message: str = ""
+    switch_actions: List[DraftSwitchAction] = Field(default_factory=list)
 
 
 class ExamImportEntry(BaseModel):

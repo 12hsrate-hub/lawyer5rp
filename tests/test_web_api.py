@@ -836,11 +836,11 @@ class WebApiTests(unittest.TestCase):
 
         response = self.client.put("/api/complaint-draft", json={"draft": draft})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["draft"]["org"], "GOV")
+        self.assertEqual(response.json()["draft"]["context.organization"], "GOV")
 
         response = self.client.get("/api/complaint-draft")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["draft"]["subject_names"], "Pavel Clayton")
+        self.assertEqual(response.json()["draft"]["context.subject_names"], "Pavel Clayton")
         self.assertTrue(response.json()["updated_at"])
 
         response = self.client.delete("/api/complaint-draft")
@@ -849,6 +849,14 @@ class WebApiTests(unittest.TestCase):
         response = self.client.get("/api/complaint-draft")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["draft"], {})
+
+
+    def test_complaint_draft_rejects_unknown_keys(self):
+        self._register_verify_and_login("tester_unknown", "draft-unknown@example.com")
+
+        response = self.client.put("/api/complaint-draft", json={"draft": {"unknown.field": "x"}})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Unknown complaint draft keys", str(response.json().get("detail", "")))
 
     def test_admin_can_force_verify_email(self):
         response = self.client.post(

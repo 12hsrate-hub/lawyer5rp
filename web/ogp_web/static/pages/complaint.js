@@ -280,7 +280,7 @@ function hasMeaningfulDraft(state) {
     return false;
   }
   return Object.entries(state).some(([key, value]) => {
-    if (key === "today_date" || key === "result") {
+    if (key === "today_date" || key === "result" || key === "meta.today_date" || key === "draft.result") {
       return false;
     }
     if (Array.isArray(value)) {
