@@ -1,4 +1,4 @@
-﻿const errorsHost = document.getElementById("admin-errors");
+const errorsHost = document.getElementById("admin-errors");
 const messageHost = document.getElementById("admin-message");
 const totalsHost = document.getElementById("admin-totals");
 const examImportHost = document.getElementById("admin-exam-import");

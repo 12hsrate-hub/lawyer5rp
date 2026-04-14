@@ -32,8 +32,12 @@ def source_url_error(value: str) -> str | None:
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"}:
         return "unsupported_scheme"
-    if not parsed.netloc:
+    if not parsed.hostname:
         return "missing_host"
+    try:
+        _ = parsed.port
+    except ValueError:
+        return "invalid_port"
     return None
 
 
@@ -81,3 +85,12 @@ def validate_source_urls(source_urls: list[str] | tuple[str, ...]) -> LawSources
         duplicate_count=duplicate_count,
         duplicate_urls=tuple(duplicate_urls),
     )
+
+
+def build_invalid_source_urls_error(validation: LawSourcesValidation) -> str:
+    preview = ", ".join(validation.invalid_urls[:3])
+    if len(validation.invalid_urls) > 3:
+        preview = f"{preview}, ..."
+    if preview:
+        return f"source_urls_invalid: {preview}"
+    return "source_urls_invalid"
