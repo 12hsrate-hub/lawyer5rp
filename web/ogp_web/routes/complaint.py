@@ -57,6 +57,17 @@ from ogp_web.storage.validation_repository import ValidationRepository
 router = APIRouter(tags=["complaint"])
 
 
+def _flatten_complaint_draft(payload: object) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        return {}
+    if isinstance(payload.get("document"), dict):
+        document = payload.get("document") or {}
+        draft = document.get("draft") if isinstance(document.get("draft"), dict) else {}
+        result = str(document.get("result") or "")
+        return {**draft, "result": result}
+    return dict(payload)
+
+
 def _normalize_history_items(items: list[dict[str, object]]) -> list[dict[str, object]]:
     normalized: list[dict[str, object]] = []
     for item in items:
@@ -229,15 +240,22 @@ def _validate_server_payload(store: UserStore, user: AuthUser, *, org: str = "",
 
 @router.get("/api/complaint-draft", response_model=ComplaintDraftResponse)
 async def get_complaint_draft(
+    document_type: str = "complaint",
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ) -> ComplaintDraftResponse:
     server_config = _server_config_for_user(store, user)
-    draft = store.get_complaint_draft(user.username, server_code=user.server_code)
-    normalized = normalize_complaint_draft(draft.get("draft", {}), config=server_config)
+    draft = store.get_complaint_draft(user.username, server_code=user.server_code, document_type=document_type)
+    metadata = draft.get("_meta", {}) if isinstance(draft.get("_meta"), dict) else {}
+    normalized = normalize_complaint_draft(_flatten_complaint_draft(draft.get("draft", {})), config=server_config)
     return ComplaintDraftResponse(
-        draft=normalized.draft,
         updated_at=str(draft.get("updated_at", "") or ""),
+        bundle_version=str(metadata.get("bundle_version", "") or ""),
+        schema_hash=str(metadata.get("schema_hash", "") or ""),
+        status=str(metadata.get("status", "draft") or "draft"),
+        allowed_actions=list(metadata.get("allowed_actions", []) or []),
+        document_type=str(draft.get("document_type", document_type) or "complaint"),
+        server_id=str(draft.get("server_id", user.server_code) or ""),
         message="Черновик жалобы загружен.",
     )
 
@@ -257,7 +275,22 @@ async def save_complaint_draft(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=[f"Unknown complaint draft keys: {unknown}. Supported semantic keys are configured per server."],
         )
-    draft = store.save_complaint_draft(user.username, normalized.draft, server_code=user.server_code)
+    draft_with_meta = {
+        "draft": normalized.draft,
+        "_meta": {
+            "bundle_version": payload.bundle_version,
+            "schema_hash": payload.schema_hash,
+            "status": payload.status,
+            "allowed_actions": payload.allowed_actions,
+        },
+    }
+    draft = store.save_complaint_draft(
+        user.username,
+        draft_with_meta,
+        server_code=user.server_code,
+        document_type=payload.document_type,
+    )
+    metadata = draft.get("_meta", {}) if isinstance(draft.get("_meta"), dict) else {}
     metrics_store.log_event(
         event_type="complaint_draft_saved",
         username=user.username,
@@ -268,19 +301,26 @@ async def save_complaint_draft(
         meta={"keys_count": len(normalized.draft or {}), "server_code": user.server_code, "draft_actions": normalized.actions or {}},
     )
     return ComplaintDraftResponse(
-        draft=draft.get("draft", {}),
+        draft=_flatten_complaint_draft(draft.get("draft", {})),
         updated_at=str(draft.get("updated_at", "") or ""),
+        bundle_version=str(metadata.get("bundle_version", "") or ""),
+        schema_hash=str(metadata.get("schema_hash", "") or ""),
+        status=str(metadata.get("status", "draft") or "draft"),
+        allowed_actions=list(metadata.get("allowed_actions", []) or []),
+        document_type=str(draft.get("document_type", payload.document_type) or "complaint"),
+        server_id=str(draft.get("server_id", user.server_code) or ""),
         message="Черновик жалобы сохранён.",
     )
 
 
 @router.delete("/api/complaint-draft", response_model=ComplaintDraftResponse)
 async def clear_complaint_draft(
+    document_type: str = "complaint",
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ComplaintDraftResponse:
-    store.clear_complaint_draft(user.username, server_code=user.server_code)
+    store.clear_complaint_draft(user.username, server_code=user.server_code, document_type=document_type)
     metrics_store.log_event(
         event_type="complaint_draft_cleared",
         username=user.username,
@@ -289,7 +329,14 @@ async def clear_complaint_draft(
         status_code=200,
         meta={"server_code": user.server_code},
     )
-    return ComplaintDraftResponse(draft={}, updated_at="", message="Черновик жалобы очищен.")
+    return ComplaintDraftResponse(
+        draft={},
+        updated_at="",
+        status="draft",
+        document_type=document_type,
+        server_id=user.server_code,
+        message="Черновик жалобы очищен.",
+    )
 
 
 @router.post("/api/generate", response_model=GenerateResponse)

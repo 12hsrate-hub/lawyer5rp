@@ -19,7 +19,16 @@
   <div id="app-message" class="success-box legal-message ui-state ui-state--idle" hidden></div>
   <div id="errors" class="errors legal-message ui-state ui-state--idle" hidden></div>
 
-  <form accept-charset="UTF-8" id="complaint-form" class="legal-workspace legal-workspace--wide" novalidate data-username="{{ username }}">
+  <form
+    accept-charset="UTF-8"
+    id="complaint-form"
+    class="legal-workspace legal-workspace--wide"
+    novalidate
+    data-username="{{ username }}"
+    data-user-id="{{ username }}"
+    data-server-id="{{ server_code }}"
+    data-document-type="complaint"
+  >
     <section class="panel legal-card legal-form-progress-card" aria-live="polite">
       <div class="legal-form-progress-card__head">
         <p class="legal-section__eyebrow">Навигация и контроль</p>
