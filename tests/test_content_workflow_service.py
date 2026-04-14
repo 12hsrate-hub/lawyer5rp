@@ -134,21 +134,21 @@ def _service():
 
 def test_lifecycle_review_publish_and_immutability():
     service = _service()
-    item = service.create_content_item(server_scope="server", server_id="blackberry", content_type="laws", content_key="k1", title="t", metadata_json={}, actor_user_id=1, request_id="r")
-    draft = service.create_draft_version(content_item_id=item["id"], payload_json={"x": 1}, schema_version=1, actor_user_id=1, request_id="r", server_scope="server", server_id="blackberry")
+    item = service.create_content_item(server_scope="server", server_id="blackberry", content_type="procedures", content_key="k1", title="t", metadata_json={}, actor_user_id=1, request_id="r")
+    draft = service.create_draft_version(content_item_id=item["id"], payload_json={"procedure_code": "k1", "title": "t", "steps": ["a"]}, schema_version=1, actor_user_id=1, request_id="r", server_scope="server", server_id="blackberry")
     submitted = service.submit_change_request(change_request_id=draft["change_request"]["id"], actor_user_id=2, request_id="r", server_scope="server", server_id="blackberry")
     assert submitted["status"] == "in_review"
     review = service.review_change_request(change_request_id=draft["change_request"]["id"], reviewer_user_id=3, decision="approve", comment="ok", diff_json={"x": [0, 1]}, request_id="r", server_scope="server", server_id="blackberry")
     assert review["change_request"]["status"] == "approved"
     published = service.publish_change_request(change_request_id=draft["change_request"]["id"], actor_user_id=4, request_id="r", summary_json={}, server_scope="server", server_id="blackberry")
     assert published["content_item"]["current_published_version_id"] == draft["version"]["id"]
-    assert draft["version"]["payload_json"] == {"x": 1}
+    assert draft["version"]["payload_json"]["procedure_code"] == "k1"
 
 
 def test_publish_without_approval_is_blocked():
     service = _service()
-    item = service.create_content_item(server_scope="server", server_id="blackberry", content_type="rules", content_key="k2", title="t", metadata_json={}, actor_user_id=1, request_id="r")
-    draft = service.create_draft_version(content_item_id=item["id"], payload_json={"x": 2}, schema_version=1, actor_user_id=1, request_id="r", server_scope="server", server_id="blackberry")
+    item = service.create_content_item(server_scope="server", server_id="blackberry", content_type="validation_rules", content_key="k2", title="t", metadata_json={}, actor_user_id=1, request_id="r")
+    draft = service.create_draft_version(content_item_id=item["id"], payload_json={"rule_code": "k2", "title": "t", "ruleset": {"a": 1}}, schema_version=1, actor_user_id=1, request_id="r", server_scope="server", server_id="blackberry")
     try:
         service.publish_change_request(change_request_id=draft["change_request"]["id"], actor_user_id=4, request_id="r", summary_json={}, server_scope="server", server_id="blackberry")
         assert False, "expected ValueError"
@@ -159,11 +159,11 @@ def test_publish_without_approval_is_blocked():
 def test_scope_isolation_and_rollback_creates_new_publish_fact():
     service = _service()
     item = service.create_content_item(server_scope="server", server_id="blackberry", content_type="templates", content_key="k3", title="t", metadata_json={}, actor_user_id=1, request_id="r")
-    d1 = service.create_draft_version(content_item_id=item["id"], payload_json={"v": 1}, schema_version=1, actor_user_id=1, request_id="r", server_scope="server", server_id="blackberry")
+    d1 = service.create_draft_version(content_item_id=item["id"], payload_json={"template_code": "k3", "title": "t", "body": "b1"}, schema_version=1, actor_user_id=1, request_id="r", server_scope="server", server_id="blackberry")
     service.submit_change_request(change_request_id=d1["change_request"]["id"], actor_user_id=1, request_id="r", server_scope="server", server_id="blackberry")
     service.review_change_request(change_request_id=d1["change_request"]["id"], reviewer_user_id=2, decision="approve", comment="ok", diff_json={}, request_id="r", server_scope="server", server_id="blackberry")
     p1 = service.publish_change_request(change_request_id=d1["change_request"]["id"], actor_user_id=1, request_id="r", summary_json={}, server_scope="server", server_id="blackberry")
-    d2 = service.create_draft_version(content_item_id=item["id"], payload_json={"v": 2}, schema_version=1, actor_user_id=1, request_id="r", server_scope="server", server_id="blackberry")
+    d2 = service.create_draft_version(content_item_id=item["id"], payload_json={"template_code": "k3", "title": "t", "body": "b2"}, schema_version=1, actor_user_id=1, request_id="r", server_scope="server", server_id="blackberry")
     service.submit_change_request(change_request_id=d2["change_request"]["id"], actor_user_id=1, request_id="r", server_scope="server", server_id="blackberry")
     service.review_change_request(change_request_id=d2["change_request"]["id"], reviewer_user_id=2, decision="approve", comment="ok", diff_json={}, request_id="r", server_scope="server", server_id="blackberry")
     p2 = service.publish_change_request(change_request_id=d2["change_request"]["id"], actor_user_id=1, request_id="r", summary_json={}, server_scope="server", server_id="blackberry")
@@ -189,3 +189,48 @@ def test_audit_log_has_actor_action_diff_and_entity_ref():
     assert last["entity_type"] == "content_item"
     assert last["entity_id"] == str(item["id"])
     assert "created" in last["diff_json"]
+
+
+def test_create_content_item_rejects_non_canonical_type():
+    service = _service()
+    try:
+        service.create_content_item(
+            server_scope="server",
+            server_id="blackberry",
+            content_type="laws",
+            content_key="legacy",
+            title="Legacy",
+            metadata_json={},
+            actor_user_id=1,
+            request_id="r",
+        )
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert str(exc) == "unsupported_content_type"
+
+
+def test_create_draft_version_validates_schema_contract():
+    service = _service()
+    item = service.create_content_item(
+        server_scope="server",
+        server_id="blackberry",
+        content_type="features",
+        content_key="f1",
+        title="Feature",
+        metadata_json={},
+        actor_user_id=1,
+        request_id="r",
+    )
+    try:
+        service.create_draft_version(
+            content_item_id=item["id"],
+            payload_json={"feature_code": "f1", "title": "Feature", "enabled": "yes"},
+            schema_version=1,
+            actor_user_id=1,
+            request_id="r",
+            server_scope="server",
+            server_id="blackberry",
+        )
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert str(exc).startswith("content_payload_contract_violation:")

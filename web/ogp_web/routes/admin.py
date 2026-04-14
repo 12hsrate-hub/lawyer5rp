@@ -1636,7 +1636,7 @@ async def admin_catalog_list(
             server_scope="server",
             server_id=user.server_code,
             content_type=entity_type,
-            include_legacy_fallback=True,
+            include_legacy_fallback=False,
         )
         audit = workflow_service.list_audit_trail(
             server_scope="server",

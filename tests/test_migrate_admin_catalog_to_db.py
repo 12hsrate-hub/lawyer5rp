@@ -16,8 +16,9 @@ import scripts.migrate_admin_catalog_to_db as migration
 class FakeLegacyStore:
     def iter_legacy_items(self):
         return [
-            ("laws", {"id": "law_1", "title": "Law 1", "config": {"a": 1}}),
-            ("laws", {"id": "law_1", "title": "Law 1", "config": {"a": 1}}),
+            ("laws", {"id": "law_1", "title": "Law 1", "config": {"procedure_code": "law_1", "title": "Law 1", "steps": ["x"]}}),
+            ("laws", {"id": "law_1", "title": "Law 1", "config": {"procedure_code": "law_1", "title": "Law 1", "steps": ["x"]}}),
+            ("legacy_unknown", {"id": "x", "title": "X", "config": {}}),
         ]
 
 
@@ -71,8 +72,9 @@ def test_migration_dry_run_and_safe_rerun(monkeypatch):
 
     summary = migration.migrate(dry_run=True)
     assert summary["migrated_items"] == 2
+    assert summary["report"]["incompatible_records"]
 
     summary_real = migration.migrate(dry_run=False, safe_rerun=True)
     assert summary_real["migrated_items"] == 1
     assert summary_real["skipped"] == 1
-    assert summary_real["errors"] == 0
+    assert summary_real["errors"] == 1
