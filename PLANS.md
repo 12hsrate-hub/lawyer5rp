@@ -10,6 +10,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current task: `Phase D complete`
 - Active execution phase override: `Phase D - Editable admin + draft/publish/rollback/audit`
 - Current micro-step: `Pilot editable workflow lifecycle completed with validation, review, publish, rollback, audit, and release checklist gates`
+- Current phase: `Phase A — Baseline inventory + migration map`
 - Overall status: `done`
 - Last updated: `2026-04-14`
 - Notes:
