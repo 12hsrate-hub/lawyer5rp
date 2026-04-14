@@ -58,6 +58,27 @@ class WebServiceTests(unittest.TestCase):
         tampered = token[:-2] + "ab"
         self.assertIsNone(auth_service.parse_session_token(tampered))
 
+    def test_auth_service_persists_generated_secret_when_env_missing(self):
+        previous_secret = os.environ.pop("OGP_WEB_SECRET", None)
+        previous_key = auth_service.SECRET_KEY
+        previous_file = auth_service.SESSION_SECRET_FILE
+        temp_secret_file = Path(self.tmpdir) / "web_session_secret.txt"
+        auth_service.SECRET_KEY = b""
+        auth_service.SESSION_SECRET_FILE = temp_secret_file
+        try:
+            first = auth_service._get_secret_key()
+            auth_service.SECRET_KEY = b""
+            second = auth_service._get_secret_key()
+        finally:
+            auth_service.SECRET_KEY = previous_key
+            auth_service.SESSION_SECRET_FILE = previous_file
+            if previous_secret is not None:
+                os.environ["OGP_WEB_SECRET"] = previous_secret
+
+        self.assertTrue(first)
+        self.assertEqual(first, second)
+        self.assertTrue(temp_secret_file.exists())
+
     def test_email_service_prefers_configured_public_base_url(self):
         previous = os.environ.get("OGP_WEB_BASE_URL")
         os.environ["OGP_WEB_BASE_URL"] = "https://www.lawyer5rp.online/"

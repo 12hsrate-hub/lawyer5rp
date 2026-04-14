@@ -9,6 +9,7 @@ import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from fastapi import HTTPException, Request, Response, status
 
@@ -19,6 +20,8 @@ PASSWORD_SALT_BYTES = 16
 PBKDF2_ITERATIONS = 200_000
 EMAIL_TOKEN_BYTES = 32
 EMAIL_RE = re.compile(r"^[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}$", re.IGNORECASE)
+WEB_DIR = Path(__file__).resolve().parents[2]
+SESSION_SECRET_FILE = WEB_DIR / "data" / "secrets" / "web_session_secret.txt"
 
 
 def _utc_now() -> datetime:
@@ -27,7 +30,25 @@ def _utc_now() -> datetime:
 
 def _load_secret_key() -> bytes:
     raw = os.getenv("OGP_WEB_SECRET", "").strip()
-    return raw.encode("utf-8") if raw else b""
+    if raw:
+        return raw.encode("utf-8")
+
+    try:
+        persisted = SESSION_SECRET_FILE.read_text(encoding="utf-8").strip()
+        if persisted:
+            return persisted.encode("utf-8")
+    except FileNotFoundError:
+        pass
+    except OSError:
+        return b""
+
+    generated = secrets.token_urlsafe(48)
+    try:
+        SESSION_SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SESSION_SECRET_FILE.write_text(generated, encoding="utf-8")
+        return generated.encode("utf-8")
+    except OSError:
+        return b""
 
 
 SECRET_KEY = _load_secret_key()
@@ -143,6 +164,16 @@ def _get_secret_key() -> bytes:
         SECRET_KEY = _load_secret_key()
     if not SECRET_KEY:
         raise RuntimeError("OGP_WEB_SECRET не задан в переменных окружения.")
+    return SECRET_KEY
+
+
+def _get_secret_key() -> bytes:
+    global SECRET_KEY
+    if not SECRET_KEY:
+        SECRET_KEY = _load_secret_key()
+    if not SECRET_KEY:
+        # Final fallback keeps the app bootable even if the data dir is not writable.
+        SECRET_KEY = secrets.token_urlsafe(48).encode("utf-8")
     return SECRET_KEY
 
 
