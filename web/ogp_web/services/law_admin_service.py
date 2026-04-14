@@ -17,7 +17,11 @@ from ogp_web.services.law_version_service import (
     resolve_active_law_version,
 )
 from ogp_web.services.law_sources_dependencies import build_sources_dependency_payload
-from ogp_web.services.law_sources_validation import normalize_source_urls, validate_source_urls
+from ogp_web.services.law_sources_validation import (
+    build_invalid_source_urls_error,
+    normalize_source_urls,
+    validate_source_urls,
+)
 
 
 LAW_SOURCES_CONTENT_TYPE = "laws"
@@ -122,7 +126,7 @@ class LawAdminService:
         if not normalized_urls:
             raise ValueError("source_urls_required")
         if validation.invalid_urls:
-            raise ValueError("source_urls_invalid")
+            raise ValueError(build_invalid_source_urls_error(validation))
 
         item = self.repository.get_content_item_by_identity(
             server_scope="server",
@@ -205,7 +209,7 @@ class LawAdminService:
         if not effective_urls:
             raise ValueError("source_urls_required")
         if validation.invalid_urls:
-            raise ValueError("source_urls_invalid")
+            raise ValueError(build_invalid_source_urls_error(validation))
 
         manifest_result = None
         if persist_sources:
@@ -253,7 +257,6 @@ class LawAdminService:
             "accepted_count": len(validation.accepted_urls),
             "invalid_count": len(validation.invalid_urls),
         }
-
     def list_recent_versions(self, *, server_code: str, limit: int = 10) -> dict[str, Any]:
         rows = list_recent_law_versions(server_code=server_code, limit=limit)
         return {
