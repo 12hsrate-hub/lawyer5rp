@@ -90,9 +90,43 @@ class _FakeContentWorkflowService:
     def __init__(self):
         self.calls: list[dict[str, object]] = []
 
+    def list_content_items(self, *, server_scope: str, server_id: str | None, content_type: str | None = None, include_legacy_fallback: bool = False):
+        self.calls.append(
+            {
+                "kind": "list_content_items",
+                "server_scope": server_scope,
+                "server_id": server_id,
+                "content_type": content_type,
+                "include_legacy_fallback": include_legacy_fallback,
+            }
+        )
+        return {
+            "items": [
+                {
+                    "id": 42,
+                    "title": "Complaint law index",
+                    "content_type": content_type,
+                    "status": "draft",
+                }
+            ],
+            "legacy_fallback": [],
+        }
+
+    def list_change_requests(self, *, content_item_id: int, server_scope: str, server_id: str | None):
+        self.calls.append(
+            {
+                "kind": "list_change_requests",
+                "content_item_id": content_item_id,
+                "server_scope": server_scope,
+                "server_id": server_id,
+            }
+        )
+        return []
+
     def list_audit_trail(self, *, server_scope: str, server_id: str | None, entity_type: str = "", entity_id: str = "", limit: int = 100):
         self.calls.append(
             {
+                "kind": "list_audit_trail",
                 "server_scope": server_scope,
                 "server_id": server_id,
                 "entity_type": entity_type,
@@ -428,3 +462,17 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(payload["result"]["change_request"]["id"], 17)
         self.assertEqual(fake_workflow.calls[-1]["kind"], "validate_change_request")
         self.assertEqual(fake_workflow.calls[-1]["change_request_id"], 17)
+
+    def test_catalog_list_accepts_legacy_laws_alias_and_normalizes_to_procedures(self):
+        fake_workflow = _FakeContentWorkflowService()
+        self.client.app.dependency_overrides[get_content_workflow_service] = lambda: fake_workflow
+
+        response = self.client.get("/api/admin/catalog/laws")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["entity_type"], "laws")
+        self.assertEqual(payload["items"][0]["content_type"], "procedures")
+        first_call = fake_workflow.calls[0]
+        self.assertEqual(first_call["kind"], "list_content_items")
+        self.assertEqual(first_call["content_type"], "procedures")
