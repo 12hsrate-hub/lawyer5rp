@@ -7,6 +7,31 @@
 
 <div class="legal-page legal-page--complaint">
   {% include "partials/complaint/header.html" %}
+  <section class="panel legal-card legal-top-meta" aria-label="Параметры документа">
+    <div class="legal-top-meta__item legal-top-meta__item--server">
+      <span class="legal-top-meta__label">Сервер</span>
+      <label class="legal-top-meta__select-wrap" for="preview-switch">
+        <select id="preview-switch" class="legal-top-meta__select" aria-label="Выбор сервера для предпросмотра">
+          {% for item in complaint_servers %}
+          <option value="{{ item.code }}"{% if item.code == server_code %} selected{% endif %}>{{ item.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="legal-top-meta__item">
+      <span class="legal-top-meta__label">Тип документа</span>
+      <strong class="legal-top-meta__value">Жалоба</strong>
+    </div>
+    <div class="legal-top-meta__item">
+      <span class="legal-top-meta__label">Статус черновика</span>
+      <strong id="draft-age-status" class="legal-top-meta__value">черновик не сохранён</strong>
+      <span id="draft-dirty-indicator" class="legal-dirty-indicator" hidden>изменения не сохранены</span>
+    </div>
+    <div class="legal-top-meta__item">
+      <span class="legal-top-meta__label">Режим результата</span>
+      <strong class="legal-top-meta__value">{{ "Тестовый" if is_test_mode else "Рабочий" }}</strong>
+    </div>
+  </section>
   {% include "partials/page_nav.html" %}
   <nav class="legal-section-jump legal-section-jump--sticky" aria-label="Навигация по разделам жалобы">
     <a class="legal-section-jump__link" href="#complaint-section-victim">Потерпевший</a>

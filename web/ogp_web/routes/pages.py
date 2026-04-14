@@ -160,6 +160,7 @@ async def complaint_page(
             nav_active="complaint",
             complaint_mode="default",
             preset_payload_json="",
+            complaint_servers=[{"code": item.code, "name": item.name} for item in list_server_configs()],
         ),
     )
 
@@ -185,6 +186,7 @@ async def complaint_test_page(
                 if is_test_user(user.username)
                 else ""
             ),
+            complaint_servers=[{"code": item.code, "name": item.name} for item in list_server_configs()],
         ),
     )
 

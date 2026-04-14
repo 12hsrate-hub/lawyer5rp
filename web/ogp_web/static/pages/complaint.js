@@ -30,6 +30,9 @@ const aiFocusHint = document.getElementById("ai-focus-hint");
 const complaintProgressText = document.getElementById("complaint-progress-text");
 const complaintProgressBar = document.getElementById("complaint-progress-bar");
 const complaintProgressHost = document.querySelector(".legal-form-progress");
+const previewSwitch = document.getElementById("preview-switch");
+const draftAgeStatus = document.getElementById("draft-age-status");
+const draftDirtyIndicator = document.getElementById("draft-dirty-indicator");
 
 const {
   apiFetch,
@@ -74,6 +77,8 @@ let lastSavedDraft = "";
 let remoteDraftSaveTimer = 0;
 let lastRemoteDraft = "";
 let isApplyingComplaintState = false;
+let lastDraftUpdatedAt = "";
+let draftAgeTimer = 0;
 
 const AI_FOCUS_HINTS = {
   wrongful_article:
@@ -312,6 +317,46 @@ function scheduleRemoteDraftSave() {
   }, 1200);
 }
 
+function parseDraftUpdatedAt(raw) {
+  const normalized = String(raw || "").trim();
+  if (!normalized) {
+    return null;
+  }
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function renderDraftAgeStatus() {
+  if (!draftAgeStatus) {
+    return;
+  }
+  const parsed = parseDraftUpdatedAt(lastDraftUpdatedAt);
+  if (!parsed) {
+    draftAgeStatus.textContent = "черновик не сохранён";
+    return;
+  }
+  const diffMs = Math.max(0, Date.now() - parsed.getTime());
+  const minutes = Math.max(0, Math.floor(diffMs / 60000));
+  draftAgeStatus.textContent = `черновик сохранён ${minutes} минут назад`;
+}
+
+function startDraftAgeTicker() {
+  window.clearInterval(draftAgeTimer);
+  renderDraftAgeStatus();
+  draftAgeTimer = window.setInterval(renderDraftAgeStatus, 60000);
+}
+
+function updateDirtyIndicator() {
+  if (!isDraftEnabled || !draftDirtyIndicator) {
+    if (draftDirtyIndicator) {
+      draftDirtyIndicator.hidden = true;
+    }
+    return;
+  }
+  const serialized = JSON.stringify(collectDraftState({ form, resultHost: result }));
+  draftDirtyIndicator.hidden = !lastRemoteDraft || serialized === lastRemoteDraft;
+}
+
 function loadDraft() {
   if (!isDraftEnabled) {
     return null;
@@ -368,6 +413,9 @@ async function saveRemoteDraft(showMessage = true) {
     return;
   }
   lastRemoteDraft = serialized;
+  lastDraftUpdatedAt = String(payload.updated_at || "");
+  startDraftAgeTicker();
+  updateDirtyIndicator();
   setBbcodeBusy(false, "Статус: черновик жалобы сохранён.");
   if (showMessage) {
     showAppMessage(payload.message || "Жалоба сохранена.");
@@ -386,6 +434,8 @@ async function loadRemoteDraft() {
     redirectIfUnauthorized(response.status);
     return;
   }
+  lastDraftUpdatedAt = String(payload.updated_at || "");
+  startDraftAgeTicker();
   if (hasMeaningfulDraft(loadDraft())) {
     setBbcodeBusy(false, "Статус: использую локальный черновик из браузера.");
     return;
@@ -396,6 +446,7 @@ async function loadRemoteDraft() {
   }
   applyComplaintState(payload.draft);
   lastRemoteDraft = JSON.stringify(payload.draft || {});
+  updateDirtyIndicator();
   setBbcodeBusy(false, "Статус: сохранённый черновик загружен.");
   showAppMessage(payload.message || "Черновик жалобы загружен.");
 }
@@ -413,6 +464,9 @@ async function clearRemoteDraft() {
     redirectIfUnauthorized(response.status);
     return;
   }
+  lastDraftUpdatedAt = "";
+  startDraftAgeTicker();
+  updateDirtyIndicator();
   setBbcodeBusy(false, "Статус: сохранённый черновик очищен.");
 }
 
@@ -448,6 +502,25 @@ function handleFormChange() {
   updateRequiredProgress();
   scheduleDraftSave();
   scheduleRemoteDraftSave();
+  updateDirtyIndicator();
+}
+
+async function updateSelectedServer(serverCode) {
+  const normalized = String(serverCode || "").trim().toLowerCase();
+  if (!normalized) {
+    return;
+  }
+  const response = await apiFetch("/api/profile/selected-server", {
+    method: "PATCH",
+    body: JSON.stringify({ server_code: normalized }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    showErrors(payload.detail || "Не удалось переключить сервер.");
+    return;
+  }
+  sessionStorage.setItem("ogp_app_message", payload.message || "Сервер переключен.");
+  window.location.reload();
 }
 
 function scrollToResult() {
@@ -602,6 +675,14 @@ saveDraftBtn?.addEventListener("click", async () => {
 if (resetDraftBtn) {
   resetDraftBtn.addEventListener("click", resetDraft);
 }
+previewSwitch?.addEventListener("change", async (event) => {
+  clearErrors();
+  const target = event.currentTarget;
+  if (!(target instanceof HTMLSelectElement)) {
+    return;
+  }
+  await updateSelectedServer(target.value);
+});
 
 document.getElementById("ai-modal-apply")?.addEventListener("click", applyAiText);
 
@@ -636,6 +717,8 @@ bindDigitsOnly(form, "appeal_no", 4);
   syncComplaintOcrButtonState();
   setAiFocusHint();
   updateRequiredProgress();
+  updateDirtyIndicator();
+  startDraftAgeTicker();
 })();
 
 wireSingleUsePrincipalOcr({
@@ -672,3 +755,5 @@ form.addEventListener("change", handleFormChange);
 clearAiErrors();
 setAiBusy(false);
 setBbcodeBusy(false, "Статус: готово к формированию BBCode.");
+updateDirtyIndicator();
+startDraftAgeTicker();
