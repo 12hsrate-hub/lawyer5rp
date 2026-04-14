@@ -103,6 +103,14 @@ class _FakeContentWorkflowService:
         ]
 
 
+class _FakeContentWorkflowServiceError:
+    def __init__(self, error: Exception):
+        self.error = error
+
+    def list_audit_trail(self, **kwargs):
+        raise self.error
+
+
 class AdminRuntimeServersApiTests(unittest.TestCase):
     def setUp(self):
         self.tmpdir = make_temporary_directory()
@@ -229,3 +237,39 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["stage"]["stage_code"], "phase_c_quality_center")
         self.assertIn("Phase C", payload["stage"]["stage_label"])
+
+    def test_platform_blueprint_status_falls_back_for_unknown_stage(self):
+        previous = os.environ.get("OGP_ADMIN_PLATFORM_STAGE")
+        os.environ["OGP_ADMIN_PLATFORM_STAGE"] = "phase_z_unknown"
+        try:
+            response = self.client.get("/api/admin/platform-blueprint/status")
+        finally:
+            if previous is None:
+                os.environ.pop("OGP_ADMIN_PLATFORM_STAGE", None)
+            else:
+                os.environ["OGP_ADMIN_PLATFORM_STAGE"] = previous
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["stage"]["stage_code"], "phase_a_foundation")
+        self.assertIn("Phase A", payload["stage"]["stage_label"])
+
+    def test_catalog_audit_maps_value_error_to_400_with_error_code_header(self):
+        fake_workflow = _FakeContentWorkflowServiceError(ValueError("bad_filter"))
+        self.client.app.dependency_overrides[get_content_workflow_service] = lambda: fake_workflow
+
+        response = self.client.get("/api/admin/catalog/audit", params={"entity_type": "laws"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("bad_filter", response.json().get("detail", []))
+        self.assertEqual(response.headers.get("x-error-code"), "admin_catalog_audit_bad_request")
+
+    def test_catalog_audit_maps_permission_error_to_404_with_error_code_header(self):
+        fake_workflow = _FakeContentWorkflowServiceError(PermissionError("forbidden_scope"))
+        self.client.app.dependency_overrides[get_content_workflow_service] = lambda: fake_workflow
+
+        response = self.client.get("/api/admin/catalog/audit", params={"entity_type": "laws"})
+
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("forbidden_scope", response.json().get("detail", []))
+        self.assertEqual(response.headers.get("x-error-code"), "admin_catalog_audit_not_found")

@@ -113,6 +113,14 @@ def _store_performance_payload(cache_key: str, payload: dict[str, Any]) -> None:
         _PERFORMANCE_CACHE[cache_key] = (monotonic(), deepcopy(payload))
 
 
+def _raise_admin_http_error(*, status_code: int, code: str, message: str) -> None:
+    raise HTTPException(
+        status_code=status_code,
+        detail=[message],
+        headers={"X-Error-Code": code},
+    )
+
+
 def _normalize_api_error(exc: Exception, *, source: str) -> dict[str, str]:
     return {
         "source": source,
@@ -1468,13 +1476,26 @@ async def admin_catalog_audit(
 ):
     normalized_entity_type = str(entity_type or "").strip().lower()
     normalized_entity_id = str(entity_id or "").strip()
-    audit = workflow_service.list_audit_trail(
-        server_scope="server",
-        server_id=user.server_code,
-        entity_type=normalized_entity_type,
-        entity_id=normalized_entity_id,
-        limit=limit,
-    )
+    try:
+        audit = workflow_service.list_audit_trail(
+            server_scope="server",
+            server_id=user.server_code,
+            entity_type=normalized_entity_type,
+            entity_id=normalized_entity_id,
+            limit=limit,
+        )
+    except ValueError as exc:
+        _raise_admin_http_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="admin_catalog_audit_bad_request",
+            message=str(exc) or "invalid_audit_filter",
+        )
+    except (KeyError, PermissionError) as exc:
+        _raise_admin_http_error(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="admin_catalog_audit_not_found",
+            message=str(exc) or "audit_scope_not_found",
+        )
     return {
         "items": audit,
         "filters": {
