@@ -47,8 +47,13 @@ const { parseJsonScript, bindDigitsOnly, bindDynamicAddButtons, addDynamicField,
 const { createPresetState, applyState, collectDraftState, buildPayload } = window.OGPComplaintPayload;
 
 const LEGACY_DRAFT_STORAGE_KEY = "ogp_web_complaint_draft_v1";
-const draftOwner = (form?.dataset?.username || "anonymous").trim().toLowerCase();
-const DRAFT_STORAGE_KEY = `ogp_web_complaint_draft_v2_${draftOwner || "anonymous"}`;
+const LEGACY_DRAFT_ARCHIVE_KEY = "ogp_web_legacy_drafts_archive_v1";
+const draftOwner = (form?.dataset?.userId || form?.dataset?.username || "anonymous").trim().toLowerCase();
+const currentServerId = (form?.dataset?.serverId || "blackberry").trim().toLowerCase();
+const currentDocumentType = (form?.dataset?.documentType || "complaint").trim().toLowerCase();
+const DRAFT_STORAGE_KEY = `draft:${draftOwner || "anonymous"}:${currentServerId}:${currentDocumentType}`;
+const DRAFT_BUNDLE_VERSION = "complaint.v3";
+const DRAFT_SCHEMA_HASH = "complaint-schema-v3";
 
 const OCR_TEXT = {
   emptyFileName: "Файл не выбран",
@@ -74,6 +79,74 @@ let lastSavedDraft = "";
 let remoteDraftSaveTimer = 0;
 let lastRemoteDraft = "";
 let isApplyingComplaintState = false;
+
+function toLegacyArchiveEntry(sourceKey, payload) {
+  return {
+    source_key: sourceKey,
+    archived_at: new Date().toISOString(),
+    payload,
+  };
+}
+
+function archiveLegacyDraft(sourceKey, payload) {
+  try {
+    const rows = JSON.parse(window.localStorage.getItem(LEGACY_DRAFT_ARCHIVE_KEY) || "[]");
+    const nextRows = Array.isArray(rows) ? rows : [];
+    nextRows.push(toLegacyArchiveEntry(sourceKey, payload));
+    window.localStorage.setItem(LEGACY_DRAFT_ARCHIVE_KEY, JSON.stringify(nextRows.slice(-20)));
+  } catch {
+    // ignore archive failures
+  }
+}
+
+function splitDraftEnvelope(state, overrides = {}) {
+  const source = state && typeof state === "object" ? { ...state } : {};
+  const resultText = String(source.result || "");
+  delete source.result;
+  return {
+    key: DRAFT_STORAGE_KEY,
+    user_id: draftOwner || "anonymous",
+    server_id: currentServerId,
+    document_type: currentDocumentType,
+    profile: {},
+    document: {
+      draft: source,
+      result: resultText,
+    },
+    metadata: {
+      updated_at: overrides.updated_at || new Date().toISOString(),
+      bundle_version: overrides.bundle_version || DRAFT_BUNDLE_VERSION,
+      schema_hash: overrides.schema_hash || DRAFT_SCHEMA_HASH,
+      status: overrides.status || "draft",
+      allowed_actions: Array.isArray(overrides.allowed_actions) ? overrides.allowed_actions : ["edit", "generate", "clear"],
+    },
+  };
+}
+
+function restoreDraftState(payload) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  if (payload.document && typeof payload.document === "object") {
+    const draftBody = payload.document.draft && typeof payload.document.draft === "object" ? payload.document.draft : {};
+    return {
+      ...draftBody,
+      result: payload.document.result || "",
+    };
+  }
+  if (payload.draft && typeof payload.draft === "object") {
+    const nested = payload.draft;
+    if (nested.document && typeof nested.document === "object") {
+      const draftBody = nested.document.draft && typeof nested.document.draft === "object" ? nested.document.draft : {};
+      return {
+        ...draftBody,
+        result: nested.document.result || "",
+      };
+    }
+    return { ...nested };
+  }
+  return { ...payload };
+}
 
 const AI_FOCUS_HINTS = {
   wrongful_article:
@@ -267,7 +340,8 @@ function persistDraft() {
   if (!isDraftEnabled) {
     return;
   }
-  const serialized = JSON.stringify(collectDraftState({ form, resultHost: result }));
+  const envelope = splitDraftEnvelope(collectDraftState({ form, resultHost: result }));
+  const serialized = JSON.stringify(envelope);
   if (serialized === lastSavedDraft) {
     return;
   }
@@ -321,11 +395,23 @@ function loadDraft() {
     if (!serialized) {
       serialized = window.localStorage.getItem(LEGACY_DRAFT_STORAGE_KEY) || "";
       if (serialized) {
-        window.localStorage.setItem(DRAFT_STORAGE_KEY, serialized);
+        try {
+          const parsedLegacy = JSON.parse(serialized);
+          const migratedState = restoreDraftState(parsedLegacy);
+          if (migratedState && typeof migratedState === "object") {
+            window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(splitDraftEnvelope(migratedState)));
+            window.localStorage.removeItem(LEGACY_DRAFT_STORAGE_KEY);
+            serialized = window.localStorage.getItem(DRAFT_STORAGE_KEY) || "";
+          } else {
+            archiveLegacyDraft(LEGACY_DRAFT_STORAGE_KEY, parsedLegacy);
+          }
+        } catch {
+          archiveLegacyDraft(LEGACY_DRAFT_STORAGE_KEY, serialized);
+        }
       }
     }
     lastSavedDraft = serialized;
-    return JSON.parse(serialized || "null");
+    return restoreDraftState(JSON.parse(serialized || "null"));
   } catch {
     lastSavedDraft = "";
     return null;
@@ -350,7 +436,8 @@ async function saveRemoteDraft(showMessage = true) {
     return;
   }
   const state = collectDraftState({ form, resultHost: result });
-  const serialized = JSON.stringify(state);
+  const envelope = splitDraftEnvelope(state);
+  const serialized = JSON.stringify(envelope);
   if (serialized === lastRemoteDraft) {
     setBbcodeBusy(false, "Статус: черновик уже сохранён, изменений нет.");
     return;
@@ -358,7 +445,14 @@ async function saveRemoteDraft(showMessage = true) {
   setBbcodeBusy(true, "Статус: сохраняю жалобу на сервере...");
   const response = await apiFetch("/api/complaint-draft", {
     method: "PUT",
-    body: JSON.stringify({ draft: state }),
+    body: JSON.stringify({
+      draft: envelope,
+      document_type: currentDocumentType,
+      bundle_version: envelope.metadata.bundle_version,
+      schema_hash: envelope.metadata.schema_hash,
+      status: envelope.metadata.status,
+      allowed_actions: envelope.metadata.allowed_actions,
+    }),
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
@@ -379,7 +473,7 @@ async function loadRemoteDraft() {
     return;
   }
   setBbcodeBusy(true, "Статус: проверяю сохранённый черновик...");
-  const response = await apiFetch("/api/complaint-draft", { method: "GET", headers: {} });
+  const response = await apiFetch(`/api/complaint-draft?document_type=${encodeURIComponent(currentDocumentType)}`, { method: "GET", headers: {} });
   const payload = await parsePayload(response);
   if (!response.ok) {
     setBbcodeBusy(false, "Статус: не удалось загрузить сохранённый черновик.");
@@ -390,12 +484,13 @@ async function loadRemoteDraft() {
     setBbcodeBusy(false, "Статус: использую локальный черновик из браузера.");
     return;
   }
-  if (!hasMeaningfulDraft(payload.draft)) {
+  const resolvedRemoteState = restoreDraftState(payload.draft);
+  if (!hasMeaningfulDraft(resolvedRemoteState)) {
     setBbcodeBusy(false, "Статус: сохранённый черновик не найден.");
     return;
   }
-  applyComplaintState(payload.draft);
-  lastRemoteDraft = JSON.stringify(payload.draft || {});
+  applyComplaintState(resolvedRemoteState);
+  lastRemoteDraft = JSON.stringify(splitDraftEnvelope(resolvedRemoteState, payload || {}));
   setBbcodeBusy(false, "Статус: сохранённый черновик загружен.");
   showAppMessage(payload.message || "Черновик жалобы загружен.");
 }
@@ -405,7 +500,7 @@ async function clearRemoteDraft() {
     return;
   }
   setBbcodeBusy(true, "Статус: очищаю сохранённый черновик...");
-  const response = await apiFetch("/api/complaint-draft", { method: "DELETE", headers: {} });
+  const response = await apiFetch(`/api/complaint-draft?document_type=${encodeURIComponent(currentDocumentType)}`, { method: "DELETE", headers: {} });
   if (!response.ok) {
     const payload = await parsePayload(response);
     setBbcodeBusy(false, "Статус: не удалось очистить сохранённый черновик.");

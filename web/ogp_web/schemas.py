@@ -87,11 +87,22 @@ class GenerateResponse(BaseModel):
 
 class ComplaintDraftPayload(BaseModel):
     draft: dict = Field(default_factory=dict)
+    document_type: str = "complaint"
+    bundle_version: str = ""
+    schema_hash: str = ""
+    status: str = "draft"
+    allowed_actions: List[str] = Field(default_factory=list)
 
 
 class ComplaintDraftResponse(BaseModel):
     draft: dict = Field(default_factory=dict)
     updated_at: str = ""
+    bundle_version: str = ""
+    schema_hash: str = ""
+    status: str = "draft"
+    allowed_actions: List[str] = Field(default_factory=list)
+    document_type: str = "complaint"
+    server_id: str = ""
     message: str = ""
 
 

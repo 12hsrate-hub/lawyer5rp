@@ -85,6 +85,9 @@ _POSTGRES_SELECT_COLUMNS = {
 }
 
 
+_DEFAULT_DRAFT_DOCUMENT_TYPE = "complaint"
+
+
 def _safe_json_load(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -121,6 +124,11 @@ class UserStore:
     def _normalize_server_context(server_code: str | None) -> str:
         normalized = str(server_code or "").strip().lower()
         return normalized or DEFAULT_SERVER_CODE
+
+    @staticmethod
+    def _normalize_document_type(document_type: str | None) -> str:
+        normalized = str(document_type or "").strip().lower()
+        return normalized or _DEFAULT_DRAFT_DOCUMENT_TYPE
 
     def _resolve_user_server_code(self, username: str, preferred_server_code: str | None = None) -> str:
         raw_username = str(username or "").strip().lower()
@@ -234,6 +242,20 @@ class UserStore:
             names = [name.strip() for name in validated.split(",") if name.strip()]
         return ", ".join(_POSTGRES_SELECT_COLUMNS[name] for name in names)
 
+    @staticmethod
+    def _normalize_draft_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            return {"draft": {}, "_meta": {}}
+        if isinstance(payload.get("draft"), dict):
+            meta = payload.get("_meta")
+            return {
+                "draft": dict(payload.get("draft") or {}),
+                "_meta": dict(meta) if isinstance(meta, dict) else {},
+            }
+        legacy = dict(payload)
+        legacy.pop("_meta", None)
+        return {"draft": legacy, "_meta": {"legacy_migrated": True}}
+
     def _pg_fetch_user(
         self,
         where_clause: str,
@@ -249,11 +271,11 @@ class UserStore:
             LEFT JOIN user_server_roles usr
                 ON usr.user_id = u.id AND usr.server_code = %s
             LEFT JOIN complaint_drafts cd
-                ON cd.user_id = u.id AND cd.server_code = %s
+                ON cd.user_id = u.id AND cd.server_code = %s AND cd.document_type = %s
             WHERE {where_clause}
             LIMIT 1
         """
-        return self._pg_fetchone(query, (normalized_server, normalized_server, *params))
+        return self._pg_fetchone(query, (normalized_server, normalized_server, _DEFAULT_DRAFT_DOCUMENT_TYPE, *params))
 
     def _auth_user_from_row(self, row) -> AuthUser:
         keys = set(row.keys())
@@ -339,11 +361,11 @@ class UserStore:
             )
             conn.execute(
                 """
-                INSERT INTO complaint_drafts (user_id, server_code, draft_json)
-                VALUES (%s, %s, '{}'::jsonb)
-                ON CONFLICT (user_id, server_code) DO NOTHING
+                INSERT INTO complaint_drafts (user_id, server_code, document_type, draft_json)
+                VALUES (%s, %s, %s, '{}'::jsonb)
+                ON CONFLICT (user_id, server_code, document_type) DO NOTHING
                 """,
-                (user_id, DEFAULT_SERVER_CODE),
+                (user_id, DEFAULT_SERVER_CODE, _DEFAULT_DRAFT_DOCUMENT_TYPE),
             )
             conn.commit()
         except Exception as exc:
@@ -578,52 +600,86 @@ class UserStore:
     def change_password(self, username: str, current_password: str, new_password: str) -> AuthUser:
         return self._pg_change_password(username, current_password, new_password)
 
-    def get_complaint_draft(self, username: str, *, server_code: str | None = None) -> dict[str, Any]:
+    def get_complaint_draft(
+        self,
+        username: str,
+        *,
+        server_code: str | None = None,
+        document_type: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_username = _normalize_username(username)
         resolved_server = self._normalize_server_context(server_code)
-        row = self._fetch_user_by_username(
-            username,
-            "complaint_draft_json, complaint_draft_updated_at",
-            server_code=resolved_server,
+        resolved_document_type = self._normalize_document_type(document_type)
+        row = self._pg_fetchone(
+            """
+            SELECT CAST(cd.draft_json AS TEXT) AS complaint_draft_json,
+                   cd.updated_at AS complaint_draft_updated_at
+            FROM users u
+            LEFT JOIN complaint_drafts cd
+              ON cd.user_id = u.id
+             AND cd.server_code = %s
+             AND cd.document_type = %s
+            WHERE u.username = %s
+            LIMIT 1
+            """,
+            (resolved_server, resolved_document_type, normalized_username),
         )
         if row is None:
             raise AuthError("Пользователь не найден.")
         raw_draft = row["complaint_draft_json"]
         if not raw_draft:
-            return {"draft": {}, "updated_at": ""}
+            return {"draft": {}, "_meta": {}, "updated_at": "", "document_type": resolved_document_type, "server_id": resolved_server}
         try:
             draft = json.loads(str(raw_draft))
         except json.JSONDecodeError:
             draft = {}
-        if not isinstance(draft, dict):
-            draft = {}
+        normalized_payload = self._normalize_draft_payload(draft if isinstance(draft, dict) else {})
         return {
-            "draft": draft,
+            "draft": normalized_payload.get("draft", {}),
+            "_meta": normalized_payload.get("_meta", {}),
             "updated_at": str(row["complaint_draft_updated_at"] or ""),
+            "document_type": resolved_document_type,
+            "server_id": resolved_server,
         }
 
-    def save_complaint_draft(self, username: str, draft: dict[str, Any], *, server_code: str | None = None) -> dict[str, Any]:
+    def save_complaint_draft(
+        self,
+        username: str,
+        draft: dict[str, Any],
+        *,
+        server_code: str | None = None,
+        document_type: str | None = None,
+    ) -> dict[str, Any]:
         normalized = _normalize_username(username)
         normalized_server = self._normalize_server_context(server_code)
+        normalized_document_type = self._normalize_document_type(document_type)
         if not isinstance(draft, dict):
             raise AuthError("Черновик жалобы должен быть объектом.")
         rowcount = self._pg_execute(
             """
-            INSERT INTO complaint_drafts (user_id, server_code, draft_json, updated_at)
-            SELECT id, %s, %s::jsonb, NOW()
+            INSERT INTO complaint_drafts (user_id, server_code, document_type, draft_json, updated_at)
+            SELECT id, %s, %s, %s::jsonb, NOW()
             FROM users
             WHERE username = %s
-            ON CONFLICT (user_id, server_code)
+            ON CONFLICT (user_id, server_code, document_type)
             DO UPDATE SET draft_json = EXCLUDED.draft_json, updated_at = NOW()
             """,
-            (normalized_server, json.dumps(draft, ensure_ascii=False), normalized),
+            (normalized_server, normalized_document_type, json.dumps(draft, ensure_ascii=False), normalized),
         )
         if rowcount <= 0:
             raise AuthError("Пользователь не найден.")
-        return self.get_complaint_draft(normalized, server_code=normalized_server)
+        return self.get_complaint_draft(normalized, server_code=normalized_server, document_type=normalized_document_type)
 
-    def clear_complaint_draft(self, username: str, *, server_code: str | None = None) -> None:
+    def clear_complaint_draft(
+        self,
+        username: str,
+        *,
+        server_code: str | None = None,
+        document_type: str | None = None,
+    ) -> None:
         normalized = _normalize_username(username)
         normalized_server = self._normalize_server_context(server_code)
+        normalized_document_type = self._normalize_document_type(document_type)
         rowcount = self._pg_execute(
             """
             UPDATE complaint_drafts cd
@@ -632,9 +688,10 @@ class UserStore:
             FROM users u
             WHERE cd.user_id = u.id
               AND cd.server_code = %s
+              AND cd.document_type = %s
               AND u.username = %s
             """,
-            (normalized_server, normalized),
+            (normalized_server, normalized_document_type, normalized),
         )
         if rowcount <= 0:
             raise AuthError("Пользователь не найден.")

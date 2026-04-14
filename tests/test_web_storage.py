@@ -142,9 +142,9 @@ class FakePostgresConnection:
             return self._upsert_role(params)
         if normalized.startswith("INSERT INTO user_selected_servers (user_id, server_code, updated_at)"):
             return self._upsert_selected_server(params)
-        if normalized.startswith("INSERT INTO complaint_drafts (user_id, server_code, draft_json) VALUES"):
+        if normalized.startswith("INSERT INTO complaint_drafts (user_id, server_code, document_type, draft_json) VALUES"):
             return self._insert_draft(params)
-        if normalized.startswith("INSERT INTO complaint_drafts (user_id, server_code, draft_json, updated_at) SELECT"):
+        if normalized.startswith("INSERT INTO complaint_drafts (user_id, server_code, document_type, draft_json, updated_at) SELECT"):
             return self._save_draft(params)
         if normalized.startswith("INSERT INTO generated_documents ("):
             return self._insert_generated_document(params)
@@ -190,6 +190,8 @@ class FakePostgresConnection:
             return self._list_users(params)
         if "FROM users u LEFT JOIN user_server_roles usr" in normalized and "LEFT JOIN complaint_drafts cd" in normalized:
             return self._fetch_user(normalized, params)
+        if normalized.startswith("SELECT CAST(cd.draft_json AS TEXT) AS complaint_draft_json, cd.updated_at AS complaint_draft_updated_at FROM users u LEFT JOIN complaint_drafts cd ON cd.user_id = u.id AND cd.server_code = %s AND cd.document_type = %s WHERE u.username = %s LIMIT 1"):
+            return self._fetch_user_draft(params)
         if normalized.startswith("SELECT uss.server_code AS selected_server_code FROM users u LEFT JOIN user_selected_servers uss ON uss.user_id = u.id WHERE u.username = %s LIMIT 1"):
             return self._fetch_selected_server(params[0])
         if normalized.startswith("SELECT id FROM users WHERE username = %s"):
@@ -319,19 +321,19 @@ class FakePostgresConnection:
         return FakeCursor(rowcount=1)
 
     def _insert_draft(self, params):
-        user_id, server_code = params
-        self.state["drafts"][(user_id, server_code)] = {
+        user_id, server_code, document_type = params
+        self.state["drafts"][(user_id, server_code, document_type)] = {
             "draft_json": {},
             "updated_at": self._now(),
         }
         return FakeCursor(rowcount=1)
 
     def _save_draft(self, params):
-        server_code, draft_json, username = params
+        server_code, document_type, draft_json, username = params
         user = self.state["users"].get(username)
         if user is None:
             return FakeCursor(rowcount=0)
-        self.state["drafts"][(user["id"], server_code)] = {
+        self.state["drafts"][(user["id"], server_code, document_type)] = {
             "draft_json": json.loads(draft_json),
             "updated_at": self._now(),
         }
@@ -570,7 +572,7 @@ class FakePostgresConnection:
         selected_server = self.state["selected_servers"].get(user["id"], {}).get("server_code")
         effective_server = selected_server or server_code
         role = self.state["roles"].get((user["id"], effective_server), {})
-        draft = self.state["drafts"].get((user["id"], effective_server), {})
+        draft = self.state["drafts"].get((user["id"], effective_server, "complaint"), {})
         return {
             "username": user["username"],
             "email": user["email"],
@@ -605,16 +607,31 @@ class FakePostgresConnection:
         }
         return FakeCursor(rowcount=1, one=payload)
 
+    def _fetch_user_draft(self, params):
+        server_code, document_type, username = params
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0, one=None)
+        draft = self.state["drafts"].get((user["id"], server_code, document_type), {})
+        return FakeCursor(
+            rowcount=1,
+            one={
+                "complaint_draft_json": json.dumps(draft.get("draft_json", {}), ensure_ascii=False),
+                "complaint_draft_updated_at": draft.get("updated_at"),
+            },
+        )
+
     def _fetch_user(self, normalized: str, params):
         server_code = params[0]
+        username_index = 3
         if "u.username = %s" in normalized:
-            user = self.state["users"].get(params[2])
+            user = self.state["users"].get(params[username_index])
         elif "u.email = %s" in normalized:
-            user = self._find_by("email", params[2])
+            user = self._find_by("email", params[username_index])
         elif "u.email_verification_token_hash = %s" in normalized:
-            user = self._find_by("email_verification_token_hash", params[2])
+            user = self._find_by("email_verification_token_hash", params[username_index])
         elif "u.password_reset_token_hash = %s" in normalized:
-            user = self._find_by("password_reset_token_hash", params[2])
+            user = self._find_by("password_reset_token_hash", params[username_index])
         else:
             raise AssertionError(f"Unsupported fake postgres fetch query: {normalized}")
         row = self._compose_user_row(user, server_code) if user else None
@@ -720,11 +737,11 @@ class FakePostgresConnection:
         return FakeCursor(rowcount=1)
 
     def _clear_draft(self, params):
-        server_code, username = params
+        server_code, document_type, username = params
         user = self.state["users"].get(username)
         if user is None:
             return FakeCursor(rowcount=0)
-        self.state["drafts"][(user["id"], server_code)] = {
+        self.state["drafts"][(user["id"], server_code, document_type)] = {
             "draft_json": {},
             "updated_at": self._now(),
         }
