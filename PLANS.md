@@ -4,6 +4,20 @@ Status: draft v1 (execution-ready baseline)
 Date: 2026-04-14
 Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared`) without full rewrite.
 
+## Current Execution State
+
+- Current phase: `Phase A — Baseline inventory + migration map`
+- Current task: `Phase A complete`
+- Current micro-step: `Phase A deliverables completed and approved for handoff into Phase B`
+- Overall status: `done`
+- Last updated: `2026-04-14`
+- Notes:
+  - `PLANS.md` is the single canonical execution plan.
+  - Progress must be recorded here after each completed micro-task.
+  - `MIGRATION_MAP.md` should track confirmed inventory slices and migration seams as they are verified.
+  - Completed slices: `5/5 initial critical journeys`
+  - Reference pilot fixed: `blackberry` + `complaint`
+
 ## 0) Goals and boundaries
 
 ### Business goal
@@ -75,12 +89,16 @@ Every configurable entity: draft -> validate -> publish -> rollback (+ full audi
 
 ## Phase A — Baseline inventory + migration map (1 sprint)
 
+Execution status: `done`
+
 ### A.1 Codebase inventory
+Status: `done`
 - Map route -> service -> storage dependencies for all critical flows (`/login`, `/complaint`, `/admin`, `/exam_import`, document build/export).
 - Mark hardcoded server-dependent paths.
 - Mark async operations and retry/error handling locations.
 
 ### A.2 Define "reference pilot"
+Status: `done`
 - Choose 1 reference server and 1 reference procedure as first migration scenario.
 - Fix canonical old-vs-new behavior checklist for this scenario.
 
