@@ -603,7 +603,6 @@ function extractCatalogEditableData(itemPayload) {
     config,
   };
 }
-}
 
 async function loadCatalog(entityType = activeCatalogEntity) {
   if (!catalogHost) return;
