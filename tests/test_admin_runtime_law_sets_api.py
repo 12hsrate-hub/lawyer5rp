@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 
 from ogp_web.app import create_app
 from ogp_web.dependencies import get_runtime_law_sets_store
+import ogp_web.routes.admin as admin_route
 from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
@@ -140,12 +141,17 @@ class AdminRuntimeLawSetsApiTests(unittest.TestCase):
         app = create_app(self.user_store, self.exam_store, self.admin_store, self.task_registry)
         self.store = _FakeRuntimeLawSetsStore()
         app.dependency_overrides[get_runtime_law_sets_store] = lambda: self.store
+        class DummyWorkflowService:
+            repository = object()
+
+        app.dependency_overrides[admin_route.get_content_workflow_service] = lambda: DummyWorkflowService()
         self.client = TestClient(app, base_url="https://testserver")
         reset_rate_limit(self.client.app.state.rate_limiter)
         self._register_and_login_admin("12345", "admin@example.com")
 
     def tearDown(self):
         reset_rate_limit(self.client.app.state.rate_limiter)
+        self.client.app.dependency_overrides.pop(admin_route.get_content_workflow_service, None)
         self.client.close()
         self.client.app.state.rate_limiter.repository.close()
         self.user_store.repository.close()

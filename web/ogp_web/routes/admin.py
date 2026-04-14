@@ -682,7 +682,7 @@ def _load_admin_task(task_id: str) -> dict[str, Any] | None:
 def _load_admin_tasks() -> list[dict[str, Any]]:
     with _ADMIN_TASKS_LOCK:
         _load_admin_tasks_from_disk()
-        return [deepcopy(task) for task in _ADMIN_TASKS.values()]
+        return [deepcopy(item) for item in _ADMIN_TASKS.values() if isinstance(item, dict)]
 
 
 def _find_active_law_rebuild_task(*, server_code: str) -> dict[str, Any] | None:
