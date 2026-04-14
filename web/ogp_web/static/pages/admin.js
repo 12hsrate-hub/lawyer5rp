@@ -557,6 +557,72 @@ async function editLawSourceRegistryFlow(sourceId, currentName, currentKind, cur
   await loadLawSourceRegistry();
 }
 
+function renderServerLawBindings(payload) {
+  const host = document.getElementById("server-law-bindings-host");
+  if (!host) return;
+  const items = Array.isArray(payload?.items) ? payload.items.filter((row) => row?.item_id) : [];
+  host.innerHTML = `
+    <table class="legal-table admin-table admin-table--compact">
+      <thead><tr><th>Law set</th><th>Law code</th><th>Source</th><th>Priority</th><th>Effective from</th></tr></thead>
+      <tbody>
+        ${items.length ? items.map((item) => `
+          <tr>
+            <td>${escapeHtml(String(item.law_set_name || item.law_set_id || "—"))}</td>
+            <td>${escapeHtml(String(item.law_code || "—"))}</td>
+            <td>${escapeHtml(String(item.source_name || item.source_url || "—"))}</td>
+            <td>${escapeHtml(String(item.priority || 0))}</td>
+            <td>${escapeHtml(String(item.effective_from || "—"))}</td>
+          </tr>
+        `).join("") : '<tr><td colspan="5" class="legal-section__description">Для выбранного сервера пока нет привязанных законов.</td></tr>'}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadServerLawBindings() {
+  const host = document.getElementById("server-law-bindings-host");
+  if (!host || !activeLawServerCode) return;
+  const response = await apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(activeLawServerCode)}/law-bindings`);
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить привязки законов."))}</p>`;
+    return;
+  }
+  renderServerLawBindings(payload);
+}
+
+async function addServerLawBindingFlow() {
+  if (!activeLawServerCode) {
+    setStateError(errorsHost, "Сначала выберите сервер.");
+    return;
+  }
+  const lawCode = String(window.prompt("Код закона (law_code)", "") || "").trim();
+  if (!lawCode) return;
+  const sourceId = Number(window.prompt("ID источника (source_id из реестра)", "1") || "0");
+  if (!Number.isFinite(sourceId) || sourceId <= 0) {
+    setStateError(errorsHost, "Укажите корректный source_id.");
+    return;
+  }
+  const priority = Number(window.prompt("Priority", "100") || "100");
+  const effectiveFrom = String(window.prompt("effective_from (YYYY-MM-DD, опционально)", "") || "").trim();
+  const response = await apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(activeLawServerCode)}/law-bindings`, {
+    method: "POST",
+    body: JSON.stringify({
+      law_code: lawCode,
+      source_id: sourceId,
+      priority: Number.isFinite(priority) ? priority : 100,
+      effective_from: effectiveFrom,
+    }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось привязать закон к серверу."));
+    return;
+  }
+  showMessage(`Закон ${lawCode} привязан к серверу ${activeLawServerCode}.`);
+  await loadServerLawBindings();
+}
+
 async function loadLawJobsOverview() {
   const host = document.getElementById("law-jobs-host");
   if (!host) return;
@@ -891,6 +957,15 @@ function renderCatalog(payload) {
         </div>
       </div>
       <div id="law-source-registry-host"></div>
+      <hr>
+      <div class="admin-section-toolbar">
+        <strong>Привязка закона к серверу</strong>
+        <div>
+          <button type="button" id="server-law-bindings-refresh" class="ghost-button">Обновить привязки</button>
+          <button type="button" id="server-law-bindings-add" class="primary-button">Привязать закон к серверу</button>
+        </div>
+      </div>
+      <div id="server-law-bindings-host"></div>
       <hr>
       <div class="admin-section-toolbar">
         <strong>Jobs / Alerts</strong>
@@ -1353,6 +1428,7 @@ async function loadCatalog(entityType = activeCatalogEntity) {
     await loadLawSourcesManager();
     await loadLawSets();
     await loadLawSourceRegistry();
+    await loadServerLawBindings();
     await loadLawJobsOverview();
   }
 }
@@ -3884,6 +3960,7 @@ catalogHost?.addEventListener("change", async (event) => {
     activeLawServerCode = String(target.value || "").trim().toLowerCase();
     await loadLawSourcesManager();
     await loadLawSets();
+    await loadServerLawBindings();
   }
 });
 
@@ -3944,6 +4021,14 @@ catalogHost?.addEventListener("click", async (event) => {
   }
   if (target.id === "law-source-registry-create") {
     await createLawSourceRegistryFlow();
+    return;
+  }
+  if (target.id === "server-law-bindings-refresh") {
+    await loadServerLawBindings();
+    return;
+  }
+  if (target.id === "server-law-bindings-add") {
+    await addServerLawBindingFlow();
     return;
   }
   if (target.id === "law-jobs-refresh") {

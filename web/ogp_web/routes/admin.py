@@ -31,6 +31,7 @@ from ogp_web.schemas import (
     AdminLawSetRebuildPayload,
     AdminLawSetRollbackPayload,
     AdminLawSourceRegistryPayload,
+    AdminServerLawBindingPayload,
     AdminPasswordResetPayload,
     AdminQuotaPayload,
     AdminRuntimeServerPayload,
@@ -681,7 +682,7 @@ def _load_admin_task(task_id: str) -> dict[str, Any] | None:
 def _load_admin_tasks() -> list[dict[str, Any]]:
     with _ADMIN_TASKS_LOCK:
         _load_admin_tasks_from_disk()
-        return [deepcopy(task) for task in _ADMIN_TASKS.values()]
+        return [deepcopy(item) for item in _ADMIN_TASKS.values() if isinstance(item, dict)]
 
 
 def _find_active_law_rebuild_task(*, server_code: str) -> dict[str, Any] | None:
@@ -1043,6 +1044,50 @@ async def admin_runtime_server_law_sets(
     normalized_code = str(server_code or "").strip().lower()
     items = store.list_law_sets(server_code=normalized_code)
     return {"server_code": normalized_code, "items": items, "count": len(items)}
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/law-bindings")
+async def admin_runtime_server_law_bindings(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+):
+    _ = user
+    normalized_code = str(server_code or "").strip().lower()
+    items = store.list_server_law_bindings(server_code=normalized_code)
+    return {"server_code": normalized_code, "items": items, "count": len(items)}
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/law-bindings")
+async def admin_runtime_server_law_bindings_add(
+    server_code: str,
+    payload: AdminServerLawBindingPayload,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    normalized_code = str(server_code or "").strip().lower()
+    try:
+        item = store.add_server_law_binding(
+            server_code=normalized_code,
+            law_code=payload.law_code,
+            source_id=payload.source_id,
+            effective_from=payload.effective_from,
+            priority=payload.priority,
+            law_set_id=payload.law_set_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    metrics_store.log_event(
+        event_type="admin_server_law_binding_add",
+        username=user.username,
+        server_code=normalized_code,
+        path=f"/api/admin/runtime-servers/{normalized_code}/law-bindings",
+        method="POST",
+        status_code=200,
+        meta={"law_set_id": item.get("law_set_id"), "law_code": item.get("law_code")},
+    )
+    return {"ok": True, "item": item}
 
 
 @router.post("/api/admin/runtime-servers/{server_code}/law-sets")

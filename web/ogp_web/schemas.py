@@ -628,3 +628,19 @@ class AdminLawSetRebuildPayload(BaseModel):
 
 class AdminLawSetRollbackPayload(BaseModel):
     law_version_id: int | None = None
+
+
+class AdminServerLawBindingPayload(BaseModel):
+    law_code: str = ""
+    source_id: int
+    effective_from: str = ""
+    priority: int = 100
+    law_set_id: int | None = None
+
+    @field_validator("law_code")
+    @classmethod
+    def validate_law_code(cls, value: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("law_code_required")
+        return normalized
