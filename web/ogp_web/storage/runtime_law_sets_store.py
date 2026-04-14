@@ -43,6 +43,14 @@ class RuntimeLawSetsStore:
             raise ValueError("law_source_kind_invalid")
         return normalized
 
+    @staticmethod
+    def _is_unique_violation(exc: Exception, *tokens: str) -> bool:
+        text = str(exc or "").strip().lower()
+        type_name = exc.__class__.__name__.lower()
+        if "unique" not in text and "duplicate" not in text and type_name not in {"uniqueviolation", "integrityerror"}:
+            return False
+        return any(str(token or "").strip().lower() in text for token in tokens if str(token or "").strip())
+
     def list_sources(self) -> list[LawSourceRecord]:
         conn = self.backend.connect()
         try:
@@ -92,8 +100,10 @@ class RuntimeLawSetsStore:
                 url=str(row.get("url") or ""),
                 is_active=bool(row.get("is_active", True)),
             )
-        except Exception:
+        except Exception as exc:
             conn.rollback()
+            if self._is_unique_violation(exc, "idx_law_source_registry_url_unique", "law_source_registry_url_unique"):
+                raise ValueError("law_source_url_already_exists") from exc
             raise
         finally:
             conn.close()
@@ -127,8 +137,10 @@ class RuntimeLawSetsStore:
                 url=str(row.get("url") or ""),
                 is_active=bool(row.get("is_active", True)),
             )
-        except Exception:
+        except Exception as exc:
             conn.rollback()
+            if self._is_unique_violation(exc, "idx_law_source_registry_url_unique", "law_source_registry_url_unique"):
+                raise ValueError("law_source_url_already_exists") from exc
             raise
         finally:
             conn.close()
@@ -172,8 +184,10 @@ class RuntimeLawSetsStore:
             ).fetchone()
             conn.commit()
             return dict(row)
-        except Exception:
+        except Exception as exc:
             conn.rollback()
+            if self._is_unique_violation(exc, "idx_law_sets_server_name_unique", "law_sets_server_name_unique"):
+                raise ValueError("law_set_name_already_exists") from exc
             raise
         finally:
             conn.close()
