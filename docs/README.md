@@ -7,10 +7,13 @@
 - `docs/archive/YYYY-MM/` — исторические планы, аудиты и разовые runbook-файлы.
 - `examples/` и `artifacts/` — примеры кода и выгрузки данных, которые не являются operational docs.
 
+Для эксплуатационных и релизных действий используйте сначала [`OPERATIONS_INDEX.md`](./OPERATIONS_INDEX.md).
+
 ## Active Docs (Keep Here)
 
 - `github_deploy.md`
 - `postgresql_migrations.md`
+- `OPERATIONS_INDEX.md`
 - `RUNBOOK.md`
 - `ROLLBACK_PLAYBOOK.md`
 - `FEATURE_FLAGS.md`

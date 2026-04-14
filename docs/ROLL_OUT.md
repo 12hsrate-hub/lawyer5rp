@@ -1,5 +1,8 @@
 # Point3 Legal Mode Rollout
 
+> Scope: rollout gating for point3 legal mode.
+> Start from [`OPERATIONS_INDEX.md`](./OPERATIONS_INDEX.md) for related rollback/deploy docs.
+
 ## Stages
 1. 10%
 2. 25%
