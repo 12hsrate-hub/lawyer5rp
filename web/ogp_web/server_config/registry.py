@@ -62,12 +62,20 @@ def _load_server_rows_from_db() -> list[dict[str, object]]:
         conn.close()
 
 
+def _build_fallback_server_config(*, code: str, title: str) -> ServerConfig:
+    display_name = str(title or code).strip() or code
+    return ServerConfig(
+        code=code,
+        name=display_name,
+        app_title=display_name,
+    )
+
+
 def _load_runtime_server_configs() -> dict[str, ServerConfig]:
     allowed_codes = _load_codes_from_config_repo()
     rows = _load_server_rows_from_db()
 
     resolved: dict[str, ServerConfig] = {}
-    fallback = next(iter(_BASE_SERVER_CONFIGS.values()))
     for row in rows:
         code = _normalized_code(str(row.get("code") or ""))
         if not code:
@@ -76,7 +84,10 @@ def _load_runtime_server_configs() -> dict[str, ServerConfig]:
             continue
         if not bool(row.get("is_active", True)):
             continue
-        base = _BASE_SERVER_CONFIGS.get(code) or fallback
+        base = _BASE_SERVER_CONFIGS.get(code) or _build_fallback_server_config(
+            code=code,
+            title=str(row.get("title") or code),
+        )
         resolved[code] = ServerConfig(
             **{
                 **base.__dict__,
