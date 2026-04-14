@@ -297,5 +297,6 @@ async def profile_page(
             server_config=server_config,
             permissions=permissions,
             nav_active="profile",
+            available_servers=[{"code": item.code, "name": item.name} for item in list_server_configs()],
         ),
     )

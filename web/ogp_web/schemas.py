@@ -366,6 +366,43 @@ class SelectedServerResponse(BaseModel):
     message: str = ""
 
 
+class DocumentBuilderSwitchPreviewPayload(BaseModel):
+    draft: dict[str, Any] = Field(default_factory=dict)
+    server_id: str = ""
+
+    @field_validator("server_id")
+    @classmethod
+    def validate_server_id(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            raise ValueError("Укажите целевой сервер.")
+        return normalized
+
+
+class DocumentBuilderSwitchDiff(BaseModel):
+    keeps: List[str] = Field(default_factory=list)
+    clears: List[str] = Field(default_factory=list)
+    new_required_fields: List[str] = Field(default_factory=list)
+    invalid_values: List[dict[str, str]] = Field(default_factory=list)
+
+
+class DocumentBuilderBundleResponse(BaseModel):
+    server_id: str = ""
+    server_name: str = ""
+    organizations: List[str] = Field(default_factory=list)
+    complaint_bases: List[dict[str, str]] = Field(default_factory=list)
+    required_fields: List[str] = Field(default_factory=list)
+    evidence_fields: List[dict[str, Any]] = Field(default_factory=list)
+
+
+class DocumentBuilderSwitchPreviewResponse(BaseModel):
+    server_id: str = ""
+    draft: dict[str, Any] = Field(default_factory=dict)
+    diff: DocumentBuilderSwitchDiff = Field(default_factory=DocumentBuilderSwitchDiff)
+    bundle: DocumentBuilderBundleResponse = Field(default_factory=DocumentBuilderBundleResponse)
+    message: str = ""
+
+
 class ExamImportEntry(BaseModel):
     source_row: int
     submitted_at: str = ""

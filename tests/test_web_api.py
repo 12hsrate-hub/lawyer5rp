@@ -827,6 +827,37 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["draft"], {})
 
+    def test_document_builder_switch_preview_and_confirm(self):
+        self._register_verify_and_login("tester", "switch@example.com")
+        draft = {
+            "appeal_no": "1234",
+            "org": "LSPD",
+            "subject_names": "Alex Stone",
+            "event_dt": "2026-04-01T10:00",
+            "victim_name": "Alex Stone",
+            "victim_passport": "123456",
+            "victim_phone": "1234567",
+            "victim_discord": "alexstone",
+            "victim_scan": "https://example.com/scan",
+            "contract_url": "https://example.com/contract",
+            "complaint_basis": "wrongful_article",
+        }
+        self.assertEqual(self.client.put("/api/complaint-draft", json={"draft": draft}).status_code, 200)
+
+        preview = self.client.post("/api/document-builder/preview-switch", json={"server_id": "blackberry", "draft": draft})
+        self.assertEqual(preview.status_code, 200)
+        preview_payload = preview.json()
+        self.assertEqual(preview_payload["server_id"], "blackberry")
+        self.assertIn("diff", preview_payload)
+        self.assertIn("bundle", preview_payload)
+        self.assertIn("required_fields", preview_payload["bundle"])
+
+        confirm = self.client.post("/api/document-builder/confirm-switch", json={"server_id": "blackberry", "draft": draft})
+        self.assertEqual(confirm.status_code, 200)
+        confirm_payload = confirm.json()
+        self.assertEqual(confirm_payload["server_id"], "blackberry")
+        self.assertEqual(confirm_payload["draft"]["org"], "LSPD")
+
     def test_admin_can_force_verify_email(self):
         response = self.client.post(
             "/api/auth/register",

@@ -11,11 +11,24 @@ const profileProgressBar = document.getElementById("profile-progress-bar");
 const profileProgressHost = document.getElementById("profile-progress-host");
 const profileSubmitButton = profileForm?.querySelector("button[type='submit']");
 const passwordSubmitButton = passwordForm?.querySelector("button[type='submit']");
+const currentServerCodeField = document.getElementById("current-server-code");
+const targetServerCodeField = document.getElementById("target-server-code");
+const switchServerBtn = document.getElementById("switch-server-btn");
+const serverSwitchKeepHost = document.getElementById("server-switch-preview-keep");
+const serverSwitchClearHost = document.getElementById("server-switch-preview-clear");
+const serverSwitchAttentionHost = document.getElementById("server-switch-preview-attention");
+const serverSwitchConfirmBtn = document.getElementById("server-switch-confirm-btn");
+const serverSwitchCancelBtn = document.getElementById("server-switch-cancel-btn");
 
 const { apiFetch, parsePayload, setStateError, setStateIdle, setStateSuccess, redirectIfUnauthorized } = window.OGPWeb;
 const { bindLogout } = window.OGPPage;
 const bindDigitsOnly = window.OGPForm?.bindDigitsOnly || (() => {});
 const setButtonBusy = window.OGPForm?.setButtonBusy || (() => {});
+const serverSwitchModal = window.OGPWeb.createModalController({
+  modal: document.getElementById("server-switch-modal"),
+});
+let pendingSwitchDraft = null;
+let pendingSwitchServerId = "";
 
 function showProfileErrors(lines) {
   setStateError(profileErrors, Array.isArray(lines) ? lines.join("\n") : String(lines || ""));
@@ -77,6 +90,77 @@ function collectProfilePayload() {
     discord: data.get("discord")?.toString().trim() || "",
     passport_scan_url: data.get("passport_scan_url")?.toString().trim() || "",
   };
+}
+
+async function collectDraftSwitchPayload() {
+  const serverId = String(targetServerCodeField?.value || "").trim().toLowerCase();
+  const draftResponse = await apiFetch("/api/complaint-draft", { method: "GET", headers: {} });
+  const draftPayload = await parsePayload(draftResponse);
+  if (!draftResponse.ok) {
+    throw new Error(Array.isArray(draftPayload?.detail) ? draftPayload.detail.join(", ") : "Не удалось загрузить текущий черновик.");
+  }
+  return {
+    server_id: serverId,
+    draft: draftPayload?.draft || {},
+  };
+}
+
+function renderSwitchPreview(payload) {
+  const diff = payload?.diff || {};
+  const keeps = Array.isArray(diff.keeps) && diff.keeps.length ? diff.keeps.join(", ") : "нет заполненных полей";
+  const clears = Array.isArray(diff.clears) && diff.clears.length ? diff.clears.join(", ") : "ничего";
+  const required = Array.isArray(diff.new_required_fields) ? diff.new_required_fields : [];
+  const invalid = Array.isArray(diff.invalid_values) ? diff.invalid_values : [];
+  const invalidText = invalid.length
+    ? invalid.map((item) => `${item.field}: ${item.reason}`).join("; ")
+    : "нет невалидных значений";
+  const requiredText = required.length ? required.join(", ") : "новых обязательных полей нет";
+  serverSwitchKeepHost.textContent = `Сохранится: ${keeps}.`;
+  serverSwitchClearHost.textContent = `Очистится: ${clears}.`;
+  serverSwitchAttentionHost.textContent = `Потребует внимания: ${requiredText}; ${invalidText}.`;
+}
+
+async function previewServerSwitch() {
+  try {
+    const payload = await collectDraftSwitchPayload();
+    const response = await apiFetch("/api/document-builder/preview-switch", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    const data = await parsePayload(response);
+    if (!response.ok) {
+      showProfileErrors(data.detail || "Не удалось получить предпросмотр переключения.");
+      redirectIfUnauthorized(response.status);
+      return;
+    }
+    pendingSwitchDraft = data.draft || {};
+    pendingSwitchServerId = data.server_id || payload.server_id;
+    renderSwitchPreview(data);
+    serverSwitchModal.open();
+  } catch (error) {
+    showProfileErrors(error?.message || "Не удалось подготовить переключение.");
+  }
+}
+
+async function confirmServerSwitch() {
+  if (!pendingSwitchServerId) {
+    return;
+  }
+  const response = await apiFetch("/api/document-builder/confirm-switch", {
+    method: "POST",
+    body: JSON.stringify({ server_id: pendingSwitchServerId, draft: pendingSwitchDraft || {} }),
+  });
+  const data = await parsePayload(response);
+  if (!response.ok) {
+    showProfileErrors(data.detail || "Не удалось переключить сервер.");
+    redirectIfUnauthorized(response.status);
+    return;
+  }
+  if (currentServerCodeField) {
+    currentServerCodeField.value = data.server_id || pendingSwitchServerId;
+  }
+  showAppMessage(data.message || "Сервер переключен.");
+  serverSwitchModal.close();
 }
 
 function updateProfileProgress() {
@@ -184,5 +268,8 @@ passwordForm?.addEventListener("submit", async (event) => {
 
 bindLogout(logoutBtn);
 bindDigitsOnly(profileForm, "phone", 7);
+serverSwitchModal.bind(serverSwitchCancelBtn);
+switchServerBtn?.addEventListener("click", previewServerSwitch);
+serverSwitchConfirmBtn?.addEventListener("click", confirmServerSwitch);
 loadProfile();
 updateProfileProgress();

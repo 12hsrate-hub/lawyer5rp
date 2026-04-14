@@ -27,6 +27,7 @@
 
   {% include "partials/page_nav.html" %}
   <nav class="legal-section-jump legal-section-jump--sticky" aria-label="Навигация по разделам профиля">
+    <a class="legal-section-jump__link" href="#profile-section-server">Сервер</a>
     <a class="legal-section-jump__link" href="#profile-section-main">Основные данные</a>
     <a class="legal-section-jump__link" href="#profile-section-password">Смена пароля</a>
   </nav>
@@ -50,6 +51,27 @@
 
   <div class="legal-workspace legal-workspace--wide">
     <div class="legal-workspace__main">
+      <section id="profile-section-server" class="panel legal-card legal-section">
+        {{ ui.section_header("Раздел 0", "Сервер документа", "Переключение сервера выполнит пересчёт черновика жалобы и покажет изменения до подтверждения.") }}
+        <div class="legal-field-grid legal-field-grid--two">
+          <label class="legal-field">
+            <span class="legal-field__label">Текущий сервер</span>
+            <input id="current-server-code" type="text" value="{{ server_code }}" readonly>
+          </label>
+          <label class="legal-field">
+            <span class="legal-field__label">Целевой сервер</span>
+            <select id="target-server-code" name="target_server_code">
+              {% for item in available_servers %}
+              <option value="{{ item.code }}"{% if item.code == server_code %} selected{% endif %}>{{ item.name }} ({{ item.code }})</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <div class="actions legal-toolbar legal-toolbar--result">
+          {{ ui.button("Переключить сервер", "secondary", "button", "switch-server-btn") }}
+        </div>
+      </section>
+
       <form accept-charset="UTF-8" id="profile-form" novalidate>
         <section id="profile-section-main" class="panel legal-card legal-section">
           {{ ui.section_header("Раздел 1", "Основные данные", "Укажите сведения представителя, которые будут подставляться в итоговые документы.") }}
@@ -88,6 +110,19 @@
           </div>
         </form>
       </section>
+    </div>
+  </div>
+</div>
+
+<div id="server-switch-modal" class="modal" hidden>
+  <div class="modal-content legal-modal-card">
+    <h3>Подтвердите переключение сервера</h3>
+    <div id="server-switch-preview-keep" class="legal-message ui-state ui-state--success">Сохранится: —</div>
+    <div id="server-switch-preview-clear" class="legal-message ui-state ui-state--empty">Очистится: —</div>
+    <div id="server-switch-preview-attention" class="legal-message ui-state ui-state--loading">Потребует внимания: —</div>
+    <div class="actions legal-toolbar legal-toolbar--result">
+      {{ ui.button("Отмена", "ghost", "button", "server-switch-cancel-btn") }}
+      {{ ui.button("Подтвердить переключение", "primary", "button", "server-switch-confirm-btn") }}
     </div>
   </div>
 </div>
