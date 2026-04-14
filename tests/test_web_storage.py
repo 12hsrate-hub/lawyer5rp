@@ -80,6 +80,7 @@ class PostgresBackend:
             "auth_rate_limit_events": [],
             "clock": 0,
             "missing_tables": set(missing_tables or set()),
+            "closed_connections": 0,
         }
 
     def connect(self):
@@ -107,6 +108,7 @@ class FakePostgresConnection:
         return None
 
     def close(self) -> None:
+        self.state["closed_connections"] += 1
         return None
 
     def execute(self, query: str, params=()):
@@ -2725,6 +2727,25 @@ class PostgresUserStoreTests(unittest.TestCase):
         self.assertFalse(details["ok"])
         self.assertFalse(details["schema_ok"])
         self.assertIn("complaint_drafts", details["missing_tables"])
+
+    def test_postgres_read_queries_close_connections(self):
+        backend = PostgresBackend()
+        repository = UserRepository(backend)
+        store = UserStore(Path("ignored.db"), Path("ignored.json"), repository=repository)
+        try:
+            initial_closed = backend._state["closed_connections"]
+            store._pg_fetchone("SELECT 1")
+            after_fetchone = backend._state["closed_connections"]
+            store._pg_fetchall("SELECT 1")
+            after_fetchall = backend._state["closed_connections"]
+            store._pg_execute("INSERT INTO servers (code, title) VALUES (%s, %s) ON CONFLICT (code) DO NOTHING", ("demo", "Demo"))
+            after_execute = backend._state["closed_connections"]
+        finally:
+            repository.close()
+
+        self.assertGreater(after_fetchone, initial_closed)
+        self.assertGreater(after_fetchall, after_fetchone)
+        self.assertGreater(after_execute, after_fetchall)
 
 
 class RateLimiterHealthTests(unittest.TestCase):

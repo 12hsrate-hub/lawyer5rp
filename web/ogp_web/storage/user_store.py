@@ -193,6 +193,10 @@ class UserStore:
             details["ok"] = False
             details["error"] = str(exc)
             details["schema_ok"] = False
+            try:
+                conn.close()
+            except Exception:
+                pass
             return details
 
         details["schema_ok"] = not missing
@@ -200,6 +204,10 @@ class UserStore:
             details["ok"] = False
             details["missing_tables"] = missing
             details["error"] = "missing_required_tables"
+        try:
+            conn.close()
+        except Exception:
+            pass
         return details
 
     def _fetchone(self, query: str, params: tuple[Any, ...] = ()):
@@ -209,16 +217,28 @@ class UserStore:
         return self.repository.execute(query, params, commit=commit)
 
     def _pg_fetchone(self, query: str, params: tuple[Any, ...] = ()):
+        conn = self._connect()
         try:
-            return self._connect().execute(query, params).fetchone()
+            return conn.execute(query, params).fetchone()
         except Exception as exc:
             raise self.backend.map_exception(exc) from exc
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     def _pg_fetchall(self, query: str, params: tuple[Any, ...] = ()):
+        conn = self._connect()
         try:
-            return self._connect().execute(query, params).fetchall()
+            return conn.execute(query, params).fetchall()
         except Exception as exc:
             raise self.backend.map_exception(exc) from exc
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     def _pg_execute(self, query: str, params: tuple[Any, ...] = (), *, commit: bool = True) -> int:
         conn = self._connect()
@@ -233,6 +253,11 @@ class UserStore:
             except Exception:
                 pass
             raise self.backend.map_exception(exc) from exc
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     def _pg_select_list(self, columns: str) -> str:
         validated = _validate_columns(columns)
@@ -373,6 +398,10 @@ class UserStore:
                 conn.rollback()
             except Exception:
                 pass
+            try:
+                conn.close()
+            except Exception:
+                pass
             mapped = self.backend.map_exception(exc)
             if isinstance(mapped, IntegrityConflictError):
                 message = "Пользователь с таким логином уже существует."
@@ -380,6 +409,10 @@ class UserStore:
                     message = "Пользователь с таким email уже существует."
                 raise AuthError(message) from exc
             raise mapped from exc
+        try:
+            conn.close()
+        except Exception:
+            pass
         return AuthUser(username=normalized, email=normalized_email, server_code=DEFAULT_SERVER_CODE), verification_token
 
     def _pg_authenticate(self, username: str, password: str) -> AuthUser:
