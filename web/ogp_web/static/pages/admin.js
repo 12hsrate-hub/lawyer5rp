@@ -266,10 +266,10 @@ function renderCatalog(payload) {
             .map((item) => {
               const entityId = String(item.id || "");
               const auditRow = auditByEntityId.get(entityId) || {};
-              const state = String(item.status || item.state || "draft").trim().toLowerCase();
+              const state = String(item.active_change_request_status || item.status || item.state || "draft").trim().toLowerCase();
               const stateLabel = statusLabels[state] || state;
               const changeRequestId = Number(item.active_change_request_id || item.change_request_id || 0);
-              const workflowActions = allowedActionsByState[state] || [];
+              const workflowActions = changeRequestId ? (allowedActionsByState[state] || []) : [];
               const version = item.current_published_version_id ?? item.version_number ?? "—";
               const author = String(
                 auditRow.author || item.updated_by || item.created_by || "system"
