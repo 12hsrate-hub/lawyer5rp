@@ -82,10 +82,23 @@ const userIndex = new Map();
 let activeCatalogEntity = String(catalogHost?.dataset.catalogEntity || "servers");
 let activeSyntheticSuite = "";
 let pendingCatalogContext = null;
+let activeLawServerCode = "";
+let lawServerOptions = [];
 
 function catalogEndpoint(entityType, itemId = "") {
   const suffix = itemId ? `/${encodeURIComponent(itemId)}` : "";
   return `/api/admin/catalog/${encodeURIComponent(entityType)}${suffix}`;
+}
+
+function withLawServerQuery(path) {
+  const selected = String(activeLawServerCode || "").trim();
+  if (!selected) return path;
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}server_code=${encodeURIComponent(selected)}`;
+}
+
+function getLawServerSelect() {
+  return document.getElementById("law-sources-server-select");
 }
 
 function formatCatalogPreviewValue(value) {
@@ -124,16 +137,69 @@ function renderCatalogPreview(payload) {
   host.hidden = false;
 }
 
+function renderLawServerSelector() {
+  const select = getLawServerSelect();
+  if (!(select instanceof HTMLSelectElement)) {
+    return;
+  }
+  const options = lawServerOptions.length ? lawServerOptions : [{ code: activeLawServerCode, title: activeLawServerCode }];
+  const safeOptions = options.filter((item) => String(item?.code || "").trim());
+  select.innerHTML = safeOptions
+    .map((item) => {
+      const code = String(item.code || "").trim().toLowerCase();
+      const title = String(item.title || code).trim();
+      const isSelected = code === String(activeLawServerCode || "").trim().toLowerCase();
+      return `<option value="${escapeHtml(code)}" ${isSelected ? "selected" : ""}>${escapeHtml(`${title} (${code})`)}</option>`;
+    })
+    .join("");
+}
+
+async function loadLawServerOptions() {
+  if (!catalogHost || activeCatalogEntity !== "laws") return;
+  const response = await apiFetch("/api/admin/runtime-servers");
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    lawServerOptions = [];
+    return;
+  }
+  const rows = Array.isArray(payload?.items) ? payload.items : [];
+  lawServerOptions = rows
+    .filter((item) => item && String(item.code || "").trim())
+    .map((item) => ({
+      code: String(item.code || "").trim().toLowerCase(),
+      title: String(item.title || "").trim(),
+      is_active: Boolean(item.is_active),
+    }));
+  if (!activeLawServerCode) {
+    const firstActive = lawServerOptions.find((item) => item.is_active);
+    if (firstActive?.code) {
+      activeLawServerCode = firstActive.code;
+    } else if (lawServerOptions[0]?.code) {
+      activeLawServerCode = lawServerOptions[0].code;
+    }
+  }
+  renderLawServerSelector();
+}
+
 async function loadLawSourcesManager() {
   if (!catalogHost || activeCatalogEntity !== "laws") {
     return;
   }
-  const response = await apiFetch("/api/admin/law-sources");
+  const select = getLawServerSelect();
+  if (select instanceof HTMLSelectElement && select.value) {
+    activeLawServerCode = String(select.value || "").trim().toLowerCase();
+  }
+  const response = await apiFetch(withLawServerQuery("/api/admin/law-sources"));
   const payload = await parsePayload(response);
   if (!response.ok) {
     setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить источники законов."));
     return;
   }
+  const payloadServerCode = String(payload?.server_code || "").trim().toLowerCase();
+  if (payloadServerCode) {
+    activeLawServerCode = payloadServerCode;
+  }
+  renderLawServerSelector();
   const textarea = document.getElementById("law-sources-textarea");
   const statusHost = document.getElementById("law-sources-status");
   if (textarea) {
@@ -176,7 +242,7 @@ function renderLawSourcesHistory(payload) {
 }
 
 async function loadLawSourcesHistory() {
-  const response = await apiFetch("/api/admin/law-sources/history?limit=8");
+  const response = await apiFetch(withLawServerQuery("/api/admin/law-sources/history?limit=8"));
   const payload = await parsePayload(response);
   if (!response.ok) {
     return;
@@ -221,6 +287,225 @@ async function loadLawSourcesDependencies() {
   renderLawSourcesDependencies(payload);
 }
 
+function parseLawSetItemsInput(raw) {
+  const rows = String(raw || "")
+    .split(/\r?\n/)
+    .map((line) => String(line || "").trim())
+    .filter(Boolean);
+  return rows.map((line, index) => {
+    const [lawCode, sourceIdRaw, priorityRaw, effectiveFromRaw] = line.split("|").map((part) => String(part || "").trim());
+    if (!lawCode) {
+      throw new Error(`Строка ${index + 1}: law_code обязателен.`);
+    }
+    const sourceId = Number(sourceIdRaw || 0);
+    const priority = Number(priorityRaw || 100);
+    return {
+      law_code: lawCode,
+      source_id: Number.isFinite(sourceId) && sourceId > 0 ? sourceId : null,
+      priority: Number.isFinite(priority) ? priority : 100,
+      effective_from: effectiveFromRaw || "",
+    };
+  });
+}
+
+function renderLawSets(payload) {
+  const host = document.getElementById("law-sets-host");
+  if (!host) return;
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  host.innerHTML = `
+    <table class="legal-table admin-table admin-table--compact">
+      <thead><tr><th>ID</th><th>Название</th><th>Статус</th><th>Публикация</th><th>Элементов</th><th>Действия</th></tr></thead>
+      <tbody>
+        ${items.length ? items.map((item) => `
+          <tr>
+            <td>${escapeHtml(String(item.id || "—"))}</td>
+            <td>${escapeHtml(String(item.name || "—"))}</td>
+            <td>${item.is_active ? "active" : "disabled"}</td>
+            <td>${item.is_published ? "published" : "draft"}</td>
+            <td>${escapeHtml(String(item.item_count || 0))}</td>
+            <td>
+              <button type="button" class="ghost-button" data-law-set-edit="${escapeHtml(String(item.id || ""))}" data-law-set-name="${escapeHtml(String(item.name || ""))}" data-law-set-active="${item.is_active ? "1" : "0"}">Изменить</button>
+              <button type="button" class="ghost-button" data-law-set-publish="${escapeHtml(String(item.id || ""))}">Опубликовать</button>
+              <button type="button" class="ghost-button" data-law-set-rebuild="${escapeHtml(String(item.id || ""))}">Rebuild</button>
+            </td>
+          </tr>
+        `).join("") : '<tr><td colspan="6" class="legal-section__description">Наборы законов пока не созданы.</td></tr>'}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadLawSets() {
+  const host = document.getElementById("law-sets-host");
+  if (!host || !activeLawServerCode) return;
+  const response = await apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(activeLawServerCode)}/law-sets`);
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить наборы законов."))}</p>`;
+    return;
+  }
+  renderLawSets(payload);
+}
+
+async function createLawSetFlow() {
+  if (!activeLawServerCode) {
+    setStateError(errorsHost, "Сначала выберите сервер.");
+    return;
+  }
+  const name = String(window.prompt("Название набора законов", `${activeLawServerCode}-default`) || "").trim();
+  if (!name) return;
+  const rawItems = String(
+    window.prompt(
+      "Элементы набора (строки формата law_code|source_id|priority|effective_from)",
+      "",
+    ) || ""
+  );
+  let items = [];
+  try {
+    items = rawItems ? parseLawSetItemsInput(rawItems) : [];
+  } catch (error) {
+    setStateError(errorsHost, String(error?.message || error));
+    return;
+  }
+  const response = await apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(activeLawServerCode)}/law-sets`, {
+    method: "POST",
+    body: JSON.stringify({ name, is_active: true, items }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось создать набор законов."));
+    return;
+  }
+  showMessage(`Набор законов создан: ${name}.`);
+  await loadLawSets();
+}
+
+async function editLawSetFlow(lawSetId, currentName, currentIsActive) {
+  const name = String(window.prompt("Новое название набора", currentName || "") || "").trim();
+  if (!name) return;
+  const rawItems = String(
+    window.prompt(
+      "Элементы набора (строки формата law_code|source_id|priority|effective_from)",
+      "",
+    ) || ""
+  );
+  let items = [];
+  try {
+    items = rawItems ? parseLawSetItemsInput(rawItems) : [];
+  } catch (error) {
+    setStateError(errorsHost, String(error?.message || error));
+    return;
+  }
+  const response = await apiFetch(`/api/admin/law-sets/${encodeURIComponent(String(lawSetId))}`, {
+    method: "PUT",
+    body: JSON.stringify({ name, is_active: currentIsActive, items }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось обновить набор законов."));
+    return;
+  }
+  showMessage(`Набор #${lawSetId} обновлен.`);
+  await loadLawSets();
+}
+
+async function publishLawSetFlow(lawSetId) {
+  const response = await apiFetch(`/api/admin/law-sets/${encodeURIComponent(String(lawSetId))}/publish`, { method: "POST" });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось опубликовать набор."));
+    return;
+  }
+  showMessage(`Набор #${lawSetId} опубликован.`);
+  await loadLawSets();
+}
+
+async function rebuildLawSetFlow(lawSetId) {
+  const response = await apiFetch(`/api/admin/law-sets/${encodeURIComponent(String(lawSetId))}/rebuild`, { method: "POST" });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось пересобрать набор."));
+    return;
+  }
+  showMessage(`Набор #${lawSetId} пересобран. Версия: ${String(payload?.result?.law_version_id || "—")}.`);
+  await loadLawSourcesManager();
+}
+
+function renderLawSourceRegistry(payload) {
+  const host = document.getElementById("law-source-registry-host");
+  if (!host) return;
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  host.innerHTML = `
+    <table class="legal-table admin-table admin-table--compact">
+      <thead><tr><th>ID</th><th>Название</th><th>Kind</th><th>URL</th><th>Статус</th><th>Действия</th></tr></thead>
+      <tbody>
+        ${items.length ? items.map((item) => `
+          <tr>
+            <td>${escapeHtml(String(item.id || "—"))}</td>
+            <td>${escapeHtml(String(item.name || "—"))}</td>
+            <td>${escapeHtml(String(item.kind || "url"))}</td>
+            <td class="admin-user-cell__secondary">${escapeHtml(String(item.url || "—"))}</td>
+            <td>${item.is_active ? "active" : "disabled"}</td>
+            <td>
+              <button type="button" class="ghost-button" data-law-source-edit="${escapeHtml(String(item.id || ""))}" data-law-source-name="${escapeHtml(String(item.name || ""))}" data-law-source-kind="${escapeHtml(String(item.kind || "url"))}" data-law-source-url="${escapeHtml(String(item.url || ""))}" data-law-source-active="${item.is_active ? "1" : "0"}">Изменить</button>
+            </td>
+          </tr>
+        `).join("") : '<tr><td colspan="6" class="legal-section__description">Реестр источников пуст.</td></tr>'}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadLawSourceRegistry() {
+  const host = document.getElementById("law-source-registry-host");
+  if (!host) return;
+  const response = await apiFetch("/api/admin/law-source-registry");
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить реестр источников."))}</p>`;
+    return;
+  }
+  renderLawSourceRegistry(payload);
+}
+
+async function createLawSourceRegistryFlow() {
+  const name = String(window.prompt("Название источника", "") || "").trim();
+  if (!name) return;
+  const kind = String(window.prompt("Kind (url|registry|api)", "url") || "url").trim().toLowerCase();
+  const url = String(window.prompt("URL источника", "") || "").trim();
+  if (!url) return;
+  const response = await apiFetch("/api/admin/law-source-registry", {
+    method: "POST",
+    body: JSON.stringify({ name, kind, url, is_active: true }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось создать источник."));
+    return;
+  }
+  showMessage("Источник добавлен в реестр.");
+  await loadLawSourceRegistry();
+}
+
+async function editLawSourceRegistryFlow(sourceId, currentName, currentKind, currentUrl, currentActive) {
+  const name = String(window.prompt("Название источника", currentName || "") || "").trim();
+  if (!name) return;
+  const kind = String(window.prompt("Kind (url|registry|api)", currentKind || "url") || "url").trim().toLowerCase();
+  const url = String(window.prompt("URL источника", currentUrl || "") || "").trim();
+  if (!url) return;
+  const response = await apiFetch(`/api/admin/law-source-registry/${encodeURIComponent(String(sourceId))}`, {
+    method: "PUT",
+    body: JSON.stringify({ name, kind, url, is_active: currentActive }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось обновить источник."));
+    return;
+  }
+  showMessage("Источник обновлен.");
+  await loadLawSourceRegistry();
+}
+
 async function rebuildLawSources() {
   const textarea = document.getElementById("law-sources-textarea");
   const raw = String(textarea?.value || "");
@@ -231,6 +516,7 @@ async function rebuildLawSources() {
   const response = await apiFetch("/api/admin/law-sources/rebuild", {
     method: "POST",
     body: JSON.stringify({
+      server_code: activeLawServerCode,
       source_urls: sourceUrls,
       persist_sources: true,
     }),
@@ -262,7 +548,7 @@ function setLawActionButtonsDisabled(disabled) {
 
 async function pollLawRebuildTask(taskId) {
   const statusHost = document.getElementById("law-sources-task-status");
-  const response = await apiFetch(`/api/admin/law-sources/tasks/${encodeURIComponent(taskId)}`);
+  const response = await apiFetch(withLawServerQuery(`/api/admin/law-sources/tasks/${encodeURIComponent(taskId)}`));
   const payload = await parsePayload(response);
   if (!response.ok) {
     stopLawRebuildPolling();
@@ -306,6 +592,7 @@ async function rebuildLawSourcesAsync() {
   const response = await apiFetch("/api/admin/law-sources/rebuild-async", {
     method: "POST",
     body: JSON.stringify({
+      server_code: activeLawServerCode,
       source_urls: sourceUrls,
       persist_sources: true,
     }),
@@ -343,6 +630,7 @@ async function saveLawSourcesManifest() {
   const response = await apiFetch("/api/admin/law-sources/save", {
     method: "POST",
     body: JSON.stringify({
+      server_code: activeLawServerCode,
       source_urls: sourceUrls,
       persist_sources: true,
     }),
@@ -366,6 +654,7 @@ async function previewLawSources() {
   const response = await apiFetch("/api/admin/law-sources/preview", {
     method: "POST",
     body: JSON.stringify({
+      server_code: activeLawServerCode,
       source_urls: sourceUrls,
       persist_sources: false,
     }),
@@ -396,7 +685,7 @@ async function previewLawSources() {
 }
 
 async function syncLawSourcesFromServerConfig() {
-  const response = await apiFetch("/api/admin/law-sources/sync", {
+  const response = await apiFetch(withLawServerQuery("/api/admin/law-sources/sync"), {
     method: "POST",
     body: JSON.stringify({}),
   });
@@ -484,6 +773,10 @@ function renderCatalog(payload) {
     <div class="legal-subcard">
       <div class="admin-section-toolbar">
         <strong>Источники законов</strong>
+        <label class="legal-field" style="min-width:260px">
+          <span class="legal-field__label">Сервер (обязательно)</span>
+          <select id="law-sources-server-select"></select>
+        </label>
         <div>
           <button type="button" id="law-sources-sync" class="ghost-button">Синхронизировать текущие</button>
           <button type="button" id="law-sources-save" class="ghost-button">Сохранить без пересборки</button>
@@ -502,6 +795,24 @@ function renderCatalog(payload) {
       </label>
       <div id="law-sources-history"></div>
       <div id="law-sources-dependencies"></div>
+      <hr>
+      <div class="admin-section-toolbar">
+        <strong>Наборы законов сервера</strong>
+        <div>
+          <button type="button" id="law-sets-refresh" class="ghost-button">Обновить наборы</button>
+          <button type="button" id="law-sets-create" class="primary-button">Добавить набор</button>
+        </div>
+      </div>
+      <div id="law-sets-host"></div>
+      <hr>
+      <div class="admin-section-toolbar">
+        <strong>Реестр источников</strong>
+        <div>
+          <button type="button" id="law-source-registry-refresh" class="ghost-button">Обновить реестр</button>
+          <button type="button" id="law-source-registry-create" class="primary-button">Добавить источник</button>
+        </div>
+      </div>
+      <div id="law-source-registry-host"></div>
     </div>
     ` : ""}
     <div class="legal-table-wrap">
@@ -952,7 +1263,10 @@ async function loadCatalog(entityType = activeCatalogEntity) {
     await loadRuntimeServersPanel();
   }
   if (entityType === "laws") {
+    await loadLawServerOptions();
     await loadLawSourcesManager();
+    await loadLawSets();
+    await loadLawSourceRegistry();
   }
 }
 
@@ -3477,6 +3791,12 @@ catalogHost?.addEventListener("change", async (event) => {
   if (!(target instanceof HTMLElement)) return;
   if (target.id === "catalog-entity") {
     await loadCatalog(String(target.value || "servers"));
+    return;
+  }
+  if (target.id === "law-sources-server-select") {
+    activeLawServerCode = String(target.value || "").trim().toLowerCase();
+    await loadLawSourcesManager();
+    await loadLawSets();
   }
 });
 
@@ -3521,6 +3841,48 @@ catalogHost?.addEventListener("click", async (event) => {
   }
   if (target.id === "law-sources-preview") {
     await previewLawSources();
+    return;
+  }
+  if (target.id === "law-sets-refresh") {
+    await loadLawSets();
+    return;
+  }
+  if (target.id === "law-sets-create") {
+    await createLawSetFlow();
+    return;
+  }
+  if (target.id === "law-source-registry-refresh") {
+    await loadLawSourceRegistry();
+    return;
+  }
+  if (target.id === "law-source-registry-create") {
+    await createLawSourceRegistryFlow();
+    return;
+  }
+  const lawSetEditId = target.getAttribute("data-law-set-edit");
+  if (lawSetEditId) {
+    const currentName = String(target.getAttribute("data-law-set-name") || "");
+    const currentIsActive = String(target.getAttribute("data-law-set-active") || "1") === "1";
+    await editLawSetFlow(lawSetEditId, currentName, currentIsActive);
+    return;
+  }
+  const lawSetPublishId = target.getAttribute("data-law-set-publish");
+  if (lawSetPublishId) {
+    await publishLawSetFlow(lawSetPublishId);
+    return;
+  }
+  const lawSetRebuildId = target.getAttribute("data-law-set-rebuild");
+  if (lawSetRebuildId) {
+    await rebuildLawSetFlow(lawSetRebuildId);
+    return;
+  }
+  const lawSourceEditId = target.getAttribute("data-law-source-edit");
+  if (lawSourceEditId) {
+    const currentName = String(target.getAttribute("data-law-source-name") || "");
+    const currentKind = String(target.getAttribute("data-law-source-kind") || "url");
+    const currentUrl = String(target.getAttribute("data-law-source-url") || "");
+    const currentActive = String(target.getAttribute("data-law-source-active") || "1") === "1";
+    await editLawSourceRegistryFlow(lawSourceEditId, currentName, currentKind, currentUrl, currentActive);
     return;
   }
   if (target.id === "catalog-create") {

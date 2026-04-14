@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 from ogp_web.dependencies import get_content_workflow_service
 from ogp_web.dependencies import get_admin_dashboard_service, get_admin_metrics_store, get_exam_answers_store, get_user_store, requires_permission
-from ogp_web.dependencies import get_runtime_servers_store
+from ogp_web.dependencies import get_runtime_law_sets_store, get_runtime_servers_store
 from ogp_web.server_config import build_permission_set, get_server_config
 from ogp_web.schemas import (
     AdminBlockPayload,
@@ -27,6 +27,8 @@ from ogp_web.schemas import (
     AdminEmailUpdatePayload,
     AdminExamScoreResetPayload,
     AdminLawSourcesPayload,
+    AdminLawSetPayload,
+    AdminLawSourceRegistryPayload,
     AdminPasswordResetPayload,
     AdminQuotaPayload,
     AdminRuntimeServerPayload,
@@ -42,6 +44,7 @@ from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
 from ogp_web.storage.runtime_servers_store import RuntimeServersStore
+from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
 from ogp_web.web import page_context, templates
 
 
@@ -1022,11 +1025,203 @@ async def admin_runtime_servers_deactivate(
     return {"ok": True, "item": store.to_payload(row)}
 
 
+@router.get("/api/admin/runtime-servers/{server_code}/law-sets")
+async def admin_runtime_server_law_sets(
+    server_code: str,
+    user: AuthUser = Depends(require_admin_user),
+    store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+):
+    _ = user
+    normalized_code = str(server_code or "").strip().lower()
+    items = store.list_law_sets(server_code=normalized_code)
+    return {"server_code": normalized_code, "items": items, "count": len(items)}
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/law-sets")
+async def admin_runtime_server_law_sets_create(
+    server_code: str,
+    payload: AdminLawSetPayload,
+    user: AuthUser = Depends(require_admin_user),
+    store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    normalized_code = str(server_code or "").strip().lower()
+    try:
+        law_set = store.create_law_set(server_code=normalized_code, name=payload.name)
+        items = store.replace_law_set_items(
+            law_set_id=int(law_set.get("id") or 0),
+            items=[item.model_dump() for item in payload.items],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    metrics_store.log_event(
+        event_type="admin_law_set_create",
+        username=user.username,
+        server_code=normalized_code,
+        path=f"/api/admin/runtime-servers/{normalized_code}/law-sets",
+        method="POST",
+        status_code=200,
+        meta={"law_set_id": law_set.get("id"), "items_count": len(items)},
+    )
+    return {"ok": True, "law_set": law_set, "items": items}
+
+
+@router.put("/api/admin/law-sets/{law_set_id}")
+async def admin_law_set_update(
+    law_set_id: int,
+    payload: AdminLawSetPayload,
+    user: AuthUser = Depends(require_admin_user),
+    store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        law_set = store.update_law_set(law_set_id=law_set_id, name=payload.name, is_active=payload.is_active)
+        items = store.replace_law_set_items(law_set_id=law_set_id, items=[item.model_dump() for item in payload.items])
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+    metrics_store.log_event(
+        event_type="admin_law_set_update",
+        username=user.username,
+        server_code=str(law_set.get("server_code") or user.server_code),
+        path=f"/api/admin/law-sets/{law_set_id}",
+        method="PUT",
+        status_code=200,
+        meta={"law_set_id": law_set_id, "items_count": len(items)},
+    )
+    return {"ok": True, "law_set": law_set, "items": items}
+
+
+@router.post("/api/admin/law-sets/{law_set_id}/publish")
+async def admin_law_set_publish(
+    law_set_id: int,
+    user: AuthUser = Depends(require_admin_user),
+    store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        law_set = store.publish_law_set(law_set_id=law_set_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+    metrics_store.log_event(
+        event_type="admin_law_set_publish",
+        username=user.username,
+        server_code=str(law_set.get("server_code") or user.server_code),
+        path=f"/api/admin/law-sets/{law_set_id}/publish",
+        method="POST",
+        status_code=200,
+        meta={"law_set_id": law_set_id},
+    )
+    return {"ok": True, "law_set": law_set}
+
+
+@router.post("/api/admin/law-sets/{law_set_id}/rebuild")
+async def admin_law_set_rebuild(
+    law_set_id: int,
+    request: Request,
+    user: AuthUser = Depends(requires_permission("manage_laws")),
+    store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    user_store: UserStore = Depends(get_user_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    actor_user_id = _resolve_actor_user_id(user_store, user.username)
+    try:
+        server_code, source_urls = store.list_source_urls_for_law_set(law_set_id=law_set_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+    if not source_urls:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["law_set_sources_empty"])
+    service = LawAdminService(workflow_service)
+    result = service.rebuild_index(
+        server_code=server_code,
+        source_urls=source_urls,
+        actor_user_id=actor_user_id,
+        request_id=getattr(request.state, "request_id", ""),
+        persist_sources=True,
+    )
+    metrics_store.log_event(
+        event_type="admin_law_set_rebuild",
+        username=user.username,
+        server_code=server_code,
+        path=f"/api/admin/law-sets/{law_set_id}/rebuild",
+        method="POST",
+        status_code=200,
+        meta={"law_set_id": law_set_id, "law_version_id": result.get("law_version_id")},
+    )
+    return {"ok": True, "law_set_id": law_set_id, "server_code": server_code, "source_urls": source_urls, "result": result}
+
+
+@router.get("/api/admin/law-source-registry")
+async def admin_law_source_registry_list(
+    user: AuthUser = Depends(require_admin_user),
+    store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+):
+    _ = user
+    items = [record.__dict__ for record in store.list_sources()]
+    return {"items": items, "count": len(items)}
+
+
+@router.post("/api/admin/law-source-registry")
+async def admin_law_source_registry_create(
+    payload: AdminLawSourceRegistryPayload,
+    user: AuthUser = Depends(require_admin_user),
+    store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        row = store.create_source(name=payload.name, kind=payload.kind, url=payload.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    metrics_store.log_event(
+        event_type="admin_law_source_registry_create",
+        username=user.username,
+        server_code=user.server_code,
+        path="/api/admin/law-source-registry",
+        method="POST",
+        status_code=200,
+        meta={"source_id": row.id},
+    )
+    return {"ok": True, "item": row.__dict__}
+
+
+@router.put("/api/admin/law-source-registry/{source_id}")
+async def admin_law_source_registry_update(
+    source_id: int,
+    payload: AdminLawSourceRegistryPayload,
+    user: AuthUser = Depends(require_admin_user),
+    store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        row = store.update_source(source_id=source_id, name=payload.name, kind=payload.kind, url=payload.url, is_active=payload.is_active)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+    metrics_store.log_event(
+        event_type="admin_law_source_registry_update",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/law-source-registry/{source_id}",
+        method="PUT",
+        status_code=200,
+        meta={"source_id": row.id},
+    )
+    return {"ok": True, "item": row.__dict__}
+
+
 def _resolve_actor_user_id(user_store: UserStore, username: str) -> int:
     actor_user_id = user_store.get_user_id(username)
     if actor_user_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["actor_not_found"])
     return int(actor_user_id)
+
+
+def _resolve_law_sources_server_code(user: AuthUser, requested_server_code: str = "") -> str:
+    normalized = str(requested_server_code or "").strip().lower()
+    return normalized or user.server_code
 
 
 def _resolve_active_change_request_id(item: dict[str, Any], change_requests: list[dict[str, Any]]) -> int | None:
@@ -1411,22 +1606,24 @@ async def admin_catalog_rollback(
 
 @router.get("/api/admin/law-sources")
 async def admin_law_sources_status(
+    server_code: str = Query(default="", description="Runtime server code override"),
     user: AuthUser = Depends(requires_permission("manage_laws")),
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
+    target_server_code = _resolve_law_sources_server_code(user, server_code)
     service = LawAdminService(workflow_service)
-    snapshot = service.get_effective_sources(server_code=user.server_code)
+    snapshot = service.get_effective_sources(server_code=target_server_code)
     metrics_store.log_event(
         event_type="admin_law_sources_status",
         username=user.username,
-        server_code=user.server_code,
+        server_code=target_server_code,
         path="/api/admin/law-sources",
         method="GET",
         status_code=200,
     )
     return {
-        "server_code": user.server_code,
+        "server_code": target_server_code,
         "source_urls": list(snapshot.source_urls),
         "source_origin": snapshot.source_origin,
         "manifest_item": snapshot.manifest_item,
@@ -1439,16 +1636,18 @@ async def admin_law_sources_status(
 @router.post("/api/admin/law-sources/sync")
 async def admin_law_sources_sync(
     request: Request,
+    server_code: str = Query(default="", description="Runtime server code override"),
     user: AuthUser = Depends(requires_permission("manage_laws")),
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
+    target_server_code = _resolve_law_sources_server_code(user, server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     service = LawAdminService(workflow_service)
     try:
         result = service.sync_sources_manifest_from_server_config(
-            server_code=user.server_code,
+            server_code=target_server_code,
             actor_user_id=actor_user_id,
             request_id=getattr(request.state, "request_id", ""),
             safe_rerun=True,
@@ -1458,7 +1657,7 @@ async def admin_law_sources_sync(
     metrics_store.log_event(
         event_type="admin_law_sources_sync",
         username=user.username,
-        server_code=user.server_code,
+        server_code=target_server_code,
         path="/api/admin/law-sources/sync",
         method="POST",
         status_code=200,
@@ -1476,11 +1675,12 @@ async def admin_law_sources_rebuild(
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
+    target_server_code = _resolve_law_sources_server_code(user, payload.server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     service = LawAdminService(workflow_service)
     try:
         result = service.rebuild_index(
-            server_code=user.server_code,
+            server_code=target_server_code,
             source_urls=payload.source_urls,
             actor_user_id=actor_user_id,
             request_id=getattr(request.state, "request_id", ""),
@@ -1491,7 +1691,7 @@ async def admin_law_sources_rebuild(
     metrics_store.log_event(
         event_type="admin_law_sources_rebuild",
         username=user.username,
-        server_code=user.server_code,
+        server_code=target_server_code,
         path="/api/admin/law-sources/rebuild",
         method="POST",
         status_code=200,
@@ -1508,14 +1708,15 @@ async def admin_law_sources_rebuild_async(
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
+    target_server_code = _resolve_law_sources_server_code(user, payload.server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     request_id = getattr(request.state, "request_id", "")
-    active_task, queued_task = _claim_law_rebuild_task(server_code=user.server_code)
+    active_task, queued_task = _claim_law_rebuild_task(server_code=target_server_code)
     if active_task:
         metrics_store.log_event(
             event_type="admin_law_sources_rebuild_async_conflict",
             username=user.username,
-            server_code=user.server_code,
+            server_code=target_server_code,
             path="/api/admin/law-sources/rebuild-async",
             method="POST",
             status_code=409,
@@ -1534,7 +1735,7 @@ async def admin_law_sources_rebuild_async(
             workflow_service = _get_content_workflow_service_for_request(request)
             service = LawAdminService(workflow_service)
             result = service.rebuild_index(
-                server_code=user.server_code,
+                server_code=target_server_code,
                 source_urls=payload.source_urls,
                 actor_user_id=actor_user_id,
                 request_id=request_id,
@@ -1550,7 +1751,7 @@ async def admin_law_sources_rebuild_async(
             metrics_store.log_event(
                 event_type="admin_law_sources_rebuild_async_finished",
                 username=user.username,
-                server_code=user.server_code,
+                server_code=target_server_code,
                 path="/api/admin/law-sources/rebuild-async",
                 method="POST",
                 status_code=200,
@@ -1566,7 +1767,7 @@ async def admin_law_sources_rebuild_async(
             metrics_store.log_event(
                 event_type="admin_law_sources_rebuild_async_failed",
                 username=user.username,
-                server_code=user.server_code,
+                server_code=target_server_code,
                 path="/api/admin/law-sources/rebuild-async",
                 method="POST",
                 status_code=500,
@@ -1577,7 +1778,7 @@ async def admin_law_sources_rebuild_async(
     metrics_store.log_event(
         event_type="admin_law_sources_rebuild_async_queued",
         username=user.username,
-        server_code=user.server_code,
+        server_code=target_server_code,
         path="/api/admin/law-sources/rebuild-async",
         method="POST",
         status_code=200,
@@ -1595,11 +1796,12 @@ async def admin_law_sources_save(
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
+    target_server_code = _resolve_law_sources_server_code(user, payload.server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     service = LawAdminService(workflow_service)
     try:
         result = service.publish_sources_manifest(
-            server_code=user.server_code,
+            server_code=target_server_code,
             source_urls=payload.source_urls,
             actor_user_id=actor_user_id,
             request_id=getattr(request.state, "request_id", ""),
@@ -1610,7 +1812,7 @@ async def admin_law_sources_save(
     metrics_store.log_event(
         event_type="admin_law_sources_save",
         username=user.username,
-        server_code=user.server_code,
+        server_code=target_server_code,
         path="/api/admin/law-sources/save",
         method="POST",
         status_code=200,
@@ -1646,17 +1848,19 @@ async def admin_law_sources_preview(
 
 @router.get("/api/admin/law-sources/history")
 async def admin_law_sources_history(
+    server_code: str = Query(default="", description="Runtime server code override"),
     user: AuthUser = Depends(requires_permission("manage_laws")),
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
     limit: int = Query(default=10, ge=1, le=100),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
+    target_server_code = _resolve_law_sources_server_code(user, server_code)
     service = LawAdminService(workflow_service)
-    result = service.list_recent_versions(server_code=user.server_code, limit=limit)
+    result = service.list_recent_versions(server_code=target_server_code, limit=limit)
     metrics_store.log_event(
         event_type="admin_law_sources_history",
         username=user.username,
-        server_code=user.server_code,
+        server_code=target_server_code,
         path="/api/admin/law-sources/history",
         method="GET",
         status_code=200,
@@ -1689,20 +1893,22 @@ async def admin_law_sources_dependencies(
 @router.get("/api/admin/law-sources/tasks/{task_id}")
 async def admin_law_sources_task_status(
     task_id: str,
+    server_code: str = Query(default="", description="Runtime server code override"),
     user: AuthUser = Depends(requires_permission("manage_laws")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
+    target_server_code = _resolve_law_sources_server_code(user, server_code)
     task = _load_admin_task(task_id)
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Задача не найдена."])
     if task.get("scope") != "law_sources_rebuild":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Задача не найдена."])
-    if str(task.get("server_code") or "") != user.server_code:
+    if str(task.get("server_code") or "") != target_server_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Доступ запрещён."])
     metrics_store.log_event(
         event_type="admin_law_sources_task_status",
         username=user.username,
-        server_code=user.server_code,
+        server_code=target_server_code,
         path=f"/api/admin/law-sources/tasks/{task_id}",
         method="GET",
         status_code=200,
