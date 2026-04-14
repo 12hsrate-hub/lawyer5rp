@@ -6,9 +6,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 
 ## Current Execution State
 
-- Current phase: `Phase A — Baseline inventory + migration map`
-- Current task: `Phase A complete`
-- Current micro-step: `Phase A deliverables completed and approved for handoff into Phase B`
+- Current phase: `Phase B — Runtime model foundation + single source-of-truth contract`
+- Current task: `Phase B complete`
+- Current micro-step: `Phase B deliverables completed; ready for Phase C read-only admin module split`
 - Overall status: `done`
 - Last updated: `2026-04-14`
 - Notes:
@@ -120,7 +120,10 @@ Dependencies: none.
 
 ## Phase B — Runtime model foundation + single source-of-truth contract (1-2 sprints)
 
+Execution status: `done`
+
 ### B.1 Data model draft and persistence skeleton
+Status: `done`
 Introduce versioned DB model families (minimal first):
 - server_config_version
 - procedure_version
@@ -131,18 +134,23 @@ Introduce versioned DB model families (minimal first):
 - publication/audit events
 
 ### B.2 Read-path adapters
+Status: `done`
 - Keep legacy endpoints.
 - Add adapter layer that can resolve config from new model behind feature flags.
 - Default remains legacy for all non-pilot scenarios.
+- Initial implementation slice complete for `blackberry + complaint` via `pilot_runtime_adapter.py` and `pilot_runtime_adapter_v1`.
 
 ### B.3 Drift detection
+Status: `done`
 - Add shadow compare for pilot scenario: legacy output vs new-runtime-derived output.
 - Persist mismatch logs with reason category.
+- Initial implementation slice complete via `pilot_runtime_shadow_compare` metrics events and `scripts/report_pilot_drift.py`.
 
 ### Deliverables
 - `DATA_MODEL_DRAFT.md`
 - feature flags matrix (`legacy_only`, `shadow_compare`, `new_runtime_active`)
 - drift-report script/check
+- Implemented pilot adapter seam with workflow-backed published reads + legacy fallback for `blackberry + complaint`
 
 ### Acceptance
 - Pilot scenario can run in `shadow_compare` mode with measurable drift report.
