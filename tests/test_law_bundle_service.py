@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import types
 import unittest
 from pathlib import Path
 
@@ -10,6 +11,9 @@ WEB_DIR = ROOT_DIR / "web"
 for candidate in (ROOT_DIR, WEB_DIR):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
+
+if "httpx" not in sys.modules:
+    sys.modules["httpx"] = types.SimpleNamespace()
 
 from ogp_web.services import law_bundle_service
 from tests.temp_helpers import make_temporary_directory
