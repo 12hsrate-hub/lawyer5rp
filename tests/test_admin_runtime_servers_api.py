@@ -174,7 +174,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         fake_workflow = _FakeContentWorkflowService()
         self.client.app.dependency_overrides[get_content_workflow_service] = lambda: fake_workflow
 
-        response = self.client.get("/api/admin/catalog/audit", params={"entity_type": " law ", "entity_id": " 42 ", "limit": 5})
+        response = self.client.get("/api/admin/catalog/audit", params={"entity_type": " LaW ", "entity_id": " 42 ", "limit": 5})
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
