@@ -24,7 +24,7 @@ window.OGPAdminRuntimeLaws = {
     runtimeServerHealth,
   }) {
     const escapeHtml = window.OGPWeb?.escapeHtml || ((value) => String(value ?? ""));
-    const serverTitle = String(server?.title || activeLawServerCode || "вЂ”").trim();
+    const serverTitle = String(server?.title || activeLawServerCode || "—").trim();
     const runtimeCount = Array.isArray(runtimeServerItems) ? runtimeServerItems.length : 0;
     const summary = runtimeServerHealth?.summary || {};
     const checks = runtimeServerHealth?.checks || {};
@@ -38,59 +38,59 @@ window.OGPAdminRuntimeLaws = {
     return `
       <div class="admin-catalog-preview">
         <div class="admin-catalog-preview__header">
-          <h4 class="admin-catalog-preview__title">Р‘С‹СЃС‚СЂС‹Р№ СЃС†РµРЅР°СЂРёР№: СЃРµСЂРІРµСЂ в†’ Р·Р°РєРѕРЅС‹ в†’ Р°РєС‚РёРІР°С†РёСЏ</h4>
+          <h4 class="admin-catalog-preview__title">Быстрый сценарий: сервер → законы → активация</h4>
           <span class="admin-badge ${readyCount === totalCount ? "admin-badge--success" : "admin-badge--muted"}">${escapeHtml(`${readyCount}/${totalCount}`)}</span>
         </div>
         <p class="legal-section__description">${escapeHtml(
           server
-            ? `РЎРµСЂРІРµСЂ ${serverTitle} (${String(server.code || "").trim().toLowerCase()}) РїРѕРґРіРѕС‚РѕРІР»РµРЅ РЅР° ${readyCount}/${totalCount} С€Р°РіРѕРІ.`
-            : "РЎРЅР°С‡Р°Р»Р° СЃРѕР·РґР°Р№С‚Рµ РёР»Рё РІС‹Р±РµСЂРёС‚Рµ runtime-СЃРµСЂРІРµСЂ, Р·Р°С‚РµРј РїСЂРѕР№РґРёС‚Рµ С€Р°РіРё РїРѕРґРіРѕС‚РѕРІРєРё.",
+            ? `Сервер ${serverTitle} (${String(server.code || "").trim().toLowerCase()}) подготовлен на ${readyCount}/${totalCount} шагов.`
+            : "Сначала создайте или выберите runtime-сервер, затем пройдите шаги подготовки.",
         )}</p>
         <div class="admin-workflow-grid">
           ${window.OGPAdminRuntimeLaws.renderWorkflowStep({
-            title: "1. РЎРµСЂРІРµСЂ",
-            status: server ? "РІС‹Р±СЂР°РЅ" : "РЅРµ РІС‹Р±СЂР°РЅ",
-            detail: server ? `${serverTitle}. РЎС‚Р°С‚СѓСЃ: ${server.is_active ? "active" : "disabled"}.` : "РЎРѕР·РґР°Р№С‚Рµ РЅРѕРІС‹Р№ runtime-СЃРµСЂРІРµСЂ РёР»Рё РІС‹Р±РµСЂРёС‚Рµ СЃСѓС‰РµСЃС‚РІСѓСЋС‰РёР№ РІ СЃРµР»РµРєС‚РѕСЂРµ РІС‹С€Рµ.",
+            title: "1. Сервер",
+            status: server ? "выбран" : "не выбран",
+            detail: server ? `${serverTitle}. Статус: ${server.is_active ? "active" : "disabled"}.` : "Создайте новый runtime-сервер или выберите существующий в селекторе выше.",
             tone: server ? "done" : "warning",
             actionHtml: `
-              <button type="button" id="workflow-create-server" class="primary-button">РЎРѕР·РґР°С‚СЊ СЃРµСЂРІРµСЂ</button>
-              <button type="button" id="workflow-refresh-runtime" class="ghost-button">РћР±РЅРѕРІРёС‚СЊ СЃРїРёСЃРѕРє</button>
+              <button type="button" id="workflow-create-server" class="primary-button">Создать сервер</button>
+              <button type="button" id="workflow-refresh-runtime" class="ghost-button">Обновить список</button>
             `,
           })}
           ${window.OGPAdminRuntimeLaws.renderWorkflowStep({
-            title: "2. РќР°Р±РѕСЂ Р·Р°РєРѕРЅРѕРІ",
-            status: activeLawSet ? "РіРѕС‚РѕРІ" : "РїСѓСЃС‚Рѕ",
+            title: "2. Набор законов",
+            status: activeLawSet ? "готов" : "пусто",
             detail: activeLawSet
-              ? `РќР°Р№РґРµРЅ РЅР°Р±РѕСЂ "${String(activeLawSet.name || "вЂ”")}" (${activeLawSet.is_published ? "published" : "draft"}).`
-              : "РЎРѕР·РґР°Р№С‚Рµ С…РѕС‚СЏ Р±С‹ РѕРґРёРЅ РЅР°Р±РѕСЂ Р·Р°РєРѕРЅРѕРІ РґР»СЏ РІС‹Р±СЂР°РЅРЅРѕРіРѕ СЃРµСЂРІРµСЂР°.",
+              ? `Найден набор "${String(activeLawSet.name || "—")}" (${activeLawSet.is_published ? "published" : "draft"}).`
+              : "Создайте хотя бы один набор законов для выбранного сервера.",
             tone: activeLawSet ? "done" : "warning",
             actionHtml: `
-              <button type="button" id="workflow-create-law-set" class="primary-button" ${server ? "" : "disabled"}>РЎРѕР·РґР°С‚СЊ РЅР°Р±РѕСЂ</button>
-              <button type="button" id="workflow-refresh-law-sets" class="ghost-button" ${server ? "" : "disabled"}>РћР±РЅРѕРІРёС‚СЊ РЅР°Р±РѕСЂС‹</button>
+              <button type="button" id="workflow-create-law-set" class="primary-button" ${server ? "" : "disabled"}>Создать набор</button>
+              <button type="button" id="workflow-refresh-law-sets" class="ghost-button" ${server ? "" : "disabled"}>Обновить наборы</button>
             `,
           })}
           ${window.OGPAdminRuntimeLaws.renderWorkflowStep({
-            title: "3. РџСЂРёРІСЏР·РєР° Р·Р°РєРѕРЅР°",
-            status: bindingCount > 0 ? `${bindingCount} РїСЂРёРІСЏР·РѕРє` : "РЅРµС‚ РїСЂРёРІСЏР·РѕРє",
+            title: "3. Привязка закона",
+            status: bindingCount > 0 ? `${bindingCount} привязок` : "нет привязок",
             detail: bindingCount > 0
-              ? "Р•СЃС‚СЊ СЃРІСЏР·Р°РЅРЅС‹Рµ Р·Р°РєРѕРЅС‹ РґР»СЏ РІС‹Р±СЂР°РЅРЅРѕРіРѕ СЃРµСЂРІРµСЂР°."
-              : "РџСЂРёРІСЏР¶РёС‚Рµ С…РѕС‚СЏ Р±С‹ РѕРґРёРЅ Р·Р°РєРѕРЅ Рє СЃРµСЂРІРµСЂСѓ С‡РµСЂРµР· РІС‹Р±РѕСЂ РёР· СЂРµРµСЃС‚СЂР° Рё РЅР°Р±РѕСЂРѕРІ.",
+              ? "Есть связанные законы для выбранного сервера."
+              : "Привяжите хотя бы один закон к серверу через выбор из реестра и наборов.",
             tone: bindingCount > 0 ? "done" : "warning",
             actionHtml: `
-              <button type="button" id="workflow-add-binding" class="primary-button" ${server ? "" : "disabled"}>РџСЂРёРІСЏР·Р°С‚СЊ Р·Р°РєРѕРЅ</button>
-              <button type="button" id="workflow-refresh-bindings" class="ghost-button" ${server ? "" : "disabled"}>РћР±РЅРѕРІРёС‚СЊ РїСЂРёРІСЏР·РєРё</button>
+              <button type="button" id="workflow-add-binding" class="primary-button" ${server ? "" : "disabled"}>Привязать закон</button>
+              <button type="button" id="workflow-refresh-bindings" class="ghost-button" ${server ? "" : "disabled"}>Обновить привязки</button>
             `,
           })}
           ${window.OGPAdminRuntimeLaws.renderWorkflowStep({
-            title: "4. РђРєС‚РёРІР°С†РёСЏ",
+            title: "4. Активация",
             status: server?.is_active ? "active" : "disabled",
             detail: server
-              ? (server.is_active ? "РЎРµСЂРІРµСЂ Р°РєС‚РёРІРµРЅ Рё РјРѕР¶РµС‚ РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊСЃСЏ РІ runtime." : "РџРѕСЃР»Рµ РїРѕРґРіРѕС‚РѕРІРєРё РІРєР»СЋС‡РёС‚Рµ СЃРµСЂРІРµСЂ.")
-              : "РЁР°Рі СЃС‚Р°РЅРµС‚ РґРѕСЃС‚СѓРїРµРЅ РїРѕСЃР»Рµ РІС‹Р±РѕСЂР° РёР»Рё СЃРѕР·РґР°РЅРёСЏ СЃРµСЂРІРµСЂР°.",
+              ? (server.is_active ? "Сервер активен и может использоваться в runtime." : "После подготовки включите сервер.")
+              : "Шаг станет доступен после выбора или создания сервера.",
             tone: server?.is_active ? "done" : "warning",
             actionHtml: `
-              <button type="button" id="workflow-activate-server" class="primary-button" ${server ? "" : "disabled"}>${server?.is_active ? "РЎРµСЂРІРµСЂ СѓР¶Рµ Р°РєС‚РёРІРµРЅ" : "РђРєС‚РёРІРёСЂРѕРІР°С‚СЊ СЃРµСЂРІРµСЂ"}</button>
-              <button type="button" id="workflow-open-server-panel" class="ghost-button" ${runtimeCount ? "" : "disabled"}>РџРѕРєР°Р·Р°С‚СЊ СЃРµСЂРІРµСЂС‹</button>
+              <button type="button" id="workflow-activate-server" class="primary-button" ${server ? "" : "disabled"}>${server?.is_active ? "Сервер уже активен" : "Активировать сервер"}</button>
+              <button type="button" id="workflow-open-server-panel" class="ghost-button" ${runtimeCount ? "" : "disabled"}>Показать серверы</button>
             `,
           })}
           ${window.OGPAdminRuntimeLaws.renderWorkflowStep({
@@ -113,23 +113,23 @@ window.OGPAdminRuntimeLaws = {
     const escapeHtml = window.OGPWeb?.escapeHtml || ((value) => String(value ?? ""));
     return `
       <table class="legal-table admin-table admin-table--compact">
-        <thead><tr><th>ID</th><th>РќР°Р·РІР°РЅРёРµ</th><th>РЎС‚Р°С‚СѓСЃ</th><th>РџСѓР±Р»РёРєР°С†РёСЏ</th><th>Р­Р»РµРјРµРЅС‚РѕРІ</th><th>Р”РµР№СЃС‚РІРёСЏ</th></tr></thead>
+        <thead><tr><th>ID</th><th>Название</th><th>Статус</th><th>Публикация</th><th>Элементов</th><th>Действия</th></tr></thead>
         <tbody>
           ${items.length ? items.map((item) => `
             <tr>
-              <td>${escapeHtml(String(item.id || "вЂ”"))}</td>
-              <td>${escapeHtml(String(item.name || "вЂ”"))}</td>
+              <td>${escapeHtml(String(item.id || "—"))}</td>
+              <td>${escapeHtml(String(item.name || "—"))}</td>
               <td>${item.is_active ? "active" : "disabled"}</td>
               <td>${item.is_published ? "published" : "draft"}</td>
               <td>${escapeHtml(String(item.item_count || 0))}</td>
               <td>
-                <button type="button" class="ghost-button" data-law-set-edit="${escapeHtml(String(item.id || ""))}" data-law-set-name="${escapeHtml(String(item.name || ""))}" data-law-set-active="${item.is_active ? "1" : "0"}">РР·РјРµРЅРёС‚СЊ</button>
-                <button type="button" class="ghost-button" data-law-set-publish="${escapeHtml(String(item.id || ""))}">РћРїСѓР±Р»РёРєРѕРІР°С‚СЊ</button>
+                <button type="button" class="ghost-button" data-law-set-edit="${escapeHtml(String(item.id || ""))}" data-law-set-name="${escapeHtml(String(item.name || ""))}" data-law-set-active="${item.is_active ? "1" : "0"}">Изменить</button>
+                <button type="button" class="ghost-button" data-law-set-publish="${escapeHtml(String(item.id || ""))}">Опубликовать</button>
                 <button type="button" class="ghost-button" data-law-set-rebuild="${escapeHtml(String(item.id || ""))}">Rebuild</button>
                 <button type="button" class="ghost-button" data-law-set-rollback="${escapeHtml(String(item.id || ""))}">Rollback</button>
               </td>
             </tr>
-          `).join("") : '<tr><td colspan="6" class="legal-section__description">РќР°Р±РѕСЂС‹ Р·Р°РєРѕРЅРѕРІ РїРѕРєР° РЅРµ СЃРѕР·РґР°РЅС‹.</td></tr>'}
+          `).join("") : '<tr><td colspan="6" class="legal-section__description">Наборы законов пока не созданы.</td></tr>'}
         </tbody>
       </table>
     `;
@@ -143,13 +143,13 @@ window.OGPAdminRuntimeLaws = {
         <tbody>
           ${items.length ? items.map((item) => `
             <tr>
-              <td>${escapeHtml(String(item.law_set_name || item.law_set_id || "вЂ”"))}</td>
-              <td>${escapeHtml(String(item.law_code || "вЂ”"))}</td>
-              <td>${escapeHtml(String(item.source_name || item.source_url || "вЂ”"))}</td>
+              <td>${escapeHtml(String(item.law_set_name || item.law_set_id || "—"))}</td>
+              <td>${escapeHtml(String(item.law_code || "—"))}</td>
+              <td>${escapeHtml(String(item.source_name || item.source_url || "—"))}</td>
               <td>${escapeHtml(String(item.priority || 0))}</td>
-              <td>${escapeHtml(String(item.effective_from || "вЂ”"))}</td>
+              <td>${escapeHtml(String(item.effective_from || "—"))}</td>
             </tr>
-          `).join("") : '<tr><td colspan="5" class="legal-section__description">Р”Р»СЏ РІС‹Р±СЂР°РЅРЅРѕРіРѕ СЃРµСЂРІРµСЂР° РїРѕРєР° РЅРµС‚ РїСЂРёРІСЏР·Р°РЅРЅС‹С… Р·Р°РєРѕРЅРѕРІ.</td></tr>'}
+          `).join("") : '<tr><td colspan="5" class="legal-section__description">Для выбранного сервера пока нет привязанных законов.</td></tr>'}
         </tbody>
       </table>
     `;
@@ -160,22 +160,22 @@ window.OGPAdminRuntimeLaws = {
     return `
       <table class="legal-table admin-table admin-table--compact">
         <thead>
-          <tr><th>РљРѕРґ</th><th>РќР°Р·РІР°РЅРёРµ</th><th>РЎС‚Р°С‚СѓСЃ</th><th>Р”РµР№СЃС‚РІРёСЏ</th></tr>
+          <tr><th>Код</th><th>Название</th><th>Статус</th><th>Действия</th></tr>
         </thead>
         <tbody>
           ${items.length
             ? items.map((item) => `
               <tr>
-                <td>${escapeHtml(String(item.code || "вЂ”"))}</td>
-                <td>${escapeHtml(String(item.title || "вЂ”"))}</td>
+                <td>${escapeHtml(String(item.code || "—"))}</td>
+                <td>${escapeHtml(String(item.title || "—"))}</td>
                 <td>${item.is_active ? "active" : "disabled"}</td>
                 <td>
-                  <button type="button" class="ghost-button" data-runtime-server-edit="${escapeHtml(String(item.code || ""))}" data-runtime-server-title="${escapeHtml(String(item.title || ""))}">РР·РјРµРЅРёС‚СЊ</button>
-                  <button type="button" class="ghost-button" data-runtime-server-toggle="${escapeHtml(String(item.code || ""))}" data-runtime-server-active="${item.is_active ? "1" : "0"}">${item.is_active ? "Р”РµР°РєС‚РёРІРёСЂРѕРІР°С‚СЊ" : "РђРєС‚РёРІРёСЂРѕРІР°С‚СЊ"}</button>
+                  <button type="button" class="ghost-button" data-runtime-server-edit="${escapeHtml(String(item.code || ""))}" data-runtime-server-title="${escapeHtml(String(item.title || ""))}">Изменить</button>
+                  <button type="button" class="ghost-button" data-runtime-server-toggle="${escapeHtml(String(item.code || ""))}" data-runtime-server-active="${item.is_active ? "1" : "0"}">${item.is_active ? "Деактивировать" : "Активировать"}</button>
                 </td>
               </tr>
             `).join("")
-            : '<tr><td colspan="4" class="legal-section__description">РЎРµСЂРІРµСЂС‹ РЅРµ РЅР°Р№РґРµРЅС‹.</td></tr>'}
+            : '<tr><td colspan="4" class="legal-section__description">Серверы не найдены.</td></tr>'}
         </tbody>
       </table>
     `;
