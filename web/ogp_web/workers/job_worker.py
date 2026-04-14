@@ -90,9 +90,24 @@ class JobWorker:
         }
 
     def _handle_document_export(self, job: dict[str, Any]) -> dict[str, Any]:
+        from ogp_web.services.export_service import ExportService
+        from ogp_web.services.object_storage_service import ObjectStorageService
+        from ogp_web.storage.artifact_repository import ArtifactRepository
         from ogp_web.storage.validation_repository import ValidationRepository
 
         payload = dict(job.get("payload_json") or {})
+        if payload.get("export_id") is not None:
+            export_service = ExportService(
+                repository=ArtifactRepository(self.service.backend),
+                storage_service=ObjectStorageService(),
+                async_job_service=self.service,
+            )
+            return export_service.complete_async_export_job(
+                export_id=int(payload["export_id"]),
+                document_version_id=int(payload["version_id"]),
+                export_format=str(payload.get("format") or "json"),
+                job_run_id=f"job:{job['id']}",
+            )
         validation_repo = ValidationRepository(self.service.backend)
         version = validation_repo.get_document_version_target(version_id=int(payload["version_id"]))
         if version is None:

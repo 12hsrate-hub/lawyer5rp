@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ogp_web.db.types import DatabaseBackend
+from ogp_web.providers.queue_provider import QueueProvider, QueueMessage, build_queue_provider_from_env
 
 
 TERMINAL_STATUSES = {"succeeded", "dead_lettered", "cancelled"}
@@ -31,11 +32,26 @@ JOB_POLICIES: dict[str, RetryPolicy] = {
 
 
 class AsyncJobService:
-    def __init__(self, backend: DatabaseBackend):
+    def __init__(self, backend: DatabaseBackend, queue_provider: QueueProvider | None = None):
         self.backend = backend
+        self.queue_provider = queue_provider or build_queue_provider_from_env()
 
     def _connect(self):
         return self.backend.connect()
+
+    def _queue_publish(self, *, job: dict[str, Any]) -> None:
+        payload_json = dict(job.get("payload_json") or {})
+        self.queue_provider.publish(
+            message=QueueMessage(
+                job_id=int(job["id"]),
+                server_scope=str(job.get("server_scope") or "server"),
+                server_id=str(job.get("server_id") or "") or None,
+                job_type=str(job.get("job_type") or ""),
+                request_id=str(payload_json.get("request_id") or ""),
+                publish_batch_id=int(payload_json["publish_batch_id"]) if payload_json.get("publish_batch_id") is not None else None,
+                dedup_key=str(job.get("idempotency_key") or "") or None,
+            )
+        )
 
     @staticmethod
     def _utc_now() -> datetime:
@@ -183,7 +199,10 @@ class AsyncJobService:
                 ),
             ).fetchone()
             conn.commit()
-            return self._deserialize_job(row)
+            job = self._deserialize_job(row)
+            if enqueue:
+                self._queue_publish(job=job)
+            return job
 
     def list_jobs(self, *, server_id: str, limit: int = 50) -> list[dict[str, Any]]:
         with closing(self._connect()) as conn:
@@ -288,6 +307,52 @@ class AsyncJobService:
             conn.commit()
         return claimed
 
+    def claim_job_by_id(self, *, job_id: int, worker_id: str, server_id: str | None) -> dict[str, Any] | None:
+        with closing(self._connect()) as conn:
+            conn.execute("BEGIN")
+            row = conn.execute(
+                """
+                SELECT id
+                FROM async_jobs
+                WHERE id = %s
+                  AND status IN ('queued', 'pending', 'failed')
+                  AND next_run_at <= NOW()
+                  AND (
+                    server_scope = 'global'
+                    OR (%s IS NOT NULL AND server_scope = 'server' AND server_id = %s)
+                  )
+                FOR UPDATE SKIP LOCKED
+                """,
+                (job_id, server_id, server_id),
+            ).fetchone()
+            if row is None:
+                conn.rollback()
+                return None
+            job = conn.execute(
+                """
+                UPDATE async_jobs
+                SET status = 'processing', updated_at = NOW(), last_error_code = NULL, last_error_message = NULL
+                WHERE id = %s
+                RETURNING id, server_scope, server_id, job_type, status, entity_type, entity_id,
+                          CAST(payload_json AS TEXT) AS payload_json, CAST(result_json AS TEXT) AS result_json,
+                          idempotency_key, attempt_count, max_attempts, next_run_at,
+                          last_error_code, last_error_message, created_by, created_at, updated_at
+                """,
+                (job_id,),
+            ).fetchone()
+            attempt_number = int(job["attempt_count"] or 0) + 1
+            conn.execute(
+                """
+                INSERT INTO job_attempts (
+                    async_job_id, attempt_number, status, worker_id, started_at,
+                    error_details_json, result_snapshot_json
+                ) VALUES (%s, %s, 'started', %s, NOW(), '{}'::jsonb, '{}'::jsonb)
+                """,
+                (job_id, attempt_number, worker_id),
+            )
+            conn.commit()
+        return self._deserialize_job(job)
+
     def mark_succeeded(self, *, job_id: int, worker_id: str, result_json: dict[str, Any]) -> dict[str, Any]:
         with closing(self._connect()) as conn:
             conn.execute(
@@ -378,6 +443,18 @@ class AsyncJobService:
                         error_message[:1000],
                     ),
                 )
+                self.queue_provider.dead_letter(
+                    message=QueueMessage(
+                        job_id=job_id,
+                        server_scope=str(row.get("server_scope") or "server"),
+                        server_id=str(row.get("server_id") or "") or None,
+                        job_type=str(row.get("job_type") or ""),
+                        request_id=str(self._decode_json(row.get("payload_json"), default={}).get("request_id") or ""),
+                        publish_batch_id=self._decode_json(row.get("payload_json"), default={}).get("publish_batch_id"),
+                        dedup_key=str(row.get("idempotency_key") or "") or None,
+                    ),
+                    reason="max_attempts_exceeded",
+                )
             else:
                 delay_seconds = policy.base_delay_seconds * (2 ** (attempt_count - 1))
                 next_run_at = self._utc_now() + timedelta(seconds=delay_seconds)
@@ -395,6 +472,7 @@ class AsyncJobService:
                     """,
                     (attempt_count, next_run_at, error_code, error_message[:1000], job_id),
                 ).fetchone()
+                self._queue_publish(job=self._deserialize_job(job_row))
             conn.commit()
         return self._deserialize_job(job_row)
 
@@ -420,7 +498,9 @@ class AsyncJobService:
                 (job_id,),
             ).fetchone()
             conn.commit()
-        return self._deserialize_job(row)
+        job_row = self._deserialize_job(row)
+        self._queue_publish(job=job_row)
+        return job_row
 
     def cancel_job(self, *, job_id: int, server_id: str) -> dict[str, Any]:
         job = self.get_job(job_id=job_id, server_id=server_id)

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import json
-import threading
-import uuid
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Protocol
 
 from fastapi import HTTPException, status
 
+from ogp_web.services.async_job_service import AsyncJobService
 from ogp_web.services.object_storage_service import ObjectStorageService
 from ogp_web.storage.artifact_repository import ArtifactRepository
 
@@ -27,27 +26,19 @@ class DefaultValidationGateProvider:
         return ExportGateResult(mode="warn", reason="validation_unavailable_default_warn")
 
 
-class InMemoryJobLayer:
-    def submit(self, *, job_name: str, run: Callable[[], None]) -> str:
-        job_run_id = f"{job_name}:{uuid.uuid4().hex}"
-        thread = threading.Thread(target=run, daemon=True)
-        thread.start()
-        return job_run_id
-
-
 class ExportService:
     def __init__(
         self,
         *,
         repository: ArtifactRepository,
         storage_service: ObjectStorageService,
+        async_job_service: AsyncJobService | None = None,
         validation_gate_provider: ValidationGateProvider | None = None,
-        job_layer: InMemoryJobLayer | None = None,
     ):
         self.repository = repository
         self.storage_service = storage_service
+        self.async_job_service = async_job_service
         self.validation_gate_provider = validation_gate_provider or DefaultValidationGateProvider()
-        self.job_layer = job_layer or InMemoryJobLayer()
 
     @staticmethod
     def _deserialize(row):
@@ -126,6 +117,19 @@ class ExportService:
             )
             return self._deserialize(failed)
 
+    def complete_async_export_job(
+        self,
+        *,
+        export_id: int,
+        document_version_id: int,
+        export_format: str,
+        job_run_id: str | None,
+    ) -> dict[str, object]:
+        version_row = self.repository.get_document_version(version_id=document_version_id)
+        if version_row is None:
+            raise ValueError("Версия документа для export job не найдена.")
+        return self._complete_sync_export(export_id, dict(version_row), export_format, job_run_id)
+
     def create_export(
         self,
         *,
@@ -134,6 +138,7 @@ class ExportService:
         document_version_id: int,
         export_format: str,
         execution_mode: str,
+        request_id: str = "",
     ):
         actor_id = self._resolve_actor(username)
         version_row = self._get_version_or_404(version_id=document_version_id, user_server_id=user_server_id)
@@ -160,7 +165,8 @@ class ExportService:
         if execution_mode == "sync":
             return self._complete_sync_export(export_id, version_row, export_format, None)
 
-        job_run_id = f"export:{uuid.uuid4().hex}"
+        if self.async_job_service is None:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=["Async job service is not configured for exports."])
         self.repository.update_export(
             export_id=export_id,
             status="pending",
@@ -168,14 +174,40 @@ class ExportService:
             mime_type="application/octet-stream",
             size_bytes=0,
             checksum="",
-            job_run_id=job_run_id,
+            job_run_id="",
             metadata_json={"gate_mode": gate.mode, "gate_reason": gate.reason, "execution_mode": execution_mode},
         )
-
-        def _run_async() -> None:
-            self._complete_sync_export(export_id, version_row, export_format, job_run_id)
-
-        self.job_layer.submit(job_name="export", run=_run_async)
+        job = self.async_job_service.create_job(
+            server_scope="server",
+            server_id=user_server_id,
+            job_type="document_export",
+            entity_type="export",
+            entity_id=export_id,
+            payload_json={
+                "export_id": export_id,
+                "version_id": int(version_row["id"]),
+                "format": export_format,
+                "request_id": str(request_id or ""),
+            },
+            created_by=actor_id,
+            idempotency_key=f"export:{export_id}:{version_row['id']}:{export_format}",
+            enqueue=True,
+        )
+        self.repository.update_export(
+            export_id=export_id,
+            status="pending",
+            storage_key="",
+            mime_type="application/octet-stream",
+            size_bytes=0,
+            checksum="",
+            job_run_id=f"job:{job['id']}",
+            metadata_json={
+                "gate_mode": gate.mode,
+                "gate_reason": gate.reason,
+                "execution_mode": execution_mode,
+                "job_id": int(job["id"]),
+            },
+        )
         refreshed = self.repository.get_export(export_id=export_id)
         if refreshed is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Export не найден."])

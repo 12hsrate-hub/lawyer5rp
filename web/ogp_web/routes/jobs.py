@@ -15,8 +15,9 @@ from ogp_web.storage.user_store import UserStore
 router = APIRouter(tags=["jobs"])
 
 
-def _service(store: UserStore) -> AsyncJobService:
-    return AsyncJobService(store.backend)
+def _service(store: UserStore, request: Request) -> AsyncJobService:
+    queue_provider = getattr(request.app.state, "queue_provider", None)
+    return AsyncJobService(store.backend, queue_provider=queue_provider)
 
 
 def _actor_id(store: UserStore, username: str) -> int | None:
@@ -45,11 +46,13 @@ class JobActionResponse(BaseModel):
 class GenerationAsyncPayload(BaseModel):
     content_json: dict[str, Any] | list[Any] | str | int | float | bool
     idempotency_key: str | None = None
+    publish_batch_id: int | None = None
 
 
 class ExportCreatePayload(BaseModel):
     format: str = "json"
     idempotency_key: str | None = None
+    publish_batch_id: int | None = None
 
 
 class AdminReindexPayload(BaseModel):
@@ -63,21 +66,23 @@ class AdminImportPayload(BaseModel):
 
 @router.get("/api/jobs")
 async def list_jobs(
+    request: Request,
     limit: int = 50,
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ):
-    return {"items": _service(store).list_jobs(server_id=user.server_code, limit=limit)}
+    return {"items": _service(store, request).list_jobs(server_id=user.server_code, limit=limit)}
 
 
 @router.get("/api/jobs/{job_id}")
 async def get_job(
     job_id: int,
+    request: Request,
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ):
     try:
-        return _service(store).get_job(job_id=job_id, server_id=user.server_code)
+        return _service(store, request).get_job(job_id=job_id, server_id=user.server_code)
     except Exception as exc:  # noqa: BLE001
         raise _translate_service_error(exc) from exc
 
@@ -85,11 +90,12 @@ async def get_job(
 @router.get("/api/jobs/{job_id}/attempts")
 async def list_job_attempts(
     job_id: int,
+    request: Request,
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ):
     try:
-        return {"items": _service(store).list_attempts(job_id=job_id, server_id=user.server_code)}
+        return {"items": _service(store, request).list_attempts(job_id=job_id, server_id=user.server_code)}
     except Exception as exc:  # noqa: BLE001
         raise _translate_service_error(exc) from exc
 
@@ -97,11 +103,12 @@ async def list_job_attempts(
 @router.post("/api/jobs/{job_id}/retry", response_model=JobActionResponse)
 async def retry_job(
     job_id: int,
+    request: Request,
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ):
     try:
-        job = _service(store).retry_job(job_id=job_id, server_id=user.server_code)
+        job = _service(store, request).retry_job(job_id=job_id, server_id=user.server_code)
     except Exception as exc:  # noqa: BLE001
         raise _translate_service_error(exc) from exc
     return JobActionResponse(id=int(job["id"]), status=str(job["status"]), job_type=str(job["job_type"]))
@@ -110,11 +117,12 @@ async def retry_job(
 @router.post("/api/jobs/{job_id}/cancel", response_model=JobActionResponse)
 async def cancel_job(
     job_id: int,
+    request: Request,
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ):
     try:
-        job = _service(store).cancel_job(job_id=job_id, server_id=user.server_code)
+        job = _service(store, request).cancel_job(job_id=job_id, server_id=user.server_code)
     except Exception as exc:  # noqa: BLE001
         raise _translate_service_error(exc) from exc
     return JobActionResponse(id=int(job["id"]), status=str(job["status"]), job_type=str(job["job_type"]))
@@ -129,7 +137,7 @@ async def create_document_generation_job(
     store: UserStore = Depends(get_user_store),
 ):
     try:
-        job = _service(store).create_job(
+        job = _service(store, request).create_job(
             server_scope="server",
             server_id=user.server_code,
             job_type="document_generation",
@@ -141,6 +149,7 @@ async def create_document_generation_job(
                 "username": user.username,
                 "user_server_id": user.server_code,
                 "request_id": getattr(request.state, "request_id", ""),
+                "publish_batch_id": payload.publish_batch_id,
             },
             created_by=_actor_id(store, user.username),
             idempotency_key=payload.idempotency_key,
@@ -160,7 +169,7 @@ async def create_export_job(
     store: UserStore = Depends(get_user_store),
 ):
     try:
-        job = _service(store).create_job(
+        job = _service(store, request).create_job(
             server_scope="server",
             server_id=user.server_code,
             job_type="document_export",
@@ -170,6 +179,7 @@ async def create_export_job(
                 "version_id": version_id,
                 "format": payload.format,
                 "request_id": getattr(request.state, "request_id", ""),
+                "publish_batch_id": payload.publish_batch_id,
             },
             created_by=_actor_id(store, user.username),
             idempotency_key=payload.idempotency_key,
@@ -188,7 +198,7 @@ async def create_reindex_job(
     store: UserStore = Depends(get_user_store),
 ):
     try:
-        job = _service(store).create_job(
+        job = _service(store, request).create_job(
             server_scope="global",
             server_id=None,
             job_type="content_reindex",
@@ -213,7 +223,7 @@ async def create_import_job(
     if not str(payload.source or "").strip():
         raise HTTPException(status_code=400, detail=["source обязателен."])
     try:
-        job = _service(store).create_job(
+        job = _service(store, request).create_job(
             server_scope="global",
             server_id=None,
             job_type="content_import",
