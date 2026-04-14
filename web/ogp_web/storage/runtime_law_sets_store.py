@@ -382,7 +382,20 @@ class RuntimeLawSetsStore:
         conn = self.backend.connect()
         try:
             target_set_id = int(law_set_id or 0)
-            if target_set_id <= 0:
+            if target_set_id > 0:
+                existing_set = conn.execute(
+                    """
+                    SELECT id, server_code
+                    FROM law_sets
+                    WHERE id = %s
+                    """,
+                    (target_set_id,),
+                ).fetchone()
+                if existing_set is None:
+                    raise ValueError("law_set_not_found")
+                if str(existing_set.get("server_code") or "").strip().lower() != normalized_server:
+                    raise ValueError("law_set_server_mismatch")
+            else:
                 row = conn.execute(
                     """
                     SELECT id

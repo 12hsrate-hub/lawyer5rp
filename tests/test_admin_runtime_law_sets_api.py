@@ -97,6 +97,12 @@ class _FakeRuntimeLawSetsStore:
         ] if server_code == "blackberry" else []
 
     def add_server_law_binding(self, *, server_code: str, law_code: str, source_id: int, effective_from: str = "", priority: int = 100, law_set_id=None):
+        if law_set_id is not None:
+            set_row = self.law_sets.get(int(law_set_id))
+            if not set_row:
+                raise ValueError("law_set_not_found")
+            if str(set_row.get("server_code") or "").strip().lower() != str(server_code or "").strip().lower():
+                raise ValueError("law_set_server_mismatch")
         return {
             "id": 88,
             "law_set_id": int(law_set_id or 1),
@@ -233,6 +239,14 @@ class AdminRuntimeLawSetsApiTests(unittest.TestCase):
         )
         self.assertEqual(bind_added.status_code, 200)
         self.assertEqual(bind_added.json()["item"]["law_code"], "custom_law")
+
+        self.store.law_sets[9] = {"id": 9, "server_code": "vinewood", "name": "Foreign", "is_active": True, "is_published": False, "item_count": 0}
+        bind_foreign = self.client.post(
+            "/api/admin/runtime-servers/blackberry/law-bindings",
+            json={"law_code": "cross_server_law", "source_id": 1, "law_set_id": 9},
+        )
+        self.assertEqual(bind_foreign.status_code, 400)
+        self.assertIn("law_set_server_mismatch", " ".join(bind_foreign.json().get("detail") or []))
 
 
 if __name__ == "__main__":
