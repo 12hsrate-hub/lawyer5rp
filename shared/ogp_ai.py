@@ -1280,9 +1280,9 @@ def score_exam_answers_batch_with_proxy_fallback(
                 f'\nDraft reference answer: {item.get("reference", "")}'
                 f'\nMinimal required points:\n'
                 + "\n".join(f'- {point}' for point in (item.get("key_points") or []))
-                + f'\nmust_not_include:\n'
+                + '\nmust_not_include:\n'
                 + "\n".join(f'- {point}' for point in (item.get("must_not_include") or []))
-                + f'\nfatal_errors:\n'
+                + '\nfatal_errors:\n'
                 + "\n".join(f'- {point}' for point in (item.get("fatal_errors") or []))
             )
             for item in chunk_items

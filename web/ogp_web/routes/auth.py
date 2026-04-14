@@ -6,7 +6,7 @@ from fastapi.concurrency import run_in_threadpool
 from ogp_web.dependencies import get_user_store, requires_permission
 from ogp_web.rate_limit import RateLimitExceeded, auth_rate_limit
 from ogp_web.schemas import AuthPayload, AuthResponse, EmailPayload, PasswordChangePayload, PasswordResetPayload
-from ogp_web.services.auth_service import AuthError, clear_auth_cookie, require_user, set_auth_cookie
+from ogp_web.services.auth_service import AuthError, clear_auth_cookie, set_auth_cookie
 from ogp_web.services.email_service import build_public_base_url, send_password_reset_email, send_verification_email
 from ogp_web.storage.user_store import UserStore
 

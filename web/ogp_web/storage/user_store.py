@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from contextlib import closing
 from pathlib import Path
 from typing import Any
 

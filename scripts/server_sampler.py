@@ -6,7 +6,6 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 import signal
-import sys
 import time
 from typing import Any
 

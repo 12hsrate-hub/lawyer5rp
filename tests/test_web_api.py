@@ -27,7 +27,6 @@ from ogp_web.storage.user_repository import UserRepository
 from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
 from ogp_web.routes import admin as admin_route
 from ogp_web.routes import complaint as complaint_route
-from ogp_web.routes import admin as admin_route
 from ogp_web.routes import exam_import as exam_import_route
 from ogp_web.services import ai_service
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
@@ -1604,8 +1603,6 @@ class WebApiTests(unittest.TestCase):
         original_save_answer_citations = complaint_route.save_answer_citations
         original_get_user_id = self.store.get_user_id
         original_create_law_qa_run = self.store.create_law_qa_run
-        original_evaluate = complaint_route.FeatureFlagService.evaluate
-        original_evaluate = complaint_route.FeatureFlagService.evaluate
         original_resolve_law_article_source = self.store.resolve_law_article_source
         self.store.get_user_id = lambda username: 1
         self.store.create_law_qa_run = lambda **kwargs: 77
@@ -2311,9 +2308,6 @@ class WebApiTests(unittest.TestCase):
 
         original_fetch = exam_import_route.fetch_exam_sheet_rows
         original_score = exam_import_route.score_exam_answers_batch_with_proxy_fallback
-        original_single_score = exam_import_route.score_exam_answer_with_proxy_fallback
-        original_single_score = exam_import_route.score_exam_answer_with_proxy_fallback
-        original_single_score = exam_import_route.score_exam_answer_with_proxy_fallback
 
         def fake_fetch_exam_sheet_rows(force_refresh=False):
             return [

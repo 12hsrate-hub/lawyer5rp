@@ -223,7 +223,9 @@ class ExamImportTaskRegistry:
     def _run(self, task_id: str, runner: Callable[[Callable[[dict[str, Any]], None]], dict[str, Any]]) -> None:
         self._update(task_id, status="running", started_at=_utc_now())
         try:
-            progress_callback = lambda progress: self._update(task_id, progress=progress)
+            def progress_callback(progress: dict[str, Any]) -> None:
+                self._update(task_id, progress=progress)
+
             try:
                 result = runner(progress_callback)
             except TypeError:
