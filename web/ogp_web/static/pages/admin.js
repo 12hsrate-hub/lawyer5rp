@@ -84,6 +84,10 @@ let activeSyntheticSuite = "";
 let pendingCatalogContext = null;
 let activeLawServerCode = "";
 let lawServerOptions = [];
+let lawSetOptions = [];
+let lawSourceRegistryItems = [];
+let serverLawBindingItems = [];
+let lawCatalogOptions = [];
 
 function catalogEndpoint(entityType, itemId = "") {
   const suffix = itemId ? `/${encodeURIComponent(itemId)}` : "";
@@ -334,6 +338,7 @@ function renderLawSets(payload) {
   const host = document.getElementById("law-sets-host");
   if (!host) return;
   const items = Array.isArray(payload?.items) ? payload.items : [];
+  lawSetOptions = items;
   host.innerHTML = `
     <table class="legal-table admin-table admin-table--compact">
       <thead><tr><th>ID</th><th>Название</th><th>Статус</th><th>Публикация</th><th>Элементов</th><th>Действия</th></tr></thead>
@@ -486,6 +491,7 @@ function renderLawSourceRegistry(payload) {
   const host = document.getElementById("law-source-registry-host");
   if (!host) return;
   const items = Array.isArray(payload?.items) ? payload.items : [];
+  lawSourceRegistryItems = items;
   host.innerHTML = `
     <table class="legal-table admin-table admin-table--compact">
       <thead><tr><th>ID</th><th>Название</th><th>Kind</th><th>URL</th><th>Статус</th><th>Действия</th></tr></thead>
@@ -561,6 +567,7 @@ function renderServerLawBindings(payload) {
   const host = document.getElementById("server-law-bindings-host");
   if (!host) return;
   const items = Array.isArray(payload?.items) ? payload.items.filter((row) => row?.item_id) : [];
+  serverLawBindingItems = items;
   host.innerHTML = `
     <table class="legal-table admin-table admin-table--compact">
       <thead><tr><th>Law set</th><th>Law code</th><th>Source</th><th>Priority</th><th>Effective from</th></tr></thead>
@@ -591,7 +598,152 @@ async function loadServerLawBindings() {
   renderServerLawBindings(payload);
 }
 
+async function loadLawCatalogOptions() {
+  const response = await apiFetch(catalogEndpoint("laws"));
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    return [];
+  }
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  lawCatalogOptions = items;
+  return items;
+}
+
+function normalizeLawCodeOptions(items) {
+  const seen = new Set();
+  const normalized = [];
+  items.forEach((item) => {
+    const rawCode = String(item?.code || item?.key || item?.law_code || "").trim();
+    if (!rawCode) return;
+    const code = rawCode.toLowerCase();
+    if (seen.has(code)) return;
+    seen.add(code);
+    normalized.push({
+      code,
+      label: String(item?.title || item?.name || item?.law_set_name || rawCode).trim() || rawCode,
+    });
+  });
+  return normalized.sort((a, b) => a.code.localeCompare(b.code));
+}
+
+async function openServerLawBindingDialog() {
+  if (!lawSetOptions.length) {
+    await loadLawSets();
+  }
+  if (!lawSourceRegistryItems.length) {
+    await loadLawSourceRegistry();
+  }
+  const catalogItems = await loadLawCatalogOptions();
+  const lawCodeOptions = normalizeLawCodeOptions([...catalogItems, ...serverLawBindingItems, ...lawSetOptions]);
+  const sourceOptions = lawSourceRegistryItems.filter((item) => Number(item?.id) > 0);
+  if (!sourceOptions.length) {
+    throw new Error("Сначала добавьте источник в «Реестр источников».");
+  }
+  if (!lawCodeOptions.length) {
+    throw new Error("Не удалось собрать список кодов законов для выбора.");
+  }
+  const dialog = document.createElement("dialog");
+  dialog.innerHTML = `
+    <form method="dialog" class="legal-section">
+      <h3>Привязать закон к серверу</h3>
+      <p class="legal-field__hint">Сервер: <strong>${escapeHtml(activeLawServerCode)}</strong></p>
+      <label class="legal-field"><span class="legal-field__label">Код закона</span>
+        <select name="law_code" required>
+          ${lawCodeOptions.map((item) => `<option value="${escapeHtml(item.code)}">${escapeHtml(item.code)} — ${escapeHtml(item.label)}</option>`).join("")}
+        </select>
+      </label>
+      <label class="legal-field"><span class="legal-field__label">Источник</span>
+        <select name="source_id" required>
+          ${sourceOptions.map((item) => `<option value="${escapeHtml(String(item.id))}">${escapeHtml(String(item.name || "Источник"))} — ${escapeHtml(String(item.url || ""))}</option>`).join("")}
+        </select>
+      </label>
+      <label class="legal-field"><span class="legal-field__label">Набор законов</span>
+        <select name="law_set_id">
+          <option value="">Автовыбор (публикуемый/последний)</option>
+          ${lawSetOptions.map((item) => `<option value="${escapeHtml(String(item.id || ""))}">${escapeHtml(String(item.name || item.id || ""))}</option>`).join("")}
+        </select>
+      </label>
+      <label class="legal-field"><span class="legal-field__label">Priority</span><input type="number" name="priority" value="100" min="1" max="10000"></label>
+      <label class="legal-field"><span class="legal-field__label">Effective from</span><input type="date" name="effective_from" value=""></label>
+      <menu style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+        <button type="button" class="ghost-button" data-action="cancel">Отмена</button>
+        <button type="submit" class="primary-button" data-action="submit">Привязать</button>
+      </menu>
+    </form>
+  `;
+  document.body.appendChild(dialog);
+  return await new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      if (dialog.open) {
+        dialog.close();
+      }
+      dialog.remove();
+      resolve(value);
+    };
+    dialog.querySelector('[data-action="cancel"]')?.addEventListener("click", () => finish(null));
+    dialog.addEventListener("cancel", () => finish(null));
+    dialog.addEventListener("close", () => finish(null));
+    dialog.querySelector("form")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      if (!(form instanceof HTMLFormElement)) return;
+      const formData = new FormData(form);
+      const lawCode = String(formData.get("law_code") || "").trim().toLowerCase();
+      const sourceId = Number(formData.get("source_id") || 0);
+      const priority = Number(formData.get("priority") || 100);
+      const effectiveFrom = String(formData.get("effective_from") || "").trim();
+      const lawSetIdRaw = String(formData.get("law_set_id") || "").trim();
+      if (!lawCode) {
+        setStateError(errorsHost, "Выберите код закона.");
+        return;
+      }
+      if (!Number.isFinite(sourceId) || sourceId <= 0) {
+        setStateError(errorsHost, "Выберите источник.");
+        return;
+      }
+      finish({
+        law_code: lawCode,
+        source_id: sourceId,
+        priority: Number.isFinite(priority) ? priority : 100,
+        effective_from: effectiveFrom,
+        law_set_id: lawSetIdRaw ? Number(lawSetIdRaw) : null,
+      });
+    });
+    dialog.showModal();
+  });
+}
+
 async function addServerLawBindingFlow() {
+  // Prefer modal-driven selection flow; legacy prompt flow below is bypassed.
+  let formPayload = null;
+  if (!activeLawServerCode) {
+    setStateError(errorsHost, "Сначала выберите сервер.");
+    return;
+  }
+  try {
+    formPayload = await openServerLawBindingDialog();
+  } catch (error) {
+    setStateError(errorsHost, String(error?.message || error));
+    return;
+  }
+  if (!formPayload) return;
+  const response = await apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(activeLawServerCode)}/law-bindings`, {
+    method: "POST",
+    body: JSON.stringify(formPayload),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось привязать закон к серверу."));
+    return;
+  }
+  showMessage(`Закон ${String(formPayload.law_code || "")} привязан к серверу ${activeLawServerCode}.`);
+  await loadServerLawBindings();
+  return;
+  /* legacy prompt flow
+  let formPayload = null;
   if (!activeLawServerCode) {
     setStateError(errorsHost, "Сначала выберите сервер.");
     return;
@@ -621,6 +773,7 @@ async function addServerLawBindingFlow() {
   }
   showMessage(`Закон ${lawCode} привязан к серверу ${activeLawServerCode}.`);
   await loadServerLawBindings();
+  */
 }
 
 async function loadLawJobsOverview() {
