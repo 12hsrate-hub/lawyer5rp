@@ -29,6 +29,7 @@
 - `utf8_hardening_plan.md`
 - `ROLL_OUT.md`
 - `CODEX_RUN_GUIDE.md`
+- `multi_server_visual_admin_platform_blueprint.md`
 
 ## Archive Policy
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import uuid
 from copy import deepcopy
@@ -10,7 +11,7 @@ from typing import Any
 from time import monotonic
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from datetime import datetime, timezone
 
 from ogp_web.dependencies import get_content_workflow_service
@@ -61,6 +62,22 @@ _ADMIN_TASKS_LOCK = threading.Lock()
 _ADMIN_TASKS_PATH = Path(__file__).resolve().parents[3] / "web" / "data" / "admin_tasks.json"
 _MODEL_POLICY_PATH = Path(__file__).resolve().parents[3] / "config" / "model_policy.yaml"
 
+_BLUEPRINT_STAGE_LABELS: dict[str, str] = {
+    "phase_a_foundation": "Phase A — Stabilize foundation",
+    "phase_b_visual_workflows": "Phase B — Visual workflows",
+    "phase_c_quality_center": "Phase C — Quality command center",
+    "phase_d_scale_out": "Phase D — Multi-server scale-out",
+}
+
+
+def _resolve_admin_platform_stage() -> dict[str, str]:
+    raw_stage = str(os.getenv("OGP_ADMIN_PLATFORM_STAGE", "phase_a_foundation") or "").strip().lower()
+    stage_code = raw_stage if raw_stage in _BLUEPRINT_STAGE_LABELS else "phase_a_foundation"
+    return {
+        "stage_code": stage_code,
+        "stage_label": _BLUEPRINT_STAGE_LABELS[stage_code],
+    }
+
 
 def _point3_monitoring_threshold(level: str, metric: str, fallback: float) -> float:
     payload = load_point3_eval_thresholds()
@@ -95,6 +112,23 @@ def _store_performance_payload(cache_key: str, payload: dict[str, Any]) -> None:
     with _PERFORMANCE_CACHE_LOCK:
         _PERFORMANCE_CACHE[cache_key] = (monotonic(), deepcopy(payload))
 
+
+
+
+def _admin_error_response(*, status_code: int, source: str, code: str, message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "ok": False,
+            "error": {
+                "code": code,
+                "source": source,
+                "message": message,
+            },
+            "detail": [message],
+        },
+        headers={"X-Error-Code": code},
+    )
 
 def _normalize_api_error(exc: Exception, *, source: str) -> dict[str, str]:
     return {
@@ -1430,6 +1464,57 @@ def _build_catalog_payload_config(payload: AdminCatalogItemPayload) -> dict[str,
         raise ValueError("key_required")
     return merged
 
+@router.get("/api/admin/platform-blueprint/status")
+async def admin_platform_blueprint_status(user: AuthUser = Depends(require_admin_user)):
+    stage = _resolve_admin_platform_stage()
+    return {
+        "ok": True,
+        "stage": stage,
+        "server_code": user.server_code,
+    }
+
+@router.get("/api/admin/catalog/audit")
+async def admin_catalog_audit(
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    limit: int = Query(100, ge=1, le=500),
+    entity_type: str = Query(""),
+    entity_id: str = Query(""),
+):
+    normalized_entity_type = str(entity_type or "").strip().lower()
+    normalized_entity_id = str(entity_id or "").strip()
+    try:
+        audit = workflow_service.list_audit_trail(
+            server_scope="server",
+            server_id=user.server_code,
+            entity_type=normalized_entity_type,
+            entity_id=normalized_entity_id,
+            limit=limit,
+        )
+    except ValueError as exc:
+        return _admin_error_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            source="admin_catalog_audit",
+            code="admin_catalog_audit_bad_request",
+            message=str(exc) or "invalid_audit_filter",
+        )
+    except (KeyError, PermissionError) as exc:
+        return _admin_error_response(
+            status_code=status.HTTP_404_NOT_FOUND,
+            source="admin_catalog_audit",
+            code="admin_catalog_audit_not_found",
+            message=str(exc) or "audit_scope_not_found",
+        )
+    return {
+        "items": audit,
+        "filters": {
+            "entity_type": normalized_entity_type,
+            "entity_id": normalized_entity_id,
+            "limit": limit,
+        },
+    }
+
+
 @router.get("/api/admin/catalog/{entity_type}")
 async def admin_catalog_list(
     entity_type: str,
@@ -1585,18 +1670,6 @@ async def admin_catalog_review_action(
     return {"ok": True, "result": result}
 
 
-@router.get("/api/admin/catalog/audit")
-async def admin_catalog_audit(
-    user: AuthUser = Depends(require_admin_user),
-    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
-    limit: int = Query(100, ge=1, le=500),
-):
-    audit = workflow_service.list_audit_trail(
-        server_scope="server",
-        server_id=user.server_code,
-        limit=limit,
-    )
-    return {"items": audit}
 
 
 @router.post("/api/admin/catalog/{entity_type}")
