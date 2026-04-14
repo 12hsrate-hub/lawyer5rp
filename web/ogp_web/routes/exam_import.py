@@ -9,6 +9,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from ogp_web.dependencies import get_admin_metrics_store, get_exam_answers_store, get_exam_import_task_registry, requires_permission
 from ogp_web.schemas import ExamAnswerScore, ExamImportDetail, ExamImportResponse, ExamImportTaskStatus
+from ogp_web.services.job_status_service import enrich_job_status
 from ogp_web.services import exam_import_service
 from ogp_web.services.auth_service import AuthUser
 from ogp_web.services.exam_import_tasks import (
@@ -293,7 +294,7 @@ async def create_exam_import_score_task(
         )
     except ExamImportTaskCapacityError as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=[str(exc)]) from exc
-    return ExamImportTaskStatus(**record.to_dict())
+    return ExamImportTaskStatus(**enrich_job_status(record.to_dict(), subsystem="exam_import"))
 
 
 @router.post("/api/exam-import/rescore-failed/tasks", response_model=ExamImportTaskStatus)
@@ -316,7 +317,7 @@ async def create_exam_import_failed_rescore_task(
         )
     except ExamImportTaskCapacityError as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=[str(exc)]) from exc
-    return ExamImportTaskStatus(**record.to_dict())
+    return ExamImportTaskStatus(**enrich_job_status(record.to_dict(), subsystem="exam_import"))
 
 
 @router.post("/api/exam-import/rows/{source_row}/score/tasks", response_model=ExamImportTaskStatus)
@@ -344,7 +345,7 @@ async def create_exam_import_row_score_task(
         )
     except ExamImportTaskCapacityError as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=[str(exc)]) from exc
-    return ExamImportTaskStatus(**record.to_dict())
+    return ExamImportTaskStatus(**enrich_job_status(record.to_dict(), subsystem="exam_import"))
 
 
 @router.get("/api/exam-import/tasks/{task_id}", response_model=ExamImportTaskStatus)
@@ -357,7 +358,7 @@ async def get_exam_import_task(
     record = task_registry.get_task(task_id)
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Задача проверки не найдена."])
-    return ExamImportTaskStatus(**record.to_dict())
+    return ExamImportTaskStatus(**enrich_job_status(record.to_dict(), subsystem="exam_import"))
 
 
 @router.get("/api/exam-import/rows/{source_row}", response_model=ExamImportDetail)

@@ -13,6 +13,7 @@ This directory keeps active operational docs plus two active planning-source doc
 
 - `OPERATIONS_INDEX.md` - primary entrypoint for deploy/run/rollback docs
 - `RUNBOOK.md` - incident handling for point3 legal mode
+- `ASYNC_OPERATIONS_RUNBOOK.md` - async jobs, law rebuild, and exam import ops response
 - `ROLL_OUT.md` - rollout stages and go/no-go rules
 - `ROLLBACK_PLAYBOOK.md` - rollback procedure by feature flag
 - `github_deploy.md` - GitHub-to-server deploy flow
@@ -23,6 +24,7 @@ This directory keeps active operational docs plus two active planning-source doc
 - `FEATURE_FLAGS.md` - active feature-flag reference
 - `ACCEPTANCE_CHECKLIST.md` - release acceptance gates
 - `CODEX_RUN_GUIDE.md` - execution guide for Codex-driven task work
+- `../RETRY_IDEMPOTENCY_MATRIX.md` - current retry/idempotency contract and gaps
 - `exam_scoring_incident_runbook.md` - exam scoring incident response
 - `exam_scoring_rollout_gates_and_kpis.md` - exam scoring rollout gates
 

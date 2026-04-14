@@ -12,7 +12,7 @@ from ogp_web.providers.queue_provider import QueueProvider, QueueMessage, build_
 
 
 TERMINAL_STATUSES = {"succeeded", "dead_lettered", "cancelled"}
-ACTIVE_STATUSES = {"pending", "queued", "processing", "failed"}
+ACTIVE_STATUSES = {"pending", "queued", "processing", "retry_scheduled"}
 
 
 @dataclass(frozen=True)
@@ -267,7 +267,7 @@ class AsyncJobService:
                 """
                 SELECT id
                 FROM async_jobs
-                WHERE status IN ('queued', 'pending', 'failed')
+                WHERE status IN ('queued', 'pending', 'retry_scheduled')
                   AND next_run_at <= NOW()
                   AND (
                     server_scope = 'global'
@@ -315,7 +315,7 @@ class AsyncJobService:
                 SELECT id
                 FROM async_jobs
                 WHERE id = %s
-                  AND status IN ('queued', 'pending', 'failed')
+                  AND status IN ('queued', 'pending', 'retry_scheduled')
                   AND next_run_at <= NOW()
                   AND (
                     server_scope = 'global'
@@ -461,7 +461,7 @@ class AsyncJobService:
                 job_row = conn.execute(
                     """
                     UPDATE async_jobs
-                    SET status = 'queued', attempt_count = %s, updated_at = NOW(),
+                    SET status = 'retry_scheduled', attempt_count = %s, updated_at = NOW(),
                         next_run_at = %s,
                         last_error_code = %s, last_error_message = %s
                     WHERE id = %s

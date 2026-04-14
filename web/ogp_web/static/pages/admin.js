@@ -13,6 +13,9 @@ const aiPipelineHost = document.getElementById("admin-ai-pipeline");
 const roleHistoryHost = document.getElementById("admin-role-history");
 const endpointsHost = document.getElementById("admin-top-endpoints");
 const syntheticHost = document.getElementById("admin-synthetic");
+const asyncJobsHost = document.getElementById("admin-async-jobs");
+const lawJobsHost = document.getElementById("admin-law-jobs");
+const examImportOpsHost = document.getElementById("admin-exam-import-ops");
 const activeFiltersHost = document.getElementById("admin-active-filters");
 const userSearchField = document.getElementById("admin-user-search");
 const userSortField = document.getElementById("admin-user-sort");
@@ -95,8 +98,11 @@ const {
 const {
   renderAiPipelineMarkup,
   renderCostSummaryMarkup,
+  renderExamImportOpsMarkup,
+  renderLawJobsMarkup,
   renderPerformanceMarkup,
   renderRoleHistoryMarkup,
+  renderAsyncJobsMarkup,
   renderSyntheticMarkup,
   renderTopEndpointsMarkup,
   renderTotalsMarkup,
@@ -262,6 +268,7 @@ function renderLawSourcesHistory(payload) {
         .join("")}
     </ul>
   `;
+  host.innerHTML = renderLawJobsMarkup(payload, { escapeHtml });
 }
 
 async function loadLawSourcesHistory() {
@@ -611,7 +618,7 @@ async function addServerLawBindingFlow() {
 }
 
 async function loadLawJobsOverview() {
-  const host = document.getElementById("law-jobs-host");
+  const host = lawJobsHost || document.getElementById("law-jobs-host");
   if (!host) return;
   const response = await apiFetch("/api/admin/law-jobs/overview");
   const payload = await parsePayload(response);
@@ -2252,6 +2259,106 @@ async function loadAdminPerformance({ silent = false } = {}) {
   }
 }
 
+async function loadAdminAsyncJobs({ silent = false } = {}) {
+  if (!asyncJobsHost) {
+    return;
+  }
+  if (!silent) {
+    renderLoadingState(asyncJobsHost, { count: 4, compact: true });
+  }
+  try {
+    const response = await apiFetch("/api/admin/async-jobs/overview");
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      if (!silent) {
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить async jobs overview."));
+      }
+      return;
+    }
+    asyncJobsHost.innerHTML = renderAsyncJobsMarkup(payload, {
+      escapeHtml,
+      renderAsyncJobActions(item) {
+        const jobId = Number(item?.id || "0");
+        const canonicalStatus = String(item?.canonical_status || "").trim().toLowerCase();
+        if (!jobId) {
+          return '<span class="admin-user-cell__secondary">вЂ”</span>';
+        }
+        if (canonicalStatus === "failed") {
+          return `<button type="button" class="ghost-button" data-async-job-action="retry" data-async-job-id="${escapeHtml(String(jobId))}">Retry</button>`;
+        }
+        if (canonicalStatus === "retry_scheduled") {
+          return `<button type="button" class="ghost-button" data-async-job-action="cancel" data-async-job-id="${escapeHtml(String(jobId))}">Cancel retry</button>`;
+        }
+        return '<span class="admin-user-cell__secondary">вЂ”</span>';
+      },
+    });
+  } catch (error) {
+    if (!silent) {
+      setStateError(errorsHost, error?.message || "Не удалось загрузить async jobs overview.");
+    }
+  }
+}
+
+async function loadExamImportOps({ silent = false } = {}) {
+  if (!examImportOpsHost) {
+    return;
+  }
+  if (!silent) {
+    renderLoadingState(examImportOpsHost, { count: 4, compact: true });
+  }
+  try {
+    const response = await apiFetch("/api/admin/exam-import/overview");
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      if (!silent) {
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить exam import ops overview."));
+      }
+      return;
+    }
+    examImportOpsHost.innerHTML = renderExamImportOpsMarkup(payload, { escapeHtml });
+  } catch (error) {
+    if (!silent) {
+      setStateError(errorsHost, error?.message || "Не удалось загрузить exam import ops overview.");
+    }
+  }
+}
+
+async function handleAsyncJobAction(target) {
+  const button = target.closest("[data-async-job-action]");
+  if (!(button instanceof HTMLButtonElement)) {
+    return;
+  }
+  const action = String(button.getAttribute("data-async-job-action") || "").trim().toLowerCase();
+  const jobId = Number(button.getAttribute("data-async-job-id") || "0");
+  if (!action || !jobId) {
+    setStateError(errorsHost, "РќРµ СѓРґР°Р»РѕСЃСЊ РѕРїСЂРµРґРµР»РёС‚СЊ async job action.");
+    return;
+  }
+  clearMessage();
+  setStateIdle(errorsHost);
+  button.disabled = true;
+  try {
+    const response = await apiFetch(`/api/jobs/${encodeURIComponent(String(jobId))}/${encodeURIComponent(action)}`, {
+      method: "POST",
+    });
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      setStateError(errorsHost, formatHttpError(response, payload, `РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹РїРѕР»РЅРёС‚СЊ action ${action} РґР»СЏ job #${jobId}.`));
+      return;
+    }
+    showMessage(
+      action === "retry"
+        ? `Async job #${jobId} РїРѕСЃС‚Р°РІР»РµРЅР° РЅР° СЂСѓС‡РЅРѕР№ retry.`
+        : `Async job #${jobId} СЃРЅСЏС‚Р° СЃ РѕС‡РµСЂРµРґРё РїРѕРІС‚РѕСЂРЅРѕР№ РїРѕРїС‹С‚РєРё.`,
+    );
+    await loadAdminAsyncJobs({ silent: true });
+  } catch (error) {
+    setStateError(errorsHost, error?.message || `РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹РїРѕР»РЅРёС‚СЊ action ${action} РґР»СЏ job #${jobId}.`);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 const adminOverviewLoader = createAdminOverviewLoader({
   apiFetch,
   buildOverviewUrl,
@@ -2385,6 +2492,9 @@ function scheduleLiveRefresh() {
     await Promise.all([
       loadAdminOverview({ silent: true }),
       loadAdminPerformance({ silent: true }),
+      loadAdminAsyncJobs({ silent: true }),
+      loadLawJobsOverview(),
+      loadExamImportOps({ silent: true }),
       loadAiPipeline({ silent: true }),
       loadRoleHistory({ silent: true }),
     ]);
@@ -2722,6 +2832,9 @@ refreshNowButton?.addEventListener("click", async () => {
   await Promise.all([
     loadAdminOverview(),
     loadAdminPerformance(),
+    loadAdminAsyncJobs(),
+    loadLawJobsOverview(),
+    loadExamImportOps(),
     loadAiPipeline(),
     loadRoleHistory(),
   ]);
@@ -2736,6 +2849,13 @@ activeFiltersHost?.addEventListener("click", (event) => {
     return;
   }
   clearFilter(chip.getAttribute("data-clear-filter") || "");
+});
+asyncJobsHost?.addEventListener("click", async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  await handleAsyncJobAction(target);
 });
 
 userModal.bind(
@@ -2784,6 +2904,9 @@ document.addEventListener("visibilitychange", () => {
     Promise.all([
       loadAdminOverview({ silent: true }),
       loadAdminPerformance({ silent: true }),
+      loadAdminAsyncJobs({ silent: true }),
+      loadLawJobsOverview(),
+      loadExamImportOps({ silent: true }),
       loadAiPipeline({ silent: true }),
       loadRoleHistory({ silent: true }),
     ]);
@@ -2796,6 +2919,9 @@ initCollapsibles();
 Promise.all([
   loadAdminOverview(),
   loadAdminPerformance(),
+  loadAdminAsyncJobs(),
+  loadLawJobsOverview(),
+  loadExamImportOps(),
   loadAiPipeline(),
   loadRoleHistory(),
   loadCatalog(),

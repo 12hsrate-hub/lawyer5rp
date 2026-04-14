@@ -6,13 +6,12 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 
 ## Current Execution State
 
-- Current phase: `Phase B — Runtime model foundation + single source-of-truth contract`
-- Current task: `Phase D complete`
-- Active execution phase override: `Phase D - Editable admin + draft/publish/rollback/audit`
-- Current micro-step: `Pilot editable workflow lifecycle completed with validation, review, publish, rollback, audit, and release checklist gates`
-- Current phase: `Phase A — Baseline inventory + migration map`
-- Overall status: `done`
-- Last updated: `2026-04-14`
+- Current phase: `Phase E — Async/jobs stabilization`
+- Current task: `Phase E complete`
+- Active execution phase override: `Phase E accepted; next recommended start is Phase F.1`
+- Current micro-step: `Phase E checkpoint prepared for git push`
+- Overall status: `in_progress`
+- Last updated: `2026-04-15`
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -251,26 +250,74 @@ Dependencies: Phase C.
 
 ## Phase E — Async/jobs stabilization (1 sprint)
 
+Execution status: `done`
+
 ### E.1 Job model hardening
+Status: `done`
 Standardize job states across import/export/law rebuild/generation:
 - queued, running, succeeded, failed, retry_scheduled, cancelled.
 
+Current E.1 progress:
+- `JOB_STATE_MATRIX.md` added as the canonical async state baseline.
+- Current fragmentation documented across:
+  - `AsyncJobService`: `pending`, `queued`, `processing`, `succeeded`, `dead_lettered`, `cancelled`
+  - `ExamImportTaskRegistry`: `queued`, `running`, `completed`, `failed`
+  - admin law rebuild tasks in `admin.py`: `queued`, `running`, `finished`, `failed`
+- First implementation slice completed:
+  - shared `job_status_service.py` normalizer added
+  - canonical status is now exposed alongside raw status for `/api/jobs*`, `/api/exam-import/tasks/*`, `/api/admin/law-sources/tasks/*`, and `/api/admin/tasks/*`
+- Second implementation slice completed:
+  - `AsyncJobService` now uses `retry_scheduled` for automatic delayed retries instead of collapsing them into plain `queued`
+  - worker claim paths now consume `retry_scheduled` jobs when `next_run_at` is due
+- Third implementation slice completed:
+  - admin dashboard now exposes an `Async Jobs` overview for failed/retry-scheduled background work
+  - operator-facing summary counts and problem-job inventory are available through `/api/admin/async-jobs/overview`
+- Fourth implementation slice completed:
+  - the `Async Jobs` admin block now exposes first operator controls on top of shared `/api/jobs` endpoints
+  - `failed` jobs can be retried manually, and `retry_scheduled` jobs can be cancelled from the dashboard surface
+- Fifth implementation slice completed:
+  - the same ops/dashboard surface now also exposes `law rebuild` task health and failed rebuild alerts
+  - `admin/dashboard` can now be used as a single review surface for shared async jobs plus law runtime rebuild failures
+- Sixth implementation slice completed:
+  - the same ops/dashboard surface now also exposes `exam import` pending scoring, failed entries, and recent import/scoring failures
+  - `admin/dashboard` now serves as one operator-facing review surface for shared async jobs, law rebuild alerts, and exam import problem signals
+- Phase E.1 acceptance reached.
+
 ### E.2 Idempotency + retries
+Status: `done`
 - Add dedup keys for import/export/generation operations.
 - Explicit retry policies by job type.
 - Non-retryable failure classes documented.
 
+Current E.2 progress:
+- `docs/ASYNC_OPERATIONS_RUNBOOK.md` added as the operator runbook for shared async jobs, law rebuild, and exam import flows.
+- `RETRY_IDEMPOTENCY_MATRIX.md` added as the explicit retry/idempotency contract baseline.
+- `content_reindex` now has a route-level idempotency contract via `/api/admin/reindex`:
+  - explicit `idempotency_key` is accepted
+  - default dedup key now resolves to `content_reindex:{scope}`
+- Remaining E.2 gaps are now narrowed to non-shared task models (`law rebuild`, `exam import`) rather than the shared async job surface.
+- Phase E.2 acceptance reached for the shared async job surface.
+
 ### E.3 Ops visibility
+Status: `done`
 - Admin/Ops screen for failed jobs + retry controls + incident notes.
 
 ### Deliverables
 - async operations runbook updates
 - job observability views
 - retry/idempotency matrix
+- `JOB_STATE_MATRIX.md`
+- `docs/ASYNC_OPERATIONS_RUNBOOK.md`
+- `RETRY_IDEMPOTENCY_MATRIX.md`
 
 ### Acceptance
 - No silent duplicate execution for covered job classes.
 - Failed async operations visible and retryable by operators/admins.
+- `Phase E` accepted via:
+  - canonical operator-facing state layer
+  - unified ops/dashboard surface for shared async jobs, law rebuild, and exam import
+  - first operator controls for shared async jobs
+  - async runbook plus retry/idempotency matrix deliverables
 
 ### Rollback/containment
 - Per-job-type kill switches / queue pause / fallback to manual ops where needed.

@@ -53,7 +53,7 @@ class InMemoryJobService:
     def claim_available_jobs(self, *, worker_id: str, server_id: str | None, limit: int = 10):
         items = []
         for job in self.jobs.values():
-            if job["status"] not in {"queued", "pending", "failed"}:
+            if job["status"] not in {"queued", "pending", "retry_scheduled"}:
                 continue
             if job["server_scope"] == "server" and job["server_id"] != server_id:
                 continue
@@ -80,7 +80,7 @@ class InMemoryJobService:
             job["status"] = "dead_lettered"
             self.dead_letters.append(job_id)
         else:
-            job["status"] = "queued"
+            job["status"] = "retry_scheduled"
         job["last_error_code"] = error_code
         job["last_error_message"] = error_message
         return dict(job)
@@ -125,7 +125,7 @@ def test_retry_and_dead_letter_flow():
     first = worker.run_once()[0]
     second = worker.run_once()[0]
 
-    assert first["status"] == "queued"
+    assert first["status"] == "retry_scheduled"
     assert second["status"] == "dead_lettered"
     assert job["id"] in service.dead_letters
     assert [item["status"] for item in service.attempts[job["id"]]] == ["failed", "failed"]

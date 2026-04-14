@@ -89,6 +89,203 @@ window.OGPAdminOverview = {
     `;
   },
 
+  renderAsyncJobsMarkup(payload, helpers = {}) {
+    const escapeHtml = helpers.escapeHtml || ((value) => String(value ?? ""));
+    const renderAsyncJobActions = helpers.renderAsyncJobActions || (() => "");
+    const summary = payload?.summary || {};
+    const problemJobs = Array.isArray(payload?.problem_jobs) ? payload.problem_jobs : [];
+    const byJobType = Array.isArray(payload?.by_job_type) ? payload.by_job_type : [];
+
+    const cards = [
+      ["Всего jobs", summary.total_jobs || 0, "Последние server/global async jobs для текущего сервера."],
+      ["Проблемные", summary.problem_jobs || 0, "Сумма failed и retry_scheduled jobs."],
+      ["Failed", summary.failed_jobs || 0, "Требуют внимания оператора или ручного retry."],
+      ["Retry scheduled", summary.retry_scheduled_jobs || 0, "Ожидают автоматической повторной попытки."],
+    ];
+
+    const cardsHtml = cards
+      .map(
+        ([label, value, hint]) => `
+          <article class="legal-status-card">
+            <span class="legal-status-card__label">${escapeHtml(label)}</span>
+            <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(value))}</strong>
+            <span class="admin-user-cell__secondary">${escapeHtml(hint)}</span>
+          </article>
+        `,
+      )
+      .join("");
+
+    const byTypeHtml = byJobType.length
+      ? `<div class="admin-section-toolbar"><span class="admin-user-cell__secondary">By type: ${escapeHtml(byJobType.map((item) => `${item.job_type} (${item.count})`).join(", "))}</span></div>`
+      : "";
+
+    const tableHtml = problemJobs.length
+      ? `
+        <div class="legal-table-shell">
+          <table class="legal-table admin-table admin-table--compact">
+            <thead><tr><th>ID</th><th>Type</th><th>Status</th><th>Raw</th><th>Next run</th><th>Error</th><th>Actions</th></tr></thead>
+            <tbody>
+              ${problemJobs
+                .map(
+                  (item) => `
+                    <tr>
+                      <td>${escapeHtml(String(item.id || "-"))}</td>
+                      <td>${escapeHtml(String(item.job_type || "-"))}</td>
+                      <td>${escapeHtml(String(item.canonical_status || "-"))}</td>
+                      <td>${escapeHtml(String(item.raw_status || item.status || "-"))}</td>
+                      <td>${escapeHtml(String(item.next_run_at || "-"))}</td>
+                      <td>${escapeHtml(String(item.last_error_code || item.last_error_message || "-"))}</td>
+                      <td>${renderAsyncJobActions(item)}</td>
+                    </tr>
+                  `,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      `
+      : '<p class="legal-section__description">Проблемных async jobs сейчас нет.</p>';
+
+    return `
+      <div class="admin-performance-grid">${cardsHtml}</div>
+      ${byTypeHtml}
+      ${tableHtml}
+    `;
+  },
+
+  renderLawJobsMarkup(payload, helpers = {}) {
+    const escapeHtml = helpers.escapeHtml || ((value) => String(value ?? ""));
+    const summary = payload?.summary || {};
+    const alerts = Array.isArray(payload?.alerts) ? payload.alerts : [];
+    const running = Array.isArray(payload?.running) ? payload.running : [];
+
+    const cards = [
+      ["Всего rebuild tasks", summary.total_tasks || 0, "Все фоновые law rebuild tasks для текущего admin surface."],
+      ["Running", summary.running_tasks || 0, "Очередь и активные rebuild tasks."],
+      ["Failed", summary.failed_tasks || 0, "Требуют ручной проверки law runtime."],
+      ["Alerts", summary.alerts_count || 0, "Сигналы по упавшим rebuild tasks."],
+    ];
+
+    const cardsHtml = cards
+      .map(
+        ([label, value, hint]) => `
+          <article class="legal-status-card">
+            <span class="legal-status-card__label">${escapeHtml(label)}</span>
+            <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(value))}</strong>
+            <span class="admin-user-cell__secondary">${escapeHtml(hint)}</span>
+          </article>
+        `,
+      )
+      .join("");
+
+    const alertsHtml = alerts.length
+      ? `
+        <div class="legal-table-shell">
+          <table class="legal-table admin-table admin-table--compact">
+            <thead><tr><th>Task</th><th>Server</th><th>Error</th></tr></thead>
+            <tbody>
+              ${alerts
+                .map(
+                  (item) => `
+                    <tr>
+                      <td>${escapeHtml(String(item.task_id || "-"))}</td>
+                      <td>${escapeHtml(String(item.server_code || "-"))}</td>
+                      <td>${escapeHtml(String(item.error || "-"))}</td>
+                    </tr>
+                  `,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      `
+      : '<p class="legal-section__description">Упавших law rebuild tasks сейчас нет.</p>';
+
+    const runningHtml = running.length
+      ? `<div class="admin-section-toolbar"><span class="admin-user-cell__secondary">Running: ${escapeHtml(running.map((item) => `${item.task_id} (${item.server_code || "-"})`).join(", "))}</span></div>`
+      : "";
+
+    return `
+      <div class="admin-performance-grid">${cardsHtml}</div>
+      ${runningHtml}
+      ${alertsHtml}
+    `;
+  },
+
+  renderExamImportOpsMarkup(payload, helpers = {}) {
+    const escapeHtml = helpers.escapeHtml || ((value) => String(value ?? ""));
+    const summary = payload?.summary || {};
+    const failedEntries = Array.isArray(payload?.failed_entries) ? payload.failed_entries : [];
+    const recentFailures = Array.isArray(payload?.recent_failures) ? payload.recent_failures : [];
+    const recentRowFailures = Array.isArray(payload?.recent_row_failures) ? payload.recent_row_failures : [];
+
+    const cards = [
+      ["Pending scores", summary.pending_scores || 0, "Строки, которые ещё ждут scoring."],
+      ["Failed entries", summary.failed_entries || 0, "Записи с неуспешной проверкой ответов."],
+      ["Import failures", summary.recent_failures || 0, "Недавние ошибки массового импорта или scoring."],
+      ["Problem signals", summary.problem_signals || 0, "Суммарный операторский сигнал по exam import."],
+    ];
+
+    const cardsHtml = cards
+      .map(
+        ([label, value, hint]) => `
+          <article class="legal-status-card">
+            <span class="legal-status-card__label">${escapeHtml(label)}</span>
+            <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(value))}</strong>
+            <span class="admin-user-cell__secondary">${escapeHtml(hint)}</span>
+          </article>
+        `,
+      )
+      .join("");
+
+    const failedEntriesHtml = failedEntries.length
+      ? `
+        <div class="legal-table-shell">
+          <table class="legal-table admin-table admin-table--compact">
+            <thead><tr><th>Row</th><th>Name</th><th>Format</th><th>Reason</th></tr></thead>
+            <tbody>
+              ${failedEntries
+                .map(
+                  (item) => `
+                    <tr>
+                      <td>${escapeHtml(String(item.source_row || "-"))}</td>
+                      <td>${escapeHtml(String(item.full_name || "-"))}</td>
+                      <td>${escapeHtml(String(item.exam_format || "-"))}</td>
+                      <td>${escapeHtml(String(item.score_error || item.question_g_rationale || "-"))}</td>
+                    </tr>
+                  `,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      `
+      : '<p class="legal-section__description">Записей с failed scoring сейчас нет.</p>';
+
+    const failureNotes = [...recentFailures, ...recentRowFailures]
+      .slice(0, 5)
+      .map((item) => {
+        if (typeof item === "string") {
+          return item;
+        }
+        if (item && typeof item === "object") {
+          return String(item.message || item.error || item.detail || JSON.stringify(item));
+        }
+        return String(item || "");
+      })
+      .filter(Boolean);
+
+    const failureNotesHtml = failureNotes.length
+      ? `<div class="admin-section-toolbar"><span class="admin-user-cell__secondary">Recent failures: ${escapeHtml(failureNotes.join(" | "))}</span></div>`
+      : "";
+
+    return `
+      <div class="admin-performance-grid">${cardsHtml}</div>
+      ${failureNotesHtml}
+      ${failedEntriesHtml}
+    `;
+  },
+
   renderSyntheticMarkup(summary, helpers = {}) {
     const escapeHtml = helpers.escapeHtml || ((value) => String(value ?? ""));
     const renderBadge = helpers.renderBadge || ((text) => String(text ?? ""));

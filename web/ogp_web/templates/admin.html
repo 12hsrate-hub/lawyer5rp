@@ -301,6 +301,38 @@
           <div id="admin-synthetic" class="admin-performance-grid"></div>
         </div>
       </section>
+
+      <section class="legal-subcard admin-collapsible" data-collapsible-section="async-jobs">
+        <div class="legal-subcard__header admin-collapsible__header">
+          <div>
+            <span class="legal-field__label">Async Jobs</span>
+            <p class="legal-section__description">Failed and retry-scheduled background jobs across export, import, reindex, and generation flows.</p>
+          </div>
+          <button
+            type="button"
+            class="ghost-button admin-collapsible__toggle"
+            data-collapsible-target="admin-async-jobs-content"
+            data-expanded-default="true"
+            aria-expanded="true"
+            aria-controls="admin-async-jobs-content"
+          >
+            Скрыть
+          </button>
+        </div>
+        <div id="admin-async-jobs-content" class="admin-collapsible__content">
+          <div id="admin-async-jobs" class="admin-performance-grid"></div>
+          <div class="admin-section-toolbar">
+            <span class="legal-field__label">Law rebuild tasks</span>
+            <span class="admin-user-cell__secondary">Background rebuild failures and active law runtime tasks.</span>
+          </div>
+          <div id="admin-law-jobs"></div>
+          <div class="admin-section-toolbar">
+            <span class="legal-field__label">Exam import</span>
+            <span class="admin-user-cell__secondary">Pending scoring, failed entries, and recent import/scoring failures.</span>
+          </div>
+          <div id="admin-exam-import-ops"></div>
+        </div>
+      </section>
       {% endif %}
 
       {% if admin_focus == "users" %}

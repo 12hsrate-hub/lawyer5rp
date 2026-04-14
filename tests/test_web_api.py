@@ -902,6 +902,101 @@ class WebApiTests(unittest.TestCase):
                     admin_route._ADMIN_TASKS.clear()
                     admin_route._ADMIN_TASKS.update(backup)
 
+    def test_admin_law_sources_task_status_exposes_canonical_status(self):
+        self._register_verify_and_login("12345", "admin-law-task-ok@example.com")
+        with patch("ogp_web.routes.admin._load_admin_tasks_from_disk", lambda: None):
+            with admin_route._ADMIN_TASKS_LOCK:
+                backup = dict(admin_route._ADMIN_TASKS)
+                admin_route._ADMIN_TASKS.clear()
+                admin_route._ADMIN_TASKS["law-rebuild-ok"] = {
+                    "task_id": "law-rebuild-ok",
+                    "scope": "law_sources_rebuild",
+                    "server_code": "blackberry",
+                    "status": "finished",
+                }
+            try:
+                response = self.client.get("/api/admin/law-sources/tasks/law-rebuild-ok")
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertEqual(payload["status"], "finished")
+                self.assertEqual(payload["raw_status"], "finished")
+                self.assertEqual(payload["canonical_status"], "succeeded")
+            finally:
+                with admin_route._ADMIN_TASKS_LOCK:
+                    admin_route._ADMIN_TASKS.clear()
+                    admin_route._ADMIN_TASKS.update(backup)
+
+    def test_admin_async_jobs_overview_exposes_problem_summary(self):
+        self._register_verify_and_login("12345", "admin-async-overview@example.com")
+
+        class DummyAsyncJobService:
+            def list_jobs(self, *, server_id: str, limit: int = 50):
+                self.server_id = server_id
+                self.limit = limit
+                return [
+                    {
+                        "id": 101,
+                        "job_type": "content_reindex",
+                        "status": "retry_scheduled",
+                        "next_run_at": "2026-04-15T01:00:00+00:00",
+                        "last_error_message": "temporary failure",
+                    },
+                    {
+                        "id": 202,
+                        "job_type": "content_reindex",
+                        "status": "dead_lettered",
+                        "next_run_at": "",
+                        "last_error_message": "fatal failure",
+                    },
+                    {
+                        "id": 303,
+                        "job_type": "document_export",
+                        "status": "processing",
+                        "next_run_at": "",
+                        "last_error_message": "",
+                    },
+                ]
+
+        service = DummyAsyncJobService()
+        with patch("ogp_web.routes.admin._get_async_job_service", return_value=service):
+            response = self.client.get("/api/admin/async-jobs/overview")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(service.server_id, "blackberry")
+        self.assertEqual(service.limit, 100)
+        self.assertEqual(payload["summary"]["total_jobs"], 3)
+        self.assertEqual(payload["summary"]["problem_jobs"], 2)
+        self.assertEqual(payload["summary"]["failed_jobs"], 1)
+        self.assertEqual(payload["summary"]["retry_scheduled_jobs"], 1)
+        self.assertEqual(payload["summary"]["running_jobs"], 1)
+        statuses = {item["raw_status"]: item["canonical_status"] for item in payload["problem_jobs"]}
+        self.assertEqual(statuses["retry_scheduled"], "retry_scheduled")
+        self.assertEqual(statuses["dead_lettered"], "failed")
+        self.assertEqual(
+            {item["job_type"]: item["count"] for item in payload["by_job_type"]},
+            {"content_reindex": 2},
+        )
+
+    def test_admin_exam_import_overview_exposes_problem_summary(self):
+        self._register_verify_and_login("12345", "admin-exam-import-overview@example.com")
+
+        response = self.client.get("/api/admin/exam-import/overview")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertIn("summary", payload)
+        self.assertIn("pending_scores", payload["summary"])
+        self.assertIn("failed_entries", payload["summary"])
+        self.assertIn("problem_signals", payload["summary"])
+        self.assertIn("failed_entries", payload)
+        self.assertIn("recent_failures", payload)
+        self.assertIn("recent_row_failures", payload)
+        self.assertIsInstance(payload["failed_entries"], list)
+        self.assertIsInstance(payload["recent_failures"], list)
+        self.assertIsInstance(payload["recent_row_failures"], list)
+
     def test_law_sources_preview_forbidden_for_user_without_manage_laws_permission(self):
         self._register_verify_and_login("plainuser_preview", "plainuser-preview@example.com")
         response = self.client.post(
@@ -2555,6 +2650,8 @@ class WebApiTests(unittest.TestCase):
                 time.sleep(0.05)
             self.assertIsNotNone(row_result)
             self.assertEqual(row_result["status"], "completed")
+            self.assertEqual(row_result["raw_status"], "completed")
+            self.assertEqual(row_result["canonical_status"], "succeeded")
             self.assertEqual(row_result["result"]["source_row"], 2)
             self.assertEqual(row_result["result"]["question_g_score"], 92)
             self.assertEqual(len(row_result["result"]["failed_fields"]), 2)
@@ -2576,6 +2673,8 @@ class WebApiTests(unittest.TestCase):
                 time.sleep(0.05)
             self.assertIsNotNone(bulk_result)
             self.assertEqual(bulk_result["status"], "completed")
+            self.assertEqual(bulk_result["raw_status"], "completed")
+            self.assertEqual(bulk_result["canonical_status"], "succeeded")
             self.assertEqual(bulk_result["result"]["scored_count"], 1)
             self.assertEqual(len(bulk_result["result"]["latest_entries"]), 2)
             self.assertEqual(bulk_result["result"]["failed_field_count"], 4)
