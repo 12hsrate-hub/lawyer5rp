@@ -60,6 +60,22 @@ git -C /srv/lawyer5rp-deploy/repo reset --hard origin/main
 bash /srv/lawyer5rp-deploy/repo/scripts/deploy_from_checkout.sh
 ```
 
+## Local SSH access note
+
+On this workstation, use the configured SSH alias instead of raw `root@host`:
+
+```bash
+ssh lawyer5rp-prod
+```
+
+The alias is defined in `C:\Users\12hs\.ssh\config` and points to:
+
+- host: `89.111.153.129`
+- user: `root`
+- identity: `C:/Users/12hs/.ssh/lawyer5rp_ed25519`
+
+Using the alias avoids losing the correct deploy key in future sessions.
+
 What the deploy script does:
 
 - backs up current deploy-managed files from `shared`, `web`, and `scripts`
