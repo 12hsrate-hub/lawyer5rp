@@ -97,6 +97,126 @@ Codex должен:
    - draft/publish/rollback/audit
    - master manifest
    - legacy transition strategy
+  
+  ## Mandatory risk constraints
+
+The migration plan is incomplete unless it explicitly addresses the following 5 risks.
+
+These are not optional notes.
+They must be treated as binding planning constraints.
+
+For EACH mandatory risk, the plan must include:
+- why it matters
+- where it exists now or is likely to appear in the current repo
+- target architectural rule that prevents it
+- mitigation steps
+- earliest phase where it must be addressed
+- acceptance criteria / validation method
+- fallback / rollback / containment plan
+- whether it is a pre-launch blocker, pre-scale blocker, or later optimization
+
+### Risk 1 — Dual source of truth between legacy logic and new DB-driven workflow
+There is a major risk that legacy routes/services and the new configuration-driven runtime become two competing sources of truth.
+
+The plan must:
+- define the single source of truth for each migrated scenario
+- define when legacy becomes adapter-only
+- define compatibility boundaries during transition
+- define how drift between old and new behavior is detected
+- define cutover criteria
+
+### Risk 2 — Hardcoded server-specific business logic for new servers
+There is a major risk that new servers will be added through scattered hardcoded conditionals, one-off enums, or ad hoc logic branches.
+
+The plan must:
+- prohibit new server-specific hardcoding as the default approach
+- define how server differences are represented through versioned configuration/data
+- define where configuration ends and explicit plugin-style extension begins
+- define review rules that reject scattered server conditionals
+
+### Risk 3 — Frontend admin complexity collapsing into a monolithic admin UI
+There is a major risk that the visual admin becomes one giant tightly coupled module, making future changes expensive and unsafe.
+
+The plan must:
+- define admin UI boundaries by domain
+- define read-only views first and editable tools later
+- define reusable UI patterns and shared component boundaries
+- avoid one mega-module or one mega-page approach
+- keep human-readable admin UX as a core product requirement
+
+### Risk 4 — Transitional instability of background jobs, imports, exports, retries, and async processing
+There is a major risk that migration destabilizes async behavior before core product flows visibly fail.
+
+The plan must:
+- treat jobs/imports/exports/retries/workers as a dedicated migration concern
+- define idempotency expectations
+- define visibility of job states in admin or ops surfaces
+- define retry/failure/containment behavior
+- define phased migration of background operations instead of silent replacement
+
+### Risk 5 — Incomplete AI / citation provenance for audit and explainability
+There is a major risk that generated documents or legal outputs cannot be traced back to the exact legal and configuration context used.
+
+The plan must:
+- treat provenance as a required product and audit capability
+- define minimum stored provenance fields
+- define citation trace storage
+- define how provenance appears in admin/audit/review flows
+- define acceptance criteria for explainability and traceability
+
+Minimum provenance fields expected in planning:
+- server_id
+- server configuration version
+- procedure version
+- template version
+- law_set version
+- citation / fragment identifiers
+- model/provider identifier
+- prompt version
+- generation timestamp
+
+## Required risk section in PLANS.md
+
+`PLANS.md` must contain a dedicated section named:
+
+## Risk Register and Closure Strategy
+
+That section must include, for each mandatory risk:
+- priority
+- owner area
+- trigger / warning signs
+- mitigation
+- validation
+- closure milestone
+
+Owner area examples:
+- backend
+- admin UI
+- infra
+- AI / retrieval
+- migration / rollout
+
+## Quality gate for the plan
+
+A valid plan must explicitly include:
+- single-source-of-truth transition strategy
+- anti-hardcoding strategy for server differences
+- modular admin UI strategy
+- async/jobs stabilization strategy
+- AI/citation provenance strategy
+- acceptance criteria for each major phase
+- rollback / containment logic for risky migration steps
+
+If any mandatory risk is deferred, the plan must explicitly state:
+- why it is deferred
+- what keeps the system safe until then
+- which later milestone closes it
+
+## Expected discipline from Codex
+
+Do not produce a vague or generic migration plan.
+Do not only mention the risks at a high level.
+The plan must stage them, constrain them, and define how they will be closed.
 
 ## Что особенно важно про предметную модель
 Похожей должна быть только машина обработки.
