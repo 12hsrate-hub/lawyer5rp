@@ -104,8 +104,6 @@ def build_invalid_source_urls_error(validation: LawSourcesValidation) -> str:
     if preview:
         return f"source_urls_invalid: {preview}"
     return "source_urls_invalid"
-
-
 class LawAdminService:
     def __init__(self, workflow_service: ContentWorkflowService):
         self.workflow_service = workflow_service
@@ -322,7 +320,6 @@ class LawAdminService:
             "accepted_count": len(validation.accepted_urls),
             "invalid_count": len(validation.invalid_urls),
         }
-
     def list_recent_versions(self, *, server_code: str, limit: int = 10) -> dict[str, Any]:
         rows = list_recent_law_versions(server_code=server_code, limit=limit)
         return {
