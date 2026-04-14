@@ -351,7 +351,6 @@ async def generate(
     flag_service: FeatureFlagService = Depends(get_feature_flag_service),
 ) -> GenerateResponse:
     started_at = start_timer()
-    cases_flag = flag_service.evaluate(flag="cases_v1", context=RolloutContext(username=user.username, server_id=user.server_code))
     docs_flag = flag_service.evaluate(flag="documents_v2", context=RolloutContext(username=user.username, server_id=user.server_code))
     validation_flag = flag_service.evaluate(
         flag="validation_gate_v1",
