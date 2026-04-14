@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlparse
 
 from ogp_web.server_config import get_server_config
 from ogp_web.services.content_workflow_service import ContentWorkflowService
@@ -16,6 +15,11 @@ from ogp_web.services.law_version_service import (
     import_law_snapshot,
     list_recent_law_versions,
     resolve_active_law_version,
+)
+from ogp_web.services.law_sources_validation import (
+    build_invalid_source_urls_error,
+    normalize_source_urls,
+    validate_source_urls,
 )
 
 
@@ -34,76 +38,6 @@ class LawSourcesSnapshot:
     bundle_meta: dict[str, Any] | None
 
 
-@dataclass(frozen=True)
-class LawSourcesValidation:
-    normalized_urls: tuple[str, ...]
-    accepted_urls: tuple[str, ...]
-    invalid_urls: tuple[str, ...]
-    duplicate_count: int
-
-
-def normalize_source_urls(source_urls: list[str] | tuple[str, ...]) -> tuple[str, ...]:
-    normalized: list[str] = []
-    seen: set[str] = set()
-    for raw in source_urls:
-        value = str(raw or "").strip()
-        if not value:
-            continue
-        if value in seen:
-            continue
-        seen.add(value)
-        normalized.append(value)
-    return tuple(normalized)
-
-
-def is_valid_source_url(value: str) -> bool:
-    parsed = urlparse(value)
-    if parsed.scheme not in {"http", "https"}:
-        return False
-    if not parsed.hostname:
-        return False
-    try:
-        _ = parsed.port
-    except ValueError:
-        return False
-    return True
-
-
-def validate_source_urls(source_urls: list[str] | tuple[str, ...]) -> LawSourcesValidation:
-    normalized = normalize_source_urls(source_urls)
-    accepted: list[str] = []
-    invalid: list[str] = []
-    seen: set[str] = set()
-    duplicate_count = 0
-
-    for raw in source_urls:
-        value = str(raw or "").strip()
-        if not value:
-            continue
-        if value in seen:
-            duplicate_count += 1
-            continue
-        seen.add(value)
-        if is_valid_source_url(value):
-            accepted.append(value)
-        else:
-            invalid.append(value)
-
-    return LawSourcesValidation(
-        normalized_urls=normalized,
-        accepted_urls=tuple(accepted),
-        invalid_urls=tuple(invalid),
-        duplicate_count=duplicate_count,
-    )
-
-
-def build_invalid_source_urls_error(validation: LawSourcesValidation) -> str:
-    preview = ", ".join(validation.invalid_urls[:3])
-    if len(validation.invalid_urls) > 3:
-        preview = f"{preview}, ..."
-    if preview:
-        return f"source_urls_invalid: {preview}"
-    return "source_urls_invalid"
 class LawAdminService:
     def __init__(self, workflow_service: ContentWorkflowService):
         self.workflow_service = workflow_service
@@ -316,7 +250,9 @@ class LawAdminService:
             "ok": True,
             "accepted_urls": list(validation.accepted_urls),
             "invalid_urls": list(validation.invalid_urls),
+            "invalid_details": list(validation.invalid_details),
             "duplicate_count": validation.duplicate_count,
+            "duplicate_urls": list(validation.duplicate_urls),
             "accepted_count": len(validation.accepted_urls),
             "invalid_count": len(validation.invalid_urls),
         }

@@ -69,6 +69,7 @@ const {
 } = window.OGPWeb;
 const ExamView = window.OGPExamImportView;
 const ADMIN_COLLAPSE_STORAGE_KEY = "ogp_admin_collapsible_sections";
+const LAW_REBUILD_TASK_STORAGE_KEY = "ogp_admin_law_rebuild_task_id";
 const DEFAULT_USER_MODAL_TITLE = userModalTitle?.textContent || "Карточка пользователя";
 
 let adminSearchTimer = null;
@@ -145,6 +146,13 @@ async function loadLawSourcesManager() {
     statusHost.textContent = `Источник ссылок: ${origin}. Активная версия закона: ${activeVersionId}. Статей в индексе: ${chunkCount}.`;
   }
   await loadLawSourcesHistory();
+  setLawActionButtonsDisabled(false);
+  const storedTaskId = window.localStorage.getItem(LAW_REBUILD_TASK_STORAGE_KEY);
+  if (storedTaskId) {
+    setLawActionButtonsDisabled(true);
+    stopLawRebuildPolling();
+    await pollLawRebuildTask(storedTaskId);
+  }
 }
 
 function renderLawSourcesHistory(payload) {
@@ -205,12 +213,22 @@ function stopLawRebuildPolling() {
   }
 }
 
+function setLawActionButtonsDisabled(disabled) {
+  ["law-sources-sync", "law-sources-save", "law-sources-preview", "law-sources-rebuild-async", "law-sources-rebuild"].forEach((id) => {
+    const button = document.getElementById(id);
+    if (button instanceof HTMLButtonElement) {
+      button.disabled = Boolean(disabled);
+    }
+  });
+}
+
 async function pollLawRebuildTask(taskId) {
   const statusHost = document.getElementById("law-sources-task-status");
   const response = await apiFetch(`/api/admin/law-sources/tasks/${encodeURIComponent(taskId)}`);
   const payload = await parsePayload(response);
   if (!response.ok) {
     stopLawRebuildPolling();
+    setLawActionButtonsDisabled(false);
     if (statusHost) {
       statusHost.textContent = "Не удалось получить статус фоновой пересборки.";
     }
@@ -222,12 +240,16 @@ async function pollLawRebuildTask(taskId) {
   }
   if (status === "finished") {
     stopLawRebuildPolling();
+    setLawActionButtonsDisabled(false);
+    window.localStorage.removeItem(LAW_REBUILD_TASK_STORAGE_KEY);
     showMessage(`Фоновая пересборка завершена. Версия ${String(payload?.result?.law_version_id || "—")}.`);
     await loadCatalog("laws");
     return;
   }
   if (status === "failed") {
     stopLawRebuildPolling();
+    setLawActionButtonsDisabled(false);
+    window.localStorage.removeItem(LAW_REBUILD_TASK_STORAGE_KEY);
     setStateError(errorsHost, String(payload?.error || "Фоновая пересборка завершилась ошибкой."));
     return;
   }
@@ -252,10 +274,23 @@ async function rebuildLawSourcesAsync() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
+    const details = Array.isArray(payload?.detail) ? payload.detail : [];
+    const conflictDetail = details.find((item) => String(item || "").startsWith("law_rebuild_already_in_progress:"));
+    if (response.status === 409 && conflictDetail) {
+      const activeTaskId = String(conflictDetail).split(":")[1] || "";
+      if (activeTaskId) {
+        window.localStorage.setItem(LAW_REBUILD_TASK_STORAGE_KEY, activeTaskId);
+        setLawActionButtonsDisabled(true);
+        await pollLawRebuildTask(activeTaskId);
+        return;
+      }
+    }
     setStateError(errorsHost, formatHttpError(response, payload, "Не удалось поставить пересборку в очередь."));
     return;
   }
   showMessage(`Пересборка поставлена в очередь (task: ${String(payload?.task_id || "—")}).`);
+  window.localStorage.setItem(LAW_REBUILD_TASK_STORAGE_KEY, String(payload?.task_id || ""));
+  setLawActionButtonsDisabled(true);
   stopLawRebuildPolling();
   await pollLawRebuildTask(String(payload?.task_id || ""));
 }
@@ -305,10 +340,19 @@ async function previewLawSources() {
   const detailsHost = document.getElementById("law-sources-validation");
   if (detailsHost) {
     const invalidUrls = Array.isArray(payload?.invalid_urls) ? payload.invalid_urls : [];
-    const invalidBlock = invalidUrls.length
-      ? `<br><strong>Невалидные ссылки:</strong><br>${invalidUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
+    const invalidDetails = Array.isArray(payload?.invalid_details) ? payload.invalid_details : [];
+    const duplicateUrls = Array.isArray(payload?.duplicate_urls) ? payload.duplicate_urls : [];
+    const invalidBlock = invalidDetails.length
+      ? `<br><strong>Невалидные ссылки:</strong><br>${invalidDetails
+        .map((item) => `${escapeHtml(String(item?.url || ""))} (${escapeHtml(String(item?.reason || "invalid"))})`)
+        .join("<br>")}`
+      : (invalidUrls.length
+        ? `<br><strong>Невалидные ссылки:</strong><br>${invalidUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
+        : "");
+    const duplicateBlock = duplicateUrls.length
+      ? `<br><strong>Дубликаты (после нормализации):</strong><br>${duplicateUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
       : "";
-    detailsHost.innerHTML = `Принято: ${escapeHtml(String(payload?.accepted_count ?? 0))}. Дубликатов: ${escapeHtml(String(payload?.duplicate_count ?? 0))}. Невалидных: ${escapeHtml(String(payload?.invalid_count ?? 0))}.${invalidBlock}`;
+    detailsHost.innerHTML = `Принято: ${escapeHtml(String(payload?.accepted_count ?? 0))}. Дубликатов: ${escapeHtml(String(payload?.duplicate_count ?? 0))}. Невалидных: ${escapeHtml(String(payload?.invalid_count ?? 0))}.${invalidBlock}${duplicateBlock}`;
   }
   showMessage("Проверка ссылок выполнена.");
 }
