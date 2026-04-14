@@ -14,16 +14,6 @@ for candidate in (ROOT_DIR, WEB_DIR):
 
 if "httpx" not in sys.modules:
     sys.modules["httpx"] = types.SimpleNamespace()
-if "fastapi" not in sys.modules:
-    fastapi_stub = types.ModuleType("fastapi")
-    fastapi_stub.HTTPException = Exception
-    fastapi_stub.Request = object
-    fastapi_stub.Response = object
-    fastapi_stub.Depends = lambda value=None: value
-    fastapi_stub.APIRouter = object
-    fastapi_stub.Query = lambda *args, **kwargs: None
-    fastapi_stub.status = types.SimpleNamespace(HTTP_400_BAD_REQUEST=400)
-    sys.modules["fastapi"] = fastapi_stub
 
 from ogp_web.services.law_admin_service import LawAdminService, normalize_source_urls, validate_source_urls
 
@@ -54,6 +44,7 @@ class LawAdminServiceHelpersTests(unittest.TestCase):
                 "ftp://example.com/law/a",
                 "https://example.com/law/a",
                 "invalid-url",
+                "http://user:pass@",
                 "http://example.com/law/b",
             ]
         )
@@ -70,6 +61,7 @@ class LawAdminServiceHelpersTests(unittest.TestCase):
             (
                 "ftp://example.com/law/a",
                 "invalid-url",
+                "http://user:pass@",
             ),
         )
         self.assertEqual(validation.duplicate_count, 1)
