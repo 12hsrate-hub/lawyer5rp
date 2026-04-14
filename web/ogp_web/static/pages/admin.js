@@ -122,7 +122,7 @@ const {
 const ExamView = window.OGPExamImportView;
 const ADMIN_COLLAPSE_STORAGE_KEY = "ogp_admin_collapsible_sections";
 const LAW_REBUILD_TASK_STORAGE_KEY = "ogp_admin_law_rebuild_task_id";
-const DEFAULT_USER_MODAL_TITLE = userModalTitle?.textContent || "Р В РЎв„ўР В Р’В°Р РЋР вЂљР РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В РЎвЂќР В Р’В° Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ";
+const DEFAULT_USER_MODAL_TITLE = userModalTitle?.textContent || "Карточка пользователя";
 
 let adminSearchTimer = null;
 let adminLiveTimer = null;
@@ -214,7 +214,7 @@ async function loadLawSourcesManager() {
   const response = await apiFetch(withLawServerQuery("/api/admin/law-sources"));
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ ."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить источники законов."));
     return;
   }
   const payloadServerCode = String(payload?.server_code || "").trim().toLowerCase();
@@ -229,10 +229,10 @@ async function loadLawSourcesManager() {
     textarea.value = Array.isArray(payload?.source_urls) ? payload.source_urls.join("\n") : "";
   }
   if (statusHost) {
-    const activeVersionId = payload?.active_law_version?.id ?? "Р Р†Р вЂљРІР‚Сњ";
-    const chunkCount = payload?.bundle_meta?.chunk_count ?? payload?.active_law_version?.chunk_count ?? "Р Р†Р вЂљРІР‚Сњ";
+    const activeVersionId = payload?.active_law_version?.id ?? "—";
+    const chunkCount = payload?.bundle_meta?.chunk_count ?? payload?.active_law_version?.chunk_count ?? "—";
     const origin = String(payload?.source_origin || "unknown");
-    statusHost.textContent = `Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ Р РЋР С“Р РЋР С“Р РЋРІР‚в„–Р В Р’В»Р В РЎвЂўР В РЎвЂќ: ${origin}. Р В РЎвЂ™Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р вЂ¦Р В Р’В°Р РЋР РЏ Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋР С“Р В РЎвЂР РЋР РЏ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В Р’В°: ${activeVersionId}. Р В Р Р‹Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В РІвЂћвЂ“ Р В Р вЂ  Р В РЎвЂР В Р вЂ¦Р В РўвЂР В Р’ВµР В РЎвЂќР РЋР С“Р В Р’Вµ: ${chunkCount}.`;
+    statusHost.textContent = `Источник ссылок: ${origin}. Активная версия закона: ${activeVersionId}. Статей в индексе: ${chunkCount}.`;
   }
   await loadLawSourcesHistory();
   await loadLawSourcesDependencies();
@@ -252,13 +252,13 @@ function renderLawSourcesHistory(payload) {
   }
   const items = Array.isArray(payload?.items) ? payload.items : [];
   if (!items.length) {
-    host.innerHTML = '<p class="legal-section__description">Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР В РЎвЂР РЋР РЏ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В РЎвЂўР В РЎвЂќ Р В РЎвЂ”Р В РЎвЂўР В РЎвЂќР В Р’В° Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р РЋРІР‚С™Р В Р’В°.</p>';
+    host.innerHTML = '<p class="legal-section__description">История пересборок пока пуста.</p>';
     return;
   }
   host.innerHTML = `
     <ul class="legal-section__description">
       ${items
-        .map((item) => `<li>Р В РІР‚в„ўР В Р’ВµР РЋР вЂљР РЋР С“Р В РЎвЂР РЋР РЏ #${escapeHtml(String(item.id || "Р Р†Р вЂљРІР‚Сњ"))} Р Р†Р вЂљРЎС› articles: ${escapeHtml(String(item.chunk_count || 0))} Р Р†Р вЂљРЎС› generated: ${escapeHtml(String(item.generated_at_utc || "Р Р†Р вЂљРІР‚Сњ"))}</li>`)
+        .map((item) => `<li>Версия #${escapeHtml(String(item.id || "—"))} • articles: ${escapeHtml(String(item.chunk_count || 0))} • generated: ${escapeHtml(String(item.generated_at_utc || "—"))}</li>`)
         .join("")}
     </ul>
   `;
@@ -280,20 +280,20 @@ function renderLawSourcesDependencies(payload) {
   }
   const rows = Array.isArray(payload?.servers) ? payload.servers : [];
   if (!rows.length) {
-    host.innerHTML = '<p class="legal-section__description">Р В РЎСљР В Р’ВµР РЋРІР‚С™ Р В РўвЂР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р РЋРІР‚В¦ Р В РЎвЂ”Р В РЎвЂў Р В Р’В·Р В Р’В°Р В Р вЂ Р В РЎвЂР РЋР С“Р В РЎвЂР В РЎВР В РЎвЂўР РЋР С“Р РЋРІР‚С™Р РЋР РЏР В РЎВ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ .</p>';
+    host.innerHTML = '<p class="legal-section__description">Нет данных по зависимостям источников.</p>';
     return;
   }
   host.innerHTML = `
-    <div class="legal-section__description"><strong>Р В Р Р‹Р В Р вЂ Р РЋР РЏР В Р’В·Р РЋР Р‰ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂўР В Р вЂ  Р В РЎвЂ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ  Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ </strong></div>
+    <div class="legal-section__description"><strong>Связь серверов и источников законов</strong></div>
     <table class="legal-table">
-      <thead><tr><th>Р В Р Р‹Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљ</th><th>Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ </th><th>Р В РЎвЂєР В Р’В±Р РЋРІР‚В°Р В РЎвЂР РЋРІР‚В¦ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ </th><th>Р В Р Р‹Р В Р вЂ Р РЋР РЏР В Р’В·Р В Р’В°Р В Р вЂ¦ Р РЋР С“ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР В Р’В°Р В РЎВР В РЎвЂ</th></tr></thead>
+      <thead><tr><th>Сервер</th><th>Источников</th><th>Общих источников</th><th>Связан с серверами</th></tr></thead>
       <tbody>
         ${rows
           .map((row) => `<tr>
-            <td>${escapeHtml(String(row?.server_name || row?.server_code || "Р Р†Р вЂљРІР‚Сњ"))}</td>
+            <td>${escapeHtml(String(row?.server_name || row?.server_code || "—"))}</td>
             <td>${escapeHtml(String(row?.source_count || 0))}</td>
             <td>${escapeHtml(String(row?.shared_source_count || 0))}</td>
-            <td>${escapeHtml(String((row?.shared_with_servers || []).join(", ") || "Р Р†Р вЂљРІР‚Сњ"))}</td>
+            <td>${escapeHtml(String((row?.shared_with_servers || []).join(", ") || "—"))}</td>
           </tr>`)
           .join("")}
       </tbody>
@@ -389,20 +389,20 @@ function renderLawSourceRegistry(payload) {
   lawSourceRegistryItems = items;
   host.innerHTML = `
     <table class="legal-table admin-table admin-table--compact">
-      <thead><tr><th>ID</th><th>Р В РЎСљР В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ</th><th>Kind</th><th>URL</th><th>Р В Р Р‹Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“</th><th>Р В РІР‚СњР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В РЎвЂР РЋР РЏ</th></tr></thead>
+      <thead><tr><th>ID</th><th>Название</th><th>Kind</th><th>URL</th><th>Статус</th><th>Действия</th></tr></thead>
       <tbody>
         ${items.length ? items.map((item) => `
           <tr>
-            <td>${escapeHtml(String(item.id || "Р Р†Р вЂљРІР‚Сњ"))}</td>
-            <td>${escapeHtml(String(item.name || "Р Р†Р вЂљРІР‚Сњ"))}</td>
+            <td>${escapeHtml(String(item.id || "—"))}</td>
+            <td>${escapeHtml(String(item.name || "—"))}</td>
             <td>${escapeHtml(String(item.kind || "url"))}</td>
-            <td class="admin-user-cell__secondary">${escapeHtml(String(item.url || "Р Р†Р вЂљРІР‚Сњ"))}</td>
+            <td class="admin-user-cell__secondary">${escapeHtml(String(item.url || "—"))}</td>
             <td>${item.is_active ? "active" : "disabled"}</td>
             <td>
-              <button type="button" class="ghost-button" data-law-source-edit="${escapeHtml(String(item.id || ""))}" data-law-source-name="${escapeHtml(String(item.name || ""))}" data-law-source-kind="${escapeHtml(String(item.kind || "url"))}" data-law-source-url="${escapeHtml(String(item.url || ""))}" data-law-source-active="${item.is_active ? "1" : "0"}">Р В Р’ВР В Р’В·Р В РЎВР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰</button>
+              <button type="button" class="ghost-button" data-law-source-edit="${escapeHtml(String(item.id || ""))}" data-law-source-name="${escapeHtml(String(item.name || ""))}" data-law-source-kind="${escapeHtml(String(item.kind || "url"))}" data-law-source-url="${escapeHtml(String(item.url || ""))}" data-law-source-active="${item.is_active ? "1" : "0"}">Изменить</button>
             </td>
           </tr>
-        `).join("") : '<tr><td colspan="6" class="legal-section__description">Р В Р’В Р В Р’ВµР В Р’ВµР РЋР С“Р РЋРІР‚С™Р РЋР вЂљ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ  Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р РЋРІР‚С™.</td></tr>'}
+        `).join("") : '<tr><td colspan="6" class="legal-section__description">Реестр источников пуст.</td></tr>'}
       </tbody>
     </table>
   `;
@@ -414,17 +414,17 @@ async function loadLawSourceRegistry() {
   const response = await apiFetch("/api/admin/law-source-registry");
   const payload = await parsePayload(response);
   if (!response.ok) {
-    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР вЂљР В Р’ВµР В Р’ВµР РЋР С“Р РЋРІР‚С™Р РЋР вЂљ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ ."))}</p>`;
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить реестр источников."))}</p>`;
     return;
   }
   renderLawSourceRegistry(payload);
 }
 
 async function createLawSourceRegistryFlow() {
-  const name = String(window.prompt("Р В РЎСљР В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°", "") || "").trim();
+  const name = String(window.prompt("Название источника", "") || "").trim();
   if (!name) return;
   const kind = String(window.prompt("Kind (url|registry|api)", "url") || "url").trim().toLowerCase();
-  const url = String(window.prompt("URL Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°", "") || "").trim();
+  const url = String(window.prompt("URL источника", "") || "").trim();
   if (!url) return;
   const response = await apiFetch("/api/admin/law-source-registry", {
     method: "POST",
@@ -432,18 +432,18 @@ async function createLawSourceRegistryFlow() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂўР В Р’В·Р В РўвЂР В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось создать источник."));
     return;
   }
-  showMessage("Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ Р В РўвЂР В РЎвЂўР В Р’В±Р В Р’В°Р В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦ Р В Р вЂ  Р РЋР вЂљР В Р’ВµР В Р’ВµР РЋР С“Р РЋРІР‚С™Р РЋР вЂљ.");
+  showMessage("Источник добавлен в реестр.");
   await loadLawSourceRegistry();
 }
 
 async function editLawSourceRegistryFlow(sourceId, currentName, currentKind, currentUrl, currentActive) {
-  const name = String(window.prompt("Р В РЎСљР В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°", currentName || "") || "").trim();
+  const name = String(window.prompt("Название источника", currentName || "") || "").trim();
   if (!name) return;
   const kind = String(window.prompt("Kind (url|registry|api)", currentKind || "url") || "url").trim().toLowerCase();
-  const url = String(window.prompt("URL Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°", currentUrl || "") || "").trim();
+  const url = String(window.prompt("URL источника", currentUrl || "") || "").trim();
   if (!url) return;
   const response = await apiFetch(`/api/admin/law-source-registry/${encodeURIComponent(String(sourceId))}`, {
     method: "PUT",
@@ -451,10 +451,10 @@ async function editLawSourceRegistryFlow(sourceId, currentName, currentKind, cur
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂўР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось обновить источник."));
     return;
   }
-  showMessage("Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ Р В РЎвЂўР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦.");
+  showMessage("Источник обновлен.");
   await loadLawSourceRegistry();
 }
 
@@ -505,37 +505,37 @@ async function openServerLawBindingDialog() {
   const lawCodeOptions = normalizeLawCodeOptions([...catalogItems, ...serverLawBindingItems, ...lawSetOptions]);
   const sourceOptions = lawSourceRegistryItems.filter((item) => Number(item?.id) > 0);
   if (!sourceOptions.length) {
-    throw new Error("Р В Р Р‹Р В Р вЂ¦Р В Р’В°Р РЋРІР‚РЋР В Р’В°Р В Р’В»Р В Р’В° Р В РўвЂР В РЎвЂўР В Р’В±Р В Р’В°Р В Р вЂ Р РЋР Р‰Р РЋРІР‚С™Р В Р’Вµ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ Р В Р вЂ  Р вЂ™Р’В«Р В Р’В Р В Р’ВµР В Р’ВµР РЋР С“Р РЋРІР‚С™Р РЋР вЂљ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ Р вЂ™Р’В».");
+    throw new Error("Сначала добавьте источник в «Реестр источников».");
   }
   if (!lawCodeOptions.length) {
-    throw new Error("Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂўР В Р’В±Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р РЋР С“Р В РЎвЂ”Р В РЎвЂР РЋР С“Р В РЎвЂўР В РЎвЂќ Р В РЎвЂќР В РЎвЂўР В РўвЂР В РЎвЂўР В Р вЂ  Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ  Р В РўвЂР В Р’В»Р РЋР РЏ Р В Р вЂ Р РЋРІР‚в„–Р В Р’В±Р В РЎвЂўР РЋР вЂљР В Р’В°.");
+    throw new Error("Не удалось собрать список кодов законов для выбора.");
   }
   const dialog = document.createElement("dialog");
   dialog.innerHTML = `
     <form method="dialog" class="legal-section">
-      <h3>Р В РЎСџР РЋР вЂљР В РЎвЂР В Р вЂ Р РЋР РЏР В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦ Р В РЎвЂќ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРЎвЂњ</h3>
-      <p class="legal-field__hint">Р В Р Р‹Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљ: <strong>${escapeHtml(activeLawServerCode)}</strong></p>
-      <label class="legal-field"><span class="legal-field__label">Р В РЎв„ўР В РЎвЂўР В РўвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В Р’В°</span>
+      <h3>Привязать закон к серверу</h3>
+      <p class="legal-field__hint">Сервер: <strong>${escapeHtml(activeLawServerCode)}</strong></p>
+      <label class="legal-field"><span class="legal-field__label">Код закона</span>
         <select name="law_code" required>
-          ${lawCodeOptions.map((item) => `<option value="${escapeHtml(item.code)}">${escapeHtml(item.code)} Р Р†Р вЂљРІР‚Сњ ${escapeHtml(item.label)}</option>`).join("")}
+          ${lawCodeOptions.map((item) => `<option value="${escapeHtml(item.code)}">${escapeHtml(item.code)} — ${escapeHtml(item.label)}</option>`).join("")}
         </select>
       </label>
-      <label class="legal-field"><span class="legal-field__label">Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ</span>
+      <label class="legal-field"><span class="legal-field__label">Источник</span>
         <select name="source_id" required>
-          ${sourceOptions.map((item) => `<option value="${escapeHtml(String(item.id))}">${escapeHtml(String(item.name || "Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ"))} Р Р†Р вЂљРІР‚Сњ ${escapeHtml(String(item.url || ""))}</option>`).join("")}
+          ${sourceOptions.map((item) => `<option value="${escapeHtml(String(item.id))}">${escapeHtml(String(item.name || "Источник"))} — ${escapeHtml(String(item.url || ""))}</option>`).join("")}
         </select>
       </label>
-      <label class="legal-field"><span class="legal-field__label">Р В РЎСљР В Р’В°Р В Р’В±Р В РЎвЂўР РЋР вЂљ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ </span>
+      <label class="legal-field"><span class="legal-field__label">Набор законов</span>
         <select name="law_set_id">
-          <option value="">Р В РЎвЂ™Р В Р вЂ Р РЋРІР‚С™Р В РЎвЂўР В Р вЂ Р РЋРІР‚в„–Р В Р’В±Р В РЎвЂўР РЋР вЂљ (Р В РЎвЂ”Р РЋРЎвЂњР В Р’В±Р В Р’В»Р В РЎвЂР В РЎвЂќР РЋРЎвЂњР В Р’ВµР В РЎВР РЋРІР‚в„–Р В РІвЂћвЂ“/Р В РЎвЂ”Р В РЎвЂўР РЋР С“Р В Р’В»Р В Р’ВµР В РўвЂР В Р вЂ¦Р В РЎвЂР В РІвЂћвЂ“)</option>
+          <option value="">Автовыбор (публикуемый/последний)</option>
           ${lawSetOptions.map((item) => `<option value="${escapeHtml(String(item.id || ""))}">${escapeHtml(String(item.name || item.id || ""))}</option>`).join("")}
         </select>
       </label>
       <label class="legal-field"><span class="legal-field__label">Priority</span><input type="number" name="priority" value="100" min="1" max="10000"></label>
       <label class="legal-field"><span class="legal-field__label">Effective from</span><input type="date" name="effective_from" value=""></label>
       <menu style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
-        <button type="button" class="ghost-button" data-action="cancel">Р В РЎвЂєР РЋРІР‚С™Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В°</button>
-        <button type="submit" class="primary-button" data-action="submit">Р В РЎСџР РЋР вЂљР В РЎвЂР В Р вЂ Р РЋР РЏР В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰</button>
+        <button type="button" class="ghost-button" data-action="cancel">Отмена</button>
+        <button type="submit" class="primary-button" data-action="submit">Привязать</button>
       </menu>
     </form>
   `;
@@ -565,11 +565,11 @@ async function openServerLawBindingDialog() {
       const effectiveFrom = String(formData.get("effective_from") || "").trim();
       const lawSetIdRaw = String(formData.get("law_set_id") || "").trim();
       if (!lawCode) {
-        setStateError(errorsHost, "Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р В РЎвЂќР В РЎвЂўР В РўвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В Р’В°.");
+        setStateError(errorsHost, "Выберите код закона.");
         return;
       }
       if (!Number.isFinite(sourceId) || sourceId <= 0) {
-        setStateError(errorsHost, "Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ.");
+        setStateError(errorsHost, "Выберите источник.");
         return;
       }
       finish({
@@ -587,7 +587,7 @@ async function openServerLawBindingDialog() {
 async function addServerLawBindingFlow() {
   let formPayload = null;
   if (!activeLawServerCode) {
-    setStateError(errorsHost, "Р В Р Р‹Р В Р вЂ¦Р В Р’В°Р РЋРІР‚РЋР В Р’В°Р В Р’В»Р В Р’В° Р В Р вЂ Р РЋРІР‚в„–Р В Р’В±Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљ.");
+    setStateError(errorsHost, "Сначала выберите сервер.");
     return;
   }
   try {
@@ -603,10 +603,10 @@ async function addServerLawBindingFlow() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В Р вЂ Р РЋР РЏР В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦ Р В РЎвЂќ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРЎвЂњ."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось привязать закон к серверу."));
     return;
   }
-  showMessage(`Р В РІР‚вЂќР В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦ ${String(formPayload.law_code || "")} Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В Р вЂ Р РЋР РЏР В Р’В·Р В Р’В°Р В Р вЂ¦ Р В РЎвЂќ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРЎвЂњ ${activeLawServerCode}.`);
+  showMessage(`Закон ${String(formPayload.law_code || "")} привязан к серверу ${activeLawServerCode}.`);
   await loadServerLawBindings();
 }
 
@@ -616,7 +616,7 @@ async function loadLawJobsOverview() {
   const response = await apiFetch("/api/admin/law-jobs/overview");
   const payload = await parsePayload(response);
   if (!response.ok) {
-    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ jobs/alerts."))}</p>`;
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить jobs/alerts."))}</p>`;
     return;
   }
   const summary = payload?.summary || {};
@@ -627,7 +627,7 @@ async function loadLawJobsOverview() {
       jobs: total=${escapeHtml(String(summary.total_tasks || 0))}, running=${escapeHtml(String(summary.running_tasks || 0))}, failed=${escapeHtml(String(summary.failed_tasks || 0))}, alerts=${escapeHtml(String(summary.alerts_count || 0))}
     </div>
     <details ${alerts.length ? "open" : ""}>
-      <summary>Р В РЎвЂ™Р В Р’В»Р В Р’ВµР РЋР вЂљР РЋРІР‚С™Р РЋРІР‚в„–</summary>
+      <summary>Алерты</summary>
       <pre class="legal-field__hint">${escapeHtml(JSON.stringify(alerts, null, 2) || "[]")}</pre>
     </details>
     <details>
@@ -654,10 +654,10 @@ async function rebuildLawSources() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В РЎвЂўР В Р’В±Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р РЋРІР‚в„–."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось пересобрать законы."));
     return;
   }
-  showMessage(`Р В РІР‚вЂќР В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р РЋРІР‚в„– Р В РЎвЂўР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р РЋРІР‚в„–: Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋР С“Р В РЎвЂР РЋР РЏ ${String(payload?.law_version_id || "Р Р†Р вЂљРІР‚Сњ")}, Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В РІвЂћвЂ“ ${String(payload?.article_count || 0)}.`);
+  showMessage(`Законы обновлены: версия ${String(payload?.law_version_id || "—")}, статей ${String(payload?.article_count || 0)}.`);
   await loadCatalog("laws");
 }
 
@@ -685,19 +685,19 @@ async function pollLawRebuildTask(taskId) {
     stopLawRebuildPolling();
     setLawActionButtonsDisabled(false);
     if (statusHost) {
-      statusHost.textContent = "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋРЎвЂњР РЋРІР‚РЋР В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“ Р РЋРІР‚С›Р В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂўР В РІвЂћвЂ“ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В РЎвЂќР В РЎвЂ.";
+      statusHost.textContent = "Не удалось получить статус фоновой пересборки.";
     }
     return;
   }
   const status = String(payload?.status || "queued");
   if (statusHost) {
-    statusHost.textContent = `Р В Р’В¤Р В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋР РЏ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В РЎвЂќР В Р’В°: ${status} (task: ${taskId})`;
+    statusHost.textContent = `Фоновая пересборка: ${status} (task: ${taskId})`;
   }
   if (status === "finished") {
     stopLawRebuildPolling();
     setLawActionButtonsDisabled(false);
     clearStoredLawRebuildTaskId();
-    showMessage(`Р В Р’В¤Р В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋР РЏ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В РЎвЂќР В Р’В° Р В Р’В·Р В Р’В°Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРІвЂљВ¬Р В Р’ВµР В Р вЂ¦Р В Р’В°. Р В РІР‚в„ўР В Р’ВµР РЋР вЂљР РЋР С“Р В РЎвЂР РЋР РЏ ${String(payload?.result?.law_version_id || "Р Р†Р вЂљРІР‚Сњ")}.`);
+    showMessage(`Фоновая пересборка завершена. Версия ${String(payload?.result?.law_version_id || "—")}.`);
     await loadCatalog("laws");
     return;
   }
@@ -705,7 +705,7 @@ async function pollLawRebuildTask(taskId) {
     stopLawRebuildPolling();
     setLawActionButtonsDisabled(false);
     clearStoredLawRebuildTaskId();
-    setStateError(errorsHost, String(payload?.error || "Р В Р’В¤Р В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋР РЏ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В РЎвЂќР В Р’В° Р В Р’В·Р В Р’В°Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРІвЂљВ¬Р В РЎвЂР В Р’В»Р В Р’В°Р РЋР С“Р РЋР Р‰ Р В РЎвЂўР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В РЎвЂўР В РІвЂћвЂ“."));
+    setStateError(errorsHost, String(payload?.error || "Фоновая пересборка завершилась ошибкой."));
     return;
   }
   lawRebuildPollTimer = window.setTimeout(() => {
@@ -741,10 +741,10 @@ async function rebuildLawSourcesAsync() {
         return;
       }
     }
-    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂ”Р В РЎвЂўР РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В РЎвЂќР РЋРЎвЂњ Р В Р вЂ  Р В РЎвЂўР РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В Р’ВµР В РўвЂР РЋР Р‰."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось поставить пересборку в очередь."));
     return;
   }
-  showMessage(`Р В РЎСџР В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В РЎвЂќР В Р’В° Р В РЎвЂ”Р В РЎвЂўР РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В Р’В° Р В Р вЂ  Р В РЎвЂўР РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В Р’ВµР В РўвЂР РЋР Р‰ (task: ${String(payload?.task_id || "Р Р†Р вЂљРІР‚Сњ")}).`);
+  showMessage(`Пересборка поставлена в очередь (task: ${String(payload?.task_id || "—")}).`);
   setStoredLawRebuildTaskId(String(payload?.task_id || ""));
   setLawActionButtonsDisabled(true);
   stopLawRebuildPolling();
@@ -768,10 +768,10 @@ async function saveLawSourcesManifest() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ ."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось сохранить источники законов."));
     return;
   }
-  showMessage("Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ  Р РЋР С“Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р РЋРІР‚в„– Р В Р вЂ  workflow.");
+  showMessage("Источники законов сохранены в workflow.");
   await loadCatalog("laws");
 }
 
@@ -792,7 +792,7 @@ async function previewLawSources() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР С“Р РЋР С“Р РЋРІР‚в„–Р В Р’В»Р В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ ."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось проверить ссылки законов."));
     return;
   }
   const detailsHost = document.getElementById("law-sources-validation");
@@ -801,18 +801,18 @@ async function previewLawSources() {
     const invalidDetails = Array.isArray(payload?.invalid_details) ? payload.invalid_details : [];
     const duplicateUrls = Array.isArray(payload?.duplicate_urls) ? payload.duplicate_urls : [];
     const invalidBlock = invalidDetails.length
-      ? `<br><strong>Р В РЎСљР В Р’ВµР В Р вЂ Р В Р’В°Р В Р’В»Р В РЎвЂР В РўвЂР В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р РЋР С“Р РЋР С“Р РЋРІР‚в„–Р В Р’В»Р В РЎвЂќР В РЎвЂ:</strong><br>${invalidDetails
+      ? `<br><strong>Невалидные ссылки:</strong><br>${invalidDetails
         .map((item) => `${escapeHtml(String(item?.url || ""))} (${escapeHtml(String(item?.reason || "invalid"))})`)
         .join("<br>")}`
       : (invalidUrls.length
-        ? `<br><strong>Р В РЎСљР В Р’ВµР В Р вЂ Р В Р’В°Р В Р’В»Р В РЎвЂР В РўвЂР В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р РЋР С“Р РЋР С“Р РЋРІР‚в„–Р В Р’В»Р В РЎвЂќР В РЎвЂ:</strong><br>${invalidUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
+        ? `<br><strong>Невалидные ссылки:</strong><br>${invalidUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
         : "");
     const duplicateBlock = duplicateUrls.length
-      ? `<br><strong>Р В РІР‚СњР РЋРЎвЂњР В Р’В±Р В Р’В»Р В РЎвЂР В РЎвЂќР В Р’В°Р РЋРІР‚С™Р РЋРІР‚в„– (Р В РЎвЂ”Р В РЎвЂўР РЋР С“Р В Р’В»Р В Р’Вµ Р В Р вЂ¦Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р В Р’В»Р В РЎвЂР В Р’В·Р В Р’В°Р РЋРІР‚В Р В РЎвЂР В РЎвЂ):</strong><br>${duplicateUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
+      ? `<br><strong>Дубликаты (после нормализации):</strong><br>${duplicateUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
       : "";
-    detailsHost.innerHTML = `Р В РЎСџР РЋР вЂљР В РЎвЂР В Р вЂ¦Р РЋР РЏР РЋРІР‚С™Р В РЎвЂў: ${escapeHtml(String(payload?.accepted_count ?? 0))}. Р В РІР‚СњР РЋРЎвЂњР В Р’В±Р В Р’В»Р В РЎвЂР В РЎвЂќР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР В Р вЂ : ${escapeHtml(String(payload?.duplicate_count ?? 0))}. Р В РЎСљР В Р’ВµР В Р вЂ Р В Р’В°Р В Р’В»Р В РЎвЂР В РўвЂР В Р вЂ¦Р РЋРІР‚в„–Р РЋРІР‚В¦: ${escapeHtml(String(payload?.invalid_count ?? 0))}.${invalidBlock}${duplicateBlock}`;
+    detailsHost.innerHTML = `Принято: ${escapeHtml(String(payload?.accepted_count ?? 0))}. Дубликатов: ${escapeHtml(String(payload?.duplicate_count ?? 0))}. Невалидных: ${escapeHtml(String(payload?.invalid_count ?? 0))}.${invalidBlock}${duplicateBlock}`;
   }
-  showMessage("Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В° Р РЋР С“Р РЋР С“Р РЋРІР‚в„–Р В Р’В»Р В РЎвЂўР В РЎвЂќ Р В Р вЂ Р РЋРІР‚в„–Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В Р’В°.");
+  showMessage("Проверка ссылок выполнена.");
 }
 
 async function syncLawSourcesFromServerConfig() {
@@ -822,10 +822,10 @@ async function syncLawSourcesFromServerConfig() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂР В Р вЂ¦Р РЋРІР‚В¦Р РЋР вЂљР В РЎвЂўР В Р вЂ¦Р В РЎвЂР В Р’В·Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р РЋР С“Р РЋР С“Р РЋРІР‚в„–Р В Р’В»Р В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ ."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось синхронизировать ссылки законов."));
     return;
   }
-  showMessage(payload?.changed ? "Р В Р Р‹Р РЋР С“Р РЋРІР‚в„–Р В Р’В»Р В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ  Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР В Р вЂ¦Р В Р’ВµР РЋР С“Р В Р’ВµР В Р вЂ¦Р РЋРІР‚в„– Р В РЎвЂР В Р’В· server config Р В Р вЂ  DB." : "DB-Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ  Р РЋРЎвЂњР В Р’В¶Р В Р’Вµ Р В Р’В°Р В РЎвЂќР РЋРІР‚С™Р РЋРЎвЂњР В Р’В°Р В Р’В»Р РЋР Р‰Р В Р вЂ¦Р РЋРІР‚в„–.");
+  showMessage(payload?.changed ? "Ссылки законов перенесены из server config в DB." : "DB-источники законов уже актуальны.");
   await loadCatalog("laws");
 }
 
@@ -869,7 +869,7 @@ async function loadCatalogAuditTrail() {
   const host = document.getElementById("catalog-audit-results");
   if (!response.ok) {
     if (host) {
-      host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В Р’В¶Р РЋРЎвЂњР РЋР вЂљР В Р вЂ¦Р В Р’В°Р В Р’В» Р В РЎвЂР В Р’В·Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В РІвЂћвЂ“."))}</p>`;
+      host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить журнал изменений."))}</p>`;
     }
     return;
   }
@@ -914,7 +914,7 @@ async function loadCatalogPreview(itemId) {
   const response = await apiFetch(catalogEndpoint(activeCatalogEntity, itemId));
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂ”Р РЋР вЂљР В Р’ВµР В РўвЂР В РЎвЂ”Р РЋР вЂљР В РЎвЂўР РЋР С“Р В РЎВР В РЎвЂўР РЋРІР‚С™Р РЋР вЂљ catalog."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить предпросмотр catalog."));
     return;
   }
   renderCatalogPreview(payload, itemId);
@@ -924,51 +924,51 @@ function slugifyCatalogKey(value) {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_\-.Р В Р’В°-Р РЋР РЏР РЋРІР‚В]/gi, "")
+    .replace(/[^a-z0-9_\-.Р°-СЏС']/gi, "")
     .replace(/_+/g, "_");
 }
 
 function getCatalogEntityFieldMeta(entityType) {
-  const sharedHelp = "Р В РІР‚вЂќР В Р’В°Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР РЏ Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР РЋРІР‚в„–. JSON Р В Р вЂ¦Р РЋРЎвЂњР В Р’В¶Р В Р’ВµР В Р вЂ¦ Р РЋРІР‚С™Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р В РўвЂР В Р’В»Р РЋР РЏ Р РЋР вЂљР В Р’ВµР В РўвЂР В РЎвЂќР В РЎвЂР РЋРІР‚В¦/Р В Р вЂ¦Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ¦Р В РўвЂР В Р’В°Р РЋР вЂљР РЋРІР‚С™Р В Р вЂ¦Р РЋРІР‚в„–Р РЋРІР‚В¦ Р В Р’В°Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂР В Р’В±Р РЋРЎвЂњР РЋРІР‚С™Р В РЎвЂўР В Р вЂ .";
+  const sharedHelp = "Заполните поля формы. JSON нужен только для редких/нестандартных атрибутов.";
   const byEntity = {
     servers: {
-      description: "Р В РЎСџР РЋР вЂљР В РЎвЂўР РЋРІР‚С›Р В РЎвЂР В Р’В»Р РЋР Р‰ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР В Р’В°: Р В РЎВР В РЎвЂўР В РўвЂР В Р’ВµР В Р’В»Р РЋР Р‰, URL Р В РЎвЂ Р РЋРІР‚С™Р В Р’ВµР РЋРІР‚В¦Р В Р вЂ¦Р В РЎвЂР РЋРІР‚РЋР В Р’ВµР РЋР С“Р В РЎвЂќР В РЎвЂР В Р’Вµ Р В РЎвЂўР В РЎвЂ“Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ.",
+      description: "Профиль сервера: модель, URL и технические ограничения.",
       fields: [
-        { name: "server_code", label: "Р В РЎв„ўР В РЎвЂўР В РўвЂ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР В Р’В°", placeholder: "prod-1", help: "Р В Р в‚¬Р В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°Р В Р’В»Р РЋР Р‰Р В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В РЎвЂќР В РЎвЂўР В РўвЂ Р В РЎвЂўР В РЎвЂќР РЋР вЂљР РЋРЎвЂњР В Р’В¶Р В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ." },
-        { name: "base_url", label: "Base URL", placeholder: "https://api.example.com", help: "Р В РІР‚ВР В Р’В°Р В Р’В·Р В РЎвЂўР В Р вЂ Р РЋРІР‚в„–Р В РІвЂћвЂ“ URL Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР В Р’В°/Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С™Р В Р’ВµР В РЎвЂ“Р РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР В РЎвЂ." },
-        { name: "timeout_sec", label: "Timeout (Р РЋР С“Р В Р’ВµР В РЎвЂќ)", type: "number", min: 1, placeholder: "30", help: "Р В РЎС›Р В Р’В°Р В РІвЂћвЂ“Р В РЎВР В Р’В°Р РЋРЎвЂњР РЋРІР‚С™ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР РЋР С“Р В РЎвЂўР В Р вЂ  Р В Р вЂ  Р РЋР С“Р В Р’ВµР В РЎвЂќР РЋРЎвЂњР В Р вЂ¦Р В РўвЂР В Р’В°Р РЋРІР‚В¦." },
+        { name: "server_code", label: "Код сервера", placeholder: "prod-1", help: "Уникальный код окружения." },
+        { name: "base_url", label: "Base URL", placeholder: "https://api.example.com", help: "Базовый URL сервера/интеграции." },
+        { name: "timeout_sec", label: "Timeout (сек)", type: "number", min: 1, placeholder: "30", help: "Таймаут запросов в секундах." },
       ],
     },
     laws: {
-      description: "Р В РЎСљР В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ Р В РЎвЂ Р В Р’ВµР В РЎвЂ“Р В РЎвЂў Р РЋР вЂљР В Р’ВµР В РЎвЂќР В Р вЂ Р В РЎвЂР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋРІР‚в„–.",
+      description: "Нормативный источник и его реквизиты.",
       fields: [
-        { name: "law_code", label: "Р В РЎв„ўР В РЎвЂўР В РўвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В Р’В°", placeholder: "uk_rf_2026", help: "Р В РІР‚в„ўР В Р вЂ¦Р РЋРЎвЂњР РЋРІР‚С™Р РЋР вЂљР В Р’ВµР В Р вЂ¦Р В Р вЂ¦Р В РЎвЂР В РІвЂћвЂ“ Р В РЎвЂќР В РЎвЂўР В РўвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В Р’В°/Р РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°." },
-        { name: "source", label: "Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ", placeholder: "consultant", help: "Р В РЎвЂєР РЋРІР‚С™Р В РЎвЂќР РЋРЎвЂњР В РўвЂР В Р’В° Р В Р вЂ Р В Р’В·Р РЋР РЏР РЋРІР‚С™ Р РЋРІР‚С™Р В Р’ВµР В РЎвЂќР РЋР С“Р РЋРІР‚С™ (Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В РЎвЂР РЋР С“/Р РЋР вЂљР В Р’ВµР В Р’ВµР РЋР С“Р РЋРІР‚С™Р РЋР вЂљ)." },
-        { name: "effective_from", label: "Р В РІР‚СњР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р РЋРЎвЂњР В Р’ВµР РЋРІР‚С™ Р РЋР С“", placeholder: "2026-01-01", help: "Р В РІР‚СњР В Р’В°Р РЋРІР‚С™Р В Р’В° Р В Р вЂ  Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚С™Р В Р’Вµ YYYY-MM-DD." },
+        { name: "law_code", label: "Код закона", placeholder: "uk_rf_2026", help: "Внутренний код закона/сборника." },
+        { name: "source", label: "Источник", placeholder: "consultant", help: "Откуда взят текст (сервис/реестр)." },
+        { name: "effective_from", label: "Действует с", placeholder: "2026-01-01", help: "Дата в формате YYYY-MM-DD." },
       ],
     },
     templates: {
-      description: "Р В Р РѓР В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂўР В Р вЂ¦ Р В РўвЂР В РЎвЂўР В РЎвЂќР РЋРЎвЂњР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°: Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚С™, Р РЋРІР‚В Р В Р’ВµР В Р’В»Р РЋР Р‰ Р В РЎвЂ Р В РЎвЂўР В Р’В±Р РЋР РЏР В Р’В·Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂ.",
+      description: "Шаблон документа: формат, цель и обязательные блоки.",
       fields: [
-        { name: "template_type", label: "Р В РЎС›Р В РЎвЂР В РЎвЂ” Р РЋРІвЂљВ¬Р В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂўР В Р вЂ¦Р В Р’В°", placeholder: "complaint", help: "Р В РЎСљР В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР РЋР вЂљ: complaint, appeal, rehab." },
-        { name: "document_kind", label: "Р В РІР‚в„ўР В РЎвЂР В РўвЂ Р В РўвЂР В РЎвЂўР В РЎвЂќР РЋРЎвЂњР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°", placeholder: "Р В РІР‚вЂњР В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р В Р’В°", help: "Р В Р’В§Р В Р’ВµР В Р’В»Р В РЎвЂўР В Р вЂ Р В Р’ВµР В РЎвЂќР В РЎвЂўР РЋРІР‚РЋР В РЎвЂР РЋРІР‚С™Р В Р’В°Р В Р’ВµР В РЎВР РЋРІР‚в„–Р В РІвЂћвЂ“ Р В Р вЂ Р В РЎвЂР В РўвЂ Р В РўвЂР В РЎвЂўР В РЎвЂќР РЋРЎвЂњР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°." },
-        { name: "output_format", label: "Р В Р’В¤Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚С™ Р В Р вЂ Р РЋРІР‚в„–Р В Р вЂ Р В РЎвЂўР В РўвЂР В Р’В°", placeholder: "bbcode", help: "Р В РЎСљР В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР РЋР вЂљ: bbcode, markdown, html." },
+        { name: "template_type", label: "Тип шаблона", placeholder: "complaint", help: "Например: complaint, appeal, rehab." },
+        { name: "document_kind", label: "Вид документа", placeholder: "Жалоба", help: "Человекочитаемый вид документа." },
+        { name: "output_format", label: "Формат вывода", placeholder: "bbcode", help: "Например: bbcode, markdown, html." },
       ],
     },
     features: {
-      description: "Р В Р’В¤Р В РЎвЂР РЋРІР‚РЋР В Р’В°-Р РЋРІР‚С›Р В Р’В»Р В Р’В°Р В РЎвЂ“: rollout Р В РЎвЂ Р РЋРЎвЂњР РЋР С“Р В Р’В»Р В РЎвЂўР В Р вЂ Р В РЎвЂР РЋР РЏ Р В Р вЂ Р В РЎвЂќР В Р’В»Р РЋР вЂ№Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ.",
+      description: "Фича-флаг: rollout и условия включения.",
       fields: [
-        { name: "feature_flag", label: "Feature flag", placeholder: "new_law_qa", help: "Р В Р в‚¬Р В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°Р В Р’В»Р РЋР Р‰Р В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В РЎвЂќР В РЎвЂўР В РўвЂ Р РЋРІР‚С›Р В Р’В»Р В Р’В°Р В РЎвЂ“Р В Р’В°." },
-        { name: "rollout_percent", label: "Rollout (%)", type: "number", min: 0, max: 100, placeholder: "25", help: "Р В РІР‚СњР В РЎвЂўР В Р’В»Р РЋР РЏ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р В Р’ВµР В РІвЂћвЂ“ Р В Р вЂ  Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР РЋРІР‚В Р В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚В¦." },
-        { name: "audience", label: "Р В РЎвЂ™Р РЋРЎвЂњР В РўвЂР В РЎвЂР РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР В РЎвЂР РЋР РЏ", placeholder: "testers", help: "Р В РЎв„ўР В РЎвЂўР В РЎВР РЋРЎвЂњ Р В Р вЂ Р В РЎвЂќР В Р’В»Р РЋР вЂ№Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂў: all/testers/staff/..." },
+        { name: "feature_flag", label: "Feature flag", placeholder: "new_law_qa", help: "Уникальный код флага." },
+        { name: "rollout_percent", label: "Rollout (%)", type: "number", min: 0, max: 100, placeholder: "25", help: "Доля пользователей в процентах." },
+        { name: "audience", label: "Аудитория", placeholder: "testers", help: "Кому включено: all/testers/staff/..." },
       ],
     },
     rules: {
-      description: "Р В РЎСџР РЋР вЂљР В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В»Р В РЎвЂў Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ: Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎвЂўР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’ВµР РЋРІР‚С™, Р В РЎвЂўР В Р’В±Р В Р’В»Р В Р’В°Р РЋР С“Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂ Р В РўвЂР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В РЎвЂР В Р’Вµ.",
+      description: "Правило применения: приоритет, область и действие.",
       fields: [
-        { name: "rule_type", label: "Р В РЎС›Р В РЎвЂР В РЎвЂ” Р В РЎвЂ”Р РЋР вЂљР В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В»Р В Р’В°", placeholder: "moderation", help: "Р В РЎв„ўР В Р’В°Р РЋРІР‚С™Р В Р’ВµР В РЎвЂ“Р В РЎвЂўР РЋР вЂљР В РЎвЂР РЋР РЏ Р В РЎвЂ”Р РЋР вЂљР В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В»Р В Р’В°." },
-        { name: "priority", label: "Р В РЎСџР РЋР вЂљР В РЎвЂР В РЎвЂўР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’ВµР РЋРІР‚С™", type: "number", min: 0, placeholder: "100", help: "Р В Р’В§Р В Р’ВµР В РЎВ Р В Р’В±Р В РЎвЂўР В Р’В»Р РЋР Р‰Р РЋРІвЂљВ¬Р В Р’Вµ Р РЋРІР‚РЋР В РЎвЂР РЋР С“Р В Р’В»Р В РЎвЂў, Р РЋРІР‚С™Р В Р’ВµР В РЎВ Р В Р вЂ Р РЋРІР‚в„–Р РЋРІвЂљВ¬Р В Р’Вµ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎвЂўР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’ВµР РЋРІР‚С™." },
-        { name: "applies_to", label: "Р В РЎвЂєР В Р’В±Р В Р’В»Р В Р’В°Р РЋР С“Р РЋРІР‚С™Р РЋР Р‰", placeholder: "complaint_generation", help: "Р В РІР‚СљР В РўвЂР В Р’Вµ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР В Р вЂ¦Р РЋР РЏР В Р’ВµР РЋРІР‚С™Р РЋР С“Р РЋР РЏ Р В РЎвЂ”Р РЋР вЂљР В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В»Р В РЎвЂў." },
+        { name: "rule_type", label: "Тип правила", placeholder: "moderation", help: "Категория правила." },
+        { name: "priority", label: "Приоритет", type: "number", min: 0, placeholder: "100", help: "Чем больше число, тем выше приоритет." },
+        { name: "applies_to", label: "Область", placeholder: "complaint_generation", help: "Где применяется правило." },
       ],
     },
   };
@@ -1001,7 +1001,7 @@ function parseCatalogAdvancedJson(rawJson) {
   }
   const parsed = JSON.parse(raw);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Advanced JSON Р В РўвЂР В РЎвЂўР В Р’В»Р В Р’В¶Р В Р’ВµР В Р вЂ¦ Р В Р’В±Р РЋРІР‚в„–Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂўР В Р’В±Р РЋР вЂ°Р В Р’ВµР В РЎвЂќР РЋРІР‚С™Р В РЎвЂўР В РЎВ.");
+    throw new Error("Advanced JSON должен быть объектом.");
   }
   return parsed;
 }
@@ -1027,41 +1027,41 @@ async function openCatalogFormDialog(entityType, seed = {}) {
     .join("");
   dialog.innerHTML = `
     <form method="dialog" class="legal-section">
-      <h3>${seed.id ? "Р В Р’В Р В Р’ВµР В РўвЂР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ" : "Р В Р Р‹Р В РЎвЂўР В Р’В·Р В РўвЂР В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ"}: ${escapeHtml(entityType)}</h3>
+      <h3>${seed.id ? "Редактирование" : "Создание"}: ${escapeHtml(entityType)}</h3>
       <p class="legal-field__hint">${escapeHtml(meta.description || "")}</p>
       <label class="legal-field">
-        <span class="legal-field__label">Р В РЎСљР В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ</span>
-        <input type="text" name="title" value="${escapeHtml(values.title)}" placeholder="Р В РЎСџР В РЎвЂўР В Р вЂ¦Р РЋР РЏР РЋРІР‚С™Р В Р вЂ¦Р В РЎвЂўР В Р’Вµ Р В РЎвЂР В РЎВР РЋР РЏ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р В РЎвЂР РЋР С“Р В РЎвЂ" required>
+        <span class="legal-field__label">Название</span>
+        <input type="text" name="title" value="${escapeHtml(values.title)}" placeholder="Понятное имя записи" required>
       </label>
       <label class="legal-field">
-        <span class="legal-field__label">Р В РЎв„ўР В Р’В»Р РЋР вЂ№Р РЋРІР‚РЋ</span>
+        <span class="legal-field__label">Ключ</span>
         <input type="text" name="key" value="${escapeHtml(values.key)}" placeholder="server_main" required>
-        <span class="legal-field__hint">Р В Р в‚¬Р В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°Р В Р’В»Р РЋР Р‰Р В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В РЎвЂќР В Р’В»Р РЋР вЂ№Р РЋРІР‚РЋ (Р В Р’В»Р В Р’В°Р РЋРІР‚С™Р В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋРІР‚В Р В Р’В°/Р РЋРІР‚В Р В РЎвЂР РЋРІР‚С›Р РЋР вЂљР РЋРІР‚в„–/Р В РЎвЂ”Р В РЎвЂўР В РўвЂР РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В РЎвЂќР В РЎвЂР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ). Р В РЎСџР РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР РЋР вЂљ: <code>main_ruleset</code></span>
+        <span class="legal-field__hint">Уникальный ключ (латиница/цифры/подчеркивание). Пример: <code>main_ruleset</code></span>
       </label>
       <label class="legal-field">
-        <span class="legal-field__label">Р В РЎвЂєР В РЎвЂ”Р В РЎвЂР РЋР С“Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ</span>
-        <textarea name="description" rows="2" placeholder="Р В РЎв„ўР РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂќР В РЎвЂў: Р В Р’В·Р В Р’В°Р РЋРІР‚РЋР В Р’ВµР В РЎВ Р В Р вЂ¦Р РЋРЎвЂњР В Р’В¶Р В Р вЂ¦Р В Р’В° Р В Р’В·Р В Р’В°Р В РЎвЂ”Р В РЎвЂР РЋР С“Р РЋР Р‰">${escapeHtml(values.description)}</textarea>
+        <span class="legal-field__label">Описание</span>
+        <textarea name="description" rows="2" placeholder="Кратко: зачем нужна запись">${escapeHtml(values.description)}</textarea>
       </label>
       <label class="legal-field">
-        <span class="legal-field__label">Р В Р Р‹Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“</span>
+        <span class="legal-field__label">Статус</span>
         <select name="status">
           ${["draft", "review", "published", "active", "disabled", "archived"]
             .map((statusName) => `<option value="${statusName}" ${values.status === statusName ? "selected" : ""}>${statusName}</option>`)
             .join("")}
         </select>
-        <span class="legal-field__hint">Р В РЎвЂєР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂў Р В РўвЂР В Р’В»Р РЋР РЏ Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р РЋРІР‚в„–Р РЋРІР‚В¦ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р В РЎвЂР РЋР С“Р В Р’ВµР В РІвЂћвЂ“ Р В РЎвЂР РЋР С“Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р РЋРЎвЂњР В Р’ВµР РЋРІР‚С™Р РЋР С“Р РЋР РЏ <code>draft</code>.</span>
+        <span class="legal-field__hint">Обычно для новых записей используется <code>draft</code>.</span>
       </label>
       ${dynamicFields}
       <details>
-        <summary>Р В РІР‚СњР В РЎвЂўР В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰Р В Р вЂ¦Р В РЎвЂў (JSON)</summary>
-        <p class="legal-field__hint">Р В РЎвЂєР В РЎвЂ”Р РЋРІР‚В Р В РЎвЂР В РЎвЂўР В Р вЂ¦Р В Р’В°Р В Р’В»Р РЋР Р‰Р В Р вЂ¦Р В РЎвЂў. Р В РІР‚СњР В РЎвЂўР В Р’В±Р В Р’В°Р В Р вЂ Р РЋР Р‰Р РЋРІР‚С™Р В Р’Вµ Р РЋР вЂљР В Р’ВµР В РўвЂР В РЎвЂќР В РЎвЂР В Р’Вµ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР РЏ Р В Р вЂ  JSON-Р В РЎвЂўР В Р’В±Р РЋР вЂ°Р В Р’ВµР В РЎвЂќР РЋРІР‚С™Р В Р’Вµ, Р В Р вЂ¦Р В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР РЋР вЂљ: {\"tags\":[\"beta\"],\"owner\":\"team-legal\"}</p>
+        <summary>Дополнительно (JSON)</summary>
+        <p class="legal-field__hint">Опционально. Добавьте редкие поля в JSON-объекте, например: {\"tags\":[\"beta\"],\"owner\":\"team-legal\"}</p>
         <label class="legal-field">
           <textarea name="advanced_config" rows="7" placeholder='{\"tags\":[\"beta\"],\"owner\":\"team-legal\"}'>${escapeHtml(JSON.stringify(values.config || {}, null, 2))}</textarea>
         </label>
       </details>
       <menu style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
-        <button type="button" class="ghost-button" data-action="cancel">Р В РЎвЂєР РЋРІР‚С™Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В°</button>
-        <button type="submit" class="primary-button" data-action="submit">Р В Р Р‹Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰</button>
+        <button type="button" class="ghost-button" data-action="cancel">Отмена</button>
+        <button type="submit" class="primary-button" data-action="submit">Сохранить</button>
       </menu>
     </form>
   `;
@@ -1094,10 +1094,10 @@ async function openCatalogFormDialog(entityType, seed = {}) {
         const description = String(formData.get("description") || "").trim();
         const status = String(formData.get("status") || "draft").trim().toLowerCase();
         if (!title) {
-          throw new Error("Р В РЎСџР В РЎвЂўР В Р’В»Р В Р’Вµ Р вЂ™Р’В«Р В РЎСљР В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’ВµР вЂ™Р’В» Р В РЎвЂўР В Р’В±Р РЋР РЏР В Р’В·Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰Р В Р вЂ¦Р В РЎвЂў.");
+          throw new Error("Поле «Название» обязательно.");
         }
         if (!key) {
-          throw new Error("Р В РЎСџР В РЎвЂўР В Р’В»Р В Р’Вµ Р вЂ™Р’В«Р В РЎв„ўР В Р’В»Р РЋР вЂ№Р РЋРІР‚РЋР вЂ™Р’В» Р В РЎвЂўР В Р’В±Р РЋР РЏР В Р’В·Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰Р В Р вЂ¦Р В РЎвЂў.");
+          throw new Error("Поле «Ключ» обязательно.");
         }
         const advanced = parseCatalogAdvancedJson(formData.get("advanced_config"));
         const payload = { title, key, description, status, config: advanced };
@@ -1140,7 +1140,7 @@ async function loadCatalog(entityType = activeCatalogEntity) {
   const response = await apiFetch(catalogEndpoint(entityType));
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ catalog."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить catalog."));
     return;
   }
   activeCatalogAuditEntityType = "";
@@ -1167,7 +1167,7 @@ const catalogModal = createModalController({
 
 function formatJsonForDisplay(value) {
   if (value === null || value === undefined) {
-    return "Р Р†Р вЂљРІР‚Сњ";
+    return "—";
   }
   if (typeof value === "string") {
     try {
@@ -1213,7 +1213,7 @@ function parseJsonConfig(rawText) {
     const source = String(rawText || "");
     const match = /position\s+(\d+)/i.exec(String(error?.message || ""));
     if (!match) {
-      return { ok: false, message: "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР вЂљР В Р’В°Р В Р’В·Р В РЎвЂўР В Р’В±Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р РЋР Р‰ JSON. Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР РЋР Р‰Р РЋРІР‚С™Р В Р’Вµ Р РЋР С“Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°Р В РЎвЂќР РЋР С“Р В РЎвЂР РЋР С“." };
+      return { ok: false, message: "Не удалось разобрать JSON. Проверьте синтаксис." };
     }
     const index = Number(match[1]);
     const boundedIndex = Number.isFinite(index) ? Math.max(0, Math.min(index, source.length)) : 0;
@@ -1222,14 +1222,14 @@ function parseJsonConfig(rawText) {
     const column = boundedIndex - (before.lastIndexOf("\n") + 1) + 1;
     return {
       ok: false,
-      message: `Р В РЎСљР В Р’ВµР В РЎвЂќР В РЎвЂўР РЋР вЂљР РЋР вЂљР В Р’ВµР В РЎвЂќР РЋРІР‚С™Р В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ JSON: Р В РЎвЂўР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В Р’В° Р В Р вЂ¦Р В Р’В° Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В Р’Вµ ${line}, Р В РЎвЂ”Р В РЎвЂўР В Р’В·Р В РЎвЂР РЋРІР‚В Р В РЎвЂР РЋР РЏ ${column}.`,
+      message: `Некорректный JSON: ошибка на строке ${line}, позиция ${column}.`,
     };
   }
 }
 
 function resetCatalogModalState() {
   pendingCatalogContext = null;
-  if (catalogModalTitle) catalogModalTitle.textContent = "Р В Р’В Р В Р’ВµР В РўвЂР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ Р В РЎвЂќР В Р’В°Р РЋРІР‚С™Р В Р’В°Р В Р’В»Р В РЎвЂўР В РЎвЂ“Р В Р’В°";
+  if (catalogModalTitle) catalogModalTitle.textContent = "Редактирование каталога";
   if (catalogTitleInput) {
     catalogTitleInput.value = "";
     catalogTitleInput.disabled = false;
@@ -1242,14 +1242,14 @@ function resetCatalogModalState() {
     catalogJsonError.textContent = "";
     catalogJsonError.hidden = true;
   }
-  if (catalogPublishedHost) catalogPublishedHost.textContent = "Р Р†Р вЂљРІР‚Сњ";
-  if (catalogDraftHost) catalogDraftHost.textContent = "Р Р†Р вЂљРІР‚Сњ";
+  if (catalogPublishedHost) catalogPublishedHost.textContent = "—";
+  if (catalogDraftHost) catalogDraftHost.textContent = "—";
   if (catalogSaveButton) {
     catalogSaveButton.hidden = false;
     catalogSaveButton.disabled = false;
-    catalogSaveButton.textContent = "Р В Р Р‹Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰";
+    catalogSaveButton.textContent = "Сохранить";
   }
-  if (catalogCancelButton) catalogCancelButton.textContent = "Р В РІР‚вЂќР В Р’В°Р В РЎвЂќР РЋР вЂљР РЋРІР‚в„–Р РЋРІР‚С™Р РЋР Р‰";
+  if (catalogCancelButton) catalogCancelButton.textContent = "Закрыть";
   setStateIdle(catalogModalErrors);
 }
 
@@ -1277,8 +1277,8 @@ function openCatalogModal(config) {
     {};
 
   if (catalogModalTitle) {
-    const baseTitle = mode === "view" ? "Р В РЎСџР РЋР вЂљР В РЎвЂўР РЋР С“Р В РЎВР В РЎвЂўР РЋРІР‚С™Р РЋР вЂљ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°" : (config?.isCreate ? "Р В Р Р‹Р В РЎвЂўР В Р’В·Р В РўвЂР В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°" : "Р В Р’В Р В Р’ВµР В РўвЂР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°");
-    catalogModalTitle.textContent = `${baseTitle}: ${String(item.title || "").trim() || "Р В Р’В±Р В Р’ВµР В Р’В· Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ"}`;
+    const baseTitle = mode === "view" ? "Просмотр элемента" : (config?.isCreate ? "Создание элемента" : "Редактирование элемента");
+    catalogModalTitle.textContent = `${baseTitle}: ${String(item.title || "").trim() || "без названия"}`;
   }
   if (catalogTitleInput) {
     catalogTitleInput.value = String(item.title || "");
@@ -1290,12 +1290,12 @@ function openCatalogModal(config) {
   }
   if (catalogPublishedHost) {
     catalogPublishedHost.textContent = formatJsonForDisplay(
-      extractVersionPayload(publishedVersion) ?? "Р В РЎвЂєР В РЎвЂ”Р РЋРЎвЂњР В Р’В±Р В Р’В»Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р В Р’В°Р РЋР РЏ Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋР С“Р В РЎвЂР РЋР РЏ Р В РЎвЂўР РЋРІР‚С™Р РЋР С“Р РЋРЎвЂњР РЋРІР‚С™Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р РЋРЎвЂњР В Р’ВµР РЋРІР‚С™."
+      extractVersionPayload(publishedVersion) ?? "Опубликованная версия отсутствует."
     );
   }
   if (catalogDraftHost) {
     catalogDraftHost.textContent = formatJsonForDisplay(
-      extractVersionPayload(draftVersion) ?? "Р В Р’В§Р В Р’ВµР РЋР вЂљР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂР В РЎвЂќ Р В РЎвЂўР РЋРІР‚С™Р РЋР С“Р РЋРЎвЂњР РЋРІР‚С™Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р РЋРЎвЂњР В Р’ВµР РЋРІР‚С™."
+      extractVersionPayload(draftVersion) ?? "Черновик отсутствует."
     );
   }
   if (catalogSaveButton) {
@@ -1303,7 +1303,7 @@ function openCatalogModal(config) {
     catalogSaveButton.disabled = false;
   }
   if (catalogCancelButton) {
-    catalogCancelButton.textContent = mode === "view" ? "Р В РІР‚вЂќР В Р’В°Р В РЎвЂќР РЋР вЂљР РЋРІР‚в„–Р РЋРІР‚С™Р РЋР Р‰" : "Р В РЎвЂєР РЋРІР‚С™Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В°";
+    catalogCancelButton.textContent = mode === "view" ? "Закрыть" : "Отмена";
   }
   catalogModal.open();
 }
@@ -1316,7 +1316,7 @@ async function submitCatalogModal() {
   const title = String(catalogTitleInput?.value || "").trim();
   const rawJson = String(catalogJsonInput?.value || "").trim();
   if (!title) {
-    setStateError(catalogModalErrors, "Р В Р в‚¬Р В РЎвЂќР В Р’В°Р В Р’В¶Р В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°.");
+    setStateError(catalogModalErrors, "Укажите название элемента.");
     return;
   }
   const parsed = parseJsonConfig(rawJson || "{}");
@@ -1346,15 +1346,15 @@ async function submitCatalogModal() {
     const response = await apiFetch(url, { method, body });
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(catalogModalErrors, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™."));
+      setStateError(catalogModalErrors, formatHttpError(response, payload, "Не удалось сохранить элемент."));
       if (catalogSaveButton) catalogSaveButton.disabled = false;
       return;
     }
-    showMessage(isCreate ? "Р В Р’В­Р В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™ Р РЋР С“Р В РЎвЂўР В Р’В·Р В РўвЂР В Р’В°Р В Р вЂ¦." : "Р В Р’В­Р В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™ Р В РЎвЂўР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦.");
+    showMessage(isCreate ? "Элемент создан." : "Элемент обновлен.");
     closeCatalogModal();
     await loadCatalog(activeCatalogEntity);
   } catch (error) {
-    setStateError(catalogModalErrors, error?.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™.");
+    setStateError(catalogModalErrors, error?.message || "Не удалось сохранить элемент.");
     if (catalogSaveButton) catalogSaveButton.disabled = false;
   }
 }
@@ -1386,7 +1386,7 @@ function setCollapsibleExpanded(button, expanded, state = null) {
   }
 
   button.setAttribute("aria-expanded", expanded ? "true" : "false");
-  button.textContent = expanded ? "Р В Р Р‹Р В РЎвЂќР РЋР вЂљР РЋРІР‚в„–Р РЋРІР‚С™Р РЋР Р‰" : "Р В РЎСџР В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰";
+  button.textContent = expanded ? "Скрыть" : "Показать";
   content.hidden = !expanded;
   section.dataset.collapsibleOpen = expanded ? "true" : "false";
 
@@ -1425,42 +1425,42 @@ function initCollapsibles() {
 function describeApiPath(path) {
   const normalized = String(path || "").trim();
   if (!normalized) {
-    return "Р В Р Р‹Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В Р’ВµР В РЎВР В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР РЋР С“ Р В Р’В±Р В Р’ВµР В Р’В· Р РЋРЎвЂњР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р В РЎвЂўР В РЎвЂ“Р В РЎвЂў Р В РЎвЂ”Р РЋРЎвЂњР РЋРІР‚С™Р В РЎвЂ.";
+    return "Системный запрос без указанного пути.";
   }
 
   const patterns = [
-    [/^\/api\/admin\/overview$/, "Р В РІР‚вЂќР В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂќР В Р’В° Р В Р вЂ Р РЋР С“Р В Р’ВµР В РІвЂћвЂ“ Р В Р’В°Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦-Р В РЎвЂ”Р В Р’В°Р В Р вЂ¦Р В Р’ВµР В Р’В»Р В РЎвЂ: Р РЋР С“Р В Р вЂ Р В РЎвЂўР В РўвЂР В РЎвЂќР В Р’В°, Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р В РЎвЂ, Р РЋР С“Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚С™Р В РЎвЂР РЋР РЏ Р В РЎвЂ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂР В РЎвЂќР В Р’В°."],
-    [/^\/api\/admin\/users\.csv$/, "Р В РІР‚в„ўР РЋРІР‚в„–Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂќР В Р’В° CSV Р РЋР С“Р В РЎвЂў Р РЋР С“Р В РЎвЂ”Р В РЎвЂР РЋР С“Р В РЎвЂќР В РЎвЂўР В РЎВ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р В Р’ВµР В РІвЂћвЂ“ Р В РЎвЂ”Р В РЎвЂў Р РЋРІР‚С™Р В Р’ВµР В РЎвЂќР РЋРЎвЂњР РЋРІР‚В°Р В РЎвЂР В РЎВ Р РЋРІР‚С›Р В РЎвЂР В Р’В»Р РЋР Р‰Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р В РЎВ."],
-    [/^\/api\/admin\/events\.csv$/, "Р В РІР‚в„ўР РЋРІР‚в„–Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂќР В Р’В° CSV Р РЋР С“Р В РЎвЂў Р РЋР С“Р В РЎвЂ”Р В РЎвЂР РЋР С“Р В РЎвЂќР В РЎвЂўР В РЎВ Р РЋР С“Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚С™Р В РЎвЂР В РІвЂћвЂ“ Р В РЎвЂ”Р В РЎвЂў Р РЋРІР‚С™Р В Р’ВµР В РЎвЂќР РЋРЎвЂњР РЋРІР‚В°Р В РЎвЂР В РЎВ Р РЋРІР‚С›Р В РЎвЂР В Р’В»Р РЋР Р‰Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р В РЎВ."],
-    [/^\/api\/admin\/users\/[^/]+\/verify-email$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р вЂ Р РЋР вЂљР РЋРЎвЂњР РЋРІР‚РЋР В Р вЂ¦Р РЋРЎвЂњР РЋР вЂ№ Р В РЎвЂ”Р В РЎвЂўР В РўвЂР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋР вЂљР В Р’В¶Р В РўвЂР В Р’В°Р В Р’ВµР РЋРІР‚С™ email Р В Р вЂ Р РЋРІР‚в„–Р В Р’В±Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р В РЎвЂўР В РЎвЂ“Р В РЎвЂў Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ."],
-    [/^\/api\/admin\/users\/[^/]+\/block$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂР РЋР вЂљР РЋРЎвЂњР В Р’ВµР РЋРІР‚С™ Р В РўвЂР В РЎвЂўР РЋР С“Р РЋРІР‚С™Р РЋРЎвЂњР В РЎвЂ” Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ Р В РЎвЂќ Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™Р РЋРЎвЂњ."],
-    [/^\/api\/admin\/users\/[^/]+\/unblock$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР С“Р В Р вЂ¦Р В РЎвЂР В РЎВР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В РЎвЂќР РЋРЎвЂњ Р В РЎвЂ Р В Р вЂ Р В РЎвЂўР В Р’В·Р В Р вЂ Р РЋР вЂљР В Р’В°Р РЋРІР‚В°Р В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РўвЂР В РЎвЂўР РЋР С“Р РЋРІР‚С™Р РЋРЎвЂњР В РЎвЂ” Р В РЎвЂќ Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™Р РЋРЎвЂњ."],
-    [/^\/api\/admin\/users\/[^/]+\/grant-tester$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р вЂ Р РЋРІР‚в„–Р В РўвЂР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР вЂ№ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“ Р РЋРІР‚С™Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљР В Р’В°."],
-    [/^\/api\/admin\/users\/[^/]+\/revoke-tester$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР С“Р В Р вЂ¦Р В РЎвЂР В РЎВР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р РЋРЎвЂњ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“ Р РЋРІР‚С™Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљР В Р’В°."],
-    [/^\/api\/admin\/users\/[^/]+\/grant-gka$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР РЋР С“Р В Р вЂ Р В Р’В°Р В РЎвЂР В Р вЂ Р В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР вЂ№ Р РЋРІР‚С™Р В РЎвЂР В РЎвЂ” Р В РІР‚СљР В РЎв„ўР В РЎвЂ™-Р В РІР‚вЂќР В РІР‚СљР В РЎв„ўР В РЎвЂ™."],
-    [/^\/api\/admin\/users\/[^/]+\/revoke-gka$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР С“Р В Р вЂ¦Р В РЎвЂР В РЎВР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р РЋРЎвЂњ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ Р РЋРІР‚С™Р В РЎвЂР В РЎвЂ” Р В РІР‚СљР В РЎв„ўР В РЎвЂ™-Р В РІР‚вЂќР В РІР‚СљР В РЎв„ўР В РЎвЂ™."],
-    [/^\/api\/admin\/users\/[^/]+\/email$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р вЂ Р РЋР вЂљР РЋРЎвЂњР РЋРІР‚РЋР В Р вЂ¦Р РЋРЎвЂњР РЋР вЂ№ Р В РЎВР В Р’ВµР В Р вЂ¦Р РЋР РЏР В Р’ВµР РЋРІР‚С™ email Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ."],
-    [/^\/api\/admin\/users\/[^/]+\/reset-password$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р вЂ Р РЋР вЂљР РЋРЎвЂњР РЋРІР‚РЋР В Р вЂ¦Р РЋРЎвЂњР РЋР вЂ№ Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В РЎвЂ”Р В Р’В°Р РЋР вЂљР В РЎвЂўР В Р’В»Р РЋР Р‰ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР вЂ№."],
-    [/^\/api\/admin\/users\/[^/]+\/deactivate$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В РЎВР РЋР РЏР В РЎвЂ“Р В РЎвЂќР В РЎвЂў Р В РўвЂР В Р’ВµР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В РЎвЂР РЋР вЂљР РЋРЎвЂњР В Р’ВµР РЋРІР‚С™ Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ."],
-    [/^\/api\/admin\/users\/[^/]+\/reactivate$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР С“Р В Р вЂ¦Р В РЎвЂР В РЎВР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РўвЂР В Р’ВµР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№ Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°."],
-    [/^\/api\/admin\/users\/[^/]+\/daily-quota$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р РЋР С“Р РЋРЎвЂњР РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В Р’В»Р В РЎвЂР В РЎВР В РЎвЂР РЋРІР‚С™ API Р В РўвЂР В Р’В»Р РЋР РЏ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ."],
-    [/^\/api\/admin\/users\/bulk-actions$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р В РЎвЂќР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РЎВР В Р’В°Р РЋР С“Р РЋР С“Р В РЎвЂўР В Р вЂ Р РЋРЎвЂњР РЋР вЂ№ Р В РЎвЂўР В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№ Р В РЎвЂ”Р В РЎвЂў Р В Р вЂ Р РЋРІР‚в„–Р В Р’В±Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В РЎВ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏР В РЎВ."],
-    [/^\/api\/admin\/tasks\/[^/]+$/, "Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В° Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“Р В Р’В° Р РЋРІР‚С›Р В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂўР В РІвЂћвЂ“ Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р РЋРІР‚РЋР В РЎвЂ Р В Р’В°Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦-Р В РЎвЂўР В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР В РІвЂћвЂ“."],
-    [/^\/api\/complaint-draft$/, "Р В Р Р‹Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р’Вµ, Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂќР В Р’В° Р В РЎвЂР В Р’В»Р В РЎвЂ Р В РЎвЂўР РЋРІР‚РЋР В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂќР В Р’В° Р РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂР В РЎвЂќР В Р’В° Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р РЋРІР‚в„– Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ."],
-    [/^\/api\/generate$/, "Р В РІР‚СљР В Р’ВµР В Р вЂ¦Р В Р’ВµР РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР РЏ Р В РЎвЂР РЋРІР‚С™Р В РЎвЂўР В РЎвЂ“Р В РЎвЂўР В Р вЂ Р В РЎвЂўР В РІвЂћвЂ“ Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р РЋРІР‚в„– Р В РЎвЂ”Р В РЎвЂў Р В Р’В·Р В Р’В°Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“ Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’Вµ."],
-    [/^\/api\/generate-rehab$/, "Р В РІР‚СљР В Р’ВµР В Р вЂ¦Р В Р’ВµР РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР РЏ Р В Р’В·Р В Р’В°Р РЋР РЏР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ Р В Р вЂ¦Р В Р’В° Р РЋР вЂљР В Р’ВµР В Р’В°Р В Р’В±Р В РЎвЂР В Р’В»Р В РЎвЂР РЋРІР‚С™Р В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№."],
-    [/^\/api\/ai\/suggest$/, "AI Р РЋРЎвЂњР В Р’В»Р РЋРЎвЂњР РЋРІР‚РЋР РЋРІвЂљВ¬Р В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РЎвЂ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР В РЎвЂ”Р В РЎвЂР РЋР С“Р РЋРІР‚в„–Р В Р вЂ Р В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РЎвЂўР В РЎвЂ”Р В РЎвЂР РЋР С“Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–."],
-    [/^\/api\/ai\/extract-principal$/, "AI Р РЋР вЂљР В Р’В°Р РЋР С“Р В РЎвЂ”Р В РЎвЂўР В Р’В·Р В Р вЂ¦Р В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РўвЂР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р В РўвЂР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ Р РЋР С“ Р В РЎвЂР В Р’В·Р В РЎвЂўР В Р’В±Р РЋР вЂљР В Р’В°Р В Р’В¶Р В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ Р В РўвЂР В РЎвЂўР В РЎвЂќР РЋРЎвЂњР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°."],
-    [/^\/api\/auth\/login$/, "Р В РІР‚в„ўР РЋРІР‚В¦Р В РЎвЂўР В РўвЂ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ Р В Р вЂ  Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™."],
-    [/^\/api\/auth\/register$/, "Р В Р’В Р В Р’ВµР В РЎвЂ“Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР РЏ Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂўР В РЎвЂ“Р В РЎвЂў Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°."],
-    [/^\/api\/auth\/logout$/, "Р В РІР‚в„ўР РЋРІР‚в„–Р РЋРІР‚В¦Р В РЎвЂўР В РўвЂ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ Р В РЎвЂР В Р’В· Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°."],
-    [/^\/api\/auth\/forgot-password$/, "Р В РІР‚вЂќР В Р’В°Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р В РЎвЂќ Р В Р вЂ Р В РЎвЂўР РЋР С“Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ Р В РЎвЂ”Р В Р’В°Р РЋР вЂљР В РЎвЂўР В Р’В»Р РЋР РЏ."],
-    [/^\/api\/auth\/reset-password$/, "Р В Р Р‹Р В Р’В±Р РЋР вЂљР В РЎвЂўР РЋР С“ Р В РЎвЂ”Р В Р’В°Р РЋР вЂљР В РЎвЂўР В Р’В»Р РЋР РЏ Р В РЎвЂ”Р В РЎвЂў Р РЋРІР‚С™Р В РЎвЂўР В РЎвЂќР В Р’ВµР В Р вЂ¦Р РЋРЎвЂњ Р В Р вЂ Р В РЎвЂўР РЋР С“Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ."],
-    [/^\/api\/profile$/, "Р В РІР‚вЂќР В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂќР В Р’В° Р В РЎвЂР В Р’В»Р В РЎвЂ Р РЋР С“Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р’Вµ Р В РўвЂР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р РЋРІР‚В¦ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР РЋРІР‚С›Р В РЎвЂР В Р’В»Р РЋР РЏ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ."],
-    [/^\/api\/exam-import\/sync$/, "Р В Р’ВР В РЎВР В РЎвЂ”Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™ Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р РЋРІР‚в„–Р РЋРІР‚В¦ Р В РЎвЂўР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р В РЎвЂўР В Р вЂ  Р В Р вЂ¦Р В Р’В° Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚в„– Р В РЎвЂР В Р’В· Google Sheets."],
-    [/^\/api\/exam-import\/score$/, "Р В РЎС™Р В Р’В°Р РЋР С“Р РЋР С“Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋР РЏ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В° Р В РЎвЂР В РЎВР В РЎвЂ”Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р РЋРІР‚В¦ Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В°Р РЋРІР‚В Р В РЎвЂР В РЎвЂўР В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р РЋРІР‚В¦ Р В РЎвЂўР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р В РЎвЂўР В Р вЂ ."],
-    [/^\/api\/exam-import\/rows\/\d+$/, "Р В РЎСџР РЋР вЂљР В РЎвЂўР РЋР С“Р В РЎВР В РЎвЂўР РЋРІР‚С™Р РЋР вЂљ Р В РўвЂР В Р’ВµР РЋРІР‚С™Р В Р’В°Р В Р’В»Р В Р’ВµР В РІвЂћвЂ“ Р В РЎвЂ”Р В РЎвЂў Р В РЎвЂўР В РўвЂР В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“ Р В РЎвЂР В РЎВР В РЎвЂ”Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“ Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В Р’Вµ Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В°."],
-    [/^\/api\/exam-import\/rows\/\d+\/score$/, "Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В° Р В РЎвЂ Р В РЎвЂўР РЋРІР‚В Р В Р’ВµР В Р вЂ¦Р В РЎвЂќР В Р’В° Р В РЎвЂўР В РўвЂР В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“ Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂќР РЋР вЂљР В Р’ВµР РЋРІР‚С™Р В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“ Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В РЎвЂ Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В°."],
+    [/^\/api\/admin\/overview$/, "Загрузка всей админ-панели: сводка, пользователи, события и статистика."],
+    [/^\/api\/admin\/users\.csv$/, "Выгрузка CSV со списком пользователей по текущим фильтрам."],
+    [/^\/api\/admin\/events\.csv$/, "Выгрузка CSV со списком событий по текущим фильтрам."],
+    [/^\/api\/admin\/users\/[^/]+\/verify-email$/, "Администратор вручную подтверждает email выбранного пользователя."],
+    [/^\/api\/admin\/users\/[^/]+\/block$/, "Администратор блокирует доступ пользователя к аккаунту."],
+    [/^\/api\/admin\/users\/[^/]+\/unblock$/, "Администратор снимает блокировку и возвращает доступ к аккаунту."],
+    [/^\/api\/admin\/users\/[^/]+\/grant-tester$/, "Администратор выдает пользователю статус тестера."],
+    [/^\/api\/admin\/users\/[^/]+\/revoke-tester$/, "Администратор снимает у пользователя статус тестера."],
+    [/^\/api\/admin\/users\/[^/]+\/grant-gka$/, "Администратор присваивает пользователю тип ГКА-ЗГКА."],
+    [/^\/api\/admin\/users\/[^/]+\/revoke-gka$/, "Администратор снимает у пользователя тип ГКА-ЗГКА."],
+    [/^\/api\/admin\/users\/[^/]+\/email$/, "Администратор вручную меняет email пользователя."],
+    [/^\/api\/admin\/users\/[^/]+\/reset-password$/, "Администратор вручную задает новый пароль пользователю."],
+    [/^\/api\/admin\/users\/[^/]+\/deactivate$/, "Администратор мягко деактивирует аккаунт пользователя."],
+    [/^\/api\/admin\/users\/[^/]+\/reactivate$/, "Администратор снимает деактивацию аккаунта."],
+    [/^\/api\/admin\/users\/[^/]+\/daily-quota$/, "Администратор задает суточный лимит API для пользователя."],
+    [/^\/api\/admin\/users\/bulk-actions$/, "Администратор запускает массовую операцию по выбранным пользователям."],
+    [/^\/api\/admin\/tasks\/[^/]+$/, "Проверка статуса фоновой задачи админ-операций."],
+    [/^\/api\/complaint-draft$/, "Сохранение, загрузка или очистка черновика жалобы пользователя."],
+    [/^\/api\/generate$/, "Генерация итоговой жалобы по заполненной форме."],
+    [/^\/api\/generate-rehab$/, "Генерация заявления на реабилитацию."],
+    [/^\/api\/ai\/suggest$/, "AI улучшает и переписывает описание жалобы."],
+    [/^\/api\/ai\/extract-principal$/, "AI распознает данные доверителя с изображения документа."],
+    [/^\/api\/auth\/login$/, "Вход пользователя в аккаунт."],
+    [/^\/api\/auth\/register$/, "Регистрация нового аккаунта."],
+    [/^\/api\/auth\/logout$/, "Выход пользователя из аккаунта."],
+    [/^\/api\/auth\/forgot-password$/, "Запуск восстановления пароля."],
+    [/^\/api\/auth\/reset-password$/, "Сброс пароля по токену восстановления."],
+    [/^\/api\/profile$/, "Загрузка или сохранение данных профиля пользователя."],
+    [/^\/api\/exam-import\/sync$/, "Импорт новых ответов на экзамены из Google Sheets."],
+    [/^\/api\/exam-import\/score$/, "Массовая проверка импортированных экзаменационных ответов."],
+    [/^\/api\/exam-import\/rows\/\d+$/, "Просмотр деталей по одной импортированной строке экзамена."],
+    [/^\/api\/exam-import\/rows\/\d+\/score$/, "Проверка и оценка одной конкретной строки экзамена."],
   ];
 
   for (const [pattern, description] of patterns) {
@@ -1469,37 +1469,37 @@ function describeApiPath(path) {
     }
   }
 
-  return "Р В РЎС›Р В Р’ВµР РЋРІР‚В¦Р В Р вЂ¦Р В РЎвЂР РЋРІР‚РЋР В Р’ВµР РЋР С“Р В РЎвЂќР В РЎвЂР В РІвЂћвЂ“ API-Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР РЋР С“. Р В РІР‚СњР В Р’В»Р РЋР РЏ Р РЋР РЉР РЋРІР‚С™Р В РЎвЂўР В РЎвЂ“Р В РЎвЂў Р В РЎвЂ”Р РЋРЎвЂњР РЋРІР‚С™Р В РЎвЂ Р В Р’ВµР РЋРІР‚В°Р В Р’Вµ Р В Р вЂ¦Р В Р’Вµ Р В РўвЂР В РЎвЂўР В Р’В±Р В Р’В°Р В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В РЎвЂў Р РЋРІР‚РЋР В Р’ВµР В Р’В»Р В РЎвЂўР В Р вЂ Р В Р’ВµР В РЎвЂќР В РЎвЂўР РЋРІР‚РЋР В РЎвЂР РЋРІР‚С™Р В Р’В°Р В Р’ВµР В РЎВР В РЎвЂўР В Р’Вµ Р В РЎвЂўР В РЎвЂ”Р В РЎвЂР РЋР С“Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ.";
+  return "Технический API-запрос. Для этого пути еще не добавлено человекочитаемое описание.";
 }
 
 function describeEventType(eventType) {
   const normalized = String(eventType || "").trim().toLowerCase();
   const descriptions = {
-    api_request: "Р В РЎвЂєР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚РЋР В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР РЋР С“ Р В РЎвЂќ API Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В Р’В»Р В РЎвЂўР В Р’В¶Р В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ.",
-    complaint_generated: "Р В РЎСџР В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰ Р РЋР С“Р В РЎвЂ“Р В Р’ВµР В Р вЂ¦Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р’В» Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р РЋРЎвЂњ.",
-    rehab_generated: "Р В РЎСџР В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰ Р РЋР С“Р В РЎвЂ“Р В Р’ВµР В Р вЂ¦Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р’В» Р В Р’В·Р В Р’В°Р РЋР РЏР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р’Вµ Р В Р вЂ¦Р В Р’В° Р РЋР вЂљР В Р’ВµР В Р’В°Р В Р’В±Р В РЎвЂР В Р’В»Р В РЎвЂР РЋРІР‚С™Р В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№.",
-    complaint_draft_saved: "Р В РЎСџР В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰ Р РЋР С“Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’В» Р РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂР В РЎвЂќ Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–.",
-    complaint_draft_cleared: "Р В РЎСџР В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰ Р В РЎвЂўР РЋРІР‚РЋР В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂР В Р’В» Р РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂР В РЎвЂќ Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–.",
-    ai_suggest: "AI Р В РЎвЂўР В Р’В±Р РЋР вЂљР В Р’В°Р В Р’В±Р В РЎвЂўР РЋРІР‚С™Р В Р’В°Р В Р’В» Р В РЎвЂ Р РЋРЎвЂњР В Р’В»Р РЋРЎвЂњР РЋРІР‚РЋР РЋРІвЂљВ¬Р В РЎвЂР В Р’В» Р РЋРІР‚С™Р В Р’ВµР В РЎвЂќР РЋР С“Р РЋРІР‚С™ Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–.",
-    ai_extract_principal: "AI Р РЋР вЂљР В Р’В°Р РЋР С“Р В РЎвЂ”Р В РЎвЂўР В Р’В·Р В Р вЂ¦Р В Р’В°Р В Р’В» Р В РўвЂР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р РЋР С“ Р В РўвЂР В РЎвЂўР В РЎвЂќР РЋРЎвЂњР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°.",
-    ai_exam_scoring: "AI Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂР В Р’В» Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В°Р РЋРІР‚В Р В РЎвЂР В РЎвЂўР В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р В РЎвЂўР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р РЋРІР‚в„– Р В РЎвЂ Р В Р вЂ Р В Р’ВµР РЋР вЂљР В Р вЂ¦Р РЋРЎвЂњР В Р’В» Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂР В РЎвЂќР РЋРЎвЂњ Р В РЎвЂ”Р В РЎвЂў cache, Р РЋР РЉР В Р вЂ Р РЋР вЂљР В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂР В РЎвЂќР В Р’В°Р В РЎВ Р В РЎвЂ LLM.",
-    exam_import_sync_error: "Р В Р’ВР В РЎВР В РЎвЂ”Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™ Р В РЎвЂР В Р’В· Google Sheets Р В Р’В·Р В Р’В°Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРІвЂљВ¬Р В РЎвЂР В Р’В»Р РЋР С“Р РЋР РЏ Р В РЎвЂўР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В РЎвЂўР В РІвЂћвЂ“.",
-    exam_import_score_failures: "Р В РІР‚в„ўР В РЎвЂў Р В Р вЂ Р РЋР вЂљР В Р’ВµР В РЎВР РЋР РЏ Р В РЎВР В Р’В°Р РЋР С“Р РЋР С“Р В РЎвЂўР В Р вЂ Р В РЎвЂўР В РІвЂћвЂ“ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В РЎвЂ Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р В РЎвЂўР В Р вЂ  Р РЋРІР‚РЋР В Р’В°Р РЋР С“Р РЋРІР‚С™Р РЋР Р‰ Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќ Р В Р вЂ¦Р В Р’Вµ Р В РЎвЂўР В Р’В±Р РЋР вЂљР В Р’В°Р В Р’В±Р В РЎвЂўР РЋРІР‚С™Р В Р’В°Р В Р’В»Р В Р’В°Р РЋР С“Р РЋР Р‰.",
-    exam_import_row_score_error: "Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В° Р В РЎвЂўР В РўвЂР В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“ Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В РЎвЂ Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В° Р В Р’В·Р В Р’В°Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРІвЂљВ¬Р В РЎвЂР В Р’В»Р В Р’В°Р РЋР С“Р РЋР Р‰ Р В РЎвЂўР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В РЎвЂўР В РІвЂћвЂ“.",
-    admin_verify_email: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В РЎвЂ”Р В РЎвЂўР В РўвЂР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋР вЂљР В РўвЂР В РЎвЂР В Р’В» email Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ.",
-    admin_block_user: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р’В·Р В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р’В» Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ.",
-    admin_unblock_user: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР вЂљР В Р’В°Р В Р’В·Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р’В» Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ.",
-    admin_grant_tester: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р вЂ Р РЋРІР‚в„–Р В РўвЂР В Р’В°Р В Р’В» Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“ Р РЋРІР‚С™Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљР В Р’В°.",
-    admin_revoke_tester: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР С“Р В Р вЂ¦Р РЋР РЏР В Р’В» Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“ Р РЋРІР‚С™Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљР В Р’В°.",
-    admin_grant_gka: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР РЋР С“Р В Р вЂ Р В РЎвЂўР В РЎвЂР В Р’В» Р РЋРІР‚С™Р В РЎвЂР В РЎвЂ” Р В РІР‚СљР В РЎв„ўР В РЎвЂ™-Р В РІР‚вЂќР В РІР‚СљР В РЎв„ўР В РЎвЂ™.",
-    admin_revoke_gka: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР С“Р В Р вЂ¦Р РЋР РЏР В Р’В» Р РЋРІР‚С™Р В РЎвЂР В РЎвЂ” Р В РІР‚СљР В РЎв„ўР В РЎвЂ™-Р В РІР‚вЂќР В РІР‚СљР В РЎв„ўР В РЎвЂ™.",
-    admin_update_email: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В РЎвЂР В Р’В·Р В РЎВР В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р’В» email Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ.",
-    admin_reset_password: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р В Р’В» Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В РЎвЂ”Р В Р’В°Р РЋР вЂљР В РЎвЂўР В Р’В»Р РЋР Р‰ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР вЂ№.",
-    admin_deactivate_user: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В РўвЂР В Р’ВµР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р’В» Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ.",
-    admin_reactivate_user: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР С“Р В Р вЂ¦Р РЋР РЏР В Р’В» Р В РўвЂР В Р’ВµР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№ Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°.",
-    admin_set_daily_quota: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В РЎвЂўР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂР В Р’В» Р РЋР С“Р РЋРЎвЂњР РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р РЋРЎвЂњР РЋР вЂ№ Р В РЎвЂќР В Р вЂ Р В РЎвЂўР РЋРІР‚С™Р РЋРЎвЂњ API Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ.",
+    api_request: "Обычный запрос к API приложения.",
+    complaint_generated: "Пользователь сгенерировал жалобу.",
+    rehab_generated: "Пользователь сгенерировал заявление на реабилитацию.",
+    complaint_draft_saved: "Пользователь сохранил черновик жалобы.",
+    complaint_draft_cleared: "Пользователь очистил черновик жалобы.",
+    ai_suggest: "AI обработал и улучшил текст жалобы.",
+    ai_extract_principal: "AI распознал данные с документа.",
+    ai_exam_scoring: "AI проверил экзаменационные ответы и вернул статистику по cache, эвристикам и LLM.",
+    exam_import_sync_error: "Импорт из Google Sheets завершился ошибкой.",
+    exam_import_score_failures: "Во время массовой проверки экзаменов часть строк не обработалась.",
+    exam_import_row_score_error: "Проверка одной строки экзамена завершилась ошибкой.",
+    admin_verify_email: "Администратор подтвердил email пользователя.",
+    admin_block_user: "Администратор заблокировал пользователя.",
+    admin_unblock_user: "Администратор разблокировал пользователя.",
+    admin_grant_tester: "Администратор выдал статус тестера.",
+    admin_revoke_tester: "Администратор снял статус тестера.",
+    admin_grant_gka: "Администратор присвоил тип ГКА-ЗГКА.",
+    admin_revoke_gka: "Администратор снял тип ГКА-ЗГКА.",
+    admin_update_email: "Администратор изменил email пользователя.",
+    admin_reset_password: "Администратор задал новый пароль пользователю.",
+    admin_deactivate_user: "Администратор деактивировал аккаунт пользователя.",
+    admin_reactivate_user: "Администратор снял деактивацию аккаунта.",
+    admin_set_daily_quota: "Администратор обновил суточную квоту API пользователя.",
   };
-  return descriptions[normalized] || "Р В Р Р‹Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В Р’ВµР В РЎВР В Р вЂ¦Р В РЎвЂўР В Р’Вµ Р РЋР С“Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚С™Р В РЎвЂР В Р’Вµ Р В Р’В±Р В Р’ВµР В Р’В· Р В РўвЂР В РЎвЂўР В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰Р В Р вЂ¦Р В РЎвЂўР В РЎвЂ“Р В РЎвЂў Р В РЎвЂўР В РЎвЂ”Р В РЎвЂР РЋР С“Р В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ.";
+  return descriptions[normalized] || "Системное событие без дополнительного описания.";
 }
 
 function showMessage(text) {
@@ -1579,16 +1579,16 @@ function renderBandBadge(band) {
 
 function riskLabel(user) {
   const riskScore = Number(user.risk_score || 0);
-  if (riskScore >= 4) return renderBadge("Р В Р’В Р В РЎвЂР РЋР С“Р В РЎвЂќ: Р В Р вЂ Р РЋРІР‚в„–Р РЋР С“Р В РЎвЂўР В РЎвЂќР В РЎвЂР В РІвЂћвЂ“", "danger");
-  if (riskScore >= 2) return renderBadge("Р В Р’В Р В РЎвЂР РЋР С“Р В РЎвЂќ: Р РЋР С“Р РЋР вЂљР В Р’ВµР В РўвЂР В Р вЂ¦Р В РЎвЂР В РІвЂћвЂ“", "info");
-  return renderBadge("Р В Р’В Р В РЎвЂР РЋР С“Р В РЎвЂќ: Р В Р вЂ¦Р В РЎвЂР В Р’В·Р В РЎвЂќР В РЎвЂР В РІвЂћвЂ“", "success-soft");
+  if (riskScore >= 4) return renderBadge("Риск: высокий", "danger");
+  if (riskScore >= 2) return renderBadge("Риск: средний", "info");
+  return renderBadge("Р РёСЃРє: РЅРёР·РєРёР№", "success-soft");
 }
 
 function renderFilterChip(label, key) {
   return `
     <button type="button" class="admin-filter-chip" data-clear-filter="${escapeHtml(key)}">
       <span>${escapeHtml(label)}</span>
-      <span class="admin-filter-chip__close" aria-hidden="true">Р вЂњРІР‚вЂќ</span>
+      <span class="admin-filter-chip__close" aria-hidden="true">Г—</span>
     </button>
   `;
 }
@@ -1612,7 +1612,7 @@ function renderLoadingState(host, options = {}) {
 
   host.innerHTML = `
     <div class="admin-loading" aria-live="polite" aria-busy="true">
-      <p class="legal-section__description">Р В РІР‚вЂќР В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В¶Р В Р’В°Р В Р’ВµР В РЎВ Р В РўвЂР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ...</p>
+      <p class="legal-section__description">Загружаем данные...</p>
       ${lines}
     </div>
   `;
@@ -1692,13 +1692,13 @@ async function runSyntheticSuite(suite) {
     });
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, `Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р РЋРІР‚С™Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ synthetic suite ${normalizedSuite}.`));
+      setStateError(errorsHost, formatHttpError(response, payload, `Не удалось запустить synthetic suite ${normalizedSuite}.`));
       return;
     }
-    showMessage(`Synthetic suite ${normalizedSuite} Р В Р’В·Р В Р’В°Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРІвЂљВ¬Р В Р’ВµР В Р вЂ¦: ${String(payload?.status || "unknown")}.`);
+    showMessage(`Synthetic suite ${normalizedSuite} завершен: ${String(payload?.status || "unknown")}.`);
     await loadAdminOverview({ silent: true });
   } catch (error) {
-    setStateError(errorsHost, error?.message || `Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р РЋРІР‚С™Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ synthetic suite ${normalizedSuite}.`);
+    setStateError(errorsHost, error?.message || `Не удалось запустить synthetic suite ${normalizedSuite}.`);
   } finally {
     activeSyntheticSuite = "";
     await loadAdminOverview({ silent: true });
@@ -1888,23 +1888,23 @@ function renderActiveFilters(filters) {
   }
 
   const chips = [];
-  if (filters.search) chips.push(renderFilterChip(`Р В РЎСџР В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰: ${filters.search}`, "search"));
+  if (filters.search) chips.push(renderFilterChip(`Пользователь: ${filters.search}`, "search"));
   if (filters.user_sort && filters.user_sort !== "complaints") {
     const sortLabels = {
-      api_requests: "Р В Р Р‹Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В РЎвЂќР В Р’В°: API-Р В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р вЂ¦Р В РЎвЂўР РЋР С“Р РЋРІР‚С™Р РЋР Р‰",
-      last_seen: "Р В Р Р‹Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В РЎвЂќР В Р’В°: Р В РЎвЂ”Р В РЎвЂўР РЋР С“Р В Р’В»Р В Р’ВµР В РўвЂР В Р вЂ¦Р РЋР РЏР РЋР РЏ Р В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р вЂ¦Р В РЎвЂўР РЋР С“Р РЋРІР‚С™Р РЋР Р‰",
-      created_at: "Р В Р Р‹Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В РЎвЂќР В Р’В°: Р В РўвЂР В Р’В°Р РЋРІР‚С™Р В Р’В° Р РЋР вЂљР В Р’ВµР В РЎвЂ“Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР В РЎвЂ",
-      username: "Р В Р Р‹Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В РЎвЂќР В Р’В°: username",
+      api_requests: "Сортировка: API-активность",
+      last_seen: "Сортировка: последняя активность",
+      created_at: "Сортировка: дата регистрации",
+      username: "Сортировка: username",
     };
-    chips.push(renderFilterChip(sortLabels[filters.user_sort] || `Р В Р Р‹Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В РЎвЂќР В Р’В°: ${filters.user_sort}`, "user_sort"));
+    chips.push(renderFilterChip(sortLabels[filters.user_sort] || `Сортировка: ${filters.user_sort}`, "user_sort"));
   }
-  if (filters.blocked_only) chips.push(renderFilterChip("Р В РЎС›Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р В Р’В·Р В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ", "blocked_only"));
-  if (filters.tester_only) chips.push(renderFilterChip("Р В РЎС›Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р РЋРІР‚С™Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљР РЋРІР‚в„–", "tester_only"));
-  if (filters.gka_only) chips.push(renderFilterChip("Р В РЎС›Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р В РІР‚СљР В РЎв„ўР В РЎвЂ™-Р В РІР‚вЂќР В РІР‚СљР В РЎв„ўР В РЎвЂ™", "gka_only"));
-  if (filters.unverified_only) chips.push(renderFilterChip("Р В РЎС›Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р В Р’В±Р В Р’ВµР В Р’В· Р В РЎвЂ”Р В РЎвЂўР В РўвЂР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋР вЂљР В Р’В¶Р В РўвЂР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ email", "unverified_only"));
-  if (filters.event_search) chips.push(renderFilterChip(`Р В Р Р‹Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚С™Р В РЎвЂР РЋР РЏ: ${filters.event_search}`, "event_search"));
-  if (filters.event_type) chips.push(renderFilterChip(`Р В РЎС›Р В РЎвЂР В РЎвЂ”: ${filters.event_type}`, "event_type"));
-  if (filters.failed_events_only) chips.push(renderFilterChip("Р В РЎС›Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р В РЎвЂўР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В РЎвЂ", "failed_events_only"));
+  if (filters.blocked_only) chips.push(renderFilterChip("Только заблокированные", "blocked_only"));
+  if (filters.tester_only) chips.push(renderFilterChip("Только тестеры", "tester_only"));
+  if (filters.gka_only) chips.push(renderFilterChip("Только ГКА-ЗГКА", "gka_only"));
+  if (filters.unverified_only) chips.push(renderFilterChip("Только без подтверждения email", "unverified_only"));
+  if (filters.event_search) chips.push(renderFilterChip(`События: ${filters.event_search}`, "event_search"));
+  if (filters.event_type) chips.push(renderFilterChip(`РўРёРї: ${filters.event_type}`, "event_type"));
+  if (filters.failed_events_only) chips.push(renderFilterChip("Только ошибки", "failed_events_only"));
 
   if (!chips.length) {
     activeFiltersHost.innerHTML = "";
@@ -1918,12 +1918,12 @@ function renderActiveFilters(filters) {
 
 function renderUserStatuses(user) {
   const badges = [
-    user.email_verified ? renderBadge("Email OK", "success") : renderBadge("Email Р В Р вЂ¦Р В Р’Вµ Р В РЎвЂ”Р В РЎвЂўР В РўвЂР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋР вЂљР В Р’В¶Р В РўвЂР В Р’ВµР В Р вЂ¦", "muted"),
-    user.access_blocked ? renderBadge("Р В РІР‚вЂќР В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦", "danger") : renderBadge("Р В РЎвЂ™Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р’ВµР В Р вЂ¦", "success-soft"),
-    user.deactivated_at ? renderBadge("Р В РІР‚СњР В Р’ВµР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦", "danger") : null,
-    user.is_tester ? renderBadge("Р В РЎС›Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљ", "info") : renderBadge("Р В РЎвЂєР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚РЋР В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“", "neutral"),
-    user.is_gka ? renderBadge("Р В РІР‚СљР В РЎв„ўР В РЎвЂ™-Р В РІР‚вЂќР В РІР‚СљР В РЎв„ўР В РЎвЂ™", "info") : null,
-    Number(user.api_quota_daily || 0) > 0 ? renderBadge(`Р В РЎв„ўР В Р вЂ Р В РЎвЂўР РЋРІР‚С™Р В Р’В°/Р В РўвЂР В Р’ВµР В Р вЂ¦Р РЋР Р‰: ${Number(user.api_quota_daily || 0)}`, "info") : renderBadge("Р В РЎв„ўР В Р вЂ Р В РЎвЂўР РЋРІР‚С™Р В Р’В°: Р В Р’В±Р В Р’ВµР В Р’В· Р В Р’В»Р В РЎвЂР В РЎВР В РЎвЂР РЋРІР‚С™Р В Р’В°", "muted"),
+    user.email_verified ? renderBadge("Email OK", "success") : renderBadge("Email не подтвержден", "muted"),
+    user.access_blocked ? renderBadge("Заблокирован", "danger") : renderBadge("Активен", "success-soft"),
+    user.deactivated_at ? renderBadge("Деактивирован", "danger") : null,
+    user.is_tester ? renderBadge("Тестер", "info") : renderBadge("Обычный", "neutral"),
+    user.is_gka ? renderBadge("ГКА-ЗГКА", "info") : null,
+    Number(user.api_quota_daily || 0) > 0 ? renderBadge(`Квота/день: ${Number(user.api_quota_daily || 0)}`, "info") : renderBadge("Квота: без лимита", "muted"),
     riskLabel(user),
   ];
   return `<div class="admin-badge-row">${badges.filter(Boolean).join("")}</div>`;
@@ -1933,7 +1933,7 @@ function renderUserActivity(user) {
   return `
     <div class="admin-activity">
       <div class="admin-activity__main">
-        <strong>${escapeHtml(String(user.complaints || 0))}</strong><span>Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±</span>
+        <strong>${escapeHtml(String(user.complaints || 0))}</strong><span>жалоб</span>
         <strong>${escapeHtml(String(user.rehabs || 0))}</strong><span>rehab</span>
       </div>
       <div class="admin-activity__meta">
@@ -2072,37 +2072,37 @@ function renderExamEntryDetailModal(entry) {
     return;
   }
   if (userModalTitle) {
-    userModalTitle.textContent = `Р В Р’В Р В Р’В°Р В Р’В·Р В Р’В±Р В РЎвЂўР РЋР вЂљ Р В РЎвЂўР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р В Р’В° Р вЂ™Р’В· Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В Р’В° ${entry.source_row || "Р Р†Р вЂљРІР‚Сњ"}`;
+    userModalTitle.textContent = `Разбор ответа · строка ${entry.source_row || "—"}`;
   }
 
   userModalBody.innerHTML = `
     <div class="legal-status-row legal-status-row--three">
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Р В Р Р‹Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В Р’В°</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(entry.source_row || "Р Р†Р вЂљРІР‚Сњ"))}</strong>
+        <span class="legal-status-card__label">Строка</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(entry.source_row || "—"))}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Р В РЎв„ўР В Р’В°Р В Р вЂ¦Р В РўвЂР В РЎвЂР В РўвЂР В Р’В°Р РЋРІР‚С™</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.full_name || "Р Р†Р вЂљРІР‚Сњ")}</strong>
+        <span class="legal-status-card__label">Кандидат</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.full_name || "—")}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Р В Р Р‹Р РЋР вЂљР В Р’ВµР В РўвЂР В Р вЂ¦Р В РЎвЂР В РІвЂћвЂ“ Р В Р’В±Р В Р’В°Р В Р’В»Р В Р’В»</span>
+        <span class="legal-status-card__label">Средний балл</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatExamAverage(entry))}</strong>
       </article>
     </div>
 
     <div class="legal-status-row legal-status-row--three">
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Р В Р’В¤Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚С™</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.exam_format || "Р Р†Р вЂљРІР‚Сњ")}</strong>
+        <span class="legal-status-card__label">Формат</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.exam_format || "—")}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Р В РЎвЂєР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р В РЎвЂўР В Р вЂ </span>
+        <span class="legal-status-card__label">Ответов</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(entry.answer_count || 0))}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Р В РЎвЂєР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В РЎвЂў</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.updated_at || entry.imported_at || "Р Р†Р вЂљРІР‚Сњ")}</strong>
+        <span class="legal-status-card__label">Обновлено</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.updated_at || entry.imported_at || "—")}</strong>
       </article>
     </div>
 
@@ -2111,21 +2111,21 @@ function renderExamEntryDetailModal(entry) {
     <section class="legal-subcard admin-user-detail-card">
       <div class="legal-subcard__header">
         <div>
-          <span class="legal-field__label">Р В Р’ВР РЋР С“Р РЋРІР‚В¦Р В РЎвЂўР В РўвЂР В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР РЏ Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В РЎвЂ</span>
-          <p class="legal-section__description">Р В РЎСљР В РЎвЂР В Р’В¶Р В Р’Вµ Р В Р вЂ Р В РЎвЂР В РўвЂР В Р вЂ¦Р В РЎвЂў, Р В РЎвЂќР В Р’В°Р В РЎвЂќР В РЎвЂР В Р’Вµ Р В РўвЂР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР РЋРІвЂљВ¬Р В Р’В»Р В РЎвЂ Р В РЎвЂР В Р’В· Р РЋРІР‚С™Р В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂР РЋРІР‚В Р РЋРІР‚в„– Р В РЎвЂ Р РЋР С“ Р РЋРІР‚РЋР В Р’ВµР В РЎВ Р РЋР С“Р РЋР вЂљР В Р’В°Р В Р вЂ Р В Р вЂ¦Р В РЎвЂР В Р вЂ Р В Р’В°Р В Р’В»Р В Р’В°Р РЋР С“Р РЋР Р‰ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В°.</p>
+          <span class="legal-field__label">Исходные поля строки</span>
+          <p class="legal-section__description">Ниже видно, какие данные пришли из таблицы и с чем сравнивалась проверка.</p>
         </div>
       </div>
       <div class="legal-table-shell exam-detail-shell exam-detail-shell--payload">
         <table class="legal-table admin-table admin-table--compact exam-detail-table exam-detail-table--payload">
           <thead>
             <tr>
-              <th>Р В Р Р‹Р РЋРІР‚С™Р В РЎвЂўР В Р’В»Р В Р’В±Р В Р’ВµР РЋРІР‚В  / Р В РЎСџР В РЎвЂўР В Р’В»Р В Р’Вµ</th>
-              <th>Р В РІР‚вЂќР В Р вЂ¦Р В Р’В°Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р’Вµ</th>
+              <th>Столбец / Поле</th>
+              <th>Значение</th>
             </tr>
           </thead>
           <tbody id="admin-exam-detail-body">
             <tr>
-              <td colspan="2" class="legal-table__empty">Р В РІР‚СњР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В¶Р В Р’ВµР В Р вЂ¦Р РЋРІР‚в„–.</td>
+              <td colspan="2" class="legal-table__empty">Данные строки загружены.</td>
             </tr>
           </tbody>
         </table>
@@ -2146,7 +2146,7 @@ function renderExamEntryDetailModal(entry) {
 async function openExamEntryDetail(sourceRow) {
   const normalizedSourceRow = Number(sourceRow);
   if (!Number.isFinite(normalizedSourceRow) || normalizedSourceRow <= 0) {
-    setStateError(errorsHost, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂўР В РЎвЂ”Р РЋР вЂљР В Р’ВµР В РўвЂР В Р’ВµР В Р’В»Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР РЋРЎвЂњ Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В° Р В РўвЂР В Р’В»Р РЋР РЏ Р РЋР вЂљР В Р’В°Р В Р’В·Р В Р’В±Р В РЎвЂўР РЋР вЂљР В Р’В°.");
+    setStateError(errorsHost, "Не удалось определить строку экзамена для разбора.");
     return;
   }
 
@@ -2154,14 +2154,14 @@ async function openExamEntryDetail(sourceRow) {
     const response = await apiFetch(`/api/exam-import/rows/${encodeURIComponent(normalizedSourceRow)}`);
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР вЂљР В Р’В°Р В Р’В·Р В Р’В±Р В РЎвЂўР РЋР вЂљ Р В РЎвЂўР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р В Р’В°."));
+      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить разбор ответа."));
       return;
     }
     selectedUser = null;
     renderExamEntryDetailModal(payload);
     userModal.open();
   } catch (error) {
-    setStateError(errorsHost, error?.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР вЂљР В Р’В°Р В Р’В·Р В Р’В±Р В РЎвЂўР РЋР вЂљ Р В РЎвЂўР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р В Р’В°.");
+    setStateError(errorsHost, error?.message || "Не удалось загрузить разбор ответа.");
   }
 }
 
@@ -2187,7 +2187,7 @@ async function loadAiPipeline({ silent = false } = {}) {
     const payload = await parsePayload(response);
     if (!response.ok) {
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ AI Pipeline."));
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить AI Pipeline."));
       }
       return;
     }
@@ -2197,11 +2197,11 @@ async function loadAiPipeline({ silent = false } = {}) {
       const first = partialErrors[0] || {};
       const source = first.source ? `[${String(first.source)}] ` : "";
       const message = String(first.message || "").trim();
-      setStateError(errorsHost, `AI Pipeline Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В¶Р В Р’ВµР В Р вЂ¦ Р РЋРІР‚РЋР В Р’В°Р РЋР С“Р РЋРІР‚С™Р В РЎвЂР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂў (${partialErrors.length}). ${source}${message}`.trim());
+      setStateError(errorsHost, `AI Pipeline загружен частично (${partialErrors.length}). ${source}${message}`.trim());
     }
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ AI Pipeline.");
+      setStateError(errorsHost, error?.message || "Не удалось загрузить AI Pipeline.");
     }
   }
 }
@@ -2218,14 +2218,14 @@ async function loadRoleHistory({ silent = false } = {}) {
     const payload = await parsePayload(response);
     if (!response.ok) {
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР В РЎвЂР РЋР вЂ№ Р РЋР вЂљР В РЎвЂўР В Р’В»Р В Р’ВµР В РІвЂћвЂ“."));
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить историю ролей."));
       }
       return;
     }
     renderRoleHistory(payload);
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР В РЎвЂР РЋР вЂ№ Р РЋР вЂљР В РЎвЂўР В Р’В»Р В Р’ВµР В РІвЂћвЂ“.");
+      setStateError(errorsHost, error?.message || "Не удалось загрузить историю ролей.");
     }
   }
 }
@@ -2239,7 +2239,7 @@ async function loadAdminPerformance({ silent = false } = {}) {
     if (!response.ok) {
       const payload = await parsePayload(response);
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР вЂљР В РЎвЂР В РЎвЂќР В РЎвЂ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В РЎвЂР В Р’В·Р В Р вЂ Р В РЎвЂўР В РўвЂР В РЎвЂР РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰Р В Р вЂ¦Р В РЎвЂўР РЋР С“Р РЋРІР‚С™Р В РЎвЂ."));
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить метрики производительности."));
       }
       return;
     }
@@ -2247,7 +2247,7 @@ async function loadAdminPerformance({ silent = false } = {}) {
     renderPerformance(payload);
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР вЂљР В РЎвЂР В РЎвЂќР В РЎвЂ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В РЎвЂР В Р’В·Р В Р вЂ Р В РЎвЂўР В РўвЂР В РЎвЂР РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰Р В Р вЂ¦Р В РЎвЂўР РЋР С“Р РЋРІР‚С™Р В РЎвЂ.");
+      setStateError(errorsHost, error?.message || "Не удалось загрузить метрики производительности.");
     }
   }
 }
@@ -2370,13 +2370,13 @@ function clearLiveTimer() {
 function scheduleLiveRefresh() {
   clearLiveTimer();
   if (!liveRefreshField?.checked) {
-    setLiveStatus("Live: Р В Р вЂ Р РЋРІР‚в„–Р В РЎвЂќР В Р’В»Р РЋР вЂ№Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂў", "muted");
+    setLiveStatus("Live: выключено", "muted");
     return;
   }
 
   const intervalSeconds = Number(liveIntervalField?.value || 30);
   const safeIntervalMs = Math.max(10, intervalSeconds) * 1000;
-  setLiveStatus(`Live: Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’В°Р В Р’В» ${Math.max(10, intervalSeconds)}Р РЋР С“`, "info");
+  setLiveStatus(`Live: интервал ${Math.max(10, intervalSeconds)}с`, "info");
 
   adminLiveTimer = window.setInterval(async () => {
     if (document.hidden) {
@@ -2436,7 +2436,7 @@ async function pollBulkTask(taskId) {
     const response = await apiFetch(`/api/admin/tasks/${encodeURIComponent(taskId)}`);
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋРЎвЂњР РЋРІР‚РЋР В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“ bulk-Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р РЋРІР‚РЋР В РЎвЂ."));
+      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось получить статус bulk-задачи."));
       return;
     }
     const progress = payload.progress || {};
@@ -2444,30 +2444,30 @@ async function pollBulkTask(taskId) {
       statusHost.textContent = `Bulk: ${payload.status} (${progress.done || 0}/${progress.total || 0})`;
     }
     if (payload.status === "finished") {
-      showMessage(`Bulk Р В Р’В·Р В Р’В°Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРІвЂљВ¬Р В Р’ВµР В Р вЂ¦: ok ${payload.result?.success_count || 0}, Р В РЎвЂўР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂўР В РЎвЂќ ${payload.result?.failed_count || 0}.`);
+      showMessage(`Bulk завершен: ok ${payload.result?.success_count || 0}, ошибок ${payload.result?.failed_count || 0}.`);
       selectedBulkUsers = new Set();
       await loadAdminOverview();
       return;
     }
     if (payload.status === "failed") {
-      setStateError(errorsHost, payload.error || "Bulk-Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р РЋРІР‚РЋР В Р’В° Р В Р’В·Р В Р’В°Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРІвЂљВ¬Р В РЎвЂР В Р’В»Р В Р’В°Р РЋР С“Р РЋР Р‰ Р В РЎвЂўР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В РЎвЂўР В РІвЂћвЂ“.");
+      setStateError(errorsHost, payload.error || "Bulk-задача завершилась ошибкой.");
       return;
     }
     // eslint-disable-next-line no-await-in-loop
     await new Promise((resolve) => window.setTimeout(resolve, 1000));
   }
-  setStateError(errorsHost, "Р В РЎС›Р В Р’В°Р В РІвЂћвЂ“Р В РЎВР В Р’В°Р РЋРЎвЂњР РЋРІР‚С™ Р В РЎвЂўР В Р’В¶Р В РЎвЂР В РўвЂР В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ bulk-Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р РЋРІР‚РЋР В РЎвЂ.");
+  setStateError(errorsHost, "Таймаут ожидания bulk-задачи.");
 }
 
 async function runBulkAction() {
   const usernames = Array.from(selectedBulkUsers);
   if (!usernames.length) {
-    setStateError(errorsHost, "Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р РЋРІР‚В¦Р В РЎвЂўР РЋРІР‚С™Р РЋР РЏ Р В Р’В±Р РЋРІР‚в„– Р В РЎвЂўР В РўвЂР В Р вЂ¦Р В РЎвЂўР В РЎвЂ“Р В РЎвЂў Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ Р В РўвЂР В Р’В»Р РЋР РЏ Р В РЎВР В Р’В°Р РЋР С“Р РЋР С“Р В РЎвЂўР В Р вЂ Р В РЎвЂўР В РІвЂћвЂ“ Р В РЎвЂўР В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР В РЎвЂ.");
+    setStateError(errorsHost, "Выберите хотя бы одного пользователя для массовой операции.");
     return;
   }
   const action = String(document.getElementById("admin-bulk-action")?.value || "").trim();
   if (!action) {
-    setStateError(errorsHost, "Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р В РЎВР В Р’В°Р РЋР С“Р РЋР С“Р В РЎвЂўР В Р вЂ Р В РЎвЂўР В Р’Вµ Р В РўвЂР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В РЎвЂР В Р’Вµ.");
+    setStateError(errorsHost, "Выберите массовое действие.");
     return;
   }
   const reason = String(document.getElementById("admin-bulk-reason")?.value || "").trim();
@@ -2480,10 +2480,10 @@ async function runBulkAction() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р РЋРІР‚С™Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ bulk-Р В РЎвЂўР В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось запустить bulk-операцию."));
     return;
   }
-  showMessage("Bulk-Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р РЋРІР‚РЋР В Р’В° Р В РўвЂР В РЎвЂўР В Р’В±Р В Р’В°Р В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В Р’В° Р В Р вЂ  Р В РЎвЂўР РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В Р’ВµР В РўвЂР РЋР Р‰.");
+  showMessage("Bulk-задача добавлена в очередь.");
   await pollBulkTask(payload.task_id);
 }
 
@@ -2524,7 +2524,7 @@ usersHost?.addEventListener("click", async (event) => {
       }
     });
     const statusHost = document.getElementById("admin-bulk-status");
-    if (statusHost) statusHost.textContent = `Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂў: ${selectedBulkUsers.size}`;
+    if (statusHost) statusHost.textContent = `Выбрано: ${selectedBulkUsers.size}`;
   }
 });
 
@@ -2565,7 +2565,7 @@ usersHost?.addEventListener("change", (event) => {
       selectedBulkUsers.delete(String(username).toLowerCase());
     }
     const statusHost = document.getElementById("admin-bulk-status");
-    if (statusHost) statusHost.textContent = `Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂў: ${selectedBulkUsers.size}`;
+    if (statusHost) statusHost.textContent = `Выбрано: ${selectedBulkUsers.size}`;
   }
 });
 
@@ -2586,7 +2586,7 @@ catalogHost?.addEventListener("click", async (event) => {
   if (target.id === "catalog-create") {
     const payload = await openCatalogFormDialog(activeCatalogEntity);
     if (!payload) return;
-    await performAdminAction(catalogEndpoint(activeCatalogEntity), "Р В Р’В­Р В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™ Р РЋР С“Р В РЎвЂўР В Р’В·Р В РўвЂР В Р’В°Р В Р вЂ¦.", payload);
+    await performAdminAction(catalogEndpoint(activeCatalogEntity), "Элемент создан.", payload);
     await loadCatalog(activeCatalogEntity);
     return;
   }
@@ -2599,7 +2599,7 @@ catalogHost?.addEventListener("click", async (event) => {
     const response = await apiFetch(catalogEndpoint(activeCatalogEntity, viewId));
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™ catalog."));
+      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить элемент catalog."));
       return;
     }
     openCatalogModal({
@@ -2615,7 +2615,7 @@ catalogHost?.addEventListener("click", async (event) => {
     const itemResponse = await apiFetch(catalogEndpoint(activeCatalogEntity, editId));
     const itemPayload = await parsePayload(itemResponse);
     if (!itemResponse.ok) {
-      setStateError(errorsHost, formatHttpError(itemResponse, itemPayload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™ catalog."));
+      setStateError(errorsHost, formatHttpError(itemResponse, itemPayload, "Не удалось загрузить элемент catalog."));
       return;
     }
     const payload = await openCatalogFormDialog(activeCatalogEntity, extractCatalogEditableData(itemPayload));
@@ -2624,7 +2624,7 @@ catalogHost?.addEventListener("click", async (event) => {
       method: "PUT",
       body: JSON.stringify(payload),
     });
-    if (response.ok) showMessage("Р В Р’В­Р В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™ Р В РЎвЂўР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦.");
+    if (response.ok) showMessage("Элемент обновлен.");
     await loadCatalog(activeCatalogEntity);
     return;
   }
@@ -2633,10 +2633,10 @@ catalogHost?.addEventListener("click", async (event) => {
     const action = String(target.getAttribute("data-catalog-workflow-action") || "").trim().toLowerCase();
     const changeRequestId = Number(target.getAttribute("data-catalog-workflow-cr-id") || "0");
     if (!action || !changeRequestId) {
-      setStateError(errorsHost, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂўР В РЎвЂ”Р РЋР вЂљР В Р’ВµР В РўвЂР В Р’ВµР В Р’В»Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РўвЂР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В РЎвЂР В Р’Вµ workflow: Р В РЎвЂўР РЋРІР‚С™Р РЋР С“Р РЋРЎвЂњР РЋРІР‚С™Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р РЋРЎвЂњР В Р’ВµР РЋРІР‚С™ change request.");
+      setStateError(errorsHost, "Не удалось определить действие workflow: отсутствует change request.");
       return;
     }
-    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, workflowItemId)}/workflow`, "Workflow Р В РЎвЂўР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦.", {
+    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, workflowItemId)}/workflow`, "Workflow обновлен.", {
       action,
       change_request_id: changeRequestId,
     });
@@ -2654,23 +2654,23 @@ catalogHost?.addEventListener("click", async (event) => {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-      showMessage("JSON Р РЋР С“Р В РЎвЂќР В РЎвЂўР В РЎвЂ”Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦.");
+      showMessage("JSON скопирован.");
     } catch {
-      showMessage("Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂќР В РЎвЂўР В РЎвЂ”Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰ JSON.");
+      showMessage("Не удалось скопировать JSON.");
     }
     return;
   }
   const rollbackId = target.getAttribute("data-catalog-rollback");
   if (rollbackId) {
     const version = Number(window.prompt("Rollback to version", "1") || "1");
-    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, rollbackId)}/rollback`, "Rollback Р В Р вЂ Р РЋРІР‚в„–Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦.", { version });
+    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, rollbackId)}/rollback`, "Rollback выполнен.", { version });
     await loadCatalog(activeCatalogEntity);
     return;
   }
   const deleteId = target.getAttribute("data-catalog-delete");
   if (deleteId) {
     const response = await apiFetch(catalogEndpoint(activeCatalogEntity, deleteId), { method: "DELETE" });
-    if (response.ok) showMessage("Р В Р’В­Р В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В Р’ВµР В Р вЂ¦.");
+    if (response.ok) showMessage("Элемент удален.");
     await loadCatalog(activeCatalogEntity);
   }
 });
