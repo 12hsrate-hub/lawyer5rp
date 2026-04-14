@@ -16,6 +16,7 @@ const syntheticHost = document.getElementById("admin-synthetic");
 const asyncJobsHost = document.getElementById("admin-async-jobs");
 const lawJobsHost = document.getElementById("admin-law-jobs");
 const examImportOpsHost = document.getElementById("admin-exam-import-ops");
+const pilotRolloutHost = document.getElementById("admin-pilot-rollout");
 const provenanceTraceHost = document.getElementById("admin-provenance-trace");
 const provenanceTraceForm = document.getElementById("admin-provenance-form");
 const provenanceTraceVersionField = document.getElementById("admin-provenance-version-id");
@@ -1702,6 +1703,224 @@ function renderNormalizedKeyValueField(label, value) {
   return renderKeyValueField(label, compactLegacyRefValue(value));
 }
 
+function derivePilotRolloutState(featureFlags) {
+  const items = Array.isArray(featureFlags) ? featureFlags : [];
+  const adapter = items.find((item) => String(item?.flag || "") === "pilot_runtime_adapter_v1") || {};
+  const shadow = items.find((item) => String(item?.flag || "") === "pilot_shadow_compare_v1") || {};
+  const adapterActive = Boolean(adapter.use_new_flow);
+  const shadowActive = Boolean(shadow.use_new_flow);
+  if (adapterActive) {
+    return "new_runtime_active";
+  }
+  if (shadowActive) {
+    return "shadow_compare";
+  }
+  return "legacy_only";
+}
+
+function renderPilotRolloutMarkup(payload) {
+  const data = payload?.data || payload || {};
+  const featureFlags = Array.isArray(data.feature_flags) ? data.feature_flags : [];
+  const rolloutState = derivePilotRolloutState(featureFlags);
+  const rolloutTone = rolloutState === "new_runtime_active"
+    ? "success-soft"
+    : rolloutState === "shadow_compare"
+      ? "info"
+      : "muted";
+  const adapter = featureFlags.find((item) => String(item?.flag || "") === "pilot_runtime_adapter_v1") || {};
+  const shadow = featureFlags.find((item) => String(item?.flag || "") === "pilot_shadow_compare_v1") || {};
+  const warningSignals = Array.isArray(data.warning_signals) ? data.warning_signals : [];
+  const rollbackHistory = Array.isArray(data.rollback_history) ? data.rollback_history : [];
+  const checklist = [
+    {
+      label: "Shadow compare enabled before cutover",
+      status: rolloutState === "shadow_compare" || rolloutState === "new_runtime_active" ? "pass" : "warn",
+      note: rolloutState === "legacy_only"
+        ? "Pilot is still fully legacy-only."
+        : "Shadow compare is available for pilot monitoring.",
+    },
+    {
+      label: "No active rollout warning signals",
+      status: warningSignals.length === 0 ? "pass" : "warn",
+      note: warningSignals.length === 0
+        ? "No warning signals recorded for the pilot server."
+        : `${warningSignals.length} rollout warning signal(s) need review first.`,
+    },
+    {
+      label: "Fallback remains low and explainable",
+      status: Number(data.fallback_to_legacy_usage || 0) === 0 ? "pass" : "warn",
+      note: `Fallback-to-legacy events: ${String(data.fallback_to_legacy_usage || 0)}.`,
+    },
+    {
+      label: "Rollback path exists and is visible",
+      status: "pass",
+      note: `Rollback history entries visible: ${String(rollbackHistory.length || 0)}.`,
+    },
+    {
+      label: "Admin provenance review is available",
+      status: "pass",
+      note: "Generated document review and provenance trace are visible in the same dashboard workspace.",
+    },
+  ];
+  const actionHint = checklist.some((item) => item.status !== "pass")
+    ? "Preflight gate is not clean yet: keep the pilot on legacy or shadow mode."
+    : "Preflight gate looks clean: pilot activation can be considered if rollout owners agree.";
+
+  return `
+    <div class="admin-performance-grid">
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Pilot state</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${renderBadge(rolloutState, rolloutTone)}</strong>
+        <span class="admin-user-cell__secondary">Derived from pilot adapter + shadow flags.</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Adapter mode</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(adapter.mode || "off"))}</strong>
+        <span class="admin-user-cell__secondary">cohort=${escapeHtml(String(adapter.cohort || "default"))}, active=${escapeHtml(String(Boolean(adapter.use_new_flow)))}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Shadow compare</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(shadow.mode || "off"))}</strong>
+        <span class="admin-user-cell__secondary">cohort=${escapeHtml(String(shadow.cohort || "default"))}, active=${escapeHtml(String(Boolean(shadow.use_new_flow)))}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Fallback / rollback</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(data.fallback_to_legacy_usage || 0))} / ${escapeHtml(String(rollbackHistory.length || 0))}</strong>
+        <span class="admin-user-cell__secondary">fallback events / rollback batches</span>
+      </article>
+    </div>
+    <div class="legal-field-grid legal-field-grid--two">
+      <div class="legal-field">
+        <span class="legal-field__label">Pilot flags</span>
+        <div class="legal-table-shell">
+          <table class="legal-table admin-table admin-table--compact">
+            <thead><tr><th>Flag</th><th>Mode</th><th>Cohort</th><th>Active</th><th>Enforcement</th></tr></thead>
+            <tbody>
+              ${featureFlags
+                .filter((item) => ["pilot_runtime_adapter_v1", "pilot_shadow_compare_v1"].includes(String(item?.flag || "")))
+                .map((item) => `
+                  <tr>
+                    <td>${escapeHtml(String(item.flag || "—"))}</td>
+                    <td>${escapeHtml(String(item.mode || "off"))}</td>
+                    <td>${escapeHtml(String(item.cohort || "default"))}</td>
+                    <td>${escapeHtml(String(Boolean(item.use_new_flow)))}</td>
+                    <td>${escapeHtml(String(item.enforcement || "off"))}</td>
+                  </tr>
+                `)
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="legal-field">
+        <span class="legal-field__label">Warning signals</span>
+        ${
+          warningSignals.length
+            ? `
+              <div class="legal-table-shell">
+                <table class="legal-table admin-table admin-table--compact">
+                  <thead><tr><th>Signal</th><th>Total</th></tr></thead>
+                  <tbody>
+                    ${warningSignals
+                      .map((item) => `
+                        <tr>
+                          <td>${escapeHtml(String(item.event_type || "—"))}</td>
+                          <td>${escapeHtml(String(item.total || 0))}</td>
+                        </tr>
+                      `)
+                      .join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : '<div class="admin-user-cell__secondary">No rollout warning signals recorded for the pilot server.</div>'
+        }
+      </div>
+    </div>
+    <div class="legal-field">
+      <span class="legal-field__label">Activation checklist</span>
+      <div class="legal-table-shell">
+        <table class="legal-table admin-table admin-table--compact">
+          <thead><tr><th>Gate</th><th>Status</th><th>Note</th></tr></thead>
+          <tbody>
+            ${checklist
+              .map((item) => `
+                <tr>
+                  <td>${escapeHtml(String(item.label || "—"))}</td>
+                  <td>${renderBadge(item.status === "pass" ? "pass" : "review", item.status === "pass" ? "success-soft" : "info")}</td>
+                  <td>${escapeHtml(String(item.note || "—"))}</td>
+                </tr>
+              `)
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+      <div class="admin-user-cell__secondary">${escapeHtml(actionHint)}</div>
+    </div>
+    <div class="legal-field">
+      <span class="legal-field__label">Operator playbooks</span>
+      <div class="legal-table-shell">
+        <table class="legal-table admin-table admin-table--compact">
+          <thead><tr><th>Use case</th><th>Reference</th><th>When to use</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Preflight before any cutover</td>
+              <td><code>PILOT_ACTIVATION_CHECKLIST.md</code></td>
+              <td>Before enabling or expanding pilot runtime activation.</td>
+            </tr>
+            <tr>
+              <td>Record rollout decision and observation window</td>
+              <td><code>PILOT_CUTOVER_REPORT_TEMPLATE.md</code></td>
+              <td>Immediately after a proceed, hold, or rollback decision.</td>
+            </tr>
+            <tr>
+              <td>Prepare next server or procedure rollout</td>
+              <td><code>SCALE_OUT_CHECKLIST_TEMPLATE.md</code></td>
+              <td>After pilot observation is accepted and reuse starts.</td>
+            </tr>
+            <tr>
+              <td>Log each observation-window review</td>
+              <td><code>PILOT_OBSERVATION_LOG_TEMPLATE.md</code></td>
+              <td>During steady-state monitoring before sign-off or rollback.</td>
+            </tr>
+            <tr>
+              <td>Track legacy cleanup candidates</td>
+              <td><code>LEGACY_DEPRECATION_CANDIDATES.md</code></td>
+              <td>During observation and after rollback risk is low.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="admin-user-cell__secondary">These playbooks stay read-only here; rollout changes still require explicit operator action.</div>
+    </div>
+    <div class="legal-field">
+      <span class="legal-field__label">Observation guidance</span>
+      <div class="legal-table-shell">
+        <table class="legal-table admin-table admin-table--compact">
+          <thead><tr><th>Checkpoint</th><th>Expected signal</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Warning signals</td>
+              <td>${warningSignals.length === 0 ? "No active warnings before continuing rollout." : `${warningSignals.length} warning signal(s) still need explanation.`}</td>
+            </tr>
+            <tr>
+              <td>Fallback usage</td>
+              <td>${escapeHtml(String(data.fallback_to_legacy_usage || 0))} fallback event(s) recorded for the current release view.</td>
+            </tr>
+            <tr>
+              <td>Rollback readiness</td>
+              <td>${escapeHtml(String(rollbackHistory.length || 0))} rollback batch reference(s) visible to operators.</td>
+            </tr>
+            <tr>
+              <td>Review journal</td>
+              <td>Use <code>PILOT_OBSERVATION_LOG_TEMPLATE.md</code> for every observation checkpoint until sign-off.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
 function renderProvenanceTraceMarkup(trace) {
   if (!trace) {
     return '<p class="legal-section__description">Trace не найден.</p>';
@@ -2768,6 +2987,30 @@ async function loadExamImportOps({ silent = false } = {}) {
   }
 }
 
+async function loadPilotRollout({ silent = false } = {}) {
+  if (!pilotRolloutHost) {
+    return;
+  }
+  if (!silent) {
+    renderLoadingState(pilotRolloutHost, { count: 3, compact: true });
+  }
+  try {
+    const response = await apiFetch("/api/admin/dashboard/sections/release");
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      if (!silent) {
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить pilot rollout state."));
+      }
+      return;
+    }
+    pilotRolloutHost.innerHTML = renderPilotRolloutMarkup(payload);
+  } catch (error) {
+    if (!silent) {
+      setStateError(errorsHost, error?.message || "Не удалось загрузить pilot rollout state.");
+    }
+  }
+}
+
 async function handleAsyncJobAction(target) {
   const button = target.closest("[data-async-job-action]");
   if (!(button instanceof HTMLButtonElement)) {
@@ -3280,6 +3523,7 @@ refreshNowButton?.addEventListener("click", async () => {
     loadAdminAsyncJobs(),
     loadLawJobsOverview(),
     loadExamImportOps(),
+    loadPilotRollout(),
     loadRecentGeneratedDocuments({ silent: true }),
     loadAiPipeline(),
     loadRoleHistory(),
@@ -3373,6 +3617,7 @@ document.addEventListener("visibilitychange", () => {
       loadAdminAsyncJobs({ silent: true }),
       loadLawJobsOverview(),
       loadExamImportOps({ silent: true }),
+      loadPilotRollout({ silent: true }),
       loadRecentGeneratedDocuments({ silent: true }),
       loadAiPipeline({ silent: true }),
       loadRoleHistory({ silent: true }),
@@ -3389,6 +3634,7 @@ Promise.all([
   loadAdminAsyncJobs(),
   loadLawJobsOverview(),
   loadExamImportOps(),
+  loadPilotRollout(),
   loadRecentGeneratedDocuments(),
   loadAiPipeline(),
   loadRoleHistory(),
