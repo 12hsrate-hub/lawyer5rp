@@ -1435,6 +1435,7 @@ class WebApiTests(unittest.TestCase):
         original_get_user_id = self.store.get_user_id
         original_create_law_qa_run = self.store.create_law_qa_run
         original_evaluate = complaint_route.FeatureFlagService.evaluate
+        original_evaluate = complaint_route.FeatureFlagService.evaluate
         original_resolve_law_article_source = self.store.resolve_law_article_source
         self.store.get_user_id = lambda username: 1
         self.store.create_law_qa_run = lambda **kwargs: 77
