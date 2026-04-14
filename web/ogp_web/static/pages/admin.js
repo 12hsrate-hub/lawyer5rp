@@ -467,6 +467,19 @@ function renderCatalog(payload) {
       <button type="button" id="catalog-create" class="primary-button">Создать</button>
     </div>
     <p class="legal-section__description">${escapeHtml(entityDescriptions[entityType] || "")}</p>
+    ${entityType === "servers" ? `
+    <div class="legal-subcard">
+      <div class="admin-section-toolbar">
+        <strong>Runtime серверы</strong>
+        <div>
+          <button type="button" id="runtime-servers-refresh" class="ghost-button">Обновить</button>
+          <button type="button" id="runtime-servers-create" class="primary-button">Добавить сервер</button>
+        </div>
+      </div>
+      <p class="legal-section__description">Управление реальными серверами из таблицы <code>servers</code>.</p>
+      <div id="runtime-servers-host"></div>
+    </div>
+    ` : ""}
     ${entityType === "laws" ? `
     <div class="legal-subcard">
       <div class="admin-section-toolbar">
@@ -552,6 +565,94 @@ function renderCatalog(payload) {
     <p class="legal-section__description">Журнал изменений (автор и diff):</p>
     <pre class="legal-field__hint">${escapeHtml(audit.slice(0, 8).map((row) => `${row.created_at} ${row.author} ${row.action} ${row.workflow_from || ""}->${row.workflow_to || ""}\n${row.diff || ""}`).join("\n\n"))}</pre>
   `;
+}
+
+function renderRuntimeServersPanel(payload) {
+  const host = document.getElementById("runtime-servers-host");
+  if (!host) return;
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  host.innerHTML = `
+    <table class="legal-table admin-table admin-table--compact">
+      <thead>
+        <tr><th>Код</th><th>Название</th><th>Статус</th><th>Действия</th></tr>
+      </thead>
+      <tbody>
+        ${items.length
+          ? items.map((item) => `
+            <tr>
+              <td>${escapeHtml(String(item.code || "—"))}</td>
+              <td>${escapeHtml(String(item.title || "—"))}</td>
+              <td>${item.is_active ? "active" : "disabled"}</td>
+              <td>
+                <button type="button" class="ghost-button" data-runtime-server-edit="${escapeHtml(String(item.code || ""))}" data-runtime-server-title="${escapeHtml(String(item.title || ""))}">Изменить</button>
+                <button type="button" class="ghost-button" data-runtime-server-toggle="${escapeHtml(String(item.code || ""))}" data-runtime-server-active="${item.is_active ? "1" : "0"}">${item.is_active ? "Деактивировать" : "Активировать"}</button>
+              </td>
+            </tr>
+          `).join("")
+          : '<tr><td colspan="4" class="legal-section__description">Серверы не найдены.</td></tr>'}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadRuntimeServersPanel() {
+  const host = document.getElementById("runtime-servers-host");
+  if (!host) return;
+  const response = await apiFetch("/api/admin/runtime-servers");
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить runtime серверы."))}</p>`;
+    return;
+  }
+  renderRuntimeServersPanel(payload);
+}
+
+async function createRuntimeServerFlow() {
+  const code = String(window.prompt("Код сервера (латиница/цифры/_-.)", "") || "").trim().toLowerCase();
+  if (!code) return;
+  const title = String(window.prompt("Название сервера", code) || "").trim();
+  if (!title) return;
+  const response = await apiFetch("/api/admin/runtime-servers", {
+    method: "POST",
+    body: JSON.stringify({ code, title }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось создать сервер."));
+    return;
+  }
+  showMessage(`Сервер ${code} создан.`);
+  await loadRuntimeServersPanel();
+}
+
+async function editRuntimeServerFlow(code, currentTitle) {
+  const title = String(window.prompt(`Новое название для ${code}`, currentTitle || code) || "").trim();
+  if (!title) return;
+  const response = await apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(code)}`, {
+    method: "PUT",
+    body: JSON.stringify({ code, title }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось обновить сервер."));
+    return;
+  }
+  showMessage(`Сервер ${code} обновлен.`);
+  await loadRuntimeServersPanel();
+}
+
+async function toggleRuntimeServerFlow(code, isActive) {
+  const action = isActive ? "deactivate" : "activate";
+  const response = await apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(code)}/${action}`, {
+    method: "POST",
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось обновить статус сервера."));
+    return;
+  }
+  showMessage(`Статус сервера ${code} обновлен.`);
+  await loadRuntimeServersPanel();
 }
 
 function renderCatalogPreviewSummary(entityType, item, effectivePayload) {
@@ -847,6 +948,9 @@ async function loadCatalog(entityType = activeCatalogEntity) {
     return;
   }
   renderCatalog(payload);
+  if (entityType === "servers") {
+    await loadRuntimeServersPanel();
+  }
   if (entityType === "laws") {
     await loadLawSourcesManager();
   }
@@ -3379,6 +3483,26 @@ catalogHost?.addEventListener("change", async (event) => {
 catalogHost?.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
+  if (target.id === "runtime-servers-refresh") {
+    await loadRuntimeServersPanel();
+    return;
+  }
+  if (target.id === "runtime-servers-create") {
+    await createRuntimeServerFlow();
+    return;
+  }
+  const runtimeEditCode = target.getAttribute("data-runtime-server-edit");
+  if (runtimeEditCode) {
+    const currentTitle = String(target.getAttribute("data-runtime-server-title") || runtimeEditCode);
+    await editRuntimeServerFlow(runtimeEditCode, currentTitle);
+    return;
+  }
+  const runtimeToggleCode = target.getAttribute("data-runtime-server-toggle");
+  if (runtimeToggleCode) {
+    const activeRaw = String(target.getAttribute("data-runtime-server-active") || "0");
+    await toggleRuntimeServerFlow(runtimeToggleCode, activeRaw === "1");
+    return;
+  }
   if (target.id === "law-sources-sync") {
     await syncLawSourcesFromServerConfig();
     return;

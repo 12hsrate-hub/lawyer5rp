@@ -15,6 +15,7 @@ from ogp_web.storage.exam_answers_store import ExamAnswersStore, get_default_exa
 from ogp_web.storage.user_store import UserStore, get_default_user_store
 from ogp_web.storage.content_workflow_repository import ContentWorkflowRepository
 from ogp_web.storage.admin_dashboard_repository import AdminDashboardRepository
+from ogp_web.storage.runtime_servers_store import RuntimeServersStore
 
 
 def get_user_store(request: Request) -> UserStore:
@@ -75,6 +76,11 @@ def get_admin_dashboard_service(
     if service is not None:
         return service
     return AdminDashboardService(repository)
+
+
+def get_runtime_servers_store(_: Request) -> RuntimeServersStore:
+    backend = get_database_backend()
+    return RuntimeServersStore(backend)
 
 def get_exam_import_task_registry(request: Request) -> ExamImportTaskRegistry:
     return request.app.state.exam_import_task_registry
