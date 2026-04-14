@@ -1,4 +1,4 @@
-﻿const errorsHost = document.getElementById("admin-errors");
+const errorsHost = document.getElementById("admin-errors");
 const messageHost = document.getElementById("admin-message");
 const totalsHost = document.getElementById("admin-totals");
 const examImportHost = document.getElementById("admin-exam-import");
@@ -168,6 +168,36 @@ async function rebuildLawSources() {
   await loadCatalog("laws");
 }
 
+async function previewLawSources() {
+  const textarea = document.getElementById("law-sources-textarea");
+  const raw = String(textarea?.value || "");
+  const sourceUrls = raw
+    .split(/\r?\n/)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  const response = await apiFetch("/api/admin/law-sources/preview", {
+    method: "POST",
+    body: JSON.stringify({
+      source_urls: sourceUrls,
+      persist_sources: false,
+    }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось проверить ссылки законов."));
+    return;
+  }
+  const detailsHost = document.getElementById("law-sources-validation");
+  if (detailsHost) {
+    const invalidUrls = Array.isArray(payload?.invalid_urls) ? payload.invalid_urls : [];
+    const invalidBlock = invalidUrls.length
+      ? `<br><strong>Невалидные ссылки:</strong><br>${invalidUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
+      : "";
+    detailsHost.innerHTML = `Принято: ${escapeHtml(String(payload?.accepted_count ?? 0))}. Дубликатов: ${escapeHtml(String(payload?.duplicate_count ?? 0))}. Невалидных: ${escapeHtml(String(payload?.invalid_count ?? 0))}.${invalidBlock}`;
+  }
+  showMessage("Проверка ссылок выполнена.");
+}
+
 async function syncLawSourcesFromServerConfig() {
   const response = await apiFetch("/api/admin/law-sources/sync", {
     method: "POST",
@@ -246,10 +276,12 @@ function renderCatalog(payload) {
         <strong>Источники законов</strong>
         <div>
           <button type="button" id="law-sources-sync" class="ghost-button">Синхронизировать текущие</button>
+          <button type="button" id="law-sources-preview" class="ghost-button">Проверить ссылки</button>
           <button type="button" id="law-sources-rebuild" class="primary-button">Пересобрать законы</button>
         </div>
       </div>
       <p id="law-sources-status" class="legal-section__description">Загружаем источники и активную версию...</p>
+      <p id="law-sources-validation" class="legal-section__description">Перед пересборкой можно проверить ссылки на валидность и дубликаты.</p>
       <label class="legal-field">
         <span class="legal-field__label">Ссылки на законы</span>
         <textarea id="law-sources-textarea" rows="8" placeholder="По одной ссылке на строку"></textarea>
@@ -3151,6 +3183,10 @@ catalogHost?.addEventListener("click", async (event) => {
   }
   if (target.id === "law-sources-rebuild") {
     await rebuildLawSources();
+    return;
+  }
+  if (target.id === "law-sources-preview") {
+    await previewLawSources();
     return;
   }
   if (target.id === "catalog-create") {

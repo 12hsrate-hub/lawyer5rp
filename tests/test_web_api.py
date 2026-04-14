@@ -776,6 +776,79 @@ class WebApiTests(unittest.TestCase):
         finally:
             self.client.app.state.exam_answers_store = original_exam_store
 
+    def test_admin_law_sources_preview_reports_duplicates_and_invalid_urls(self):
+        self._register_verify_and_login("12345", "admin-law-preview@example.com")
+
+        class DummyWorkflowService:
+            repository = object()
+
+        self.client.app.dependency_overrides[admin_route.get_content_workflow_service] = lambda: DummyWorkflowService()
+        try:
+            response = self.client.post(
+                "/api/admin/law-sources/preview",
+                json={
+                    "source_urls": [
+                        "https://example.com/law/a",
+                        "ftp://example.com/law/a",
+                        "https://example.com/law/a",
+                        "invalid-url",
+                        "http://example.com/law/b",
+                    ],
+                    "persist_sources": False,
+                },
+            )
+        finally:
+            self.client.app.dependency_overrides.pop(admin_route.get_content_workflow_service, None)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(
+            payload["accepted_urls"],
+            [
+                "https://example.com/law/a",
+                "http://example.com/law/b",
+            ],
+        )
+        self.assertEqual(
+            payload["invalid_urls"],
+            [
+                "ftp://example.com/law/a",
+                "invalid-url",
+            ],
+        )
+        self.assertEqual(payload["duplicate_count"], 1)
+        self.assertEqual(payload["accepted_count"], 2)
+        self.assertEqual(payload["invalid_count"], 2)
+
+    def test_admin_law_sources_rebuild_rejects_invalid_urls_with_examples(self):
+        self._register_verify_and_login("12345", "admin-law-rebuild@example.com")
+
+        class DummyWorkflowService:
+            repository = object()
+
+        self.client.app.dependency_overrides[admin_route.get_content_workflow_service] = lambda: DummyWorkflowService()
+        try:
+            response = self.client.post(
+                "/api/admin/law-sources/rebuild",
+                json={
+                    "source_urls": [
+                        "https://example.com/law/a",
+                        "invalid-url",
+                        "ftp://example.com/law/b",
+                    ],
+                    "persist_sources": False,
+                },
+            )
+        finally:
+            self.client.app.dependency_overrides.pop(admin_route.get_content_workflow_service, None)
+
+        self.assertEqual(response.status_code, 400)
+        detail = response.json()["detail"]
+        self.assertEqual(len(detail), 1)
+        self.assertIn("source_urls_invalid", detail[0])
+        self.assertIn("invalid-url", detail[0])
+        self.assertIn("ftp://example.com/law/b", detail[0])
+
     def test_admin_overview_forbidden_for_non_admin(self):
         self._register_verify_and_login("tester", "tester@example.com")
         response = self.client.get("/api/admin/overview")
