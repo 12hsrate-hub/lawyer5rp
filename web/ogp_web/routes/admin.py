@@ -685,6 +685,29 @@ def _find_active_law_rebuild_task(*, server_code: str) -> dict[str, Any] | None:
     return None
 
 
+def _claim_law_rebuild_task(*, server_code: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    with _ADMIN_TASKS_LOCK:
+        _load_admin_tasks_from_disk()
+        active_task = find_active_law_rebuild_task(tasks=_ADMIN_TASKS, server_code=server_code)
+        if active_task:
+            return active_task, None
+        task = {
+            "task_id": f"law-rebuild-{uuid.uuid4().hex}",
+            "scope": "law_sources_rebuild",
+            "server_code": server_code,
+            "status": "queued",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": "",
+            "finished_at": "",
+            "progress": {"done": 0, "total": 1},
+            "result": None,
+            "error": "",
+        }
+        _ADMIN_TASKS[str(task["task_id"])] = deepcopy(task)
+        _save_admin_tasks_to_disk()
+        return None, deepcopy(task)
+
+
 _load_admin_tasks_from_disk()
 
 
@@ -1370,7 +1393,7 @@ async def admin_law_sources_rebuild_async(
 ):
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     request_id = getattr(request.state, "request_id", "")
-    active_task = _find_active_law_rebuild_task(server_code=user.server_code)
+    active_task, queued_task = _claim_law_rebuild_task(server_code=user.server_code)
     if active_task:
         metrics_store.log_event(
             event_type="admin_law_sources_rebuild_async_conflict",
@@ -1385,22 +1408,8 @@ async def admin_law_sources_rebuild_async(
             status_code=status.HTTP_409_CONFLICT,
             detail=[f"law_rebuild_already_in_progress:{active_task.get('task_id')}"],
         )
-    task_id = f"law-rebuild-{uuid.uuid4().hex}"
-    created_at = datetime.now(timezone.utc).isoformat()
-    _put_admin_task(
-        {
-            "task_id": task_id,
-            "scope": "law_sources_rebuild",
-            "server_code": user.server_code,
-            "status": "queued",
-            "created_at": created_at,
-            "started_at": "",
-            "finished_at": "",
-            "progress": {"done": 0, "total": 1},
-            "result": None,
-            "error": "",
-        }
-    )
+    assert queued_task is not None
+    task_id = str(queued_task["task_id"])
 
     def _runner() -> None:
         _patch_admin_task(task_id, status="running", started_at=datetime.now(timezone.utc).isoformat())
