@@ -928,7 +928,6 @@ def _build_catalog_payload_config(payload: AdminCatalogItemPayload) -> dict[str,
     if not str(merged.get("key") or "").strip():
         raise ValueError("key_required")
     return merged
-
 @router.get("/api/admin/catalog/{entity_type}")
 async def admin_catalog_list(
     entity_type: str,
