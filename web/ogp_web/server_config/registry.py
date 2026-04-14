@@ -26,19 +26,19 @@ def _normalized_code(value: str) -> str:
     return str(value or "").strip().lower()
 
 
-def _load_codes_from_config_repo() -> set[str]:
+def _load_codes_from_config_repo() -> set[str] | None:
     path = Path(str(os.getenv("OGP_SERVER_CONFIG_REPO", "")).strip())
     if not str(path):
-        return set(_BASE_SERVER_CONFIGS.keys())
+        return None
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return set(_BASE_SERVER_CONFIGS.keys())
+        return None
     if not isinstance(payload, dict):
-        return set(_BASE_SERVER_CONFIGS.keys())
+        return None
     raw_servers = payload.get("servers")
     if not isinstance(raw_servers, list):
-        return set(_BASE_SERVER_CONFIGS.keys())
+        return None
     codes = {
         _normalized_code(item.get("code", ""))
         for item in raw_servers
@@ -65,37 +65,31 @@ def _load_server_rows_from_db() -> list[dict[str, object]]:
 def _load_runtime_server_configs() -> dict[str, ServerConfig]:
     allowed_codes = _load_codes_from_config_repo()
     rows = _load_server_rows_from_db()
-    if not rows:
-        return {
-            code: config
-            for code, config in _BASE_SERVER_CONFIGS.items()
-            if code in allowed_codes
-        }
 
     resolved: dict[str, ServerConfig] = {}
+    fallback = next(iter(_BASE_SERVER_CONFIGS.values()))
     for row in rows:
         code = _normalized_code(str(row.get("code") or ""))
-        if not code or code not in allowed_codes:
+        if not code:
             continue
-        base = _BASE_SERVER_CONFIGS.get(code)
-        if base is None:
+        if allowed_codes is not None and code not in allowed_codes:
             continue
         if not bool(row.get("is_active", True)):
             continue
+        base = _BASE_SERVER_CONFIGS.get(code) or fallback
         resolved[code] = ServerConfig(
             **{
                 **base.__dict__,
+                "code": code,
                 "name": str(row.get("title") or base.name),
             }
         )
 
-    if resolved:
-        return resolved
-    return {
-        code: config
-        for code, config in _BASE_SERVER_CONFIGS.items()
-        if code in allowed_codes
-    }
+    for code, config in _BASE_SERVER_CONFIGS.items():
+        if allowed_codes is not None and code not in allowed_codes:
+            continue
+        resolved.setdefault(code, config)
+    return resolved
 
 
 def get_server_config(server_code: str) -> ServerConfig:
