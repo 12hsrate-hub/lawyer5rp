@@ -75,6 +75,7 @@ const DEFAULT_USER_MODAL_TITLE = userModalTitle?.textContent || "Карточк�
 let adminSearchTimer = null;
 let adminLiveTimer = null;
 let lawRebuildPollTimer = null;
+let catalogAuditRefreshTimer = null;
 let selectedUser = null;
 let pendingAction = null;
 let selectedBulkUsers = new Set();
@@ -88,6 +89,8 @@ let lawSetOptions = [];
 let lawSourceRegistryItems = [];
 let serverLawBindingItems = [];
 let lawCatalogOptions = [];
+let activeCatalogAuditEntityType = "";
+let activeCatalogAuditEntityId = "";
 
 function catalogEndpoint(entityType, itemId = "") {
   const suffix = itemId ? `/${encodeURIComponent(itemId)}` : "";
@@ -227,6 +230,7 @@ async function loadLawSourcesManager() {
     activeLawServerCode = payloadServerCode;
   }
   renderLawServerSelector();
+  await loadPlatformBlueprintStage();
   const textarea = document.getElementById("law-sources-textarea");
   const statusHost = document.getElementById("law-sources-status");
   if (textarea) {
@@ -311,6 +315,35 @@ async function loadLawSourcesDependencies() {
     return;
   }
   renderLawSourcesDependencies(payload);
+}
+
+
+function renderPlatformBlueprintStage(payload) {
+  const host = document.getElementById("platform-blueprint-stage");
+  if (!host) {
+    return;
+  }
+  const stage = payload?.stage || {};
+  const stageCode = String(stage?.stage_code || "phase_a_foundation").trim();
+  const stageLabel = String(stage?.stage_label || "Phase A — Stabilize foundation").trim();
+  host.innerHTML = `
+    <div class="legal-section__description"><strong>Этап платформы:</strong> ${escapeHtml(stageLabel)}</div>
+    <div class="legal-field__hint">code: <code>${escapeHtml(stageCode)}</code></div>
+  `;
+}
+
+async function loadPlatformBlueprintStage() {
+  const host = document.getElementById("platform-blueprint-stage");
+  if (!host) {
+    return;
+  }
+  const response = await apiFetch("/api/admin/platform-blueprint/status");
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить текущий этап платформы."))}</p>`;
+    return;
+  }
+  renderPlatformBlueprintStage(payload);
 }
 
 function parseLawSetItemsInput(raw) {
@@ -1083,6 +1116,7 @@ function renderCatalog(payload) {
         </div>
       </div>
       <p id="law-sources-status" class="legal-section__description">Загружаем источники и активную версию...</p>
+      <div id="platform-blueprint-stage" class="legal-subcard"></div>
       <p id="law-sources-validation" class="legal-section__description">Перед пересборкой можно проверить ссылки на валидность и дубликаты.</p>
       <p id="law-sources-task-status" class="legal-section__description"></p>
       <label class="legal-field">
@@ -1188,8 +1222,70 @@ function renderCatalog(payload) {
       <pre id="catalog-preview-json" class="admin-catalog-preview__json"></pre>
     </section>
     <p class="legal-section__description">Журнал изменений (автор и diff):</p>
-    <pre class="legal-field__hint">${escapeHtml(audit.slice(0, 8).map((row) => `${row.created_at} ${row.author} ${row.action} ${row.workflow_from || ""}->${row.workflow_to || ""}\n${row.diff || ""}`).join("\n\n"))}</pre>
+    <div class="admin-section-toolbar">
+      <label class="legal-field"><span class="legal-field__label">entity_type</span><input id="catalog-audit-entity-type" value="${escapeHtml(activeCatalogAuditEntityType || entityType)}" placeholder="laws"></label>
+      <label class="legal-field"><span class="legal-field__label">entity_id</span><input id="catalog-audit-entity-id" value="${escapeHtml(activeCatalogAuditEntityId)}" placeholder="42"></label>
+      <label class="legal-field"><span class="legal-field__label">limit</span><input id="catalog-audit-limit" type="number" min="1" max="100" value="12"></label>
+      <button type="button" id="catalog-audit-refresh" class="ghost-button">Обновить журнал</button>
+    </div>
+    <div id="catalog-audit-results">
+      <pre class="legal-field__hint">${escapeHtml(audit.slice(0, 8).map((row) => `${row.created_at} ${row.author} ${row.action} ${row.workflow_from || ""}->${row.workflow_to || ""}\n${row.diff || ""}`).join("\n\n"))}</pre>
+    </div>
   `;
+}
+
+
+function renderCatalogAuditTrail(payload) {
+  const host = document.getElementById("catalog-audit-results");
+  if (!host) {
+    return;
+  }
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (!items.length) {
+    host.innerHTML = '<p class="legal-section__description">По заданным фильтрам аудита записей нет.</p>';
+    return;
+  }
+  host.innerHTML = `
+    <pre class="legal-field__hint">${escapeHtml(items.slice(0, 12).map((row) => `${row.created_at || "—"} ${row.author || "system"} ${row.action || "—"} ${row.entity_type || ""}#${row.entity_id || ""}
+${row.diff || ""}`).join("\n\n"))}</pre>
+  `;
+}
+
+async function loadCatalogAuditTrail() {
+  if (catalogAuditRefreshTimer) {
+    window.clearTimeout(catalogAuditRefreshTimer);
+    catalogAuditRefreshTimer = null;
+  }
+  const params = new URLSearchParams();
+  const inputEntityType = String(document.getElementById("catalog-audit-entity-type")?.value || activeCatalogAuditEntityType || activeCatalogEntity || "").trim().toLowerCase();
+  const inputEntityId = String(document.getElementById("catalog-audit-entity-id")?.value || activeCatalogAuditEntityId || "").trim();
+  const limitRaw = String(document.getElementById("catalog-audit-limit")?.value || "12").trim();
+  const safeLimit = Math.max(1, Math.min(100, Number(limitRaw || 12) || 12));
+  activeCatalogAuditEntityType = inputEntityType;
+  activeCatalogAuditEntityId = inputEntityId;
+  if (inputEntityType) params.set("entity_type", inputEntityType);
+  if (inputEntityId) params.set("entity_id", inputEntityId);
+  params.set("limit", String(safeLimit));
+  const response = await apiFetch(`/api/admin/catalog/audit?${params.toString()}`);
+  const payload = await parsePayload(response);
+  const host = document.getElementById("catalog-audit-results");
+  if (!response.ok) {
+    if (host) {
+      host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить журнал изменений."))}</p>`;
+    }
+    return;
+  }
+  renderCatalogAuditTrail(payload);
+}
+
+function scheduleCatalogAuditReload(delayMs = 250) {
+  if (catalogAuditRefreshTimer) {
+    window.clearTimeout(catalogAuditRefreshTimer);
+  }
+  catalogAuditRefreshTimer = window.setTimeout(() => {
+    catalogAuditRefreshTimer = null;
+    loadCatalogAuditTrail();
+  }, Math.max(0, Number(delayMs) || 0));
 }
 
 function renderRuntimeServersPanel(payload) {
@@ -1572,7 +1668,9 @@ async function loadCatalog(entityType = activeCatalogEntity) {
     setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить catalog."));
     return;
   }
+  activeCatalogAuditEntityType = String(entityType || "").trim().toLowerCase();
   renderCatalog(payload);
+  await loadCatalogAuditTrail();
   if (entityType === "servers") {
     await loadRuntimeServersPanel();
   }
@@ -4105,6 +4203,10 @@ usersHost?.addEventListener("change", (event) => {
 catalogHost?.addEventListener("change", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
+  if (target.id === "catalog-audit-entity-type" || target.id === "catalog-audit-entity-id" || target.id === "catalog-audit-limit") {
+    scheduleCatalogAuditReload(200);
+    return;
+  }
   if (target.id === "catalog-entity") {
     await loadCatalog(String(target.value || "servers"));
     return;
@@ -4114,6 +4216,16 @@ catalogHost?.addEventListener("change", async (event) => {
     await loadLawSourcesManager();
     await loadLawSets();
     await loadServerLawBindings();
+  }
+});
+
+catalogHost?.addEventListener("keydown", async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (event.key !== "Enter") return;
+  if (target.id === "catalog-audit-entity-type" || target.id === "catalog-audit-entity-id" || target.id === "catalog-audit-limit") {
+    event.preventDefault();
+    await loadCatalogAuditTrail();
   }
 });
 
@@ -4158,6 +4270,10 @@ catalogHost?.addEventListener("click", async (event) => {
   }
   if (target.id === "law-sources-preview") {
     await previewLawSources();
+    return;
+  }
+  if (target.id === "catalog-audit-refresh") {
+    await loadCatalogAuditTrail();
     return;
   }
   if (target.id === "law-sets-refresh") {
