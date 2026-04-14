@@ -908,6 +908,49 @@ class WebApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_law_sources_preview_forbidden_for_foreign_server_without_manage_servers(self):
+        self._register_verify_and_login("law_manager_preview", "law-manager-preview@example.com")
+
+        class DummyWorkflowService:
+            repository = object()
+
+        class DummyPermissionSet:
+            def __init__(self, codes: set[str], server_code: str):
+                self.codes = {str(code).strip().lower() for code in codes}
+                self.server_code = server_code
+
+            def has(self, permission: str) -> bool:
+                normalized = str(permission or "").strip().lower()
+                if not normalized:
+                    return True
+                return normalized in self.codes
+
+        def fake_build_permission_set(_, __, server_config):
+            return DummyPermissionSet({"manage_laws"}, getattr(server_config, "code", "blackberry"))
+
+        self.client.app.dependency_overrides[admin_route.get_content_workflow_service] = lambda: DummyWorkflowService()
+        try:
+            with patch("ogp_web.dependencies.build_permission_set", side_effect=fake_build_permission_set), patch(
+                "ogp_web.routes.admin.build_permission_set",
+                side_effect=fake_build_permission_set,
+            ), patch(
+                "ogp_web.routes.admin.get_server_config",
+                side_effect=lambda server_code: type("Cfg", (), {"code": server_code})(),
+            ):
+                response = self.client.post(
+                    "/api/admin/law-sources/preview",
+                    json={
+                        "server_code": "orange",
+                        "source_urls": ["https://example.com/law/1"],
+                        "persist_sources": False,
+                    },
+                )
+        finally:
+            self.client.app.dependency_overrides.pop(admin_route.get_content_workflow_service, None)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(any("другого сервера" in str(item).lower() for item in response.json().get("detail", [])))
+
     def test_health_endpoint_reports_ok(self):
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)

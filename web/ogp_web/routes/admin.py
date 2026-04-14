@@ -1029,9 +1029,31 @@ def _resolve_actor_user_id(user_store: UserStore, username: str) -> int:
     return int(actor_user_id)
 
 
-def _resolve_law_sources_server_code(user: AuthUser, requested_server_code: str = "") -> str:
+def _resolve_law_sources_server_code(
+    user: AuthUser,
+    user_store: UserStore,
+    requested_server_code: str = "",
+) -> str:
     normalized = str(requested_server_code or "").strip().lower()
-    return normalized or user.server_code
+    target_server_code = normalized or user.server_code
+    if target_server_code == user.server_code:
+        return target_server_code
+
+    current_permissions = build_permission_set(user_store, user.username, get_server_config(user.server_code))
+    if not current_permissions.has("manage_servers"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=["Недостаточно прав для управления источниками законов другого сервера."],
+        )
+
+    target_permissions = build_permission_set(user_store, user.username, get_server_config(target_server_code))
+    if not target_permissions.has("manage_laws"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=[f"Недостаточно прав manage_laws для сервера '{target_server_code}'."],
+        )
+
+    return target_server_code
 
 
 def _resolve_active_change_request_id(item: dict[str, Any], change_requests: list[dict[str, Any]]) -> int | None:
@@ -1419,9 +1441,10 @@ async def admin_law_sources_status(
     server_code: str = Query(default="", description="Runtime server code override"),
     user: AuthUser = Depends(requires_permission("manage_laws")),
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
-    target_server_code = _resolve_law_sources_server_code(user, server_code)
+    target_server_code = _resolve_law_sources_server_code(user, user_store, server_code)
     service = LawAdminService(workflow_service)
     snapshot = service.get_effective_sources(server_code=target_server_code)
     metrics_store.log_event(
@@ -1452,7 +1475,7 @@ async def admin_law_sources_sync(
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
-    target_server_code = _resolve_law_sources_server_code(user, server_code)
+    target_server_code = _resolve_law_sources_server_code(user, user_store, server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     service = LawAdminService(workflow_service)
     try:
@@ -1485,7 +1508,7 @@ async def admin_law_sources_rebuild(
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
-    target_server_code = _resolve_law_sources_server_code(user, payload.server_code)
+    target_server_code = _resolve_law_sources_server_code(user, user_store, payload.server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     service = LawAdminService(workflow_service)
     try:
@@ -1518,7 +1541,7 @@ async def admin_law_sources_rebuild_async(
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
-    target_server_code = _resolve_law_sources_server_code(user, payload.server_code)
+    target_server_code = _resolve_law_sources_server_code(user, user_store, payload.server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     request_id = getattr(request.state, "request_id", "")
     active_task, queued_task = _claim_law_rebuild_task(server_code=target_server_code)
@@ -1606,7 +1629,7 @@ async def admin_law_sources_save(
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
-    target_server_code = _resolve_law_sources_server_code(user, payload.server_code)
+    target_server_code = _resolve_law_sources_server_code(user, user_store, payload.server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     service = LawAdminService(workflow_service)
     try:
@@ -1636,14 +1659,16 @@ async def admin_law_sources_preview(
     payload: AdminLawSourcesPayload,
     user: AuthUser = Depends(requires_permission("manage_laws")),
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
+    target_server_code = _resolve_law_sources_server_code(user, user_store, payload.server_code)
     service = LawAdminService(workflow_service)
     result = service.preview_sources(source_urls=payload.source_urls)
     metrics_store.log_event(
         event_type="admin_law_sources_preview",
         username=user.username,
-        server_code=user.server_code,
+        server_code=target_server_code,
         path="/api/admin/law-sources/preview",
         method="POST",
         status_code=200,
@@ -1661,10 +1686,11 @@ async def admin_law_sources_history(
     server_code: str = Query(default="", description="Runtime server code override"),
     user: AuthUser = Depends(requires_permission("manage_laws")),
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    user_store: UserStore = Depends(get_user_store),
     limit: int = Query(default=10, ge=1, le=100),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
-    target_server_code = _resolve_law_sources_server_code(user, server_code)
+    target_server_code = _resolve_law_sources_server_code(user, user_store, server_code)
     service = LawAdminService(workflow_service)
     result = service.list_recent_versions(server_code=target_server_code, limit=limit)
     metrics_store.log_event(
@@ -1705,9 +1731,10 @@ async def admin_law_sources_task_status(
     task_id: str,
     server_code: str = Query(default="", description="Runtime server code override"),
     user: AuthUser = Depends(requires_permission("manage_laws")),
+    user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
-    target_server_code = _resolve_law_sources_server_code(user, server_code)
+    target_server_code = _resolve_law_sources_server_code(user, user_store, server_code)
     task = _load_admin_task(task_id)
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Задача не найдена."])
