@@ -45,6 +45,7 @@ from ogp_web.services.auth_service import AuthError, AuthUser, require_admin_use
 from ogp_web.services.point3_policy_service import load_point3_eval_thresholds
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.services.content_workflow_service import ContentWorkflowService
+from ogp_web.services.content_contracts import normalize_content_type
 from ogp_web.services.admin_dashboard_service import AdminDashboardService
 from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
@@ -153,6 +154,10 @@ def _raise_not_found(*detail: Any) -> None:
 
 def _admin_ok(**payload: Any) -> dict[str, Any]:
     return {"ok": True, **payload}
+
+
+def _normalize_admin_catalog_entity_type(entity_type: str) -> str:
+    return normalize_content_type(entity_type, allow_legacy_import_alias=True)
 
 
 def _load_model_policy() -> dict[str, Any]:
@@ -1632,10 +1637,11 @@ async def admin_catalog_list(
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
 ):
     try:
+        normalized_entity_type = _normalize_admin_catalog_entity_type(entity_type)
         result = workflow_service.list_content_items(
             server_scope="server",
             server_id=user.server_code,
-            content_type=entity_type,
+            content_type=normalized_entity_type,
             include_legacy_fallback=False,
         )
         audit = workflow_service.list_audit_trail(
@@ -1813,11 +1819,12 @@ async def admin_catalog_create(
 ):
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     try:
+        normalized_entity_type = _normalize_admin_catalog_entity_type(entity_type)
         final_config = _build_catalog_payload_config(payload)
         item = workflow_service.create_content_item(
             server_scope="server",
             server_id=user.server_code,
-            content_type=entity_type,
+            content_type=normalized_entity_type,
             content_key=str(final_config.get("key") or payload.title or "").strip().lower().replace(" ", "_"),
             title=payload.title,
             metadata_json={"config": final_config},
