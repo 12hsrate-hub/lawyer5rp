@@ -1,4 +1,4 @@
-# PLANS.md — Migration Plan for Multi-Server Legal Platform (Staged, Repo-Aware)
+# plans.md — Migration Plan for Multi-Server Legal Platform (Staged, Repo-Aware)
 
 Status: draft v1 (execution-ready baseline)  
 Date: 2026-04-14  
@@ -429,7 +429,7 @@ Three layers maintained continuously:
 3. Developer docs (schema, adapters, feature flags, migration boundaries).
 
 Primary docs to keep updated during execution:
-- `PLANS.md` (this file)
+- `plans.md` (this file)
 - `MIGRATION_MAP.md`
 - `DATA_MODEL_DRAFT.md`
 - `UI_ADMIN_STRUCTURE.md`
