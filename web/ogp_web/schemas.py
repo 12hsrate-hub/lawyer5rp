@@ -448,6 +448,8 @@ class ExamImportTaskStatus(BaseModel):
     task_type: str
     source_row: int | None = None
     status: str
+    raw_status: str = ""
+    canonical_status: str = ""
     created_at: str = ""
     started_at: str = ""
     finished_at: str = ""

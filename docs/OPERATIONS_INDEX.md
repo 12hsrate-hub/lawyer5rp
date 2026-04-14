@@ -13,6 +13,7 @@ Primary entrypoint for deploy, rollback, and live-operations work.
 - [`ROLL_OUT.md`](./ROLL_OUT.md) - rollout stages and go/no-go criteria
 - [`ROLLBACK_PLAYBOOK.md`](./ROLLBACK_PLAYBOOK.md) - rollback triggers and procedures
 - [`RUNBOOK.md`](./RUNBOOK.md) - point3 legal mode incident handling
+- [`ASYNC_OPERATIONS_RUNBOOK.md`](./ASYNC_OPERATIONS_RUNBOOK.md) - async jobs, law rebuild, and exam import ops handling
 
 ## Quality And Acceptance
 
@@ -27,6 +28,7 @@ Primary entrypoint for deploy, rollback, and live-operations work.
 - [`PRODUCT_BRIEF.md`](./PRODUCT_BRIEF.md) - active product/architecture brief
 - [`ARCHITECT_AGENT_GUIDE.md`](./ARCHITECT_AGENT_GUIDE.md) - active planning rules for Codex
 - [`CODEX_RUN_GUIDE.md`](./CODEX_RUN_GUIDE.md) - Codex task execution loop
+- [`../RETRY_IDEMPOTENCY_MATRIX.md`](../RETRY_IDEMPOTENCY_MATRIX.md) - current retry/idempotency matrix and gaps
 - [`adr/ADR-legal-workflow-stage.md`](./adr/ADR-legal-workflow-stage.md) - active staged-workflow invariant
 
 ## Exam Scoring

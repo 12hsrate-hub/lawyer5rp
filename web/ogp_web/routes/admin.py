@@ -46,6 +46,8 @@ from ogp_web.services.point3_policy_service import load_point3_eval_thresholds
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.content_contracts import normalize_content_type
+from ogp_web.services.async_job_service import AsyncJobService
+from ogp_web.services.job_status_service import enrich_job_status
 from ogp_web.services.admin_dashboard_service import AdminDashboardService
 from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
@@ -158,6 +160,11 @@ def _admin_ok(**payload: Any) -> dict[str, Any]:
 
 def _normalize_admin_catalog_entity_type(entity_type: str) -> str:
     return normalize_content_type(entity_type, allow_legacy_import_alias=True)
+
+
+def _get_async_job_service(request: Request, user_store: UserStore) -> AsyncJobService:
+    queue_provider = getattr(request.app.state, "queue_provider", None)
+    return AsyncJobService(user_store.backend, queue_provider=queue_provider)
 
 
 def _load_model_policy() -> dict[str, Any]:
@@ -1389,6 +1396,96 @@ async def admin_law_jobs_overview(
     }
 
 
+@router.get("/api/admin/async-jobs/overview")
+async def admin_async_jobs_overview(
+    request: Request,
+    user: AuthUser = Depends(requires_permission("manage_servers")),
+    user_store: UserStore = Depends(get_user_store),
+):
+    _ = user
+    service = _get_async_job_service(request, user_store)
+    items = [
+        enrich_job_status(item, subsystem="async_job")
+        for item in service.list_jobs(server_id=user.server_code, limit=100)
+    ]
+    problem_statuses = {"failed", "retry_scheduled"}
+    problem_items = [item for item in items if str(item.get("canonical_status") or "") in problem_statuses]
+    failed_items = [item for item in items if str(item.get("canonical_status") or "") == "failed"]
+    retry_items = [item for item in items if str(item.get("canonical_status") or "") == "retry_scheduled"]
+    running_items = [item for item in items if str(item.get("canonical_status") or "") == "running"]
+
+    by_type: dict[str, int] = {}
+    for item in problem_items:
+        job_type = str(item.get("job_type") or "unknown")
+        by_type[job_type] = by_type.get(job_type, 0) + 1
+
+    return {
+        "ok": True,
+        "summary": {
+            "total_jobs": len(items),
+            "problem_jobs": len(problem_items),
+            "failed_jobs": len(failed_items),
+            "retry_scheduled_jobs": len(retry_items),
+            "running_jobs": len(running_items),
+        },
+        "problem_jobs": problem_items[:20],
+        "by_job_type": [
+            {"job_type": key, "count": value}
+            for key, value in sorted(by_type.items(), key=lambda pair: (-pair[1], pair[0]))
+        ],
+    }
+
+
+@router.get("/api/admin/exam-import/overview")
+async def admin_exam_import_overview(
+    user: AuthUser = Depends(requires_permission("manage_servers")),
+    exam_store: ExamAnswersStore = Depends(get_exam_answers_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    _ = user
+    pending_scores = 0
+    summary: dict[str, Any] = {
+        "pending_scores": 0,
+        "last_sync": None,
+        "last_score": None,
+        "recent_failures": [],
+        "recent_row_failures": [],
+    }
+    failed_entries: list[dict[str, Any]] = []
+    try:
+        pending_scores = int(exam_store.count_entries_needing_scores() or 0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("admin_exam_import_overview_pending_scores_failed error=%s", exc)
+    try:
+        summary = metrics_store.get_exam_import_summary(pending_scores=pending_scores)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("admin_exam_import_overview_summary_failed error=%s", exc)
+        summary["pending_scores"] = pending_scores
+    try:
+        failed_entries = exam_store.list_entries_with_failed_scores(limit=5)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("admin_exam_import_overview_failed_entries_failed error=%s", exc)
+        failed_entries = []
+
+    recent_failures = list(summary.get("recent_failures") or [])
+    recent_row_failures = list(summary.get("recent_row_failures") or [])
+    return {
+        "ok": True,
+        "summary": {
+            "pending_scores": int(summary.get("pending_scores") or pending_scores or 0),
+            "failed_entries": len(failed_entries),
+            "recent_failures": len(recent_failures),
+            "recent_row_failures": len(recent_row_failures),
+            "problem_signals": len(failed_entries) + len(recent_failures) + len(recent_row_failures),
+        },
+        "last_sync": summary.get("last_sync"),
+        "last_score": summary.get("last_score"),
+        "recent_failures": recent_failures[:5],
+        "recent_row_failures": recent_row_failures[:5],
+        "failed_entries": failed_entries[:5],
+    }
+
+
 @router.put("/api/admin/law-source-registry/{source_id}")
 async def admin_law_source_registry_update(
     source_id: int,
@@ -2266,7 +2363,7 @@ async def admin_law_sources_task_status(
         status_code=200,
         meta={"status": task.get("status")},
     )
-    return task
+    return enrich_job_status(task, subsystem="admin_task")
 
 
 @router.get("/api/admin/dashboard")
@@ -3322,4 +3419,4 @@ async def admin_task_status(task_id: str, _: AuthUser = Depends(requires_permiss
     task = _load_admin_task(task_id)
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Задача не найдена."])
-    return task
+    return enrich_job_status(task, subsystem="admin_task")

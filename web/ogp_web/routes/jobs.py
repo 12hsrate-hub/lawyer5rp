@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from ogp_web.dependencies import get_user_store, requires_permission
 from ogp_web.services.async_job_service import AsyncJobService
 from ogp_web.services.auth_service import AuthUser
+from ogp_web.services.job_status_service import enrich_job_status
 from ogp_web.storage.case_repository import CaseRepository
 from ogp_web.storage.user_store import UserStore
 
@@ -35,11 +36,15 @@ def _translate_service_error(exc: Exception) -> HTTPException:
 class JobCreateResponse(BaseModel):
     job_id: int
     status: str
+    raw_status: str = ""
+    canonical_status: str = ""
 
 
 class JobActionResponse(BaseModel):
     id: int
     status: str
+    raw_status: str = ""
+    canonical_status: str = ""
     job_type: str
 
 
@@ -57,6 +62,7 @@ class ExportCreatePayload(BaseModel):
 
 class AdminReindexPayload(BaseModel):
     scope: str = "all"
+    idempotency_key: str | None = None
 
 
 class AdminImportPayload(BaseModel):
@@ -71,7 +77,8 @@ async def list_jobs(
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ):
-    return {"items": _service(store, request).list_jobs(server_id=user.server_code, limit=limit)}
+    items = _service(store, request).list_jobs(server_id=user.server_code, limit=limit)
+    return {"items": [enrich_job_status(item, subsystem="async_job") for item in items]}
 
 
 @router.get("/api/jobs/{job_id}")
@@ -82,7 +89,8 @@ async def get_job(
     store: UserStore = Depends(get_user_store),
 ):
     try:
-        return _service(store, request).get_job(job_id=job_id, server_id=user.server_code)
+        job = _service(store, request).get_job(job_id=job_id, server_id=user.server_code)
+        return enrich_job_status(job, subsystem="async_job")
     except Exception as exc:  # noqa: BLE001
         raise _translate_service_error(exc) from exc
 
@@ -95,7 +103,8 @@ async def list_job_attempts(
     store: UserStore = Depends(get_user_store),
 ):
     try:
-        return {"items": _service(store, request).list_attempts(job_id=job_id, server_id=user.server_code)}
+        items = _service(store, request).list_attempts(job_id=job_id, server_id=user.server_code)
+        return {"items": [enrich_job_status(item, subsystem="async_job") for item in items]}
     except Exception as exc:  # noqa: BLE001
         raise _translate_service_error(exc) from exc
 
@@ -111,7 +120,14 @@ async def retry_job(
         job = _service(store, request).retry_job(job_id=job_id, server_id=user.server_code)
     except Exception as exc:  # noqa: BLE001
         raise _translate_service_error(exc) from exc
-    return JobActionResponse(id=int(job["id"]), status=str(job["status"]), job_type=str(job["job_type"]))
+    enriched = enrich_job_status(job, subsystem="async_job")
+    return JobActionResponse(
+        id=int(job["id"]),
+        status=str(job["status"]),
+        raw_status=str(enriched["raw_status"]),
+        canonical_status=str(enriched["canonical_status"]),
+        job_type=str(job["job_type"]),
+    )
 
 
 @router.post("/api/jobs/{job_id}/cancel", response_model=JobActionResponse)
@@ -125,7 +141,14 @@ async def cancel_job(
         job = _service(store, request).cancel_job(job_id=job_id, server_id=user.server_code)
     except Exception as exc:  # noqa: BLE001
         raise _translate_service_error(exc) from exc
-    return JobActionResponse(id=int(job["id"]), status=str(job["status"]), job_type=str(job["job_type"]))
+    enriched = enrich_job_status(job, subsystem="async_job")
+    return JobActionResponse(
+        id=int(job["id"]),
+        status=str(job["status"]),
+        raw_status=str(enriched["raw_status"]),
+        canonical_status=str(enriched["canonical_status"]),
+        job_type=str(job["job_type"]),
+    )
 
 
 @router.post("/api/documents/{document_id}/generate-async", response_model=JobCreateResponse)
@@ -157,7 +180,13 @@ async def create_document_generation_job(
         )
     except Exception as exc:  # noqa: BLE001
         raise _translate_service_error(exc) from exc
-    return JobCreateResponse(job_id=int(job["id"]), status=str(job["status"]))
+    enriched = enrich_job_status(job, subsystem="async_job")
+    return JobCreateResponse(
+        job_id=int(job["id"]),
+        status=str(job["status"]),
+        raw_status=str(enriched["raw_status"]),
+        canonical_status=str(enriched["canonical_status"]),
+    )
 
 
 @router.post("/api/document-versions/{version_id}/exports", response_model=JobCreateResponse)
@@ -187,7 +216,13 @@ async def create_export_job(
         )
     except Exception as exc:  # noqa: BLE001
         raise _translate_service_error(exc) from exc
-    return JobCreateResponse(job_id=int(job["id"]), status=str(job["status"]))
+    enriched = enrich_job_status(job, subsystem="async_job")
+    return JobCreateResponse(
+        job_id=int(job["id"]),
+        status=str(job["status"]),
+        raw_status=str(enriched["raw_status"]),
+        canonical_status=str(enriched["canonical_status"]),
+    )
 
 
 @router.post("/api/admin/reindex", response_model=JobCreateResponse)
@@ -197,6 +232,8 @@ async def create_reindex_job(
     user: AuthUser = Depends(requires_permission("manage_servers")),
     store: UserStore = Depends(get_user_store),
 ):
+    normalized_scope = str(payload.scope or "all").strip().lower() or "all"
+    resolved_idempotency_key = str(payload.idempotency_key or "").strip() or f"content_reindex:{normalized_scope}"
     try:
         job = _service(store, request).create_job(
             server_scope="global",
@@ -204,13 +241,20 @@ async def create_reindex_job(
             job_type="content_reindex",
             entity_type="content",
             entity_id=None,
-            payload_json={"scope": payload.scope, "request_id": getattr(request.state, "request_id", "")},
+            payload_json={"scope": normalized_scope, "request_id": getattr(request.state, "request_id", "")},
             created_by=_actor_id(store, user.username),
+            idempotency_key=resolved_idempotency_key,
             enqueue=True,
         )
     except Exception as exc:  # noqa: BLE001
         raise _translate_service_error(exc) from exc
-    return JobCreateResponse(job_id=int(job["id"]), status=str(job["status"]))
+    enriched = enrich_job_status(job, subsystem="async_job")
+    return JobCreateResponse(
+        job_id=int(job["id"]),
+        status=str(job["status"]),
+        raw_status=str(enriched["raw_status"]),
+        canonical_status=str(enriched["canonical_status"]),
+    )
 
 
 @router.post("/api/admin/import", response_model=JobCreateResponse)
@@ -236,4 +280,10 @@ async def create_import_job(
         )
     except Exception as exc:  # noqa: BLE001
         raise _translate_service_error(exc) from exc
-    return JobCreateResponse(job_id=int(job["id"]), status=str(job["status"]))
+    enriched = enrich_job_status(job, subsystem="async_job")
+    return JobCreateResponse(
+        job_id=int(job["id"]),
+        status=str(job["status"]),
+        raw_status=str(enriched["raw_status"]),
+        canonical_status=str(enriched["canonical_status"]),
+    )

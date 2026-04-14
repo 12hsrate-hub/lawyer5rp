@@ -137,6 +137,11 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="segmented-tabs__item is-active"', response.text)
         self.assertIn('href="/admin/users"', response.text)
+        self.assertIn("Async Jobs", response.text)
+        self.assertIn("Law rebuild tasks", response.text)
+        self.assertIn('id="admin-law-jobs"', response.text)
+        self.assertIn("Exam import", response.text)
+        self.assertIn('id="admin-exam-import-ops"', response.text)
 
     def test_admin_laws_page_contains_guided_server_setup_block(self):
         self.client.post("/api/auth/logout")
