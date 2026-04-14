@@ -870,6 +870,64 @@ def _resolve_actor_user_id(user_store: UserStore, username: str) -> int:
     return int(actor_user_id)
 
 
+def _resolve_active_change_request_id(item: dict[str, Any], change_requests: list[dict[str, Any]]) -> int | None:
+    item_status = str(item.get("status") or "").strip().lower()
+    if not change_requests:
+        return None
+    if item_status in {"draft", "in_review", "approved"}:
+        for change_request in change_requests:
+            if str(change_request.get("status") or "").strip().lower() == item_status:
+                try:
+                    return int(change_request.get("id"))
+                except (TypeError, ValueError):
+                    continue
+    try:
+        return int(change_requests[0].get("id"))
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+def _build_catalog_payload_config(payload: AdminCatalogItemPayload) -> dict[str, Any]:
+    typed_fields: dict[str, Any] = {
+        "key": payload.key,
+        "description": payload.description,
+        "status": payload.status,
+        "server_code": payload.server_code,
+        "base_url": payload.base_url,
+        "timeout_sec": payload.timeout_sec,
+        "law_code": payload.law_code,
+        "source": payload.source,
+        "effective_from": payload.effective_from,
+        "template_type": payload.template_type,
+        "document_kind": payload.document_kind,
+        "output_format": payload.output_format,
+        "feature_flag": payload.feature_flag,
+        "rollout_percent": payload.rollout_percent,
+        "audience": payload.audience,
+        "rule_type": payload.rule_type,
+        "priority": payload.priority,
+        "applies_to": payload.applies_to,
+    }
+    cleaned_typed = {
+        key: value
+        for key, value in typed_fields.items()
+        if value not in (None, "", [], {})
+    }
+    merged = {
+        key: value
+        for key, value in (payload.config or {}).items()
+        if value is not None
+    }
+    merged.update(cleaned_typed)
+    if "key" not in merged:
+        merged["key"] = str(payload.title or "").strip().lower().replace(" ", "_")
+    if "status" not in merged:
+        merged["status"] = payload.status or "draft"
+    if not str(merged.get("key") or "").strip():
+        raise ValueError("key_required")
+    return merged
+
+
 @router.get("/api/admin/catalog/{entity_type}")
 async def admin_catalog_list(
     entity_type: str,
@@ -890,9 +948,19 @@ async def admin_catalog_list(
             entity_id="",
             limit=100,
         )
+        enriched_items: list[dict[str, Any]] = []
+        for item in result["items"]:
+            item_copy = dict(item)
+            change_requests = workflow_service.list_change_requests(
+                content_item_id=int(item_copy.get("id")),
+                server_scope="server",
+                server_id=user.server_code,
+            )
+            item_copy["active_change_request_id"] = _resolve_active_change_request_id(item_copy, change_requests)
+            enriched_items.append(item_copy)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
-    return {"entity_type": entity_type, "items": result["items"], "legacy_fallback": result["legacy_fallback"], "audit": audit}
+    return {"entity_type": entity_type, "items": enriched_items, "legacy_fallback": result["legacy_fallback"], "audit": audit}
 
 
 @router.get("/api/admin/catalog/{entity_type}/{item_id}")
@@ -923,7 +991,40 @@ async def admin_catalog_get_item(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     except (KeyError, PermissionError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
-    return {"item": item, "versions": versions, "change_requests": change_requests}
+    versions_by_id = {
+        int(version.get("id")): version
+        for version in versions
+        if isinstance(version, dict) and version.get("id") is not None
+    }
+    latest_change_request = change_requests[0] if change_requests else None
+    effective_version = None
+    effective_payload: dict[str, Any] = {}
+
+    published_version_id = item.get("current_published_version_id")
+    if published_version_id is not None:
+        effective_version = versions_by_id.get(int(published_version_id))
+
+    if not effective_version and latest_change_request:
+        candidate_version_id = latest_change_request.get("candidate_version_id")
+        if candidate_version_id is not None:
+            effective_version = versions_by_id.get(int(candidate_version_id))
+
+    if not effective_version and versions:
+        effective_version = versions[-1]
+
+    if effective_version:
+        payload_candidate = effective_version.get("payload_json")
+        if isinstance(payload_candidate, dict):
+            effective_payload = payload_candidate
+
+    return {
+        "item": item,
+        "versions": versions,
+        "change_requests": change_requests,
+        "effective_version": effective_version,
+        "effective_payload": effective_payload,
+        "latest_change_request": latest_change_request,
+    }
 
 
 @router.get("/api/admin/catalog/{entity_type}/{item_id}/versions")
@@ -1002,13 +1103,14 @@ async def admin_catalog_create(
 ):
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     try:
+        final_config = _build_catalog_payload_config(payload)
         item = workflow_service.create_content_item(
             server_scope="server",
             server_id=user.server_code,
             content_type=entity_type,
-            content_key=str(payload.config.get("key") or payload.title or "").strip().lower().replace(" ", "_"),
+            content_key=str(final_config.get("key") or payload.title or "").strip().lower().replace(" ", "_"),
             title=payload.title,
-            metadata_json={"config": payload.config},
+            metadata_json={"config": final_config},
             actor_user_id=actor_user_id,
             request_id=getattr(request.state, "request_id", ""),
         )
@@ -1031,9 +1133,10 @@ async def admin_catalog_update(
 ):
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     try:
+        final_config = _build_catalog_payload_config(payload)
         result = workflow_service.create_draft_version(
             content_item_id=int(item_id),
-            payload_json=payload.config,
+            payload_json=final_config,
             schema_version=1,
             actor_user_id=actor_user_id,
             request_id=getattr(request.state, "request_id", ""),
@@ -1078,18 +1181,25 @@ async def admin_catalog_workflow(
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     _ = entity_type
     try:
-        target = str(payload.target_state or "").strip().lower()
-        if target == "review":
-            response = workflow_service.submit_change_request(change_request_id=cr_id, actor_user_id=actor_user_id, request_id=getattr(request.state, "request_id", ""), server_scope="server", server_id=user.server_code)
-        elif target == "publish":
-            response = workflow_service.publish_change_request(change_request_id=cr_id, actor_user_id=actor_user_id, request_id=getattr(request.state, "request_id", ""), summary_json={"source": "admin_route"}, server_scope="server", server_id=user.server_code)
+        action = str(payload.action or "").strip().lower()
+        change_request_id = int(payload.change_request_id or cr_id or 0)
+        if change_request_id <= 0:
+            raise ValueError("change_request_id_required")
+        if action == "submit_for_review":
+            response = workflow_service.submit_change_request(change_request_id=change_request_id, actor_user_id=actor_user_id, request_id=getattr(request.state, "request_id", ""), server_scope="server", server_id=user.server_code)
+        elif action == "approve":
+            response = workflow_service.review_change_request(change_request_id=change_request_id, reviewer_user_id=actor_user_id, decision="approve", comment="approved_via_admin_route", diff_json={"source": "admin_route"}, request_id=getattr(request.state, "request_id", ""), server_scope="server", server_id=user.server_code)
+        elif action == "request_changes":
+            response = workflow_service.review_change_request(change_request_id=change_request_id, reviewer_user_id=actor_user_id, decision="request_changes", comment="requested_changes_via_admin_route", diff_json={"source": "admin_route"}, request_id=getattr(request.state, "request_id", ""), server_scope="server", server_id=user.server_code)
+        elif action == "publish":
+            response = workflow_service.publish_change_request(change_request_id=change_request_id, actor_user_id=actor_user_id, request_id=getattr(request.state, "request_id", ""), summary_json={"source": "admin_route"}, server_scope="server", server_id=user.server_code)
         else:
-            raise ValueError("unsupported_workflow_target")
+            raise ValueError("unsupported_workflow_action")
     except (ValueError, PermissionError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
-    metrics_store.log_event(event_type=f"admin_catalog_{entity_type}_workflow", username=user.username, server_code=user.server_code, path=f"/api/admin/catalog/{entity_type}/{item_id}/workflow", method="POST", status_code=200, meta={"entity_id": item_id, "author": user.username, "target_state": payload.target_state, "change_request_id": cr_id})
+    metrics_store.log_event(event_type=f"admin_catalog_{entity_type}_workflow", username=user.username, server_code=user.server_code, path=f"/api/admin/catalog/{entity_type}/{item_id}/workflow", method="POST", status_code=200, meta={"entity_id": item_id, "author": user.username, "action": payload.action, "change_request_id": payload.change_request_id or cr_id})
     return {"ok": True, "result": response}
 
 

@@ -1188,6 +1188,77 @@
   gap: 12px;
 }
 
+.admin-catalog-preview {
+  margin-top: 16px;
+  border: 1px solid rgba(214, 201, 189, 0.95);
+  border-radius: 12px;
+  background: rgba(252, 250, 247, 0.96);
+  padding: 14px;
+}
+
+.admin-catalog-preview__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.admin-catalog-preview__title {
+  margin: 0;
+  font-size: 18px;
+  color: #2b211c;
+}
+
+.admin-catalog-preview__summary {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  margin-bottom: 12px;
+}
+
+.admin-catalog-preview__summary-row {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(224, 213, 202, 0.95);
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.admin-catalog-preview__summary-row span {
+  font-size: 12px;
+  color: #7e7268;
+}
+
+.admin-catalog-preview__summary-row strong {
+  font-size: 14px;
+  color: #2f251f;
+}
+
+.admin-catalog-preview__meta,
+.admin-catalog-preview__json,
+#admin-catalog-published,
+#admin-catalog-draft {
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid rgba(214, 201, 189, 0.95);
+  border-radius: 10px;
+  background: #fdfaf6;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #2e241d;
+  white-space: pre-wrap;
+  overflow: auto;
+  max-height: 280px;
+  user-select: text;
+}
+
+.admin-catalog-typed-field {
+  min-width: 0;
+}
+
 .admin-synthetic-grid {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }

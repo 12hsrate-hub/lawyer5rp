@@ -425,11 +425,79 @@ class ExamImportTaskStatus(BaseModel):
 
 class AdminCatalogItemPayload(BaseModel):
     title: str = ""
+    key: str = ""
+    description: str = ""
+    status: str = "draft"
+    server_code: str = ""
+    base_url: str = ""
+    timeout_sec: int | None = None
+    law_code: str = ""
+    source: str = ""
+    effective_from: str = ""
+    template_type: str = ""
+    document_kind: str = ""
+    output_format: str = ""
+    feature_flag: str = ""
+    rollout_percent: int | None = None
+    audience: str = ""
+    rule_type: str = ""
+    priority: int | None = None
+    applies_to: str = ""
     config: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("title", "description")
+    @classmethod
+    def validate_trimmed_text(cls, value: str) -> str:
+        return str(value or "").strip()
+
+    @field_validator("key")
+    @classmethod
+    def validate_key(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower().replace(" ", "_")
+        if normalized and not all(ch.isalnum() or ch in {"_", "-", "."} for ch in normalized):
+            raise ValueError("key_must_contain_only_alnum_dash_underscore_dot")
+        return normalized
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        normalized = str(value or "draft").strip().lower() or "draft"
+        allowed = {"draft", "review", "published", "active", "disabled", "archived"}
+        if normalized not in allowed:
+            raise ValueError("unsupported_status")
+        return normalized
+
+    @field_validator("rollout_percent")
+    @classmethod
+    def validate_rollout_percent(cls, value: int | None) -> int | None:
+        if value is None:
+            return None
+        normalized = int(value)
+        if normalized < 0 or normalized > 100:
+            raise ValueError("rollout_percent_must_be_between_0_and_100")
+        return normalized
+
+    @field_validator("timeout_sec", "priority")
+    @classmethod
+    def validate_non_negative_int(cls, value: int | None) -> int | None:
+        if value is None:
+            return None
+        normalized = int(value)
+        if normalized < 0:
+            raise ValueError("value_must_be_non_negative")
+        return normalized
+
+    @field_validator("config")
+    @classmethod
+    def validate_config(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise ValueError("config_must_be_object")
+        return value
 
 
 class AdminCatalogWorkflowPayload(BaseModel):
-    target_state: str = ""
+    action: str = ""
+    change_request_id: int = 0
 
 
 class AdminCatalogRollbackPayload(BaseModel):

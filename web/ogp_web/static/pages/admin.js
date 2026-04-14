@@ -45,6 +45,20 @@ const actionQuotaField = document.getElementById("admin-action-quota-field");
 const actionQuotaInput = document.getElementById("admin-action-quota");
 const actionConfirmButton = document.getElementById("admin-action-confirm");
 const actionCancelButton = document.getElementById("admin-action-cancel");
+const catalogModalTitle = document.getElementById("admin-catalog-modal-title");
+const catalogModalErrors = document.getElementById("admin-catalog-modal-errors");
+const catalogForm = document.getElementById("admin-catalog-form");
+const catalogTitleInput = document.getElementById("admin-catalog-title");
+const catalogKeyInput = document.getElementById("admin-catalog-key");
+const catalogDescriptionInput = document.getElementById("admin-catalog-description");
+const catalogStatusInput = document.getElementById("admin-catalog-status");
+const catalogTypedFieldsHost = document.getElementById("admin-catalog-typed-fields");
+const catalogJsonInput = document.getElementById("admin-catalog-json");
+const catalogJsonError = document.getElementById("admin-catalog-json-error");
+const catalogPublishedHost = document.getElementById("admin-catalog-published");
+const catalogDraftHost = document.getElementById("admin-catalog-draft");
+const catalogSaveButton = document.getElementById("admin-catalog-save");
+const catalogCancelButton = document.getElementById("admin-catalog-cancel");
 const catalogHost = document.getElementById("admin-catalog");
 
 const {
@@ -59,7 +73,7 @@ const {
 } = window.OGPWeb;
 const ExamView = window.OGPExamImportView;
 const ADMIN_COLLAPSE_STORAGE_KEY = "ogp_admin_collapsible_sections";
-const DEFAULT_USER_MODAL_TITLE = userModalTitle?.textContent || "Карточка пользователя";
+const DEFAULT_USER_MODAL_TITLE = userModalTitle?.textContent || "РљР°СЂС‚РѕС‡РєР° РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ";
 
 let adminSearchTimer = null;
 let adminLiveTimer = null;
@@ -69,10 +83,278 @@ let selectedBulkUsers = new Set();
 const userIndex = new Map();
 let activeCatalogEntity = String(catalogHost?.dataset.catalogEntity || "servers");
 let activeSyntheticSuite = "";
+let pendingCatalogContext = null;
 
 function catalogEndpoint(entityType, itemId = "") {
   const suffix = itemId ? `/${encodeURIComponent(itemId)}` : "";
   return `/api/admin/catalog/${encodeURIComponent(entityType)}${suffix}`;
+}
+
+function slugifyCatalogKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_\-.Р°-СЏС‘]/gi, "")
+    .replace(/_+/g, "_");
+}
+
+function getCatalogEntityFieldMeta(entityType) {
+  const byEntity = {
+    servers: {
+      description: "РџСЂРѕС„РёР»СЊ СЃРµСЂРІРµСЂР°: РјРѕРґРµР»СЊ, URL Рё С‚РµС…РЅРёС‡РµСЃРєРёРµ РѕРіСЂР°РЅРёС‡РµРЅРёСЏ.",
+      fields: [
+        { name: "server_code", label: "РљРѕРґ СЃРµСЂРІРµСЂР°", placeholder: "blackberry", help: "РЈРЅРёРєР°Р»СЊРЅС‹Р№ РєРѕРґ РѕРєСЂСѓР¶РµРЅРёСЏ." },
+        { name: "base_url", label: "Base URL", placeholder: "https://api.example.com", help: "Р‘Р°Р·РѕРІС‹Р№ URL СЃРµСЂРІРµСЂР° РёР»Рё РёРЅС‚РµРіСЂР°С†РёРё." },
+        { name: "timeout_sec", label: "Timeout (СЃРµРє)", type: "number", min: 0, placeholder: "30", help: "РўР°Р№РјР°СѓС‚ Р·Р°РїСЂРѕСЃРѕРІ РІ СЃРµРєСѓРЅРґР°С…." },
+      ],
+    },
+    laws: {
+      description: "РќРѕСЂРјР°С‚РёРІРЅС‹Р№ РёСЃС‚РѕС‡РЅРёРє Рё РµРіРѕ СЂРµРєРІРёР·РёС‚С‹.",
+      fields: [
+        { name: "law_code", label: "РљРѕРґ Р·Р°РєРѕРЅР°", placeholder: "uk_rf_2026", help: "Р’РЅСѓС‚СЂРµРЅРЅРёР№ РєРѕРґ Р·Р°РєРѕРЅР° РёР»Рё СЃР±РѕСЂРЅРёРєР°." },
+        { name: "source", label: "РСЃС‚РѕС‡РЅРёРє", placeholder: "consultant", help: "РћС‚РєСѓРґР° РІР·СЏС‚ С‚РµРєСЃС‚." },
+        { name: "effective_from", label: "Р”РµР№СЃС‚РІСѓРµС‚ СЃ", placeholder: "2026-01-01", help: "Р”Р°С‚Р° РІ С„РѕСЂРјР°С‚Рµ YYYY-MM-DD." },
+      ],
+    },
+    templates: {
+      description: "РЁР°Р±Р»РѕРЅ РґРѕРєСѓРјРµРЅС‚Р°: С„РѕСЂРјР°С‚, С†РµР»СЊ Рё РѕР±СЏР·Р°С‚РµР»СЊРЅС‹Рµ Р±Р»РѕРєРё.",
+      fields: [
+        { name: "template_type", label: "РўРёРї С€Р°Р±Р»РѕРЅР°", placeholder: "complaint", help: "РќР°РїСЂРёРјРµСЂ: complaint, appeal, rehab." },
+        { name: "document_kind", label: "Р’РёРґ РґРѕРєСѓРјРµРЅС‚Р°", placeholder: "Р–Р°Р»РѕР±Р°", help: "Р§РµР»РѕРІРµРєРѕС‡РёС‚Р°РµРјС‹Р№ РІРёРґ РґРѕРєСѓРјРµРЅС‚Р°." },
+        { name: "output_format", label: "Р¤РѕСЂРјР°С‚ РІС‹РІРѕРґР°", placeholder: "bbcode", help: "РќР°РїСЂРёРјРµСЂ: bbcode, markdown, html." },
+      ],
+    },
+    features: {
+      description: "Р¤РёС‡Р°-С„Р»Р°Рі: rollout Рё СѓСЃР»РѕРІРёСЏ РІРєР»СЋС‡РµРЅРёСЏ.",
+      fields: [
+        { name: "feature_flag", label: "Feature flag", placeholder: "new_law_qa", help: "РЈРЅРёРєР°Р»СЊРЅС‹Р№ РєРѕРґ С„Р»Р°РіР°." },
+        { name: "rollout_percent", label: "Rollout (%)", type: "number", min: 0, max: 100, placeholder: "25", help: "Р”РѕР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ РІ РїСЂРѕС†РµРЅС‚Р°С…." },
+        { name: "audience", label: "РђСѓРґРёС‚РѕСЂРёСЏ", placeholder: "testers", help: "РљРѕРјСѓ РІРєР»СЋС‡РµРЅРѕ." },
+      ],
+    },
+    rules: {
+      description: "РџСЂР°РІРёР»Рѕ РїСЂРёРјРµРЅРµРЅРёСЏ: РїСЂРёРѕСЂРёС‚РµС‚, РѕР±Р»Р°СЃС‚СЊ Рё РґРµР№СЃС‚РІРёРµ.",
+      fields: [
+        { name: "rule_type", label: "РўРёРї РїСЂР°РІРёР»Р°", placeholder: "moderation", help: "РљР°С‚РµРіРѕСЂРёСЏ РїСЂР°РІРёР»Р°." },
+        { name: "priority", label: "РџСЂРёРѕСЂРёС‚РµС‚", type: "number", min: 0, placeholder: "100", help: "Р§РµРј Р±РѕР»СЊС€Рµ С‡РёСЃР»Рѕ, С‚РµРј РІС‹С€Рµ РїСЂРёРѕСЂРёС‚РµС‚." },
+        { name: "applies_to", label: "РћР±Р»Р°СЃС‚СЊ", placeholder: "complaint_generation", help: "Р“РґРµ РїСЂРёРјРµРЅСЏРµС‚СЃСЏ РїСЂР°РІРёР»Рѕ." },
+      ],
+    },
+  };
+  return byEntity[entityType] || { description: "JSON-СЂРµР¶РёРј Р±РµР· С‚РёРїРёР·РёСЂРѕРІР°РЅРЅС‹С… РїРѕР»РµР№.", fields: [] };
+}
+
+function formatJsonForDisplay(value) {
+  if (value === null || value === undefined) {
+    return "вЂ”";
+  }
+  if (typeof value === "string") {
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2);
+    } catch {
+      return value;
+    }
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value, null, 2);
+  }
+  return String(value);
+}
+
+function parseCatalogAdvancedJson(rawJson) {
+  const raw = String(rawJson || "").trim();
+  if (!raw) {
+    return {};
+  }
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Advanced JSON РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РѕР±СЉРµРєС‚РѕРј.");
+  }
+  return parsed;
+}
+
+function extractVersionPayload(version) {
+  if (!version || typeof version !== "object") return null;
+  if (version.payload_json !== undefined) return version.payload_json;
+  if (version.payload !== undefined) return version.payload;
+  if (version.config !== undefined) return version.config;
+  return null;
+}
+
+function renderCatalogTypedFields(entityType, seed = {}, disabled = false) {
+  if (!catalogTypedFieldsHost) {
+    }); }
+    }); }
+    return;
+  }
+  const meta = getCatalogEntityFieldMeta(entityType);
+  catalogTypedFieldsHost.innerHTML = meta.fields
+    .map((field) => {
+      const type = field.type || "text";
+      const value = String(seed[field.name] ?? "");
+      const min = field.min !== undefined ? ` min="${field.min}"` : "";
+      const max = field.max !== undefined ? ` max="${field.max}"` : "";
+      return `
+        <label class="legal-field admin-catalog-typed-field">
+          <span class="legal-field__label">${escapeHtml(field.label)}</span>
+          <input type="${escapeHtml(type)}" id="admin-catalog-field-${escapeHtml(field.name)}" data-catalog-field="${escapeHtml(field.name)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.placeholder || "")}"${min}${max}${disabled ? " disabled" : ""}>
+          <span class="legal-field__hint">${escapeHtml(field.help || "")}</span>
+        </label>
+      `;
+    })
+    .join("");
+}
+
+function resetCatalogModalState() {
+  pendingCatalogContext = null;
+  if (catalogModalTitle) catalogModalTitle.textContent = "Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ РєР°С‚Р°Р»РѕРіР°";
+  if (catalogTitleInput) {
+    catalogTitleInput.value = "";
+    catalogTitleInput.disabled = false;
+  }
+  if (catalogKeyInput) {
+    catalogKeyInput.value = "";
+    catalogKeyInput.disabled = false;
+  }
+  if (catalogDescriptionInput) {
+    catalogDescriptionInput.value = "";
+    catalogDescriptionInput.disabled = false;
+  }
+  if (catalogStatusInput) {
+    catalogStatusInput.value = "draft";
+    catalogStatusInput.disabled = false;
+  }
+  renderCatalogTypedFields(activeCatalogEntity, {}, false);
+  if (catalogJsonInput) {
+    catalogJsonInput.value = "{}";
+    catalogJsonInput.disabled = false;
+  }
+  if (catalogJsonError) {
+    catalogJsonError.textContent = "";
+    catalogJsonError.hidden = true;
+  }
+  if (catalogPublishedHost) catalogPublishedHost.textContent = "вЂ”";
+  if (catalogDraftHost) catalogDraftHost.textContent = "вЂ”";
+  if (catalogSaveButton) {
+    catalogSaveButton.hidden = false;
+    catalogSaveButton.disabled = false;
+    catalogSaveButton.textContent = "РЎРѕС…СЂР°РЅРёС‚СЊ";
+  }
+  if (catalogCancelButton) catalogCancelButton.textContent = "Р—Р°РєСЂС‹С‚СЊ";
+  setStateIdle(catalogModalErrors);
+}
+
+function closeCatalogModal() {
+  catalogModal.close();
+  resetCatalogModalState();
+}
+
+function openCatalogModal(config) {
+  resetCatalogModalState();
+  pendingCatalogContext = config;
+  const mode = config?.mode === "view" ? "view" : "edit";
+  const item = config?.item || {};
+  const versions = Array.isArray(config?.versions) ? config.versions : [];
+  const publishedVersion = versions.find((version) => String(version?.id || "") === String(item?.current_published_version_id || ""));
+  const latestVersion = versions.length ? versions[versions.length - 1] : null;
+  const latestPayload = extractVersionPayload(latestVersion) || {};
+  const publishedPayload = extractVersionPayload(publishedVersion) || {};
+  const editableSeed = {
+    title: String(item.title || ""),
+    key: String(item.content_key || latestPayload.key || ""),
+    description: String(latestPayload.description || ""),
+    status: String(item.status || latestPayload.status || "draft"),
+    ...latestPayload,
+  };
+
+  if (catalogModalTitle) {
+    const baseTitle = mode === "view" ? "РџСЂРѕСЃРјРѕС‚СЂ СЌР»РµРјРµРЅС‚Р°" : (config?.isCreate ? "РЎРѕР·РґР°РЅРёРµ СЌР»РµРјРµРЅС‚Р°" : "Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ СЌР»РµРјРµРЅС‚Р°");
+    catalogModalTitle.textContent = `${baseTitle}: ${String(item.title || "").trim() || activeCatalogEntity}`;
+  }
+  if (catalogTitleInput) {
+    catalogTitleInput.value = editableSeed.title || "";
+    catalogTitleInput.disabled = mode === "view";
+  }
+  if (catalogKeyInput) {
+    catalogKeyInput.value = editableSeed.key || "";
+    catalogKeyInput.disabled = mode === "view";
+  }
+  if (catalogDescriptionInput) {
+    catalogDescriptionInput.value = editableSeed.description || "";
+    catalogDescriptionInput.disabled = mode === "view";
+  }
+  if (catalogStatusInput) {
+    catalogStatusInput.value = editableSeed.status || "draft";
+    catalogStatusInput.disabled = mode === "view";
+  }
+  renderCatalogTypedFields(activeCatalogEntity, editableSeed, mode === "view");
+  if (catalogJsonInput) {
+    catalogJsonInput.value = formatJsonForDisplay(latestPayload);
+    catalogJsonInput.disabled = mode === "view";
+  }
+  if (catalogPublishedHost) catalogPublishedHost.textContent = formatJsonForDisplay(publishedPayload || "РћРїСѓР±Р»РёРєРѕРІР°РЅРЅР°СЏ РІРµСЂСЃРёСЏ РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚.");
+  if (catalogDraftHost) catalogDraftHost.textContent = formatJsonForDisplay(latestPayload || "Р§РµСЂРЅРѕРІРёРє РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚.");
+  if (catalogSaveButton) {
+    catalogSaveButton.hidden = mode === "view";
+    catalogSaveButton.disabled = false;
+  }
+  if (catalogCancelButton) catalogCancelButton.textContent = mode === "view" ? "Р—Р°РєСЂС‹С‚СЊ" : "РћС‚РјРµРЅР°";
+  catalogModal.open();
+}
+
+async function submitCatalogModal() {
+  if (!pendingCatalogContext || pendingCatalogContext.mode === "view") {
+    closeCatalogModal();
+    return;
+  }
+  const title = String(catalogTitleInput?.value || "").trim();
+  const key = slugifyCatalogKey(catalogKeyInput?.value || title);
+  const description = String(catalogDescriptionInput?.value || "").trim();
+  const status = String(catalogStatusInput?.value || "draft").trim().toLowerCase();
+  if (!title) {
+    setStateError(catalogModalErrors, "РЈРєР°Р¶РёС‚Рµ РЅР°Р·РІР°РЅРёРµ СЌР»РµРјРµРЅС‚Р°.");
+    return;
+  }
+  try {
+    const advanced = parseCatalogAdvancedJson(catalogJsonInput?.value || "{}");
+    const payload = { title, key, description, status, config: advanced };
+    Array.from(catalogTypedFieldsHost?.querySelectorAll("[data-catalog-field]") || []).forEach((field) => {
+      const name = String(field.getAttribute("data-catalog-field") || "");
+      if (!name) return;
+      const rawValue = String(field.value || "").trim();
+      if (!rawValue) return;
+      payload[name] = field.type === "number" ? Number(rawValue) : rawValue;
+    });
+    if (catalogJsonError) {
+      catalogJsonError.textContent = "";
+      catalogJsonError.hidden = true;
+    }
+    setStateIdle(catalogModalErrors);
+    if (catalogSaveButton) catalogSaveButton.disabled = true;
+    const isCreate = Boolean(pendingCatalogContext.isCreate);
+    const itemId = pendingCatalogContext.itemId;
+    const url = isCreate ? catalogEndpoint(activeCatalogEntity) : catalogEndpoint(activeCatalogEntity, itemId);
+    const method = isCreate ? "POST" : "PUT";
+    const response = await apiFetch(url, { method, body: JSON.stringify(payload) });
+    const responsePayload = await parsePayload(response);
+    if (!response.ok) {
+      setStateError(catalogModalErrors, formatHttpError(response, responsePayload, "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ СЌР»РµРјРµРЅС‚."));
+      if (catalogSaveButton) catalogSaveButton.disabled = false;
+      return;
+    }
+    showMessage(isCreate ? "Р­Р»РµРјРµРЅС‚ СЃРѕР·РґР°РЅ." : "Р­Р»РµРјРµРЅС‚ РѕР±РЅРѕРІР»РµРЅ.");
+    closeCatalogModal();
+    await loadCatalog(activeCatalogEntity);
+  } catch (error) {
+    const message = String(error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ СЌР»РµРјРµРЅС‚.");
+    if (catalogJsonError) {
+      catalogJsonError.textContent = message;
+      catalogJsonError.hidden = false;
+    }
+    setStateError(catalogModalErrors, message);
+    if (catalogSaveButton) catalogSaveButton.disabled = false;
+  }
 }
 
 function renderCatalog(payload) {
@@ -81,19 +363,38 @@ function renderCatalog(payload) {
   activeCatalogEntity = entityType;
   const items = Array.isArray(payload?.items) ? payload.items : [];
   const audit = Array.isArray(payload?.audit) ? payload.audit : [];
+  const statusLabels = {
+    draft: "Р§РµСЂРЅРѕРІРёРє",
+    review: "РќР° РїСЂРѕРІРµСЂРєРµ",
+    approved: "РћРґРѕР±СЂРµРЅРѕ",
+    published: "РћРїСѓР±Р»РёРєРѕРІР°РЅРѕ",
+    archived: "РђСЂС…РёРІ",
+  };
+  const workflowActionLabels = {
+    submit_for_review: "РќР° РїСЂРѕРІРµСЂРєСѓ",
+    approve: "РћРґРѕР±СЂРёС‚СЊ",
+    request_changes: "Р’РµСЂРЅСѓС‚СЊ",
+    publish: "РџСѓР±Р»РёРєРѕРІР°С‚СЊ",
+  };
+  const allowedActionsByState = {
+    draft: ["submit_for_review"],
+    review: ["approve", "request_changes"],
+    approved: ["publish", "request_changes"],
+    published: ["request_changes"],
+  };
   const entityLabels = {
-    servers: "Серверы",
-    laws: "Законы",
-    templates: "Шаблоны",
-    features: "Функции",
-    rules: "Правила",
+    servers: "РЎРµСЂРІРµСЂС‹",
+    laws: "Р—Р°РєРѕРЅС‹",
+    templates: "РЁР°Р±Р»РѕРЅС‹",
+    features: "Р¤СѓРЅРєС†РёРё",
+    rules: "РџСЂР°РІРёР»Р°",
   };
   const entityDescriptions = {
-    servers: "Серверные профили и базовые настройки окружения.",
-    laws: "Правовые источники и наборы норм, на которые опирается система.",
-    templates: "Шаблоны документов и заготовки для генерации.",
-    features: "Переключатели функций и rollout-настройки.",
-    rules: "Правила публикации, редактирования и governance-политики.",
+    servers: "РЎРµСЂРІРµСЂРЅС‹Рµ РїСЂРѕС„РёР»Рё Рё Р±Р°Р·РѕРІС‹Рµ РЅР°СЃС‚СЂРѕР№РєРё РѕРєСЂСѓР¶РµРЅРёСЏ.",
+    laws: "РџСЂР°РІРѕРІС‹Рµ РёСЃС‚РѕС‡РЅРёРєРё Рё РЅР°Р±РѕСЂС‹ РЅРѕСЂРј, РЅР° РєРѕС‚РѕСЂС‹Рµ РѕРїРёСЂР°РµС‚СЃСЏ СЃРёСЃС‚РµРјР°.",
+    templates: "РЁР°Р±Р»РѕРЅС‹ РґРѕРєСѓРјРµРЅС‚РѕРІ Рё Р·Р°РіРѕС‚РѕРІРєРё РґР»СЏ РіРµРЅРµСЂР°С†РёРё.",
+    features: "РџРµСЂРµРєР»СЋС‡Р°С‚РµР»Рё С„СѓРЅРєС†РёР№ Рё rollout-РЅР°СЃС‚СЂРѕР№РєРё.",
+    rules: "РџСЂР°РІРёР»Р° РїСѓР±Р»РёРєР°С†РёРё, СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёСЏ Рё governance-РїРѕР»РёС‚РёРєРё.",
   };
   const auditByEntityId = new Map();
   audit.forEach((row) => {
@@ -105,19 +406,19 @@ function renderCatalog(payload) {
   });
   catalogHost.innerHTML = `
     <div class="admin-section-toolbar">
-      <label class="legal-field"><span class="legal-field__label">Раздел</span>
+      <label class="legal-field"><span class="legal-field__label">Р Р°Р·РґРµР»</span>
         <select id="catalog-entity">
           ${["servers", "laws", "templates", "features", "rules"]
             .map((name) => `<option value="${name}" ${name === entityType ? "selected" : ""}>${entityLabels[name]}</option>`)
             .join("")}
         </select>
       </label>
-      <button type="button" id="catalog-create" class="primary-button">Создать</button>
+      <button type="button" id="catalog-create" class="primary-button">РЎРѕР·РґР°С‚СЊ</button>
     </div>
     <p class="legal-section__description">${escapeHtml(entityDescriptions[entityType] || "")}</p>
     <div class="legal-table-wrap">
       <table class="legal-table">
-        <thead><tr><th>Название</th><th>Статус</th><th>Версия</th><th>Автор</th><th>Действия</th></tr></thead>
+        <thead><tr><th>РќР°Р·РІР°РЅРёРµ</th><th>РЎС‚Р°С‚СѓСЃ</th><th>Р’РµСЂСЃРёСЏ</th><th>РђРІС‚РѕСЂ</th><th>Р”РµР№СЃС‚РІРёСЏ</th></tr></thead>
         <tbody>
           ${items.length
             ? items
@@ -125,33 +426,84 @@ function renderCatalog(payload) {
               const entityId = String(item.id || "");
               const auditRow = auditByEntityId.get(entityId) || {};
               const state = String(item.status || item.state || "draft");
-              const version = item.current_published_version_id ?? item.version_number ?? "—";
+              const version = item.current_published_version_id ?? item.version_number ?? "вЂ”";
               const author = String(
                 auditRow.author || item.updated_by || item.created_by || "system"
               );
+              const activeChangeRequestId = item.active_change_request_id ?? "";
+              const workflowActions = (allowedActionsByState[state] || [])
+                .map((action) => `<button type="button" class="ghost-button" data-catalog-workflow-item="${escapeHtml(String(item.id || ""))}" data-catalog-workflow-action="${escapeHtml(action)}" data-catalog-workflow-cr-id="${escapeHtml(String(activeChangeRequestId || ""))}">${escapeHtml(workflowActionLabels[action] || action)}</button>`)
+                .join("");
               return `
               <tr>
                 <td>${escapeHtml(String(item.title || ""))}</td>
-                <td>${escapeHtml(state)}</td>
+                <td>${escapeHtml(statusLabels[state] || state)}</td>
                 <td>${escapeHtml(String(version))}</td>
                 <td>${escapeHtml(author)}</td>
                 <td>
-                  <button type="button" class="ghost-button" data-catalog-edit="${escapeHtml(String(item.id || ""))}">Изменить</button>
-                  <button type="button" class="ghost-button" data-catalog-next="${escapeHtml(String(item.id || ""))}">Далее</button>
-                  <button type="button" class="ghost-button" data-catalog-rollback="${escapeHtml(String(item.id || ""))}">Откат</button>
-                  <button type="button" class="ghost-button" data-catalog-delete="${escapeHtml(String(item.id || ""))}">Удалить</button>
+                  <button type="button" class="ghost-button" data-catalog-view="${escapeHtml(String(item.id || ""))}">РћС‚РєСЂС‹С‚СЊ</button>
+                  <button type="button" class="ghost-button" data-catalog-preview="${escapeHtml(String(item.id || ""))}">Preview</button>
+                  ${workflowActions}
+                  <button type="button" class="ghost-button" data-catalog-edit="${escapeHtml(String(item.id || ""))}">РР·РјРµРЅРёС‚СЊ</button>
+                  <button type="button" class="ghost-button" data-catalog-legacy-next="${escapeHtml(String(item.id || ""))}" hidden>Р”Р°Р»РµРµ</button>
+                  <button type="button" class="ghost-button" data-catalog-rollback="${escapeHtml(String(item.id || ""))}">РћС‚РєР°С‚</button>
+                  <button type="button" class="ghost-button" data-catalog-delete="${escapeHtml(String(item.id || ""))}">РЈРґР°Р»РёС‚СЊ</button>
                 </td>
               </tr>
             `;
             })
             .join("")
-            : '<tr><td colspan="5" class="legal-section__description">Для этого раздела пока нет записей.</td></tr>'}
+            : '<tr><td colspan="5" class="legal-section__description">Р”Р»СЏ СЌС‚РѕРіРѕ СЂР°Р·РґРµР»Р° РїРѕРєР° РЅРµС‚ Р·Р°РїРёСЃРµР№.</td></tr>'}
         </tbody>
       </table>
+      <section id="catalog-preview-panel" class="admin-catalog-preview" hidden>
+        <div class="admin-catalog-preview__header">
+          <div>
+            <div class="admin-catalog-preview__title">Preview effective payload</div>
+            <div class="admin-catalog-preview__meta" id="catalog-preview-meta">Р’С‹Р±РµСЂРёС‚Рµ Р·Р°РїРёСЃСЊ, С‡С‚РѕР±С‹ РїРѕСЃРјРѕС‚СЂРµС‚СЊ СЌС„С„РµРєС‚РёРІРЅС‹Рµ РґР°РЅРЅС‹Рµ.</div>
+          </div>
+          <button type="button" class="ghost-button" id="catalog-preview-copy">РљРѕРїРёСЂРѕРІР°С‚СЊ JSON</button>
+        </div>
+        <div class="admin-catalog-preview__summary" id="catalog-preview-summary"></div>
+        <pre class="admin-catalog-preview__json" id="catalog-preview-json">{}</pre>
+      </section>
     </div>
-    <p class="legal-section__description">Журнал изменений (автор и diff):</p>
+    <p class="legal-section__description">Р–СѓСЂРЅР°Р» РёР·РјРµРЅРµРЅРёР№ (Р°РІС‚РѕСЂ Рё diff):</p>
     <pre class="legal-field__hint">${escapeHtml(audit.slice(0, 8).map((row) => `${row.created_at} ${row.author} ${row.action} ${row.workflow_from || ""}->${row.workflow_to || ""}\n${row.diff || ""}`).join("\n\n"))}</pre>
   `;
+}
+
+function renderCatalogPreviewSummary(payload) {
+  const summary = document.getElementById("catalog-preview-summary");
+  const meta = document.getElementById("catalog-preview-meta");
+  const jsonHost = document.getElementById("catalog-preview-json");
+  const panel = document.getElementById("catalog-preview-panel");
+  if (!summary || !meta || !jsonHost || !panel) return;
+  const item = payload?.item || {};
+  const effectiveVersion = payload?.effective_version || {};
+  const effectivePayload = payload?.effective_payload || {};
+  summary.innerHTML = `
+    <div class="admin-catalog-preview__summary-row"><strong>РќР°Р·РІР°РЅРёРµ:</strong> ${escapeHtml(String(item.title || "вЂ”"))}</div>
+    <div class="admin-catalog-preview__summary-row"><strong>РЎС‚Р°С‚СѓСЃ:</strong> ${escapeHtml(String(item.status || item.state || "draft"))}</div>
+    <div class="admin-catalog-preview__summary-row"><strong>Р’РµСЂСЃРёСЏ:</strong> ${escapeHtml(String(effectiveVersion?.version_number ?? item.current_version_number ?? item.current_published_version_id ?? "вЂ”"))}</div>
+  `;
+  meta.textContent = `Entity: ${String(payload?.entity_type || activeCatalogEntity)} | Item ID: ${String(item.id || "вЂ”")} | Effective version ID: ${String(effectiveVersion?.id || "вЂ”")}`;
+  jsonHost.textContent = formatJsonForDisplay(effectivePayload);
+  panel.hidden = false;
+}
+
+function renderCatalogPreview(payload) {
+  renderCatalogPreviewSummary(payload);
+}
+
+async function loadCatalogPreview(itemId) {
+  const response = await apiFetch(catalogEndpoint(activeCatalogEntity, itemId));
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ preview catalog."));
+    return;
+  }
+  renderCatalogPreview(payload);
 }
 
 async function loadCatalog(entityType = activeCatalogEntity) {
@@ -159,7 +511,7 @@ async function loadCatalog(entityType = activeCatalogEntity) {
   const response = await apiFetch(catalogEndpoint(entityType));
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить catalog."));
+    setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ catalog."));
     return;
   }
   renderCatalog(payload);
@@ -170,6 +522,9 @@ const userModal = createModalController({
 });
 const actionModal = createModalController({
   modal: document.getElementById("admin-action-modal"),
+});
+const catalogModal = createModalController({
+  modal: document.getElementById("admin-catalog-modal"),
 });
 
 function loadCollapsibleState() {
@@ -199,7 +554,7 @@ function setCollapsibleExpanded(button, expanded, state = null) {
   }
 
   button.setAttribute("aria-expanded", expanded ? "true" : "false");
-  button.textContent = expanded ? "Скрыть" : "Показать";
+  button.textContent = expanded ? "РЎРєСЂС‹С‚СЊ" : "РџРѕРєР°Р·Р°С‚СЊ";
   content.hidden = !expanded;
   section.dataset.collapsibleOpen = expanded ? "true" : "false";
 
@@ -238,42 +593,42 @@ function initCollapsibles() {
 function describeApiPath(path) {
   const normalized = String(path || "").trim();
   if (!normalized) {
-    return "Системный запрос без указанного пути.";
+    return "РЎРёСЃС‚РµРјРЅС‹Р№ Р·Р°РїСЂРѕСЃ Р±РµР· СѓРєР°Р·Р°РЅРЅРѕРіРѕ РїСѓС‚Рё.";
   }
 
   const patterns = [
-    [/^\/api\/admin\/overview$/, "Загрузка всей админ-панели: сводка, пользователи, события и статистика."],
-    [/^\/api\/admin\/users\.csv$/, "Выгрузка CSV со списком пользователей по текущим фильтрам."],
-    [/^\/api\/admin\/events\.csv$/, "Выгрузка CSV со списком событий по текущим фильтрам."],
-    [/^\/api\/admin\/users\/[^/]+\/verify-email$/, "Администратор вручную подтверждает email выбранного пользователя."],
-    [/^\/api\/admin\/users\/[^/]+\/block$/, "Администратор блокирует доступ пользователя к аккаунту."],
-    [/^\/api\/admin\/users\/[^/]+\/unblock$/, "Администратор снимает блокировку и возвращает доступ к аккаунту."],
-    [/^\/api\/admin\/users\/[^/]+\/grant-tester$/, "Администратор выдает пользователю статус тестера."],
-    [/^\/api\/admin\/users\/[^/]+\/revoke-tester$/, "Администратор снимает у пользователя статус тестера."],
-    [/^\/api\/admin\/users\/[^/]+\/grant-gka$/, "Администратор присваивает пользователю тип ГКА-ЗГКА."],
-    [/^\/api\/admin\/users\/[^/]+\/revoke-gka$/, "Администратор снимает у пользователя тип ГКА-ЗГКА."],
-    [/^\/api\/admin\/users\/[^/]+\/email$/, "Администратор вручную меняет email пользователя."],
-    [/^\/api\/admin\/users\/[^/]+\/reset-password$/, "Администратор вручную задает новый пароль пользователю."],
-    [/^\/api\/admin\/users\/[^/]+\/deactivate$/, "Администратор мягко деактивирует аккаунт пользователя."],
-    [/^\/api\/admin\/users\/[^/]+\/reactivate$/, "Администратор снимает деактивацию аккаунта."],
-    [/^\/api\/admin\/users\/[^/]+\/daily-quota$/, "Администратор задает суточный лимит API для пользователя."],
-    [/^\/api\/admin\/users\/bulk-actions$/, "Администратор запускает массовую операцию по выбранным пользователям."],
-    [/^\/api\/admin\/tasks\/[^/]+$/, "Проверка статуса фоновой задачи админ-операций."],
-    [/^\/api\/complaint-draft$/, "Сохранение, загрузка или очистка черновика жалобы пользователя."],
-    [/^\/api\/generate$/, "Генерация итоговой жалобы по заполненной форме."],
-    [/^\/api\/generate-rehab$/, "Генерация заявления на реабилитацию."],
-    [/^\/api\/ai\/suggest$/, "AI улучшает и переписывает описание жалобы."],
-    [/^\/api\/ai\/extract-principal$/, "AI распознает данные доверителя с изображения документа."],
-    [/^\/api\/auth\/login$/, "Вход пользователя в аккаунт."],
-    [/^\/api\/auth\/register$/, "Регистрация нового аккаунта."],
-    [/^\/api\/auth\/logout$/, "Выход пользователя из аккаунта."],
-    [/^\/api\/auth\/forgot-password$/, "Запуск восстановления пароля."],
-    [/^\/api\/auth\/reset-password$/, "Сброс пароля по токену восстановления."],
-    [/^\/api\/profile$/, "Загрузка или сохранение данных профиля пользователя."],
-    [/^\/api\/exam-import\/sync$/, "Импорт новых ответов на экзамены из Google Sheets."],
-    [/^\/api\/exam-import\/score$/, "Массовая проверка импортированных экзаменационных ответов."],
-    [/^\/api\/exam-import\/rows\/\d+$/, "Просмотр деталей по одной импортированной строке экзамена."],
-    [/^\/api\/exam-import\/rows\/\d+\/score$/, "Проверка и оценка одной конкретной строки экзамена."],
+    [/^\/api\/admin\/overview$/, "Р—Р°РіСЂСѓР·РєР° РІСЃРµР№ Р°РґРјРёРЅ-РїР°РЅРµР»Рё: СЃРІРѕРґРєР°, РїРѕР»СЊР·РѕРІР°С‚РµР»Рё, СЃРѕР±С‹С‚РёСЏ Рё СЃС‚Р°С‚РёСЃС‚РёРєР°."],
+    [/^\/api\/admin\/users\.csv$/, "Р’С‹РіСЂСѓР·РєР° CSV СЃРѕ СЃРїРёСЃРєРѕРј РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ РїРѕ С‚РµРєСѓС‰РёРј С„РёР»СЊС‚СЂР°Рј."],
+    [/^\/api\/admin\/events\.csv$/, "Р’С‹РіСЂСѓР·РєР° CSV СЃРѕ СЃРїРёСЃРєРѕРј СЃРѕР±С‹С‚РёР№ РїРѕ С‚РµРєСѓС‰РёРј С„РёР»СЊС‚СЂР°Рј."],
+    [/^\/api\/admin\/users\/[^/]+\/verify-email$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РІСЂСѓС‡РЅСѓСЋ РїРѕРґС‚РІРµСЂР¶РґР°РµС‚ email РІС‹Р±СЂР°РЅРЅРѕРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
+    [/^\/api\/admin\/users\/[^/]+\/block$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ Р±Р»РѕРєРёСЂСѓРµС‚ РґРѕСЃС‚СѓРї РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ Рє Р°РєРєР°СѓРЅС‚Сѓ."],
+    [/^\/api\/admin\/users\/[^/]+\/unblock$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅРёРјР°РµС‚ Р±Р»РѕРєРёСЂРѕРІРєСѓ Рё РІРѕР·РІСЂР°С‰Р°РµС‚ РґРѕСЃС‚СѓРї Рє Р°РєРєР°СѓРЅС‚Сѓ."],
+    [/^\/api\/admin\/users\/[^/]+\/grant-tester$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РІС‹РґР°РµС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ СЃС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР°."],
+    [/^\/api\/admin\/users\/[^/]+\/revoke-tester$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅРёРјР°РµС‚ Сѓ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ СЃС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР°."],
+    [/^\/api\/admin\/users\/[^/]+\/grant-gka$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РїСЂРёСЃРІР°РёРІР°РµС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ С‚РёРї Р“РљРђ-Р—Р“РљРђ."],
+    [/^\/api\/admin\/users\/[^/]+\/revoke-gka$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅРёРјР°РµС‚ Сѓ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ С‚РёРї Р“РљРђ-Р—Р“РљРђ."],
+    [/^\/api\/admin\/users\/[^/]+\/email$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РІСЂСѓС‡РЅСѓСЋ РјРµРЅСЏРµС‚ email РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
+    [/^\/api\/admin\/users\/[^/]+\/reset-password$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РІСЂСѓС‡РЅСѓСЋ Р·Р°РґР°РµС‚ РЅРѕРІС‹Р№ РїР°СЂРѕР»СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ."],
+    [/^\/api\/admin\/users\/[^/]+\/deactivate$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РјСЏРіРєРѕ РґРµР°РєС‚РёРІРёСЂСѓРµС‚ Р°РєРєР°СѓРЅС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
+    [/^\/api\/admin\/users\/[^/]+\/reactivate$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅРёРјР°РµС‚ РґРµР°РєС‚РёРІР°С†РёСЋ Р°РєРєР°СѓРЅС‚Р°."],
+    [/^\/api\/admin\/users\/[^/]+\/daily-quota$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ Р·Р°РґР°РµС‚ СЃСѓС‚РѕС‡РЅС‹Р№ Р»РёРјРёС‚ API РґР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
+    [/^\/api\/admin\/users\/bulk-actions$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ Р·Р°РїСѓСЃРєР°РµС‚ РјР°СЃСЃРѕРІСѓСЋ РѕРїРµСЂР°С†РёСЋ РїРѕ РІС‹Р±СЂР°РЅРЅС‹Рј РїРѕР»СЊР·РѕРІР°С‚РµР»СЏРј."],
+    [/^\/api\/admin\/tasks\/[^/]+$/, "РџСЂРѕРІРµСЂРєР° СЃС‚Р°С‚СѓСЃР° С„РѕРЅРѕРІРѕР№ Р·Р°РґР°С‡Рё Р°РґРјРёРЅ-РѕРїРµСЂР°С†РёР№."],
+    [/^\/api\/complaint-draft$/, "РЎРѕС…СЂР°РЅРµРЅРёРµ, Р·Р°РіСЂСѓР·РєР° РёР»Рё РѕС‡РёСЃС‚РєР° С‡РµСЂРЅРѕРІРёРєР° Р¶Р°Р»РѕР±С‹ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
+    [/^\/api\/generate$/, "Р“РµРЅРµСЂР°С†РёСЏ РёС‚РѕРіРѕРІРѕР№ Р¶Р°Р»РѕР±С‹ РїРѕ Р·Р°РїРѕР»РЅРµРЅРЅРѕР№ С„РѕСЂРјРµ."],
+    [/^\/api\/generate-rehab$/, "Р“РµРЅРµСЂР°С†РёСЏ Р·Р°СЏРІР»РµРЅРёСЏ РЅР° СЂРµР°Р±РёР»РёС‚Р°С†РёСЋ."],
+    [/^\/api\/ai\/suggest$/, "AI СѓР»СѓС‡С€Р°РµС‚ Рё РїРµСЂРµРїРёСЃС‹РІР°РµС‚ РѕРїРёСЃР°РЅРёРµ Р¶Р°Р»РѕР±С‹."],
+    [/^\/api\/ai\/extract-principal$/, "AI СЂР°СЃРїРѕР·РЅР°РµС‚ РґР°РЅРЅС‹Рµ РґРѕРІРµСЂРёС‚РµР»СЏ СЃ РёР·РѕР±СЂР°Р¶РµРЅРёСЏ РґРѕРєСѓРјРµРЅС‚Р°."],
+    [/^\/api\/auth\/login$/, "Р’С…РѕРґ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІ Р°РєРєР°СѓРЅС‚."],
+    [/^\/api\/auth\/register$/, "Р РµРіРёСЃС‚СЂР°С†РёСЏ РЅРѕРІРѕРіРѕ Р°РєРєР°СѓРЅС‚Р°."],
+    [/^\/api\/auth\/logout$/, "Р’С‹С…РѕРґ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РёР· Р°РєРєР°СѓРЅС‚Р°."],
+    [/^\/api\/auth\/forgot-password$/, "Р—Р°РїСѓСЃРє РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёСЏ РїР°СЂРѕР»СЏ."],
+    [/^\/api\/auth\/reset-password$/, "РЎР±СЂРѕСЃ РїР°СЂРѕР»СЏ РїРѕ С‚РѕРєРµРЅСѓ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёСЏ."],
+    [/^\/api\/profile$/, "Р—Р°РіСЂСѓР·РєР° РёР»Рё СЃРѕС…СЂР°РЅРµРЅРёРµ РґР°РЅРЅС‹С… РїСЂРѕС„РёР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
+    [/^\/api\/exam-import\/sync$/, "РРјРїРѕСЂС‚ РЅРѕРІС‹С… РѕС‚РІРµС‚РѕРІ РЅР° СЌРєР·Р°РјРµРЅС‹ РёР· Google Sheets."],
+    [/^\/api\/exam-import\/score$/, "РњР°СЃСЃРѕРІР°СЏ РїСЂРѕРІРµСЂРєР° РёРјРїРѕСЂС‚РёСЂРѕРІР°РЅРЅС‹С… СЌРєР·Р°РјРµРЅР°С†РёРѕРЅРЅС‹С… РѕС‚РІРµС‚РѕРІ."],
+    [/^\/api\/exam-import\/rows\/\d+$/, "РџСЂРѕСЃРјРѕС‚СЂ РґРµС‚Р°Р»РµР№ РїРѕ РѕРґРЅРѕР№ РёРјРїРѕСЂС‚РёСЂРѕРІР°РЅРЅРѕР№ СЃС‚СЂРѕРєРµ СЌРєР·Р°РјРµРЅР°."],
+    [/^\/api\/exam-import\/rows\/\d+\/score$/, "РџСЂРѕРІРµСЂРєР° Рё РѕС†РµРЅРєР° РѕРґРЅРѕР№ РєРѕРЅРєСЂРµС‚РЅРѕР№ СЃС‚СЂРѕРєРё СЌРєР·Р°РјРµРЅР°."],
   ];
 
   for (const [pattern, description] of patterns) {
@@ -282,37 +637,37 @@ function describeApiPath(path) {
     }
   }
 
-  return "Технический API-запрос. Для этого пути еще не добавлено человекочитаемое описание.";
+  return "РўРµС…РЅРёС‡РµСЃРєРёР№ API-Р·Р°РїСЂРѕСЃ. Р”Р»СЏ СЌС‚РѕРіРѕ РїСѓС‚Рё РµС‰Рµ РЅРµ РґРѕР±Р°РІР»РµРЅРѕ С‡РµР»РѕРІРµРєРѕС‡РёС‚Р°РµРјРѕРµ РѕРїРёСЃР°РЅРёРµ.";
 }
 
 function describeEventType(eventType) {
   const normalized = String(eventType || "").trim().toLowerCase();
   const descriptions = {
-    api_request: "Обычный запрос к API приложения.",
-    complaint_generated: "Пользователь сгенерировал жалобу.",
-    rehab_generated: "Пользователь сгенерировал заявление на реабилитацию.",
-    complaint_draft_saved: "Пользователь сохранил черновик жалобы.",
-    complaint_draft_cleared: "Пользователь очистил черновик жалобы.",
-    ai_suggest: "AI обработал и улучшил текст жалобы.",
-    ai_extract_principal: "AI распознал данные с документа.",
-    ai_exam_scoring: "AI проверил экзаменационные ответы и вернул статистику по cache, эвристикам и LLM.",
-    exam_import_sync_error: "Импорт из Google Sheets завершился ошибкой.",
-    exam_import_score_failures: "Во время массовой проверки экзаменов часть строк не обработалась.",
-    exam_import_row_score_error: "Проверка одной строки экзамена завершилась ошибкой.",
-    admin_verify_email: "Администратор подтвердил email пользователя.",
-    admin_block_user: "Администратор заблокировал пользователя.",
-    admin_unblock_user: "Администратор разблокировал пользователя.",
-    admin_grant_tester: "Администратор выдал статус тестера.",
-    admin_revoke_tester: "Администратор снял статус тестера.",
-    admin_grant_gka: "Администратор присвоил тип ГКА-ЗГКА.",
-    admin_revoke_gka: "Администратор снял тип ГКА-ЗГКА.",
-    admin_update_email: "Администратор изменил email пользователя.",
-    admin_reset_password: "Администратор задал новый пароль пользователю.",
-    admin_deactivate_user: "Администратор деактивировал аккаунт пользователя.",
-    admin_reactivate_user: "Администратор снял деактивацию аккаунта.",
-    admin_set_daily_quota: "Администратор обновил суточную квоту API пользователя.",
+    api_request: "РћР±С‹С‡РЅС‹Р№ Р·Р°РїСЂРѕСЃ Рє API РїСЂРёР»РѕР¶РµРЅРёСЏ.",
+    complaint_generated: "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃРіРµРЅРµСЂРёСЂРѕРІР°Р» Р¶Р°Р»РѕР±Сѓ.",
+    rehab_generated: "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃРіРµРЅРµСЂРёСЂРѕРІР°Р» Р·Р°СЏРІР»РµРЅРёРµ РЅР° СЂРµР°Р±РёР»РёС‚Р°С†РёСЋ.",
+    complaint_draft_saved: "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃРѕС…СЂР°РЅРёР» С‡РµСЂРЅРѕРІРёРє Р¶Р°Р»РѕР±С‹.",
+    complaint_draft_cleared: "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РѕС‡РёСЃС‚РёР» С‡РµСЂРЅРѕРІРёРє Р¶Р°Р»РѕР±С‹.",
+    ai_suggest: "AI РѕР±СЂР°Р±РѕС‚Р°Р» Рё СѓР»СѓС‡С€РёР» С‚РµРєСЃС‚ Р¶Р°Р»РѕР±С‹.",
+    ai_extract_principal: "AI СЂР°СЃРїРѕР·РЅР°Р» РґР°РЅРЅС‹Рµ СЃ РґРѕРєСѓРјРµРЅС‚Р°.",
+    ai_exam_scoring: "AI РїСЂРѕРІРµСЂРёР» СЌРєР·Р°РјРµРЅР°С†РёРѕРЅРЅС‹Рµ РѕС‚РІРµС‚С‹ Рё РІРµСЂРЅСѓР» СЃС‚Р°С‚РёСЃС‚РёРєСѓ РїРѕ cache, СЌРІСЂРёСЃС‚РёРєР°Рј Рё LLM.",
+    exam_import_sync_error: "РРјРїРѕСЂС‚ РёР· Google Sheets Р·Р°РІРµСЂС€РёР»СЃСЏ РѕС€РёР±РєРѕР№.",
+    exam_import_score_failures: "Р’Рѕ РІСЂРµРјСЏ РјР°СЃСЃРѕРІРѕР№ РїСЂРѕРІРµСЂРєРё СЌРєР·Р°РјРµРЅРѕРІ С‡Р°СЃС‚СЊ СЃС‚СЂРѕРє РЅРµ РѕР±СЂР°Р±РѕС‚Р°Р»Р°СЃСЊ.",
+    exam_import_row_score_error: "РџСЂРѕРІРµСЂРєР° РѕРґРЅРѕР№ СЃС‚СЂРѕРєРё СЌРєР·Р°РјРµРЅР° Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РѕС€РёР±РєРѕР№.",
+    admin_verify_email: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РїРѕРґС‚РІРµСЂРґРёР» email РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
+    admin_block_user: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°Р» РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
+    admin_unblock_user: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЂР°Р·Р±Р»РѕРєРёСЂРѕРІР°Р» РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
+    admin_grant_tester: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РІС‹РґР°Р» СЃС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР°.",
+    admin_revoke_tester: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅСЏР» СЃС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР°.",
+    admin_grant_gka: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РїСЂРёСЃРІРѕРёР» С‚РёРї Р“РљРђ-Р—Р“РљРђ.",
+    admin_revoke_gka: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅСЏР» С‚РёРї Р“РљРђ-Р—Р“РљРђ.",
+    admin_update_email: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РёР·РјРµРЅРёР» email РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
+    admin_reset_password: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ Р·Р°РґР°Р» РЅРѕРІС‹Р№ РїР°СЂРѕР»СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ.",
+    admin_deactivate_user: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РґРµР°РєС‚РёРІРёСЂРѕРІР°Р» Р°РєРєР°СѓРЅС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
+    admin_reactivate_user: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅСЏР» РґРµР°РєС‚РёРІР°С†РёСЋ Р°РєРєР°СѓРЅС‚Р°.",
+    admin_set_daily_quota: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РѕР±РЅРѕРІРёР» СЃСѓС‚РѕС‡РЅСѓСЋ РєРІРѕС‚Сѓ API РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
   };
-  return descriptions[normalized] || "Системное событие без дополнительного описания.";
+  return descriptions[normalized] || "РЎРёСЃС‚РµРјРЅРѕРµ СЃРѕР±С‹С‚РёРµ Р±РµР· РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅРѕРіРѕ РѕРїРёСЃР°РЅРёСЏ.";
 }
 
 function showMessage(text) {
@@ -333,20 +688,20 @@ function resetActionModalFields() {
   if (actionEmailField) actionEmailField.hidden = true;
   if (actionPasswordField) actionPasswordField.hidden = true;
   if (actionQuotaField) actionQuotaField.hidden = true;
-  if (actionConfirmButton) actionConfirmButton.textContent = "Подтвердить";
+  if (actionConfirmButton) actionConfirmButton.textContent = "РџРѕРґС‚РІРµСЂРґРёС‚СЊ";
   setStateIdle(actionModalErrors);
 }
 
 function openActionModal(config) {
   pendingAction = config;
   if (actionModalTitle) {
-    actionModalTitle.textContent = config.title || "Подтверждение действия";
+    actionModalTitle.textContent = config.title || "РџРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ РґРµР№СЃС‚РІРёСЏ";
   }
   if (actionModalDescription) {
     actionModalDescription.textContent = config.description || "";
   }
   if (actionConfirmButton) {
-    actionConfirmButton.textContent = config.confirmLabel || "Подтвердить";
+    actionConfirmButton.textContent = config.confirmLabel || "РџРѕРґС‚РІРµСЂРґРёС‚СЊ";
   }
   if (actionReasonField) {
     actionReasonField.hidden = !config.askReason;
@@ -410,16 +765,16 @@ function renderBandBadge(band) {
 
 function riskLabel(user) {
   const riskScore = Number(user.risk_score || 0);
-  if (riskScore >= 4) return renderBadge("Риск: высокий", "danger");
-  if (riskScore >= 2) return renderBadge("Риск: средний", "info");
-  return renderBadge("Риск: низкий", "success-soft");
+  if (riskScore >= 4) return renderBadge("Р РёСЃРє: РІС‹СЃРѕРєРёР№", "danger");
+  if (riskScore >= 2) return renderBadge("Р РёСЃРє: СЃСЂРµРґРЅРёР№", "info");
+  return renderBadge("Р РёСЃРє: РЅРёР·РєРёР№", "success-soft");
 }
 
 function renderFilterChip(label, key) {
   return `
     <button type="button" class="admin-filter-chip" data-clear-filter="${escapeHtml(key)}">
       <span>${escapeHtml(label)}</span>
-      <span class="admin-filter-chip__close" aria-hidden="true">×</span>
+      <span class="admin-filter-chip__close" aria-hidden="true">Г—</span>
     </button>
   `;
 }
@@ -443,7 +798,7 @@ function renderLoadingState(host, options = {}) {
 
   host.innerHTML = `
     <div class="admin-loading" aria-live="polite" aria-busy="true">
-      <p class="legal-section__description">Загружаем данные...</p>
+      <p class="legal-section__description">Р—Р°РіСЂСѓР¶Р°РµРј РґР°РЅРЅС‹Рµ...</p>
       ${lines}
     </div>
   `;
@@ -477,27 +832,27 @@ function renderTotals(totals) {
     return;
   }
   const items = [
-    ["Пользователи", totals.users_total, "Всего аккаунтов в системе"],
-    ["API-запросы", totals.api_requests_total, "Накопленная активность API"],
-    ["Жалобы", totals.complaints_total, "Сгенерированные жалобы"],
-    ["Реабилитации", totals.rehabs_total, "Сгенерированные реабилитации"],
-    ["AI suggest", totals.ai_suggest_total, "Текстовые AI-операции"],
-    ["AI OCR", totals.ai_ocr_total, "Распознавание документов"],
-    ["AI-проверки экзаменов", totals.ai_exam_scoring_total || 0, "Сколько раз запускалась AI-проверка экзаменов"],
-    ["Строки экзамена", totals.ai_exam_scoring_rows || 0, "Сколько строк экзамена реально проверено"],
-    ["Ответы экзамена", totals.ai_exam_scoring_answers || 0, "Сколько ответов прошло через оценивание"],
-    ["Без LLM", totals.ai_exam_heuristic_total || 0, "Ответы, закрытые без обращения к модели"],
-    ["Попадания в кэш", totals.ai_exam_cache_total || 0, "Ответы, взятые из кэша"],
-    ["Ответы через LLM", totals.ai_exam_llm_total || 0, "Ответы, реально ушедшие в модель"],
-    ["Вызовы LLM", totals.ai_exam_llm_calls_total || 0, "Сколько batch-вызовов сделали к модели"],
-    ["Ошибки экзамена", totals.ai_exam_failure_total || 0, "Ошибки оценивания экзаменов и импорта"],
-    ["Входящий трафик", `${formatNumber(totals.request_bytes_total)} B`, "Суммарный размер запросов"],
-    ["Исходящий трафик", `${formatNumber(totals.response_bytes_total)} B`, "Суммарный размер ответов"],
-    ["Ресурсные единицы", formatNumber(totals.resource_units_total), "Условная нагрузка"],
-    ["AI cost (USD)", `$${formatUsd(totals.ai_estimated_cost_total_usd || 0)}`, `Оценка по ${formatNumber(totals.ai_estimated_cost_samples || 0)} вызовам`],
-    ["AI токены (in/out/total)", `${formatNumber(totals.ai_input_tokens_total || 0)} / ${formatNumber(totals.ai_output_tokens_total || 0)} / ${formatNumber(totals.ai_total_tokens_total || 0)}`, `Сумма по ${formatNumber(totals.ai_generation_total || 0)} генерациям`],
-    ["Средний API ответ", `${formatNumber(totals.avg_api_duration_ms)} ms`, "Средняя длительность API"],
-    ["События за 24 часа", totals.events_last_24h, "Последняя суточная активность"],
+    ["РџРѕР»СЊР·РѕРІР°С‚РµР»Рё", totals.users_total, "Р’СЃРµРіРѕ Р°РєРєР°СѓРЅС‚РѕРІ РІ СЃРёСЃС‚РµРјРµ"],
+    ["API-Р·Р°РїСЂРѕСЃС‹", totals.api_requests_total, "РќР°РєРѕРїР»РµРЅРЅР°СЏ Р°РєС‚РёРІРЅРѕСЃС‚СЊ API"],
+    ["Р–Р°Р»РѕР±С‹", totals.complaints_total, "РЎРіРµРЅРµСЂРёСЂРѕРІР°РЅРЅС‹Рµ Р¶Р°Р»РѕР±С‹"],
+    ["Р РµР°Р±РёР»РёС‚Р°С†РёРё", totals.rehabs_total, "РЎРіРµРЅРµСЂРёСЂРѕРІР°РЅРЅС‹Рµ СЂРµР°Р±РёР»РёС‚Р°С†РёРё"],
+    ["AI suggest", totals.ai_suggest_total, "РўРµРєСЃС‚РѕРІС‹Рµ AI-РѕРїРµСЂР°С†РёРё"],
+    ["AI OCR", totals.ai_ocr_total, "Р Р°СЃРїРѕР·РЅР°РІР°РЅРёРµ РґРѕРєСѓРјРµРЅС‚РѕРІ"],
+    ["AI-РїСЂРѕРІРµСЂРєРё СЌРєР·Р°РјРµРЅРѕРІ", totals.ai_exam_scoring_total || 0, "РЎРєРѕР»СЊРєРѕ СЂР°Р· Р·Р°РїСѓСЃРєР°Р»Р°СЃСЊ AI-РїСЂРѕРІРµСЂРєР° СЌРєР·Р°РјРµРЅРѕРІ"],
+    ["РЎС‚СЂРѕРєРё СЌРєР·Р°РјРµРЅР°", totals.ai_exam_scoring_rows || 0, "РЎРєРѕР»СЊРєРѕ СЃС‚СЂРѕРє СЌРєР·Р°РјРµРЅР° СЂРµР°Р»СЊРЅРѕ РїСЂРѕРІРµСЂРµРЅРѕ"],
+    ["РћС‚РІРµС‚С‹ СЌРєР·Р°РјРµРЅР°", totals.ai_exam_scoring_answers || 0, "РЎРєРѕР»СЊРєРѕ РѕС‚РІРµС‚РѕРІ РїСЂРѕС€Р»Рѕ С‡РµСЂРµР· РѕС†РµРЅРёРІР°РЅРёРµ"],
+    ["Р‘РµР· LLM", totals.ai_exam_heuristic_total || 0, "РћС‚РІРµС‚С‹, Р·Р°РєСЂС‹С‚С‹Рµ Р±РµР· РѕР±СЂР°С‰РµРЅРёСЏ Рє РјРѕРґРµР»Рё"],
+    ["РџРѕРїР°РґР°РЅРёСЏ РІ РєСЌС€", totals.ai_exam_cache_total || 0, "РћС‚РІРµС‚С‹, РІР·СЏС‚С‹Рµ РёР· РєСЌС€Р°"],
+    ["РћС‚РІРµС‚С‹ С‡РµСЂРµР· LLM", totals.ai_exam_llm_total || 0, "РћС‚РІРµС‚С‹, СЂРµР°Р»СЊРЅРѕ СѓС€РµРґС€РёРµ РІ РјРѕРґРµР»СЊ"],
+    ["Р’С‹Р·РѕРІС‹ LLM", totals.ai_exam_llm_calls_total || 0, "РЎРєРѕР»СЊРєРѕ batch-РІС‹Р·РѕРІРѕРІ СЃРґРµР»Р°Р»Рё Рє РјРѕРґРµР»Рё"],
+    ["РћС€РёР±РєРё СЌРєР·Р°РјРµРЅР°", totals.ai_exam_failure_total || 0, "РћС€РёР±РєРё РѕС†РµРЅРёРІР°РЅРёСЏ СЌРєР·Р°РјРµРЅРѕРІ Рё РёРјРїРѕСЂС‚Р°"],
+    ["Р’С…РѕРґСЏС‰РёР№ С‚СЂР°С„РёРє", `${formatNumber(totals.request_bytes_total)} B`, "РЎСѓРјРјР°СЂРЅС‹Р№ СЂР°Р·РјРµСЂ Р·Р°РїСЂРѕСЃРѕРІ"],
+    ["РСЃС…РѕРґСЏС‰РёР№ С‚СЂР°С„РёРє", `${formatNumber(totals.response_bytes_total)} B`, "РЎСѓРјРјР°СЂРЅС‹Р№ СЂР°Р·РјРµСЂ РѕС‚РІРµС‚РѕРІ"],
+    ["Р РµСЃСѓСЂСЃРЅС‹Рµ РµРґРёРЅРёС†С‹", formatNumber(totals.resource_units_total), "РЈСЃР»РѕРІРЅР°СЏ РЅР°РіСЂСѓР·РєР°"],
+    ["AI cost (USD)", `$${formatUsd(totals.ai_estimated_cost_total_usd || 0)}`, `РћС†РµРЅРєР° РїРѕ ${formatNumber(totals.ai_estimated_cost_samples || 0)} РІС‹Р·РѕРІР°Рј`],
+    ["AI С‚РѕРєРµРЅС‹ (in/out/total)", `${formatNumber(totals.ai_input_tokens_total || 0)} / ${formatNumber(totals.ai_output_tokens_total || 0)} / ${formatNumber(totals.ai_total_tokens_total || 0)}`, `РЎСѓРјРјР° РїРѕ ${formatNumber(totals.ai_generation_total || 0)} РіРµРЅРµСЂР°С†РёСЏРј`],
+    ["РЎСЂРµРґРЅРёР№ API РѕС‚РІРµС‚", `${formatNumber(totals.avg_api_duration_ms)} ms`, "РЎСЂРµРґРЅСЏСЏ РґР»РёС‚РµР»СЊРЅРѕСЃС‚СЊ API"],
+    ["РЎРѕР±С‹С‚РёСЏ Р·Р° 24 С‡Р°СЃР°", totals.events_last_24h, "РџРѕСЃР»РµРґРЅСЏСЏ СЃСѓС‚РѕС‡РЅР°СЏ Р°РєС‚РёРІРЅРѕСЃС‚СЊ"],
   ];
 
   totalsHost.innerHTML = items
@@ -541,24 +896,24 @@ function renderPerformance(payload) {
 
   performanceHost.innerHTML = `
     <article class="legal-status-card">
-      <span class="legal-status-card__label">Снимок</span>
+      <span class="legal-status-card__label">РЎРЅРёРјРѕРє</span>
       <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(snapshotAt)}</strong>
       <span class="admin-user-cell__secondary">${renderBadge(isCached ? "cache" : "live", isCached ? "muted" : "success-soft")}</span>
     </article>
     <article class="legal-status-card">
       <span class="legal-status-card__label">p95 / p50 (ms)</span>
-      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(latency.p95_ms ?? "—"))} / ${escapeHtml(String(latency.p50_ms ?? "—"))}</strong>
-      <span class="admin-user-cell__secondary">Ошибок: ${escapeHtml(String(totals.failed_requests ?? 0))} из ${escapeHtml(String(totals.total_requests ?? 0))}</span>
+      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(latency.p95_ms ?? "вЂ”"))} / ${escapeHtml(String(latency.p50_ms ?? "вЂ”"))}</strong>
+      <span class="admin-user-cell__secondary">РћС€РёР±РѕРє: ${escapeHtml(String(totals.failed_requests ?? 0))} РёР· ${escapeHtml(String(totals.total_requests ?? 0))}</span>
     </article>
     <article class="legal-status-card">
       <span class="legal-status-card__label">RPS</span>
-      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(rates.requests_per_second ?? "—"))}</strong>
-      <span class="admin-user-cell__secondary">Окно: ${escapeHtml(String(payload?.window_minutes ?? "—"))} мин</span>
+      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(rates.requests_per_second ?? "вЂ”"))}</strong>
+      <span class="admin-user-cell__secondary">РћРєРЅРѕ: ${escapeHtml(String(payload?.window_minutes ?? "вЂ”"))} РјРёРЅ</span>
     </article>
     <article class="legal-status-card">
-      <span class="legal-status-card__label">Топ endpoint</span>
-      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(top[0]?.path || "—"))}</strong>
-      <span class="admin-user-cell__secondary">Запросов: ${escapeHtml(String(top[0]?.count || 0))}</span>
+      <span class="legal-status-card__label">РўРѕРї endpoint</span>
+      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(top[0]?.path || "вЂ”"))}</strong>
+      <span class="admin-user-cell__secondary">Р—Р°РїСЂРѕСЃРѕРІ: ${escapeHtml(String(top[0]?.count || 0))}</span>
     </article>
   `;
 }
@@ -570,10 +925,10 @@ function renderSynthetic(summary) {
   const bySuite = summary?.by_suite || {};
   const suites = ["smoke", "nightly", "load", "fault"];
   const suiteDescriptions = {
-    smoke: "Быстрая проверка основных сценариев генерации, снапшотов, цитат и публикации.",
-    nightly: "Расширенный регрессионный прогон полного workflow, вложений, артефактов и rollback.",
-    load: "Нагрузочная проверка burst/sustained сценариев генерации, экспорта и content workflow.",
-    fault: "Проверка отказоустойчивости: retry, DLQ, idempotency, isolation и policy gates.",
+    smoke: "Р‘С‹СЃС‚СЂР°СЏ РїСЂРѕРІРµСЂРєР° РѕСЃРЅРѕРІРЅС‹С… СЃС†РµРЅР°СЂРёРµРІ РіРµРЅРµСЂР°С†РёРё, СЃРЅР°РїС€РѕС‚РѕРІ, С†РёС‚Р°С‚ Рё РїСѓР±Р»РёРєР°С†РёРё.",
+    nightly: "Р Р°СЃС€РёСЂРµРЅРЅС‹Р№ СЂРµРіСЂРµСЃСЃРёРѕРЅРЅС‹Р№ РїСЂРѕРіРѕРЅ РїРѕР»РЅРѕРіРѕ workflow, РІР»РѕР¶РµРЅРёР№, Р°СЂС‚РµС„Р°РєС‚РѕРІ Рё rollback.",
+    load: "РќР°РіСЂСѓР·РѕС‡РЅР°СЏ РїСЂРѕРІРµСЂРєР° burst/sustained СЃС†РµРЅР°СЂРёРµРІ РіРµРЅРµСЂР°С†РёРё, СЌРєСЃРїРѕСЂС‚Р° Рё content workflow.",
+    fault: "РџСЂРѕРІРµСЂРєР° РѕС‚РєР°Р·РѕСѓСЃС‚РѕР№С‡РёРІРѕСЃС‚Рё: retry, DLQ, idempotency, isolation Рё policy gates.",
   };
   const cards = suites.map((suite) => {
     const row = bySuite[suite] || {};
@@ -586,7 +941,7 @@ function renderSynthetic(summary) {
         <strong class="legal-status-card__value legal-status-card__value--small">${renderBadge(latest, tone)}</strong>
         <span class="admin-user-cell__secondary">runs: ${escapeHtml(String(row.runs_total || 0))}, failed: ${escapeHtml(String(row.failed_total || 0))}</span>
         <span class="admin-user-cell__secondary admin-synthetic-card__description">${escapeHtml(suiteDescriptions[suite] || "")}</span>
-        <button type="button" class="ghost-button" data-synthetic-run="${suite}" ${isRunning ? "disabled" : ""}>${isRunning ? "Запуск..." : "Запустить"}</button>
+        <button type="button" class="ghost-button" data-synthetic-run="${suite}" ${isRunning ? "disabled" : ""}>${isRunning ? "Р—Р°РїСѓСЃРє..." : "Р—Р°РїСѓСЃС‚РёС‚СЊ"}</button>
       </article>
     `;
   });
@@ -601,7 +956,7 @@ function renderSynthetic(summary) {
         )
         .join("")}
     </tbody></table></div>`
-    : '<p class="legal-section__description">Падений synthetic suite не обнаружено.</p>';
+    : '<p class="legal-section__description">РџР°РґРµРЅРёР№ synthetic suite РЅРµ РѕР±РЅР°СЂСѓР¶РµРЅРѕ.</p>';
   syntheticHost.innerHTML = `
     <div class="admin-performance-grid admin-synthetic-grid">${cards.join("")}</div>
     ${failedHtml}
@@ -627,13 +982,13 @@ async function runSyntheticSuite(suite) {
     });
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, `Не удалось запустить synthetic suite ${normalizedSuite}.`));
+      setStateError(errorsHost, formatHttpError(response, payload, `РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ synthetic suite ${normalizedSuite}.`));
       return;
     }
-    showMessage(`Synthetic suite ${normalizedSuite} завершен: ${String(payload?.status || "unknown")}.`);
+    showMessage(`Synthetic suite ${normalizedSuite} Р·Р°РІРµСЂС€РµРЅ: ${String(payload?.status || "unknown")}.`);
     await loadAdminOverview({ silent: true });
   } catch (error) {
-    setStateError(errorsHost, error?.message || `Не удалось запустить synthetic suite ${normalizedSuite}.`);
+    setStateError(errorsHost, error?.message || `РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ synthetic suite ${normalizedSuite}.`);
   } finally {
     activeSyntheticSuite = "";
     await loadAdminOverview({ silent: true });
@@ -649,12 +1004,12 @@ function renderCostSummary(totals) {
     <article class="legal-status-card">
       <span class="legal-status-card__label">AI cost (USD)</span>
       <strong class="legal-status-card__value legal-status-card__value--small">$${escapeHtml(formatUsd(totals?.ai_estimated_cost_total_usd || 0))}</strong>
-      <span class="admin-user-cell__secondary">Сэмплов: ${escapeHtml(String(samples))}</span>
+      <span class="admin-user-cell__secondary">РЎСЌРјРїР»РѕРІ: ${escapeHtml(String(samples))}</span>
     </article>
     <article class="legal-status-card">
-      <span class="legal-status-card__label">AI токены (in/out/total)</span>
+      <span class="legal-status-card__label">AI С‚РѕРєРµРЅС‹ (in/out/total)</span>
       <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatNumber(totals?.ai_input_tokens_total || 0))} / ${escapeHtml(formatNumber(totals?.ai_output_tokens_total || 0))} / ${escapeHtml(formatNumber(totals?.ai_total_tokens_total || 0))}</strong>
-      <span class="admin-user-cell__secondary">Генераций: ${escapeHtml(String(totals?.ai_generation_total || 0))}</span>
+      <span class="admin-user-cell__secondary">Р“РµРЅРµСЂР°С†РёР№: ${escapeHtml(String(totals?.ai_generation_total || 0))}</span>
     </article>
   `;
 }
@@ -773,16 +1128,16 @@ function renderAiPipeline(payload) {
   aiPipelineHost.innerHTML = `
     <div class="admin-performance-grid">
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Генерации</span>
+        <span class="legal-status-card__label">Р“РµРЅРµСЂР°С†РёРё</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary?.total_generations || 0))}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Оценка стоимости</span>
+        <span class="legal-status-card__label">РћС†РµРЅРєР° СЃС‚РѕРёРјРѕСЃС‚Рё</span>
         <strong class="legal-status-card__value legal-status-card__value--small">$${escapeHtml(formatUsd(summary?.estimated_cost_total_usd || 0))}</strong>
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">p95 latency</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary?.latency_ms_p95 ?? "—"))} ms</strong>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary?.latency_ms_p95 ?? "вЂ”"))} ms</strong>
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">Budget warnings</span>
@@ -790,23 +1145,23 @@ function renderAiPipeline(payload) {
       </article>
     </div>
     <div class="admin-section-toolbar">
-      <span class="admin-user-cell__secondary">Модели: ${escapeHtml(models.map(([name, count]) => `${name} (${count})`).join(", ") || "нет данных")}</span>
+      <span class="admin-user-cell__secondary">РњРѕРґРµР»Рё: ${escapeHtml(models.map(([name, count]) => `${name} (${count})`).join(", ") || "РЅРµС‚ РґР°РЅРЅС‹С…")}</span>
     </div>
     ${
       feedback.length
         ? `
       <div class="legal-table-shell">
         <table class="legal-table admin-table admin-table--compact">
-          <thead><tr><th>Когда</th><th>Flow</th><th>Issue</th><th>Комментарий</th></tr></thead>
+          <thead><tr><th>РљРѕРіРґР°</th><th>Flow</th><th>Issue</th><th>РљРѕРјРјРµРЅС‚Р°СЂРёР№</th></tr></thead>
           <tbody>
             ${feedback
               .map(
                 (row) => `
                 <tr>
-                  <td>${escapeHtml(String(row.created_at || "—"))}</td>
-                  <td>${escapeHtml(String((row.meta || {}).flow || "—"))}</td>
-                  <td>${escapeHtml(String((row.meta || {}).issue_type || "—"))}</td>
-                  <td>${escapeHtml(String((row.meta || {}).comment || "—"))}</td>
+                  <td>${escapeHtml(String(row.created_at || "вЂ”"))}</td>
+                  <td>${escapeHtml(String((row.meta || {}).flow || "вЂ”"))}</td>
+                  <td>${escapeHtml(String((row.meta || {}).issue_type || "вЂ”"))}</td>
+                  <td>${escapeHtml(String((row.meta || {}).comment || "вЂ”"))}</td>
                 </tr>
               `,
               )
@@ -814,7 +1169,7 @@ function renderAiPipeline(payload) {
           </tbody>
         </table>
       </div>`
-        : '<p class="legal-section__description">Нет обратной связи по AI-пайплайну.</p>'
+        : '<p class="legal-section__description">РќРµС‚ РѕР±СЂР°С‚РЅРѕР№ СЃРІСЏР·Рё РїРѕ AI-РїР°Р№РїР»Р°Р№РЅСѓ.</p>'
     }
   `;
 }
@@ -841,7 +1196,7 @@ function renderAiPipeline(payload) {
     .slice(0, 3)
     .map((item) => {
       const source = String(item?.source || "unknown").trim();
-      const message = String(item?.message || "Неизвестная ошибка").trim();
+      const message = String(item?.message || "РќРµРёР·РІРµСЃС‚РЅР°СЏ РѕС€РёР±РєР°").trim();
       return `${source}: ${message}`;
     })
     .join("; ");
@@ -855,7 +1210,7 @@ function renderAiPipeline(payload) {
   aiPipelineHost.innerHTML = `
     ${
       partialErrors.length
-        ? `<div class="legal-alert legal-alert--warning">AI Pipeline загружен частично (${escapeHtml(String(partialErrors.length))}). ${escapeHtml(partialErrorsSummary || "Подробности доступны в server logs.")}</div>`
+        ? `<div class="legal-alert legal-alert--warning">AI Pipeline Р·Р°РіСЂСѓР¶РµРЅ С‡Р°СЃС‚РёС‡РЅРѕ (${escapeHtml(String(partialErrors.length))}). ${escapeHtml(partialErrorsSummary || "РџРѕРґСЂРѕР±РЅРѕСЃС‚Рё РґРѕСЃС‚СѓРїРЅС‹ РІ server logs.")}</div>`
         : ""
     }
     <div class="admin-performance-grid">
@@ -1057,23 +1412,23 @@ function renderRoleHistory(payload) {
   }
   const items = Array.isArray(payload?.items) ? payload.items : [];
   if (!items.length) {
-    roleHistoryHost.innerHTML = '<p class="legal-section__description">Изменений ролей пока нет.</p>';
+    roleHistoryHost.innerHTML = '<p class="legal-section__description">РР·РјРµРЅРµРЅРёР№ СЂРѕР»РµР№ РїРѕРєР° РЅРµС‚.</p>';
     return;
   }
   roleHistoryHost.innerHTML = `
     <div class="legal-table-shell">
       <table class="legal-table admin-table admin-table--compact">
-        <thead><tr><th>Когда</th><th>Админ</th><th>Действие</th><th>Пользователь</th></tr></thead>
+        <thead><tr><th>РљРѕРіРґР°</th><th>РђРґРјРёРЅ</th><th>Р”РµР№СЃС‚РІРёРµ</th><th>РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ</th></tr></thead>
         <tbody>
           ${items
             .slice(0, 20)
             .map(
               (item) => `
               <tr>
-                <td>${escapeHtml(String(item.created_at || "—"))}</td>
-                <td>${escapeHtml(String(item.username || "—"))}</td>
-                <td>${escapeHtml(String(item.event_type || "—"))}</td>
-                <td>${escapeHtml(String((item.meta || {}).target_username || "—"))}</td>
+                <td>${escapeHtml(String(item.created_at || "вЂ”"))}</td>
+                <td>${escapeHtml(String(item.username || "вЂ”"))}</td>
+                <td>${escapeHtml(String(item.event_type || "вЂ”"))}</td>
+                <td>${escapeHtml(String((item.meta || {}).target_username || "вЂ”"))}</td>
               </tr>
             `,
             )
@@ -1101,7 +1456,7 @@ function extractErrorMessage(payload, fallback) {
 function formatHttpError(response, payload, fallback) {
   const status = Number(response?.status || 0);
   if (redirectIfUnauthorized?.(status)) {
-    return "Требуется повторный вход в систему.";
+    return "РўСЂРµР±СѓРµС‚СЃСЏ РїРѕРІС‚РѕСЂРЅС‹Р№ РІС…РѕРґ РІ СЃРёСЃС‚РµРјСѓ.";
   }
 
   const details = extractErrorMessage(payload, fallback);
@@ -1109,13 +1464,13 @@ function formatHttpError(response, payload, fallback) {
 
   let prefix = "";
   if (status === 403) {
-    prefix = "Доступ запрещен.";
+    prefix = "Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ.";
   } else if (status === 429) {
-    prefix = "Превышен лимит запросов.";
+    prefix = "РџСЂРµРІС‹С€РµРЅ Р»РёРјРёС‚ Р·Р°РїСЂРѕСЃРѕРІ.";
   } else if (status >= 500) {
-    prefix = "Ошибка сервера.";
+    prefix = "РћС€РёР±РєР° СЃРµСЂРІРµСЂР°.";
   } else if (status >= 400) {
-    prefix = "Ошибка запроса.";
+    prefix = "РћС€РёР±РєР° Р·Р°РїСЂРѕСЃР°.";
   }
 
   const parts = [];
@@ -1137,14 +1492,14 @@ function renderTopEndpoints(items) {
     return;
   }
   if (!items.length) {
-    endpointsHost.innerHTML = '<p class="legal-section__description">Пока нет данных по API-запросам.</p>';
+    endpointsHost.innerHTML = '<p class="legal-section__description">РџРѕРєР° РЅРµС‚ РґР°РЅРЅС‹С… РїРѕ API-Р·Р°РїСЂРѕСЃР°Рј.</p>';
     return;
   }
 
   endpointsHost.innerHTML = `
     <div class="legal-table-shell">
       <table class="legal-table admin-table admin-table--compact">
-        <thead><tr><th>Эндпоинт</th><th>Что делает</th><th>Запросов</th></tr></thead>
+        <thead><tr><th>Р­РЅРґРїРѕРёРЅС‚</th><th>Р§С‚Рѕ РґРµР»Р°РµС‚</th><th>Р—Р°РїСЂРѕСЃРѕРІ</th></tr></thead>
         <tbody>
           ${items
             .map(
@@ -1169,7 +1524,7 @@ function renderExamImport(summary) {
   }
 
   if (!summary) {
-    examImportHost.innerHTML = '<p class="legal-section__description">Пока нет данных по импорту экзаменов.</p>';
+    examImportHost.innerHTML = '<p class="legal-section__description">РџРѕРєР° РЅРµС‚ РґР°РЅРЅС‹С… РїРѕ РёРјРїРѕСЂС‚Сѓ СЌРєР·Р°РјРµРЅРѕРІ.</p>';
     return;
   }
 
@@ -1182,39 +1537,39 @@ function renderExamImport(summary) {
   examImportHost.innerHTML = `
     <div class="admin-exam-grid">
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Ожидают оценивания</span>
+        <span class="legal-status-card__label">РћР¶РёРґР°СЋС‚ РѕС†РµРЅРёРІР°РЅРёСЏ</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary.pending_scores || 0))}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Последняя синхронизация</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(lastSync.created_at || "—")}</strong>
+        <span class="legal-status-card__label">РџРѕСЃР»РµРґРЅСЏСЏ СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(lastSync.created_at || "вЂ”")}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Последнее оценивание</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(lastScore.created_at || "—")}</strong>
+        <span class="legal-status-card__label">РџРѕСЃР»РµРґРЅРµРµ РѕС†РµРЅРёРІР°РЅРёРµ</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(lastScore.created_at || "вЂ”")}</strong>
       </article>
     </div>
     <div class="admin-exam-meta">
       <div class="admin-user-cell">
         <strong>${escapeHtml(lastSync.path || "/api/exam-import/sync")}</strong>
-        <span class="admin-user-cell__secondary">${escapeHtml(lastSync.status_code ? `Статус ${lastSync.status_code}` : "Запусков пока не было")}</span>
+        <span class="admin-user-cell__secondary">${escapeHtml(lastSync.status_code ? `РЎС‚Р°С‚СѓСЃ ${lastSync.status_code}` : "Р—Р°РїСѓСЃРєРѕРІ РїРѕРєР° РЅРµ Р±С‹Р»Рѕ")}</span>
       </div>
       <div class="admin-user-cell">
         <strong>${escapeHtml(lastScore.path || "/api/exam-import/score")}</strong>
-        <span class="admin-user-cell__secondary">${escapeHtml(lastScore.status_code ? `Статус ${lastScore.status_code}` : "Проверок пока не было")}</span>
+        <span class="admin-user-cell__secondary">${escapeHtml(lastScore.status_code ? `РЎС‚Р°С‚СѓСЃ ${lastScore.status_code}` : "РџСЂРѕРІРµСЂРѕРє РїРѕРєР° РЅРµ Р±С‹Р»Рѕ")}</span>
       </div>
     </div>
     ${renderAdminExamEntriesSection({
-      title: "Последние ответы и оценки",
-      description: "Последние импортированные строки с текущим баллом, статусом и быстрым переходом к детальному разбору.",
+      title: "РџРѕСЃР»РµРґРЅРёРµ РѕС‚РІРµС‚С‹ Рё РѕС†РµРЅРєРё",
+      description: "РџРѕСЃР»РµРґРЅРёРµ РёРјРїРѕСЂС‚РёСЂРѕРІР°РЅРЅС‹Рµ СЃС‚СЂРѕРєРё СЃ С‚РµРєСѓС‰РёРј Р±Р°Р»Р»РѕРј, СЃС‚Р°С‚СѓСЃРѕРј Рё Р±С‹СЃС‚СЂС‹Рј РїРµСЂРµС…РѕРґРѕРј Рє РґРµС‚Р°Р»СЊРЅРѕРјСѓ СЂР°Р·Р±РѕСЂСѓ.",
       entries: recentEntries,
-      emptyText: "Пока нет строк, которые можно показать в админке.",
+      emptyText: "РџРѕРєР° РЅРµС‚ СЃС‚СЂРѕРє, РєРѕС‚РѕСЂС‹Рµ РјРѕР¶РЅРѕ РїРѕРєР°Р·Р°С‚СЊ РІ Р°РґРјРёРЅРєРµ.",
     })}
     ${renderAdminExamEntriesSection({
-      title: "Нуждаются в перепроверке",
-      description: "Строки, где у ответов остались некорректные или неполные результаты проверки.",
+      title: "РќСѓР¶РґР°СЋС‚СЃСЏ РІ РїРµСЂРµРїСЂРѕРІРµСЂРєРµ",
+      description: "РЎС‚СЂРѕРєРё, РіРґРµ Сѓ РѕС‚РІРµС‚РѕРІ РѕСЃС‚Р°Р»РёСЃСЊ РЅРµРєРѕСЂСЂРµРєС‚РЅС‹Рµ РёР»Рё РЅРµРїРѕР»РЅС‹Рµ СЂРµР·СѓР»СЊС‚Р°С‚С‹ РїСЂРѕРІРµСЂРєРё.",
       entries: failedEntries,
-      emptyText: "Строк, требующих перепроверки, сейчас нет.",
+      emptyText: "РЎС‚СЂРѕРє, С‚СЂРµР±СѓСЋС‰РёС… РїРµСЂРµРїСЂРѕРІРµСЂРєРё, СЃРµР№С‡Р°СЃ РЅРµС‚.",
       emphasizeFailed: true,
     })}
     ${
@@ -1223,7 +1578,7 @@ function renderExamImport(summary) {
           <div class="legal-table-shell">
             <table class="legal-table admin-table admin-table--compact">
               <thead>
-                <tr><th>Время</th><th>Тип</th><th>Путь</th><th>Что случилось</th></tr>
+                <tr><th>Р’СЂРµРјСЏ</th><th>РўРёРї</th><th>РџСѓС‚СЊ</th><th>Р§С‚Рѕ СЃР»СѓС‡РёР»РѕСЃСЊ</th></tr>
               </thead>
               <tbody>
                 ${recentFailures
@@ -1242,7 +1597,7 @@ function renderExamImport(summary) {
             </table>
           </div>
         `
-        : '<p class="legal-section__description">Последних ошибок импорта экзаменов и AI-оценивания не найдено.</p>'
+        : '<p class="legal-section__description">РџРѕСЃР»РµРґРЅРёС… РѕС€РёР±РѕРє РёРјРїРѕСЂС‚Р° СЌРєР·Р°РјРµРЅРѕРІ Рё AI-РѕС†РµРЅРёРІР°РЅРёСЏ РЅРµ РЅР°Р№РґРµРЅРѕ.</p>'
     }
   `;
 }
@@ -1253,22 +1608,22 @@ function getExamEntryStatus(entry) {
   }
   const average = Number(entry?.average_score);
   if (entry?.average_score == null || Number.isNaN(average)) {
-    return { key: "pending", label: "Ожидает оценки", tone: "pending" };
+    return { key: "pending", label: "РћР¶РёРґР°РµС‚ РѕС†РµРЅРєРё", tone: "pending" };
   }
   if (average >= 73) {
-    return { key: "good", label: "Сдан хорошо", tone: "ok" };
+    return { key: "good", label: "РЎРґР°РЅ С…РѕСЂРѕС€Рѕ", tone: "ok" };
   }
   if (average > 55) {
-    return { key: "medium", label: "Сдан на среднем уровне", tone: "warn" };
+    return { key: "medium", label: "РЎРґР°РЅ РЅР° СЃСЂРµРґРЅРµРј СѓСЂРѕРІРЅРµ", tone: "warn" };
   }
-  return { key: "poor", label: "Сдан слабо", tone: "problem" };
+  return { key: "poor", label: "РЎРґР°РЅ СЃР»Р°Р±Рѕ", tone: "problem" };
 }
 
 function formatExamAverage(entry) {
   if (ExamView?.formatAverage) {
     return ExamView.formatAverage(entry);
   }
-  return entry?.average_score != null ? `${entry.average_score} / 100` : "—";
+  return entry?.average_score != null ? `${entry.average_score} / 100` : "вЂ”";
 }
 
 function renderAdminExamEntriesSection({ title, description, entries, emptyText, emphasizeFailed = false }) {
@@ -1298,14 +1653,14 @@ function renderAdminExamEntriesSection({ title, description, entries, emptyText,
         <table class="legal-table admin-table admin-table--compact">
           <thead>
             <tr>
-              <th>Строка</th>
-              <th>Кандидат</th>
-              <th>Формат</th>
-              <th>Балл</th>
-              <th>Статус</th>
-              <th>Ответов</th>
-              <th>Импорт</th>
-              <th>Действие</th>
+              <th>РЎС‚СЂРѕРєР°</th>
+              <th>РљР°РЅРґРёРґР°С‚</th>
+              <th>Р¤РѕСЂРјР°С‚</th>
+              <th>Р‘Р°Р»Р»</th>
+              <th>РЎС‚Р°С‚СѓСЃ</th>
+              <th>РћС‚РІРµС‚РѕРІ</th>
+              <th>РРјРїРѕСЂС‚</th>
+              <th>Р”РµР№СЃС‚РІРёРµ</th>
             </tr>
           </thead>
           <tbody>
@@ -1313,18 +1668,18 @@ function renderAdminExamEntriesSection({ title, description, entries, emptyText,
               .map((entry) => {
                 const status = getExamEntryStatus(entry);
                 const reviewBadge = emphasizeFailed || entry?.needs_rescore
-                  ? renderBadge("Нужна перепроверка", "danger")
+                  ? renderBadge("РќСѓР¶РЅР° РїРµСЂРµРїСЂРѕРІРµСЂРєР°", "danger")
                   : "";
                 return `
                   <tr>
-                    <td>${escapeHtml(entry.source_row ?? "—")}</td>
+                    <td>${escapeHtml(entry.source_row ?? "вЂ”")}</td>
                     <td>
                       <div class="admin-user-cell">
-                        <strong class="admin-user-cell__name">${escapeHtml(entry.full_name || "—")}</strong>
-                        <span class="admin-user-cell__secondary">${escapeHtml(entry.discord_tag || "—")}</span>
+                        <strong class="admin-user-cell__name">${escapeHtml(entry.full_name || "вЂ”")}</strong>
+                        <span class="admin-user-cell__secondary">${escapeHtml(entry.discord_tag || "вЂ”")}</span>
                       </div>
                     </td>
-                    <td>${escapeHtml(entry.exam_format || "—")}</td>
+                    <td>${escapeHtml(entry.exam_format || "вЂ”")}</td>
                     <td>${escapeHtml(formatExamAverage(entry))}</td>
                     <td>
                       <div class="admin-badge-row">
@@ -1333,14 +1688,14 @@ function renderAdminExamEntriesSection({ title, description, entries, emptyText,
                       </div>
                     </td>
                     <td>${escapeHtml(String(entry.answer_count ?? 0))}</td>
-                    <td>${escapeHtml(entry.imported_at || "—")}</td>
+                    <td>${escapeHtml(entry.imported_at || "вЂ”")}</td>
                     <td>
                       <button
                         type="button"
                         class="ghost-button admin-exam-detail-btn"
                         data-exam-source-row="${escapeHtml(entry.source_row ?? "")}"
                       >
-                        Разбор
+                        Р Р°Р·Р±РѕСЂ
                       </button>
                     </td>
                   </tr>
@@ -1360,23 +1715,23 @@ function renderActiveFilters(filters) {
   }
 
   const chips = [];
-  if (filters.search) chips.push(renderFilterChip(`Пользователь: ${filters.search}`, "search"));
+  if (filters.search) chips.push(renderFilterChip(`РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ: ${filters.search}`, "search"));
   if (filters.user_sort && filters.user_sort !== "complaints") {
     const sortLabels = {
-      api_requests: "Сортировка: API-активность",
-      last_seen: "Сортировка: последняя активность",
-      created_at: "Сортировка: дата регистрации",
-      username: "Сортировка: username",
+      api_requests: "РЎРѕСЂС‚РёСЂРѕРІРєР°: API-Р°РєС‚РёРІРЅРѕСЃС‚СЊ",
+      last_seen: "РЎРѕСЂС‚РёСЂРѕРІРєР°: РїРѕСЃР»РµРґРЅСЏСЏ Р°РєС‚РёРІРЅРѕСЃС‚СЊ",
+      created_at: "РЎРѕСЂС‚РёСЂРѕРІРєР°: РґР°С‚Р° СЂРµРіРёСЃС‚СЂР°С†РёРё",
+      username: "РЎРѕСЂС‚РёСЂРѕРІРєР°: username",
     };
-    chips.push(renderFilterChip(sortLabels[filters.user_sort] || `Сортировка: ${filters.user_sort}`, "user_sort"));
+    chips.push(renderFilterChip(sortLabels[filters.user_sort] || `РЎРѕСЂС‚РёСЂРѕРІРєР°: ${filters.user_sort}`, "user_sort"));
   }
-  if (filters.blocked_only) chips.push(renderFilterChip("Только заблокированные", "blocked_only"));
-  if (filters.tester_only) chips.push(renderFilterChip("Только тестеры", "tester_only"));
-  if (filters.gka_only) chips.push(renderFilterChip("Только ГКА-ЗГКА", "gka_only"));
-  if (filters.unverified_only) chips.push(renderFilterChip("Только без подтверждения email", "unverified_only"));
-  if (filters.event_search) chips.push(renderFilterChip(`События: ${filters.event_search}`, "event_search"));
-  if (filters.event_type) chips.push(renderFilterChip(`Тип: ${filters.event_type}`, "event_type"));
-  if (filters.failed_events_only) chips.push(renderFilterChip("Только ошибки", "failed_events_only"));
+  if (filters.blocked_only) chips.push(renderFilterChip("РўРѕР»СЊРєРѕ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅРЅС‹Рµ", "blocked_only"));
+  if (filters.tester_only) chips.push(renderFilterChip("РўРѕР»СЊРєРѕ С‚РµСЃС‚РµСЂС‹", "tester_only"));
+  if (filters.gka_only) chips.push(renderFilterChip("РўРѕР»СЊРєРѕ Р“РљРђ-Р—Р“РљРђ", "gka_only"));
+  if (filters.unverified_only) chips.push(renderFilterChip("РўРѕР»СЊРєРѕ Р±РµР· РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ email", "unverified_only"));
+  if (filters.event_search) chips.push(renderFilterChip(`РЎРѕР±С‹С‚РёСЏ: ${filters.event_search}`, "event_search"));
+  if (filters.event_type) chips.push(renderFilterChip(`РўРёРї: ${filters.event_type}`, "event_type"));
+  if (filters.failed_events_only) chips.push(renderFilterChip("РўРѕР»СЊРєРѕ РѕС€РёР±РєРё", "failed_events_only"));
 
   if (!chips.length) {
     activeFiltersHost.innerHTML = "";
@@ -1390,12 +1745,12 @@ function renderActiveFilters(filters) {
 
 function renderUserStatuses(user) {
   const badges = [
-    user.email_verified ? renderBadge("Email OK", "success") : renderBadge("Email не подтвержден", "muted"),
-    user.access_blocked ? renderBadge("Заблокирован", "danger") : renderBadge("Активен", "success-soft"),
-    user.deactivated_at ? renderBadge("Деактивирован", "danger") : null,
-    user.is_tester ? renderBadge("Тестер", "info") : renderBadge("Обычный", "neutral"),
-    user.is_gka ? renderBadge("ГКА-ЗГКА", "info") : null,
-    Number(user.api_quota_daily || 0) > 0 ? renderBadge(`Квота/день: ${Number(user.api_quota_daily || 0)}`, "info") : renderBadge("Квота: без лимита", "muted"),
+    user.email_verified ? renderBadge("Email OK", "success") : renderBadge("Email РЅРµ РїРѕРґС‚РІРµСЂР¶РґРµРЅ", "muted"),
+    user.access_blocked ? renderBadge("Р—Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ", "danger") : renderBadge("РђРєС‚РёРІРµРЅ", "success-soft"),
+    user.deactivated_at ? renderBadge("Р”РµР°РєС‚РёРІРёСЂРѕРІР°РЅ", "danger") : null,
+    user.is_tester ? renderBadge("РўРµСЃС‚РµСЂ", "info") : renderBadge("РћР±С‹С‡РЅС‹Р№", "neutral"),
+    user.is_gka ? renderBadge("Р“РљРђ-Р—Р“РљРђ", "info") : null,
+    Number(user.api_quota_daily || 0) > 0 ? renderBadge(`РљРІРѕС‚Р°/РґРµРЅСЊ: ${Number(user.api_quota_daily || 0)}`, "info") : renderBadge("РљРІРѕС‚Р°: Р±РµР· Р»РёРјРёС‚Р°", "muted"),
     riskLabel(user),
   ];
   return `<div class="admin-badge-row">${badges.filter(Boolean).join("")}</div>`;
@@ -1405,7 +1760,7 @@ function renderUserActivity(user) {
   return `
     <div class="admin-activity">
       <div class="admin-activity__main">
-        <strong>${escapeHtml(String(user.complaints || 0))}</strong><span>жалоб</span>
+        <strong>${escapeHtml(String(user.complaints || 0))}</strong><span>Р¶Р°Р»РѕР±</span>
         <strong>${escapeHtml(String(user.rehabs || 0))}</strong><span>rehab</span>
       </div>
       <div class="admin-activity__meta">
@@ -1427,46 +1782,46 @@ function renderUsers(users, userSort = "complaints") {
   });
 
   if (!users.length) {
-    usersHost.innerHTML = '<p class="legal-section__description">По текущему фильтру пользователи не найдены.</p>';
+    usersHost.innerHTML = '<p class="legal-section__description">РџРѕ С‚РµРєСѓС‰РµРјСѓ С„РёР»СЊС‚СЂСѓ РїРѕР»СЊР·РѕРІР°С‚РµР»Рё РЅРµ РЅР°Р№РґРµРЅС‹.</p>';
     return;
   }
 
   usersHost.innerHTML = `
     <div class="admin-section-toolbar">
-      <p class="legal-section__description">Показано пользователей: ${escapeHtml(String(users.length))}. Сортировка: ${escapeHtml(String(userSort))}</p>
+      <p class="legal-section__description">РџРѕРєР°Р·Р°РЅРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№: ${escapeHtml(String(users.length))}. РЎРѕСЂС‚РёСЂРѕРІРєР°: ${escapeHtml(String(userSort))}</p>
     </div>
     <div class="admin-section-toolbar">
       <label class="legal-field">
-        <span class="legal-field__label">Массовое действие</span>
+        <span class="legal-field__label">РњР°СЃСЃРѕРІРѕРµ РґРµР№СЃС‚РІРёРµ</span>
         <select id="admin-bulk-action">
-          <option value="">Выберите действие</option>
-          <option value="verify_email">Подтвердить email</option>
-          <option value="block">Заблокировать</option>
-          <option value="unblock">Разблокировать</option>
-          <option value="grant_tester">Выдать тестера</option>
-          <option value="revoke_tester">Снять тестера</option>
-          <option value="grant_gka">Выдать ГКА-ЗГКА</option>
-          <option value="revoke_gka">Снять ГКА-ЗГКА</option>
-          <option value="deactivate">Деактивировать</option>
-          <option value="reactivate">Реактивировать</option>
-          <option value="set_daily_quota">Установить квоту/день</option>
+          <option value="">Р’С‹Р±РµСЂРёС‚Рµ РґРµР№СЃС‚РІРёРµ</option>
+          <option value="verify_email">РџРѕРґС‚РІРµСЂРґРёС‚СЊ email</option>
+          <option value="block">Р—Р°Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ</option>
+          <option value="unblock">Р Р°Р·Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ</option>
+          <option value="grant_tester">Р’С‹РґР°С‚СЊ С‚РµСЃС‚РµСЂР°</option>
+          <option value="revoke_tester">РЎРЅСЏС‚СЊ С‚РµСЃС‚РµСЂР°</option>
+          <option value="grant_gka">Р’С‹РґР°С‚СЊ Р“РљРђ-Р—Р“РљРђ</option>
+          <option value="revoke_gka">РЎРЅСЏС‚СЊ Р“РљРђ-Р—Р“РљРђ</option>
+          <option value="deactivate">Р”РµР°РєС‚РёРІРёСЂРѕРІР°С‚СЊ</option>
+          <option value="reactivate">Р РµР°РєС‚РёРІРёСЂРѕРІР°С‚СЊ</option>
+          <option value="set_daily_quota">РЈСЃС‚Р°РЅРѕРІРёС‚СЊ РєРІРѕС‚Сѓ/РґРµРЅСЊ</option>
         </select>
       </label>
-      <input id="admin-bulk-reason" type="text" placeholder="Причина (для block/deactivate)">
-      <input id="admin-bulk-quota" type="number" min="0" step="1" placeholder="Квота/день (для quota)">
-      <button type="button" id="admin-bulk-run" class="ghost-button">Запустить в очереди</button>
-      <span id="admin-bulk-status" class="admin-badge admin-badge--muted">Выбрано: ${selectedBulkUsers.size}</span>
+      <input id="admin-bulk-reason" type="text" placeholder="РџСЂРёС‡РёРЅР° (РґР»СЏ block/deactivate)">
+      <input id="admin-bulk-quota" type="number" min="0" step="1" placeholder="РљРІРѕС‚Р°/РґРµРЅСЊ (РґР»СЏ quota)">
+      <button type="button" id="admin-bulk-run" class="ghost-button">Р—Р°РїСѓСЃС‚РёС‚СЊ РІ РѕС‡РµСЂРµРґРё</button>
+      <span id="admin-bulk-status" class="admin-badge admin-badge--muted">Р’С‹Р±СЂР°РЅРѕ: ${selectedBulkUsers.size}</span>
     </div>
     <div class="legal-table-shell">
       <table class="legal-table admin-table">
         <thead>
           <tr>
             <th><input type="checkbox" id="admin-users-select-all"></th>
-            <th>Пользователь</th>
-            <th>Статусы</th>
-            <th>Активность</th>
-            <th>Последняя активность</th>
-            <th>Управление</th>
+            <th>РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ</th>
+            <th>РЎС‚Р°С‚СѓСЃС‹</th>
+            <th>РђРєС‚РёРІРЅРѕСЃС‚СЊ</th>
+            <th>РџРѕСЃР»РµРґРЅСЏСЏ Р°РєС‚РёРІРЅРѕСЃС‚СЊ</th>
+            <th>РЈРїСЂР°РІР»РµРЅРёРµ</th>
           </tr>
         </thead>
         <tbody>
@@ -1485,12 +1840,12 @@ function renderUsers(users, userSort = "complaints") {
                   <td>${renderUserActivity(user)}</td>
                   <td>
                     <div class="admin-user-cell">
-                      <strong>${escapeHtml(user.last_seen_at || "—")}</strong>
-                      <span class="admin-user-cell__secondary">${escapeHtml(user.access_blocked_reason || "Без причины блокировки")}</span>
+                      <strong>${escapeHtml(user.last_seen_at || "вЂ”")}</strong>
+                      <span class="admin-user-cell__secondary">${escapeHtml(user.access_blocked_reason || "Р‘РµР· РїСЂРёС‡РёРЅС‹ Р±Р»РѕРєРёСЂРѕРІРєРё")}</span>
                     </div>
                   </td>
                   <td>
-                    <button type="button" class="secondary-button admin-user-open-btn" data-open-user="${escapeHtml(user.username || "")}">Управление</button>
+                    <button type="button" class="secondary-button admin-user-open-btn" data-open-user="${escapeHtml(user.username || "")}">РЈРїСЂР°РІР»РµРЅРёРµ</button>
                   </td>
                 </tr>
               `,
@@ -1507,31 +1862,31 @@ function renderEvents(events) {
     return;
   }
   if (!events.length) {
-    eventsHost.innerHTML = '<p class="legal-section__description">Событий по текущему фильтру нет.</p>';
+    eventsHost.innerHTML = '<p class="legal-section__description">РЎРѕР±С‹С‚РёР№ РїРѕ С‚РµРєСѓС‰РµРјСѓ С„РёР»СЊС‚СЂСѓ РЅРµС‚.</p>';
     return;
   }
 
   eventsHost.innerHTML = `
     <div class="admin-section-toolbar">
-      <p class="legal-section__description">Показано событий: ${escapeHtml(String(events.length))}</p>
+      <p class="legal-section__description">РџРѕРєР°Р·Р°РЅРѕ СЃРѕР±С‹С‚РёР№: ${escapeHtml(String(events.length))}</p>
     </div>
     <div class="legal-table-shell">
       <table class="legal-table admin-table admin-table--compact">
         <thead>
           <tr>
-            <th>Время</th>
-            <th>Пользователь</th>
-            <th>Тип</th>
-            <th>Путь</th>
-            <th>Статус</th>
+            <th>Р’СЂРµРјСЏ</th>
+            <th>РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ</th>
+            <th>РўРёРї</th>
+            <th>РџСѓС‚СЊ</th>
+            <th>РЎС‚Р°С‚СѓСЃ</th>
             <th>ms</th>
-            <th>Ресурсы</th>
+            <th>Р РµСЃСѓСЂСЃС‹</th>
           </tr>
         </thead>
         <tbody>
           ${events
             .map((event) => {
-              const statusValue = event.status_code ?? "—";
+              const statusValue = event.status_code ?? "вЂ”";
               const statusTone = Number(event.status_code || 0) >= 400 ? "danger" : "neutral";
               return `
                 <tr>
@@ -1571,34 +1926,34 @@ function renderErrorExplorer(payload) {
   const byPath = Array.isArray(payload?.by_path) ? payload.by_path : [];
 
   if (!items.length) {
-    errorExplorerHost.innerHTML = '<p class="legal-section__description">Ошибок по текущему фильтру не найдено.</p>';
+    errorExplorerHost.innerHTML = '<p class="legal-section__description">РћС€РёР±РѕРє РїРѕ С‚РµРєСѓС‰РµРјСѓ С„РёР»СЊС‚СЂСѓ РЅРµ РЅР°Р№РґРµРЅРѕ.</p>';
     return;
   }
 
-  const topTypeText = byType.slice(0, 3).map((item) => `${item.event_type}: ${item.count}`).join(" · ");
-  const topPathText = byPath.slice(0, 3).map((item) => `${item.path}: ${item.count}`).join(" · ");
+  const topTypeText = byType.slice(0, 3).map((item) => `${item.event_type}: ${item.count}`).join(" В· ");
+  const topPathText = byPath.slice(0, 3).map((item) => `${item.path}: ${item.count}`).join(" В· ");
 
   errorExplorerHost.innerHTML = `
     <div class="admin-section-toolbar">
       <p class="legal-section__description">
-        Ошибок: ${escapeHtml(String(payload?.total || items.length))}
+        РћС€РёР±РѕРє: ${escapeHtml(String(payload?.total || items.length))}
       </p>
       <p class="legal-section__description">
-        Топ типов: ${escapeHtml(topTypeText || "—")}
+        РўРѕРї С‚РёРїРѕРІ: ${escapeHtml(topTypeText || "вЂ”")}
       </p>
       <p class="legal-section__description">
-        Топ endpoint: ${escapeHtml(topPathText || "—")}
+        РўРѕРї endpoint: ${escapeHtml(topPathText || "вЂ”")}
       </p>
     </div>
     <div class="legal-table-shell">
       <table class="legal-table admin-table admin-table--compact">
         <thead>
           <tr>
-            <th>Время</th>
-            <th>Тип</th>
+            <th>Р’СЂРµРјСЏ</th>
+            <th>РўРёРї</th>
             <th>Endpoint</th>
             <th>HTTP</th>
-            <th>Ошибка</th>
+            <th>РћС€РёР±РєР°</th>
             <th>request_id</th>
           </tr>
         </thead>
@@ -1633,29 +1988,29 @@ function renderAdminAudit(events) {
 
   const adminEvents = events.filter((event) => String(event.event_type || "").startsWith("admin_"));
   if (!adminEvents.length) {
-    adminEventsHost.innerHTML = '<p class="legal-section__description">Админ-действий по текущему фильтру пока не видно.</p>';
+    adminEventsHost.innerHTML = '<p class="legal-section__description">РђРґРјРёРЅ-РґРµР№СЃС‚РІРёР№ РїРѕ С‚РµРєСѓС‰РµРјСѓ С„РёР»СЊС‚СЂСѓ РїРѕРєР° РЅРµ РІРёРґРЅРѕ.</p>';
     return;
   }
 
   adminEventsHost.innerHTML = `
     <div class="admin-section-toolbar">
-      <p class="legal-section__description">Показано админ-действий: ${escapeHtml(String(adminEvents.length))}</p>
+      <p class="legal-section__description">РџРѕРєР°Р·Р°РЅРѕ Р°РґРјРёРЅ-РґРµР№СЃС‚РІРёР№: ${escapeHtml(String(adminEvents.length))}</p>
     </div>
     <div class="legal-table-shell">
       <table class="legal-table admin-table admin-table--compact">
         <thead>
           <tr>
-            <th>Время</th>
-            <th>Администратор</th>
-            <th>Действие</th>
-            <th>Запрос</th>
-            <th>Статус</th>
+            <th>Р’СЂРµРјСЏ</th>
+            <th>РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ</th>
+            <th>Р”РµР№СЃС‚РІРёРµ</th>
+            <th>Р—Р°РїСЂРѕСЃ</th>
+            <th>РЎС‚Р°С‚СѓСЃ</th>
           </tr>
         </thead>
         <tbody>
           ${adminEvents
             .map((event) => {
-              const statusValue = event.status_code ?? "—";
+              const statusValue = event.status_code ?? "вЂ”";
               const statusTone = Number(event.status_code || 0) >= 400 ? "danger" : "success-soft";
               return `
                 <tr>
@@ -1753,7 +2108,7 @@ function renderUserModal(user) {
   userModalBody.innerHTML = `
     <div class="legal-status-row legal-status-row--three">
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Пользователь</span>
+        <span class="legal-status-card__label">РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(user.username || "-")}</strong>
       </article>
       <article class="legal-status-card">
@@ -1761,72 +2116,72 @@ function renderUserModal(user) {
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(user.email || "-")}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Последняя активность</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(user.last_seen_at || "—")}</strong>
+        <span class="legal-status-card__label">РџРѕСЃР»РµРґРЅСЏСЏ Р°РєС‚РёРІРЅРѕСЃС‚СЊ</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(user.last_seen_at || "вЂ”")}</strong>
       </article>
     </div>
 
     <div class="legal-subcard admin-user-detail-card">
       <div class="legal-subcard__header">
         <div>
-          <span class="legal-field__label">Статусы</span>
-          <p class="legal-section__description">Ключевые флаги и причина блокировки.</p>
+          <span class="legal-field__label">РЎС‚Р°С‚СѓСЃС‹</span>
+          <p class="legal-section__description">РљР»СЋС‡РµРІС‹Рµ С„Р»Р°РіРё Рё РїСЂРёС‡РёРЅР° Р±Р»РѕРєРёСЂРѕРІРєРё.</p>
         </div>
       </div>
       ${renderUserStatuses(user)}
       <div class="admin-user-detail-grid">
-        <div><span class="legal-field__label">Причина блокировки</span><div class="admin-user-detail-text">${escapeHtml(user.access_blocked_reason || "Не указана")}</div></div>
-        <div><span class="legal-field__label">Создан</span><div class="admin-user-detail-text">${escapeHtml(user.created_at || "—")}</div></div>
+        <div><span class="legal-field__label">РџСЂРёС‡РёРЅР° Р±Р»РѕРєРёСЂРѕРІРєРё</span><div class="admin-user-detail-text">${escapeHtml(user.access_blocked_reason || "РќРµ СѓРєР°Р·Р°РЅР°")}</div></div>
+        <div><span class="legal-field__label">РЎРѕР·РґР°РЅ</span><div class="admin-user-detail-text">${escapeHtml(user.created_at || "вЂ”")}</div></div>
       </div>
     </div>
 
     <div class="legal-subcard admin-user-detail-card">
       <div class="legal-subcard__header">
         <div>
-          <span class="legal-field__label">Активность</span>
-          <p class="legal-section__description">Краткая сводка по действиям пользователя.</p>
+          <span class="legal-field__label">РђРєС‚РёРІРЅРѕСЃС‚СЊ</span>
+          <p class="legal-section__description">РљСЂР°С‚РєР°СЏ СЃРІРѕРґРєР° РїРѕ РґРµР№СЃС‚РІРёСЏРј РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.</p>
         </div>
       </div>
       <div class="admin-user-summary-grid">
-        <article class="legal-status-card"><span class="legal-status-card__label">Жалобы</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.complaints || 0))}</strong></article>
+        <article class="legal-status-card"><span class="legal-status-card__label">Р–Р°Р»РѕР±С‹</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.complaints || 0))}</strong></article>
         <article class="legal-status-card"><span class="legal-status-card__label">Rehab</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.rehabs || 0))}</strong></article>
         <article class="legal-status-card"><span class="legal-status-card__label">AI</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String((user.ai_suggestions || 0) + (user.ai_ocr_requests || 0)))}</strong></article>
         <article class="legal-status-card"><span class="legal-status-card__label">API</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.api_requests || 0))}</strong></article>
-        <article class="legal-status-card"><span class="legal-status-card__label">Ресурсы</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.resource_units || 0))}</strong></article>
+        <article class="legal-status-card"><span class="legal-status-card__label">Р РµСЃСѓСЂСЃС‹</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.resource_units || 0))}</strong></article>
       </div>
     </div>
 
     <div class="legal-subcard admin-user-detail-card">
       <div class="legal-subcard__header">
         <div>
-          <span class="legal-field__label">Быстрые действия</span>
-          <p class="legal-section__description">Управление доступом и учетной записью пользователя.</p>
+          <span class="legal-field__label">Р‘С‹СЃС‚СЂС‹Рµ РґРµР№СЃС‚РІРёСЏ</span>
+          <p class="legal-section__description">РЈРїСЂР°РІР»РµРЅРёРµ РґРѕСЃС‚СѓРїРѕРј Рё СѓС‡РµС‚РЅРѕР№ Р·Р°РїРёСЃСЊСЋ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.</p>
         </div>
       </div>
       <div class="admin-user-actions">
-        <button type="button" class="ghost-button" data-verify-email="${escapeHtml(user.username || "")}">Подтвердить email</button>
-        <button type="button" class="ghost-button" data-change-email="${escapeHtml(user.username || "")}" data-current-email="${escapeHtml(user.email || "")}">Сменить email</button>
-        <button type="button" class="ghost-button" data-reset-password="${escapeHtml(user.username || "")}">Сбросить пароль</button>
-        <button type="button" class="ghost-button" data-set-quota="${escapeHtml(user.username || "")}" data-current-quota="${escapeHtml(String(user.api_quota_daily || 0))}">Квота API/день</button>
+        <button type="button" class="ghost-button" data-verify-email="${escapeHtml(user.username || "")}">РџРѕРґС‚РІРµСЂРґРёС‚СЊ email</button>
+        <button type="button" class="ghost-button" data-change-email="${escapeHtml(user.username || "")}" data-current-email="${escapeHtml(user.email || "")}">РЎРјРµРЅРёС‚СЊ email</button>
+        <button type="button" class="ghost-button" data-reset-password="${escapeHtml(user.username || "")}">РЎР±СЂРѕСЃРёС‚СЊ РїР°СЂРѕР»СЊ</button>
+        <button type="button" class="ghost-button" data-set-quota="${escapeHtml(user.username || "")}" data-current-quota="${escapeHtml(String(user.api_quota_daily || 0))}">РљРІРѕС‚Р° API/РґРµРЅСЊ</button>
         ${
           user.is_tester
-            ? `<button type="button" class="ghost-button" data-revoke-tester="${escapeHtml(user.username || "")}">Снять тестера</button>`
-            : `<button type="button" class="ghost-button" data-grant-tester="${escapeHtml(user.username || "")}">Выдать тестера</button>`
+            ? `<button type="button" class="ghost-button" data-revoke-tester="${escapeHtml(user.username || "")}">РЎРЅСЏС‚СЊ С‚РµСЃС‚РµСЂР°</button>`
+            : `<button type="button" class="ghost-button" data-grant-tester="${escapeHtml(user.username || "")}">Р’С‹РґР°С‚СЊ С‚РµСЃС‚РµСЂР°</button>`
         }
         ${
           user.is_gka
-            ? `<button type="button" class="ghost-button" data-revoke-gka="${escapeHtml(user.username || "")}">Снять ГКА-ЗГКА</button>`
-            : `<button type="button" class="ghost-button" data-grant-gka="${escapeHtml(user.username || "")}">Выдать ГКА-ЗГКА</button>`
+            ? `<button type="button" class="ghost-button" data-revoke-gka="${escapeHtml(user.username || "")}">РЎРЅСЏС‚СЊ Р“РљРђ-Р—Р“РљРђ</button>`
+            : `<button type="button" class="ghost-button" data-grant-gka="${escapeHtml(user.username || "")}">Р’С‹РґР°С‚СЊ Р“РљРђ-Р—Р“РљРђ</button>`
         }
         ${
           user.deactivated_at
-            ? `<button type="button" class="ghost-button" data-reactivate-user="${escapeHtml(user.username || "")}">Реактивировать</button>`
-            : `<button type="button" class="ghost-button" data-deactivate-user="${escapeHtml(user.username || "")}">Деактивировать</button>`
+            ? `<button type="button" class="ghost-button" data-reactivate-user="${escapeHtml(user.username || "")}">Р РµР°РєС‚РёРІРёСЂРѕРІР°С‚СЊ</button>`
+            : `<button type="button" class="ghost-button" data-deactivate-user="${escapeHtml(user.username || "")}">Р”РµР°РєС‚РёРІРёСЂРѕРІР°С‚СЊ</button>`
         }
         ${
           user.access_blocked
-            ? `<button type="button" class="ghost-button" data-unblock-user="${escapeHtml(user.username || "")}">Разблокировать</button>`
-            : `<button type="button" class="ghost-button" data-block-user="${escapeHtml(user.username || "")}">Заблокировать</button>`
+            ? `<button type="button" class="ghost-button" data-unblock-user="${escapeHtml(user.username || "")}">Р Р°Р·Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ</button>`
+            : `<button type="button" class="ghost-button" data-block-user="${escapeHtml(user.username || "")}">Р—Р°Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ</button>`
         }
       </div>
     </div>
@@ -1838,37 +2193,37 @@ function renderExamEntryDetailModal(entry) {
     return;
   }
   if (userModalTitle) {
-    userModalTitle.textContent = `Разбор ответа · строка ${entry.source_row || "—"}`;
+    userModalTitle.textContent = `Р Р°Р·Р±РѕСЂ РѕС‚РІРµС‚Р° В· СЃС‚СЂРѕРєР° ${entry.source_row || "вЂ”"}`;
   }
 
   userModalBody.innerHTML = `
     <div class="legal-status-row legal-status-row--three">
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Строка</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(entry.source_row || "—"))}</strong>
+        <span class="legal-status-card__label">РЎС‚СЂРѕРєР°</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(entry.source_row || "вЂ”"))}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Кандидат</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.full_name || "—")}</strong>
+        <span class="legal-status-card__label">РљР°РЅРґРёРґР°С‚</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.full_name || "вЂ”")}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Средний балл</span>
+        <span class="legal-status-card__label">РЎСЂРµРґРЅРёР№ Р±Р°Р»Р»</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatExamAverage(entry))}</strong>
       </article>
     </div>
 
     <div class="legal-status-row legal-status-row--three">
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Формат</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.exam_format || "—")}</strong>
+        <span class="legal-status-card__label">Р¤РѕСЂРјР°С‚</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.exam_format || "вЂ”")}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Ответов</span>
+        <span class="legal-status-card__label">РћС‚РІРµС‚РѕРІ</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(entry.answer_count || 0))}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Обновлено</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.updated_at || entry.imported_at || "—")}</strong>
+        <span class="legal-status-card__label">РћР±РЅРѕРІР»РµРЅРѕ</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.updated_at || entry.imported_at || "вЂ”")}</strong>
       </article>
     </div>
 
@@ -1877,21 +2232,21 @@ function renderExamEntryDetailModal(entry) {
     <section class="legal-subcard admin-user-detail-card">
       <div class="legal-subcard__header">
         <div>
-          <span class="legal-field__label">Исходные поля строки</span>
-          <p class="legal-section__description">Ниже видно, какие данные пришли из таблицы и с чем сравнивалась проверка.</p>
+          <span class="legal-field__label">РСЃС…РѕРґРЅС‹Рµ РїРѕР»СЏ СЃС‚СЂРѕРєРё</span>
+          <p class="legal-section__description">РќРёР¶Рµ РІРёРґРЅРѕ, РєР°РєРёРµ РґР°РЅРЅС‹Рµ РїСЂРёС€Р»Рё РёР· С‚Р°Р±Р»РёС†С‹ Рё СЃ С‡РµРј СЃСЂР°РІРЅРёРІР°Р»Р°СЃСЊ РїСЂРѕРІРµСЂРєР°.</p>
         </div>
       </div>
       <div class="legal-table-shell exam-detail-shell exam-detail-shell--payload">
         <table class="legal-table admin-table admin-table--compact exam-detail-table exam-detail-table--payload">
           <thead>
             <tr>
-              <th>Столбец / Поле</th>
-              <th>Значение</th>
+              <th>РЎС‚РѕР»Р±РµС† / РџРѕР»Рµ</th>
+              <th>Р—РЅР°С‡РµРЅРёРµ</th>
             </tr>
           </thead>
           <tbody id="admin-exam-detail-body">
             <tr>
-              <td colspan="2" class="legal-table__empty">Данные строки загружены.</td>
+              <td colspan="2" class="legal-table__empty">Р”Р°РЅРЅС‹Рµ СЃС‚СЂРѕРєРё Р·Р°РіСЂСѓР¶РµРЅС‹.</td>
             </tr>
           </tbody>
         </table>
@@ -1912,7 +2267,7 @@ function renderExamEntryDetailModal(entry) {
 async function openExamEntryDetail(sourceRow) {
   const normalizedSourceRow = Number(sourceRow);
   if (!Number.isFinite(normalizedSourceRow) || normalizedSourceRow <= 0) {
-    setStateError(errorsHost, "Не удалось определить строку экзамена для разбора.");
+    setStateError(errorsHost, "РќРµ СѓРґР°Р»РѕСЃСЊ РѕРїСЂРµРґРµР»РёС‚СЊ СЃС‚СЂРѕРєСѓ СЌРєР·Р°РјРµРЅР° РґР»СЏ СЂР°Р·Р±РѕСЂР°.");
     return;
   }
 
@@ -1920,14 +2275,14 @@ async function openExamEntryDetail(sourceRow) {
     const response = await apiFetch(`/api/exam-import/rows/${encodeURIComponent(normalizedSourceRow)}`);
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить разбор ответа."));
+      setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЂР°Р·Р±РѕСЂ РѕС‚РІРµС‚Р°."));
       return;
     }
     selectedUser = null;
     renderExamEntryDetailModal(payload);
     userModal.open();
   } catch (error) {
-    setStateError(errorsHost, error?.message || "Не удалось загрузить разбор ответа.");
+    setStateError(errorsHost, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЂР°Р·Р±РѕСЂ РѕС‚РІРµС‚Р°.");
   }
 }
 
@@ -1953,7 +2308,7 @@ async function loadAiPipeline({ silent = false } = {}) {
     const payload = await parsePayload(response);
     if (!response.ok) {
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить AI Pipeline."));
+        setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ AI Pipeline."));
       }
       return;
     }
@@ -1963,11 +2318,11 @@ async function loadAiPipeline({ silent = false } = {}) {
       const first = partialErrors[0] || {};
       const source = first.source ? `[${String(first.source)}] ` : "";
       const message = String(first.message || "").trim();
-      setStateError(errorsHost, `AI Pipeline загружен частично (${partialErrors.length}). ${source}${message}`.trim());
+      setStateError(errorsHost, `AI Pipeline Р·Р°РіСЂСѓР¶РµРЅ С‡Р°СЃС‚РёС‡РЅРѕ (${partialErrors.length}). ${source}${message}`.trim());
     }
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "Не удалось загрузить AI Pipeline.");
+      setStateError(errorsHost, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ AI Pipeline.");
     }
   }
 }
@@ -1984,14 +2339,14 @@ async function loadRoleHistory({ silent = false } = {}) {
     const payload = await parsePayload(response);
     if (!response.ok) {
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить историю ролей."));
+        setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РёСЃС‚РѕСЂРёСЋ СЂРѕР»РµР№."));
       }
       return;
     }
     renderRoleHistory(payload);
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "Не удалось загрузить историю ролей.");
+      setStateError(errorsHost, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РёСЃС‚РѕСЂРёСЋ СЂРѕР»РµР№.");
     }
   }
 }
@@ -2005,7 +2360,7 @@ async function loadAdminPerformance({ silent = false } = {}) {
     if (!response.ok) {
       const payload = await parsePayload(response);
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить метрики производительности."));
+        setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РјРµС‚СЂРёРєРё РїСЂРѕРёР·РІРѕРґРёС‚РµР»СЊРЅРѕСЃС‚Рё."));
       }
       return;
     }
@@ -2013,7 +2368,7 @@ async function loadAdminPerformance({ silent = false } = {}) {
     renderPerformance(payload);
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "Не удалось загрузить метрики производительности.");
+      setStateError(errorsHost, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РјРµС‚СЂРёРєРё РїСЂРѕРёР·РІРѕРґРёС‚РµР»СЊРЅРѕСЃС‚Рё.");
     }
   }
 }
@@ -2024,7 +2379,7 @@ async function loadAdminOverview({ silent = false } = {}) {
     clearMessage();
     showOverviewLoading();
   } else {
-    setLiveStatus("Live: обновление...", "info");
+    setLiveStatus("Live: РѕР±РЅРѕРІР»РµРЅРёРµ...", "info");
   }
 
   try {
@@ -2032,9 +2387,9 @@ async function loadAdminOverview({ silent = false } = {}) {
     if (!response.ok) {
       const payload = await parsePayload(response);
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить данные админ-панели."));
+        setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РґР°РЅРЅС‹Рµ Р°РґРјРёРЅ-РїР°РЅРµР»Рё."));
       } else {
-        setLiveStatus("Live: ошибка обновления", "danger");
+        setLiveStatus("Live: РѕС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ", "danger");
       }
       return;
     }
@@ -2056,20 +2411,20 @@ async function loadAdminOverview({ silent = false } = {}) {
       const first = partialErrors[0] || {};
       const source = first.source ? `[${String(first.source)}] ` : "";
       const message = String(first.message || "").trim();
-      setStateError(errorsHost, `Панель загружена частично (${partialErrors.length}). ${source}${message}`.trim());
+      setStateError(errorsHost, `РџР°РЅРµР»СЊ Р·Р°РіСЂСѓР¶РµРЅР° С‡Р°СЃС‚РёС‡РЅРѕ (${partialErrors.length}). ${source}${message}`.trim());
     }
 
     if (selectedUser && userIndex.has(String(selectedUser).toLowerCase())) {
       renderUserModal(userIndex.get(String(selectedUser).toLowerCase()));
     }
     if (silent) {
-      setLiveStatus(`Live: синхронно ${new Date().toLocaleTimeString("ru-RU")}`, "success-soft");
+      setLiveStatus(`Live: СЃРёРЅС…СЂРѕРЅРЅРѕ ${new Date().toLocaleTimeString("ru-RU")}`, "success-soft");
     }
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "Не удалось загрузить данные админ-панели.");
+      setStateError(errorsHost, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РґР°РЅРЅС‹Рµ Р°РґРјРёРЅ-РїР°РЅРµР»Рё.");
     } else {
-      setLiveStatus("Live: ошибка обновления", "danger");
+      setLiveStatus("Live: РѕС€РёР±РєР° РѕР±РЅРѕРІР»РµРЅРёСЏ", "danger");
     }
   }
 }
@@ -2093,13 +2448,13 @@ function clearLiveTimer() {
 function scheduleLiveRefresh() {
   clearLiveTimer();
   if (!liveRefreshField?.checked) {
-    setLiveStatus("Live: выключено", "muted");
+    setLiveStatus("Live: РІС‹РєР»СЋС‡РµРЅРѕ", "muted");
     return;
   }
 
   const intervalSeconds = Number(liveIntervalField?.value || 30);
   const safeIntervalMs = Math.max(10, intervalSeconds) * 1000;
-  setLiveStatus(`Live: интервал ${Math.max(10, intervalSeconds)}с`, "info");
+  setLiveStatus(`Live: РёРЅС‚РµСЂРІР°Р» ${Math.max(10, intervalSeconds)}СЃ`, "info");
 
   adminLiveTimer = window.setInterval(async () => {
     if (document.hidden) {
@@ -2159,13 +2514,13 @@ async function performAdminAction(url, successText, body = null) {
     });
     if (!response.ok) {
       const payload = await parsePayload(response);
-      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось выполнить действие администратора."));
+      setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹РїРѕР»РЅРёС‚СЊ РґРµР№СЃС‚РІРёРµ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°."));
       return;
     }
     showMessage(successText);
     await loadAdminOverview();
   } catch (error) {
-    setStateError(errorsHost, error?.message || "Не удалось выполнить действие администратора.");
+    setStateError(errorsHost, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹РїРѕР»РЅРёС‚СЊ РґРµР№СЃС‚РІРёРµ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°.");
   }
 }
 
@@ -2175,7 +2530,7 @@ async function pollBulkTask(taskId) {
     const response = await apiFetch(`/api/admin/tasks/${encodeURIComponent(taskId)}`);
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось получить статус bulk-задачи."));
+      setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ СЃС‚Р°С‚СѓСЃ bulk-Р·Р°РґР°С‡Рё."));
       return;
     }
     const progress = payload.progress || {};
@@ -2183,30 +2538,30 @@ async function pollBulkTask(taskId) {
       statusHost.textContent = `Bulk: ${payload.status} (${progress.done || 0}/${progress.total || 0})`;
     }
     if (payload.status === "finished") {
-      showMessage(`Bulk завершен: ok ${payload.result?.success_count || 0}, ошибок ${payload.result?.failed_count || 0}.`);
+      showMessage(`Bulk Р·Р°РІРµСЂС€РµРЅ: ok ${payload.result?.success_count || 0}, РѕС€РёР±РѕРє ${payload.result?.failed_count || 0}.`);
       selectedBulkUsers = new Set();
       await loadAdminOverview();
       return;
     }
     if (payload.status === "failed") {
-      setStateError(errorsHost, payload.error || "Bulk-задача завершилась ошибкой.");
+      setStateError(errorsHost, payload.error || "Bulk-Р·Р°РґР°С‡Р° Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РѕС€РёР±РєРѕР№.");
       return;
     }
     // eslint-disable-next-line no-await-in-loop
     await new Promise((resolve) => window.setTimeout(resolve, 1000));
   }
-  setStateError(errorsHost, "Таймаут ожидания bulk-задачи.");
+  setStateError(errorsHost, "РўР°Р№РјР°СѓС‚ РѕР¶РёРґР°РЅРёСЏ bulk-Р·Р°РґР°С‡Рё.");
 }
 
 async function runBulkAction() {
   const usernames = Array.from(selectedBulkUsers);
   if (!usernames.length) {
-    setStateError(errorsHost, "Выберите хотя бы одного пользователя для массовой операции.");
+    setStateError(errorsHost, "Р’С‹Р±РµСЂРёС‚Рµ С…РѕС‚СЏ Р±С‹ РѕРґРЅРѕРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РґР»СЏ РјР°СЃСЃРѕРІРѕР№ РѕРїРµСЂР°С†РёРё.");
     return;
   }
   const action = String(document.getElementById("admin-bulk-action")?.value || "").trim();
   if (!action) {
-    setStateError(errorsHost, "Выберите массовое действие.");
+    setStateError(errorsHost, "Р’С‹Р±РµСЂРёС‚Рµ РјР°СЃСЃРѕРІРѕРµ РґРµР№СЃС‚РІРёРµ.");
     return;
   }
   const reason = String(document.getElementById("admin-bulk-reason")?.value || "").trim();
@@ -2219,23 +2574,23 @@ async function runBulkAction() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось запустить bulk-операцию."));
+    setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ bulk-РѕРїРµСЂР°С†РёСЋ."));
     return;
   }
-  showMessage("Bulk-задача добавлена в очередь.");
+  showMessage("Bulk-Р·Р°РґР°С‡Р° РґРѕР±Р°РІР»РµРЅР° РІ РѕС‡РµСЂРµРґСЊ.");
   await pollBulkTask(payload.task_id);
 }
 
 async function handleAdminAction(target) {
   const verifyUsername = target.getAttribute("data-verify-email");
   if (verifyUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(verifyUsername)}/verify-email`, "Email пользователя подтвержден администратором.");
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(verifyUsername)}/verify-email`, "Email РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РїРѕРґС‚РІРµСЂР¶РґРµРЅ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј.");
     return true;
   }
 
   const unblockUsername = target.getAttribute("data-unblock-user");
   if (unblockUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(unblockUsername)}/unblock`, "Доступ пользователя восстановлен.");
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(unblockUsername)}/unblock`, "Р”РѕСЃС‚СѓРї РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅ.");
     return true;
   }
 
@@ -2245,34 +2600,34 @@ async function handleAdminAction(target) {
       action: "block-user",
       username: blockUsername,
       askReason: true,
-      title: "Блокировка пользователя",
-      description: `Вы блокируете пользователя ${blockUsername}. При необходимости укажите причину.`,
-      confirmLabel: "Заблокировать",
+      title: "Р‘Р»РѕРєРёСЂРѕРІРєР° РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ",
+      description: `Р’С‹ Р±Р»РѕРєРёСЂСѓРµС‚Рµ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ ${blockUsername}. РџСЂРё РЅРµРѕР±С…РѕРґРёРјРѕСЃС‚Рё СѓРєР°Р¶РёС‚Рµ РїСЂРёС‡РёРЅСѓ.`,
+      confirmLabel: "Р—Р°Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ",
     });
     return true;
   }
 
   const grantTesterUsername = target.getAttribute("data-grant-tester");
   if (grantTesterUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(grantTesterUsername)}/grant-tester`, "Статус тестера выдан.");
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(grantTesterUsername)}/grant-tester`, "РЎС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР° РІС‹РґР°РЅ.");
     return true;
   }
 
   const revokeTesterUsername = target.getAttribute("data-revoke-tester");
   if (revokeTesterUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(revokeTesterUsername)}/revoke-tester`, "Статус тестера снят.");
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(revokeTesterUsername)}/revoke-tester`, "РЎС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР° СЃРЅСЏС‚.");
     return true;
   }
 
   const grantGkaUsername = target.getAttribute("data-grant-gka");
   if (grantGkaUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(grantGkaUsername)}/grant-gka`, "Тип ГКА-ЗГКА присвоен.");
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(grantGkaUsername)}/grant-gka`, "РўРёРї Р“РљРђ-Р—Р“РљРђ РїСЂРёСЃРІРѕРµРЅ.");
     return true;
   }
 
   const revokeGkaUsername = target.getAttribute("data-revoke-gka");
   if (revokeGkaUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(revokeGkaUsername)}/revoke-gka`, "Тип ГКА-ЗГКА снят.");
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(revokeGkaUsername)}/revoke-gka`, "РўРёРї Р“РљРђ-Р—Р“РљРђ СЃРЅСЏС‚.");
     return true;
   }
 
@@ -2283,9 +2638,9 @@ async function handleAdminAction(target) {
       username: changeEmailUsername,
       askEmail: true,
       defaultEmail: target.getAttribute("data-current-email") || "",
-      title: "Смена email",
-      description: `Укажите новый email для пользователя ${changeEmailUsername}.`,
-      confirmLabel: "Сохранить email",
+      title: "РЎРјРµРЅР° email",
+      description: `РЈРєР°Р¶РёС‚Рµ РЅРѕРІС‹Р№ email РґР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ ${changeEmailUsername}.`,
+      confirmLabel: "РЎРѕС…СЂР°РЅРёС‚СЊ email",
     });
     return true;
   }
@@ -2296,9 +2651,9 @@ async function handleAdminAction(target) {
       action: "reset-password",
       username: resetPasswordUsername,
       askPassword: true,
-      title: "Сброс пароля",
-      description: `Введите новый пароль для пользователя ${resetPasswordUsername}.`,
-      confirmLabel: "Сменить пароль",
+      title: "РЎР±СЂРѕСЃ РїР°СЂРѕР»СЏ",
+      description: `Р’РІРµРґРёС‚Рµ РЅРѕРІС‹Р№ РїР°СЂРѕР»СЊ РґР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ ${resetPasswordUsername}.`,
+      confirmLabel: "РЎРјРµРЅРёС‚СЊ РїР°СЂРѕР»СЊ",
     });
     return true;
   }
@@ -2309,16 +2664,16 @@ async function handleAdminAction(target) {
       action: "deactivate-user",
       username: deactivateUsername,
       askReason: true,
-      title: "Деактивация аккаунта",
-      description: `Пользователь ${deactivateUsername} будет деактивирован (soft-delete).`,
-      confirmLabel: "Деактивировать",
+      title: "Р”РµР°РєС‚РёРІР°С†РёСЏ Р°РєРєР°СѓРЅС‚Р°",
+      description: `РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ ${deactivateUsername} Р±СѓРґРµС‚ РґРµР°РєС‚РёРІРёСЂРѕРІР°РЅ (soft-delete).`,
+      confirmLabel: "Р”РµР°РєС‚РёРІРёСЂРѕРІР°С‚СЊ",
     });
     return true;
   }
 
   const reactivateUsername = target.getAttribute("data-reactivate-user");
   if (reactivateUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(reactivateUsername)}/reactivate`, "Аккаунт реактивирован.");
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(reactivateUsername)}/reactivate`, "РђРєРєР°СѓРЅС‚ СЂРµР°РєС‚РёРІРёСЂРѕРІР°РЅ.");
     return true;
   }
 
@@ -2329,9 +2684,9 @@ async function handleAdminAction(target) {
       username: setQuotaUsername,
       askQuota: true,
       defaultQuota: target.getAttribute("data-current-quota") || "0",
-      title: "Суточная квота API",
-      description: `Установите лимит API запросов в сутки для ${setQuotaUsername} (0 = без лимита).`,
-      confirmLabel: "Сохранить квоту",
+      title: "РЎСѓС‚РѕС‡РЅР°СЏ РєРІРѕС‚Р° API",
+      description: `РЈСЃС‚Р°РЅРѕРІРёС‚Рµ Р»РёРјРёС‚ API Р·Р°РїСЂРѕСЃРѕРІ РІ СЃСѓС‚РєРё РґР»СЏ ${setQuotaUsername} (0 = Р±РµР· Р»РёРјРёС‚Р°).`,
+      confirmLabel: "РЎРѕС…СЂР°РЅРёС‚СЊ РєРІРѕС‚Сѓ",
     });
     return true;
   }
@@ -2349,7 +2704,7 @@ async function submitPendingAction() {
 
   if (action === "block-user") {
     const reason = String(actionReasonInput?.value || "").trim();
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/block`, "Доступ пользователя заблокирован.", {
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/block`, "Р”РѕСЃС‚СѓРї РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ.", {
       reason,
     });
     closeActionModal();
@@ -2359,10 +2714,10 @@ async function submitPendingAction() {
   if (action === "change-email") {
     const email = String(actionEmailInput?.value || "").trim();
     if (!email) {
-      setStateError(actionModalErrors, "Укажите новый email.");
+      setStateError(actionModalErrors, "РЈРєР°Р¶РёС‚Рµ РЅРѕРІС‹Р№ email.");
       return;
     }
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/email`, "Email пользователя обновлен.", {
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/email`, "Email РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РѕР±РЅРѕРІР»РµРЅ.", {
       email,
     });
     closeActionModal();
@@ -2372,16 +2727,16 @@ async function submitPendingAction() {
   if (action === "reset-password") {
     const password = String(actionPasswordInput?.value || "").trim();
     if (!password) {
-      setStateError(actionModalErrors, "Введите новый пароль.");
+      setStateError(actionModalErrors, "Р’РІРµРґРёС‚Рµ РЅРѕРІС‹Р№ РїР°СЂРѕР»СЊ.");
       return;
     }
     if (password.length < 10) {
-      setStateError(actionModalErrors, "Пароль должен быть не короче 10 символов.");
+      setStateError(actionModalErrors, "РџР°СЂРѕР»СЊ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РЅРµ РєРѕСЂРѕС‡Рµ 10 СЃРёРјРІРѕР»РѕРІ.");
       return;
     }
     await performAdminAction(
       `/api/admin/users/${encodeURIComponent(username)}/reset-password`,
-      "Пароль пользователя обновлен.",
+      "РџР°СЂРѕР»СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РѕР±РЅРѕРІР»РµРЅ.",
       { password },
     );
     closeActionModal();
@@ -2390,7 +2745,7 @@ async function submitPendingAction() {
 
   if (action === "deactivate-user") {
     const reason = String(actionReasonInput?.value || "").trim();
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/deactivate`, "Аккаунт пользователя деактивирован.", {
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/deactivate`, "РђРєРєР°СѓРЅС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РґРµР°РєС‚РёРІРёСЂРѕРІР°РЅ.", {
       reason,
     });
     closeActionModal();
@@ -2400,10 +2755,10 @@ async function submitPendingAction() {
   if (action === "set-daily-quota") {
     const quota = Number(actionQuotaInput?.value || 0);
     if (!Number.isFinite(quota) || quota < 0) {
-      setStateError(actionModalErrors, "Квота должна быть неотрицательным числом.");
+      setStateError(actionModalErrors, "РљРІРѕС‚Р° РґРѕР»Р¶РЅР° Р±С‹С‚СЊ РЅРµРѕС‚СЂРёС†Р°С‚РµР»СЊРЅС‹Рј С‡РёСЃР»РѕРј.");
       return;
     }
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/daily-quota`, "Квота обновлена.", {
+    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/daily-quota`, "РљРІРѕС‚Р° РѕР±РЅРѕРІР»РµРЅР°.", {
       daily_limit: quota,
     });
     closeActionModal();
@@ -2439,7 +2794,7 @@ usersHost?.addEventListener("click", async (event) => {
       }
     });
     const statusHost = document.getElementById("admin-bulk-status");
-    if (statusHost) statusHost.textContent = `Выбрано: ${selectedBulkUsers.size}`;
+    if (statusHost) statusHost.textContent = `Р’С‹Р±СЂР°РЅРѕ: ${selectedBulkUsers.size}`;
   }
 });
 
@@ -2480,7 +2835,7 @@ usersHost?.addEventListener("change", (event) => {
       selectedBulkUsers.delete(String(username).toLowerCase());
     }
     const statusHost = document.getElementById("admin-bulk-status");
-    if (statusHost) statusHost.textContent = `Выбрано: ${selectedBulkUsers.size}`;
+    if (statusHost) statusHost.textContent = `Р’С‹Р±СЂР°РЅРѕ: ${selectedBulkUsers.size}`;
   }
 });
 
@@ -2496,48 +2851,84 @@ catalogHost?.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
   if (target.id === "catalog-create") {
-    const title = window.prompt("Title", "") || "";
-    const raw = window.prompt("JSON config", "{}") || "{}";
-    await performAdminAction(catalogEndpoint(activeCatalogEntity), "Элемент создан.", {
-      title,
-      config: JSON.parse(raw),
+    openCatalogModal({
+      mode: "edit",
+      isCreate: true,
+      item: { title: "", status: "draft" },
+      versions: [],
     });
-    await loadCatalog(activeCatalogEntity);
+    return;
+  }
+  const viewId = target.getAttribute("data-catalog-view");
+  if (viewId) {
+    const response = await apiFetch(catalogEndpoint(activeCatalogEntity, viewId));
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЌР»РµРјРµРЅС‚ catalog."));
+      return;
+    }
+    openCatalogModal({
+      mode: "view",
+      item: payload?.item || {},
+      versions: Array.isArray(payload?.versions) ? payload.versions : [],
+    });
     return;
   }
   const editId = target.getAttribute("data-catalog-edit");
   if (editId) {
-    const title = window.prompt("New title", "") || "";
-    const raw = window.prompt("New JSON config", "{}") || "{}";
-    const response = await apiFetch(catalogEndpoint(activeCatalogEntity, editId), {
-      method: "PUT",
-      body: JSON.stringify({ title, config: JSON.parse(raw) }),
+    const response = await apiFetch(catalogEndpoint(activeCatalogEntity, editId));
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЌР»РµРјРµРЅС‚ catalog."));
+      return;
+    }
+    openCatalogModal({
+      mode: "edit",
+      item: payload?.item || {},
+      versions: Array.isArray(payload?.versions) ? payload.versions : [],
     });
-    if (response.ok) showMessage("Элемент обновлен.");
+    return;
+  }
+  const previewId = target.getAttribute("data-catalog-preview");
+  if (previewId) {
+    await loadCatalogPreview(previewId);
+    return;
+  }
+  if (target.id === "catalog-preview-copy") {
+    const jsonHost = document.getElementById("catalog-preview-json");
+    const text = String(jsonHost?.textContent || "").trim();
+    if (text) {
+      await navigator.clipboard.writeText(text);
+      showMessage("JSON СЃРєРѕРїРёСЂРѕРІР°РЅ.");
+    }
+    return;
+  }
+  const workflowItemId = target.getAttribute("data-catalog-workflow-item");
+  if (workflowItemId) {
+    const action = String(target.getAttribute("data-catalog-workflow-action") || "").trim();
+    const changeRequestId = Number(target.getAttribute("data-catalog-workflow-cr-id") || 0);
+    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, workflowItemId)}/workflow`, "Workflow РѕР±РЅРѕРІР»РµРЅ.", {
+      action,
+      change_request_id: Number.isFinite(changeRequestId) ? changeRequestId : 0,
+    });
     await loadCatalog(activeCatalogEntity);
     return;
   }
-  const nextId = target.getAttribute("data-catalog-next");
+  const nextId = target.getAttribute("data-catalog-legacy-next");
   if (nextId) {
-    const row = Array.from(catalogHost.querySelectorAll("[data-catalog-next]")).find((el) => el.getAttribute("data-catalog-next") === nextId);
-    const tr = row?.closest("tr");
-    const state = tr?.children?.[1]?.textContent?.trim() || "draft";
-    const targetState = state === "draft" ? "review" : state === "review" ? "publish" : "draft";
-    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, nextId)}/workflow`, "Workflow обновлен.", { target_state: targetState });
-    await loadCatalog(activeCatalogEntity);
     return;
   }
   const rollbackId = target.getAttribute("data-catalog-rollback");
   if (rollbackId) {
     const version = Number(window.prompt("Rollback to version", "1") || "1");
-    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, rollbackId)}/rollback`, "Rollback выполнен.", { version });
+    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, rollbackId)}/rollback`, "Rollback РІС‹РїРѕР»РЅРµРЅ.", { version });
     await loadCatalog(activeCatalogEntity);
     return;
   }
   const deleteId = target.getAttribute("data-catalog-delete");
   if (deleteId) {
     const response = await apiFetch(catalogEndpoint(activeCatalogEntity, deleteId), { method: "DELETE" });
-    if (response.ok) showMessage("Элемент удален.");
+    if (response.ok) showMessage("Р­Р»РµРјРµРЅС‚ СѓРґР°Р»РµРЅ.");
     await loadCatalog(activeCatalogEntity);
   }
 });
@@ -2592,15 +2983,34 @@ actionModal.bind(
   document.getElementById("admin-action-modal-close"),
   document.getElementById("admin-action-cancel"),
 );
+catalogModal.bind(
+  document.getElementById("admin-catalog-modal-close"),
+  document.getElementById("admin-catalog-cancel"),
+);
 
 actionConfirmButton?.addEventListener("click", submitPendingAction);
 actionCancelButton?.addEventListener("click", closeActionModal);
 document.getElementById("admin-action-modal-close")?.addEventListener("click", resetActionModalFields);
+catalogSaveButton?.addEventListener("click", submitCatalogModal);
+catalogCancelButton?.addEventListener("click", closeCatalogModal);
+document.getElementById("admin-catalog-modal-close")?.addEventListener("click", closeCatalogModal);
+catalogForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await submitCatalogModal();
+});
+catalogJsonInput?.addEventListener("input", () => {
+  if (catalogJsonError) {
+    catalogJsonError.hidden = true;
+    catalogJsonError.textContent = "";
+  }
+  setStateIdle(catalogModalErrors);
+});
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     userModal.close();
     closeActionModal();
+    closeCatalogModal();
   }
 });
 
@@ -2619,6 +3029,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 resetActionModalFields();
+resetCatalogModalState();
 initCollapsibles();
 Promise.all([
   loadAdminOverview(),
@@ -2629,3 +3040,4 @@ Promise.all([
 ]).then(() => {
   scheduleLiveRefresh();
 });
+
