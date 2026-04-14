@@ -268,7 +268,6 @@ function renderLawSourcesHistory(payload) {
         .join("")}
     </ul>
   `;
-  host.innerHTML = renderLawJobsMarkup(payload, { escapeHtml });
 }
 
 async function loadLawSourcesHistory() {
@@ -617,7 +616,7 @@ async function addServerLawBindingFlow() {
   await loadServerLawBindings();
 }
 
-async function loadLawJobsOverview() {
+async function legacyLoadLawJobsOverview() {
   const host = lawJobsHost || document.getElementById("law-jobs-host");
   if (!host) return;
   const response = await apiFetch("/api/admin/law-jobs/overview");
@@ -642,6 +641,18 @@ async function loadLawJobsOverview() {
       <pre class="legal-field__hint">${escapeHtml(JSON.stringify(running, null, 2) || "[]")}</pre>
     </details>
   `;
+}
+
+async function loadLawJobsOverview() {
+  const host = lawJobsHost || document.getElementById("law-jobs-host");
+  if (!host) return;
+  const response = await apiFetch("/api/admin/law-jobs/overview");
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ jobs/alerts."))}</p>`;
+    return;
+  }
+  host.innerHTML = renderLawJobsMarkup(payload, { escapeHtml });
 }
 
 async function rebuildLawSources() {

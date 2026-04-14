@@ -116,7 +116,7 @@ window.OGPAdminOverview = {
       .join("");
 
     const byTypeHtml = byJobType.length
-      ? `<div class="admin-section-toolbar"><span class="admin-user-cell__secondary">By type: ${escapeHtml(byJobType.map((item) => `${item.job_type} (${item.count})`).join(", "))}</span></div>`
+      ? `<div class="admin-section-toolbar"><span class="admin-user-cell__secondary admin-ops-wrap">By type: ${escapeHtml(byJobType.map((item) => `${item.job_type} (${item.count})`).join(", "))}</span></div>`
       : "";
 
     const tableHtml = problemJobs.length
@@ -202,7 +202,7 @@ window.OGPAdminOverview = {
       : '<p class="legal-section__description">Упавших law rebuild tasks сейчас нет.</p>';
 
     const runningHtml = running.length
-      ? `<div class="admin-section-toolbar"><span class="admin-user-cell__secondary">Running: ${escapeHtml(running.map((item) => `${item.task_id} (${item.server_code || "-"})`).join(", "))}</span></div>`
+      ? `<div class="admin-section-toolbar"><span class="admin-user-cell__secondary admin-ops-wrap">Running: ${escapeHtml(running.map((item) => `${item.task_id} (${item.server_code || "-"})`).join(", "))}</span></div>`
       : "";
 
     return `
@@ -276,7 +276,7 @@ window.OGPAdminOverview = {
       .filter(Boolean);
 
     const failureNotesHtml = failureNotes.length
-      ? `<div class="admin-section-toolbar"><span class="admin-user-cell__secondary">Recent failures: ${escapeHtml(failureNotes.join(" | "))}</span></div>`
+      ? `<div class="admin-section-toolbar"><span class="admin-user-cell__secondary admin-ops-wrap">Recent failures: ${escapeHtml(failureNotes.join(" | "))}</span></div>`
       : "";
 
     return `
