@@ -216,11 +216,19 @@ class UserStore:
     def _execute(self, query: str, params: tuple[Any, ...] = (), *, commit: bool = True) -> int:
         return self.repository.execute(query, params, commit=commit)
 
-    def _pg_fetchone(self, query: str, params: tuple[Any, ...] = ()):
+    def _pg_fetchone(self, query: str, params: tuple[Any, ...] = (), *, commit: bool = False):
         conn = self._connect()
         try:
-            return conn.execute(query, params).fetchone()
+            row = conn.execute(query, params).fetchone()
+            if commit:
+                conn.commit()
+            return row
         except Exception as exc:
+            if commit:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             raise self.backend.map_exception(exc) from exc
         finally:
             try:
@@ -773,6 +781,7 @@ class UserStore:
                 json.dumps(context_snapshot or {}, ensure_ascii=False),
                 normalized_username,
             ),
+            commit=True,
         )
         if row is None:
             raise AuthError("Пользователь не найден.")
@@ -900,6 +909,7 @@ class UserStore:
                 json.dumps(retrieved_sources or [], ensure_ascii=False),
                 str(policy_status or "pending").strip().lower() or "pending",
             ),
+            commit=True,
         )
         return int(row["id"])
 
@@ -934,6 +944,7 @@ class UserStore:
                 int(retrieval_run_id),
                 str(snapshot_id or "").strip(),
             ),
+            commit=True,
         )
         return int(row["id"])
 
@@ -1065,6 +1076,7 @@ class UserStore:
                 str(server_id or "").strip().lower(),
                 str(server_id or "").strip().lower(),
             ),
+            commit=True,
         )
         return int(row["id"])
 
@@ -1127,6 +1139,7 @@ class UserStore:
                 str(server_id or "").strip().lower(),
                 str(server_id or "").strip().lower(),
             ),
+            commit=True,
         )
         return int(row["id"])
 

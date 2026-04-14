@@ -81,6 +81,7 @@ class PostgresBackend:
             "clock": 0,
             "missing_tables": set(missing_tables or set()),
             "closed_connections": 0,
+            "commit_calls": 0,
         }
 
     def connect(self):
@@ -102,6 +103,7 @@ class FakePostgresConnection:
         self.state = state
 
     def commit(self) -> None:
+        self.state["commit_calls"] += 1
         return None
 
     def rollback(self) -> None:
@@ -2746,6 +2748,19 @@ class PostgresUserStoreTests(unittest.TestCase):
         self.assertGreater(after_fetchone, initial_closed)
         self.assertGreater(after_fetchall, after_fetchone)
         self.assertGreater(after_execute, after_fetchall)
+
+    def test_postgres_fetchone_can_commit_write_transactions(self):
+        backend = PostgresBackend()
+        repository = UserRepository(backend)
+        store = UserStore(Path("ignored.db"), Path("ignored.json"), repository=repository)
+        try:
+            initial_commits = backend._state["commit_calls"]
+            row = store._pg_fetchone("SELECT 1", commit=True)
+        finally:
+            repository.close()
+
+        self.assertEqual(row["?column?"], 1)
+        self.assertGreater(backend._state["commit_calls"], initial_commits)
 
 
 class RateLimiterHealthTests(unittest.TestCase):
