@@ -5,7 +5,7 @@ import threading
 import sys
 import time
 import unittest
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
@@ -241,7 +241,8 @@ class WebApiTests(unittest.TestCase):
 
         response = self.client.get(f"/api/generated-documents/{document_id}/snapshot")
         self.assertEqual(response.status_code, 200)
-        snapshot = response.json()["context_snapshot"]
+        payload = response.json()
+        snapshot = payload["context_snapshot"]
         self.assertIn("server", snapshot)
         self.assertIn("template_version", snapshot)
         self.assertIn("law_version_set", snapshot)
@@ -249,6 +250,9 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("effective_config_snapshot", snapshot)
         self.assertIn("content_workflow", snapshot)
         self.assertIn("feature_flags", snapshot)
+        self.assertIsNotNone(payload.get("generation_snapshot_id"))
+        self.assertIsInstance(payload.get("provenance"), dict)
+        self.assertEqual(payload["provenance"]["document_kind"], "complaint")
 
         backend_state = self.store.repository.backend._state
         self.assertGreaterEqual(len(backend_state["document_versions"]), 1)
@@ -2048,6 +2052,293 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(response_doc.json()["items"][0]["source_version_id"], 4)
         self.assertEqual(response_lawqa.json()["items"][0]["source_version_id"], 8)
 
+    def test_document_version_provenance_endpoint_returns_trace(self):
+        self._register_verify_and_login("tester", "provenance_reader@example.com")
+        original_get_target = complaint_route.ValidationRepository.get_document_version_target
+        original_get_validation = complaint_route.ValidationService.get_latest_target_validation
+        original_get_version = complaint_route.DocumentRepository.get_document_version
+        original_get_snapshot = self.store.get_generation_snapshot_by_id
+        original_get_citations = self.store.get_document_version_citations
+
+        complaint_route.ValidationRepository.get_document_version_target = lambda _self, version_id: {
+            "id": version_id,
+            "server_id": "blackberry",
+            "document_type": "complaint",
+        }
+        complaint_route.ValidationService.get_latest_target_validation = lambda _self, **kwargs: {
+            "id": 3001,
+            "status": "passed",
+        }
+        complaint_route.DocumentRepository.get_document_version = lambda _self, version_id: {
+            "id": version_id,
+            "document_id": 10,
+            "version_number": 2,
+            "generation_snapshot_id": 501,
+        }
+        self.store.get_generation_snapshot_by_id = lambda snapshot_id: {
+            "id": snapshot_id,
+            "server_code": "blackberry",
+            "document_kind": "complaint",
+            "created_at": "2026-04-15T00:00:00+00:00",
+            "context_snapshot": {
+                "ai": {"provider": "openai", "model": "gpt-5.4"},
+                "content_workflow": {"procedure": "complaint_law_index", "template": "complaint_template_v1"},
+                "effective_versions": {"law_version_id": 35},
+            },
+            "effective_config_snapshot": {
+                "server_config_version": "blackberry@2026-04-15",
+                "law_set_version": "laws@35",
+            },
+            "content_workflow_ref": {
+                "procedure": "complaint_law_index@v2",
+                "template": "complaint_template_v1@v3",
+                "prompt_version": "complaint_prompt_v4",
+            },
+        }
+        self.store.get_document_version_citations = lambda **kwargs: [
+            {"id": 901, "retrieval_run_id": 444, "source_version_id": 35},
+            {"id": 902, "retrieval_run_id": 444, "source_version_id": 35},
+        ]
+        try:
+            response = self.client.get("/api/document-versions/77/provenance")
+        finally:
+            complaint_route.ValidationRepository.get_document_version_target = original_get_target
+            complaint_route.ValidationService.get_latest_target_validation = original_get_validation
+            complaint_route.DocumentRepository.get_document_version = original_get_version
+            self.store.get_generation_snapshot_by_id = original_get_snapshot
+            self.store.get_document_version_citations = original_get_citations
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["document_version_id"], 77)
+        self.assertEqual(payload["server_id"], "blackberry")
+        self.assertEqual(payload["config"]["server_config_version"], "blackberry@2026-04-15")
+        self.assertEqual(payload["retrieval"]["citation_ids"], [901, 902])
+        self.assertEqual(payload["validation"]["latest_status"], "passed")
+
+    def test_admin_generated_document_provenance_endpoint_bridges_to_latest_version(self):
+        self._register_verify_and_login("snapshot_admin_source", "snapshot_admin_source@example.com")
+
+        profile_response = self.client.put(
+            "/api/profile",
+            json={
+                "name": "Rep",
+                "passport": "AA",
+                "address": "Addr",
+                "phone": "1234567",
+                "discord": "disc",
+                "passport_scan_url": "https://example.com/rep",
+            },
+        )
+        self.assertEqual(profile_response.status_code, 200)
+        generate_response = self.client.post(
+            "/api/generate",
+            json={
+                "appeal_no": "1234",
+                "org": "LSPD",
+                "subject_names": "John Doe",
+                "situation_description": "Описание",
+                "violation_short": "Нарушение",
+                "event_dt": "08.04.2026 14:30",
+                "today_date": "08.04.2026",
+                "victim": {
+                    "name": "Victim",
+                    "passport": "BB",
+                    "address": "Addr",
+                    "phone": "7654321",
+                    "discord": "victim",
+                    "passport_scan_url": "https://example.com/victim",
+                },
+                "contract_url": "https://example.com/contract",
+                "bar_request_url": "",
+                "official_answer_url": "",
+                "mail_notice_url": "",
+                "arrest_record_url": "",
+                "personnel_file_url": "",
+                "video_fix_urls": [],
+                "provided_video_urls": [],
+            },
+        )
+        self.assertEqual(generate_response.status_code, 200)
+        generated_document_id = int(generate_response.json()["generated_document_id"])
+
+        self.client.post("/api/auth/logout")
+        self._register_verify_and_login("12345", "admin_provenance@example.com")
+
+        response = self.client.get(f"/api/admin/generated-documents/{generated_document_id}/provenance")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["document_kind"], "complaint")
+        self.assertIsInstance(payload["document_version_id"], int)
+        self.assertIsNotNone(payload.get("generation_snapshot_id"))
+
+    def test_admin_recent_generated_documents_endpoint_lists_latest_items(self):
+        self._register_verify_and_login("recent_generated_user", "recent_generated_user@example.com")
+        profile_response = self.client.put(
+            "/api/profile",
+            json={
+                "name": "Rep",
+                "passport": "AA",
+                "address": "Addr",
+                "phone": "1234567",
+                "discord": "disc",
+                "passport_scan_url": "https://example.com/rep",
+            },
+        )
+        self.assertEqual(profile_response.status_code, 200)
+        generate_response = self.client.post(
+            "/api/generate",
+            json={
+                "appeal_no": "1234",
+                "org": "LSPD",
+                "subject_names": "John Doe",
+                "situation_description": "Описание",
+                "violation_short": "Нарушение",
+                "event_dt": "08.04.2026 14:30",
+                "today_date": "08.04.2026",
+                "victim": {
+                    "name": "Victim",
+                    "passport": "BB",
+                    "address": "Addr",
+                    "phone": "7654321",
+                    "discord": "victim",
+                    "passport_scan_url": "https://example.com/victim",
+                },
+                "contract_url": "https://example.com/contract",
+                "bar_request_url": "",
+                "official_answer_url": "",
+                "mail_notice_url": "",
+                "arrest_record_url": "",
+                "personnel_file_url": "",
+                "video_fix_urls": [],
+                "provided_video_urls": [],
+            },
+        )
+        self.assertEqual(generate_response.status_code, 200)
+        generated_document_id = int(generate_response.json()["generated_document_id"])
+
+        self.client.post("/api/auth/logout")
+        self._register_verify_and_login("12345", "recent_generated_admin@example.com")
+
+        response = self.client.get("/api/admin/generated-documents/recent?limit=5")
+        self.assertEqual(response.status_code, 200)
+        items = response.json()["items"]
+        self.assertTrue(any(int(item["id"]) == generated_document_id for item in items))
+        match = next(item for item in items if int(item["id"]) == generated_document_id)
+        self.assertEqual(match["document_kind"], "complaint")
+        self.assertEqual(match["username"], "recent_generated_user")
+
+    def test_admin_generated_document_review_context_returns_snapshot_validation_and_preview(self):
+        self._register_verify_and_login("review_context_user", "review_context_user@example.com")
+        profile_response = self.client.put(
+            "/api/profile",
+            json={
+                "name": "Rep",
+                "passport": "AA",
+                "address": "Addr",
+                "phone": "1234567",
+                "discord": "disc",
+                "passport_scan_url": "https://example.com/rep",
+            },
+        )
+        self.assertEqual(profile_response.status_code, 200)
+        generate_response = self.client.post(
+            "/api/generate",
+            json={
+                "appeal_no": "1234",
+                "org": "LSPD",
+                "subject_names": "John Doe",
+                "situation_description": "Описание",
+                "violation_short": "Нарушение",
+                "event_dt": "08.04.2026 14:30",
+                "today_date": "08.04.2026",
+                "victim": {
+                    "name": "Victim",
+                    "passport": "BB",
+                    "address": "Addr",
+                    "phone": "7654321",
+                    "discord": "victim",
+                    "passport_scan_url": "https://example.com/victim",
+                },
+                "contract_url": "https://example.com/contract",
+                "bar_request_url": "",
+                "official_answer_url": "",
+                "mail_notice_url": "",
+                "arrest_record_url": "",
+                "personnel_file_url": "",
+                "video_fix_urls": [],
+                "provided_video_urls": [],
+            },
+        )
+        self.assertEqual(generate_response.status_code, 200)
+        generated_document_id = int(generate_response.json()["generated_document_id"])
+
+        self.client.post("/api/auth/logout")
+        self._register_verify_and_login("12345", "review_context_admin@example.com")
+
+        backend_state = self.store.repository.backend._state
+        version_id = max(int(key) for key in backend_state["document_versions"].keys())
+        attachment_id = backend_state["next_attachment_id"]
+        backend_state["next_attachment_id"] += 1
+        backend_state["attachments"][attachment_id] = {
+            "id": attachment_id,
+            "server_id": "blackberry",
+            "uploaded_by": 1,
+            "storage_key": "attachments/test.pdf",
+            "filename": "test.pdf",
+            "mime_type": "application/pdf",
+            "size_bytes": 1024,
+            "checksum": "abc123",
+            "upload_status": "uploaded",
+            "metadata_json": {"document_version_id": version_id},
+            "created_at": "2026-04-15T00:00:00+00:00",
+        }
+        backend_state["document_version_attachment_links"][1] = {
+            "id": 1,
+            "document_version_id": version_id,
+            "attachment_id": attachment_id,
+            "link_type": "supporting",
+            "created_by": 1,
+            "created_at": "2026-04-15T00:00:00+00:00",
+        }
+        export_id = backend_state["next_export_id"]
+        backend_state["next_export_id"] += 1
+        backend_state["exports"][export_id] = {
+            "id": export_id,
+            "document_version_id": version_id,
+            "server_id": "blackberry",
+            "format": "pdf",
+            "status": "ready",
+            "storage_key": "exports/test.pdf",
+            "mime_type": "application/pdf",
+            "size_bytes": 4096,
+            "checksum": "def456",
+            "created_by": 1,
+            "job_run_id": None,
+            "metadata_json": {"origin": "test"},
+            "created_at": "2026-04-15T00:00:00+00:00",
+            "updated_at": "2026-04-15T00:00:00+00:00",
+        }
+
+        response = self.client.get(f"/api/admin/generated-documents/{generated_document_id}/review-context")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["generated_document"]["id"], generated_document_id)
+        self.assertEqual(payload["generated_document"]["document_kind"], "complaint")
+        self.assertIsInstance(payload["document_version"]["id"], int)
+        self.assertIn("bbcode_preview", payload["document_version"])
+        self.assertIn("latest_status", payload["validation_summary"])
+        self.assertIsInstance(payload["validation_summary"]["issues"], list)
+        self.assertIn("workflow_linkage", payload)
+        self.assertEqual(payload["workflow_linkage"]["linkage_mode"], "snapshot_refs_only")
+        self.assertIn("citations_summary", payload)
+        self.assertIn("count", payload["citations_summary"])
+        self.assertIsInstance(payload["citations_summary"]["items"], list)
+        self.assertIn("artifact_summary", payload)
+        self.assertEqual(payload["artifact_summary"]["exports_count"], 1)
+        self.assertEqual(payload["artifact_summary"]["attachments_count"], 1)
+        self.assertIn("provenance", payload)
+
     def test_ai_feedback_endpoint_records_normalized_feedback(self):
         self._register_verify_and_login("tester", "tester_feedback@example.com")
 
@@ -2223,8 +2514,9 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(payload["guard_warn_rate"], 33.33)
 
     def test_admin_ai_pipeline_recent_filter_excludes_old_rows_from_flow_summary(self):
+        now = datetime.now(UTC)
         recent_generation = {
-            "created_at": "2026-04-13T10:00:00+00:00",
+            "created_at": (now - timedelta(hours=2)).isoformat(),
             "meta": {
                 "model": "gpt-5.4-mini",
                 "latency_ms": 100,
@@ -2233,7 +2525,7 @@ class WebApiTests(unittest.TestCase):
             },
         }
         old_generation = {
-            "created_at": "2026-04-10T10:00:00+00:00",
+            "created_at": (now - timedelta(hours=72)).isoformat(),
             "meta": {
                 "model": "gpt-5.4",
                 "latency_ms": 9999,

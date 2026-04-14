@@ -61,6 +61,8 @@ class PostgresBackend:
             "next_readiness_gate_id": 1,
             "next_validation_run_id": 1,
             "next_validation_issue_id": 1,
+            "next_attachment_id": 1,
+            "next_export_id": 1,
             "servers": {},
             "users": {},
             "roles": {},
@@ -77,6 +79,9 @@ class PostgresBackend:
             "readiness_gates": {},
             "validation_runs": {},
             "validation_issues": {},
+            "attachments": {},
+            "document_version_attachment_links": {},
+            "exports": {},
             "auth_rate_limit_events": [],
             "clock": 0,
             "missing_tables": set(missing_tables or set()),
@@ -186,6 +191,10 @@ class FakePostgresConnection:
             return self._update_case_document_status(params)
         if normalized.startswith("SELECT id, document_id, version_number, CAST(content_json AS TEXT) AS content_json, created_by, generation_snapshot_id, created_at FROM document_versions WHERE document_id = %s ORDER BY version_number ASC"):
             return self._list_document_versions(params[0])
+        if normalized.startswith("SELECT id, document_id, version_number, CAST(content_json AS TEXT) AS content_json, created_by, generation_snapshot_id, created_at FROM document_versions WHERE id = %s LIMIT 1"):
+            return self._get_document_version(params[0])
+        if normalized.startswith("SELECT id, document_id, version_number, CAST(content_json AS TEXT) AS content_json, created_by, generation_snapshot_id, created_at FROM document_versions WHERE generation_snapshot_id = %s ORDER BY id DESC LIMIT 1"):
+            return self._get_latest_document_version_by_generation_snapshot_id(params[0])
         if (
             (
                 "FROM users u LEFT JOIN user_server_roles usr" in normalized
@@ -225,6 +234,10 @@ class FakePostgresConnection:
             return self._list_validation_runs(params)
         if normalized.startswith("SELECT id, validation_run_id, issue_code, severity, message, field_ref, CAST(details_json AS TEXT) AS details_json, created_at FROM validation_issues WHERE validation_run_id = %s ORDER BY created_at ASC, id ASC"):
             return self._list_validation_issues(params[0])
+        if normalized.startswith("SELECT c.id, c.document_version_id, c.retrieval_run_id, c.citation_type, c.source_type, c.source_id, c.source_version_id, c.canonical_ref, c.quoted_text, c.usage_type, c.created_at FROM document_version_citations c JOIN document_versions dv ON dv.id = c.document_version_id JOIN case_documents d ON d.id = dv.document_id WHERE c.document_version_id = %s AND d.server_id = %s ORDER BY c.id ASC"):
+            return self._get_document_version_citations(params[0], server_id=params[1])
+        if normalized.startswith("SELECT id, document_version_id, retrieval_run_id, citation_type, source_type, source_id, source_version_id, canonical_ref, quoted_text, usage_type, created_at FROM document_version_citations WHERE document_version_id = %s ORDER BY id ASC"):
+            return self._get_document_version_citations(params[0], server_id=None)
         if normalized.startswith("UPDATE users SET email_verified_at = NOW(), email_verification_token_hash = NULL WHERE username = %s"):
             return self._mark_email_verified(params[0])
         if normalized.startswith("UPDATE users SET email_verification_token_hash = %s, email_verification_sent_at = NOW() WHERE email = %s"):
@@ -261,8 +274,20 @@ class FakePostgresConnection:
             return self._fetch_generated_document_snapshot(params)
         if normalized.startswith("SELECT gs.legacy_generated_document_id AS id, gs.server_id AS server_code, gs.document_kind AS document_kind, gs.created_at AS created_at FROM generation_snapshots gs JOIN users u ON u.id = gs.user_id WHERE u.username = %s ORDER BY gs.created_at DESC, gs.id DESC LIMIT %s"):
             return self._list_generation_snapshots_history(params)
+        if normalized.startswith("SELECT gs.id AS generation_snapshot_id, gs.legacy_generated_document_id AS id, gs.server_id AS server_code, gs.document_kind AS document_kind, gs.created_at AS created_at, CAST(gs.context_snapshot_json AS TEXT) AS context_snapshot_json FROM generation_snapshots gs JOIN users u ON u.id = gs.user_id WHERE u.username = %s AND gs.legacy_generated_document_id = %s ORDER BY gs.id DESC LIMIT 1"):
+            return self._fetch_generation_snapshot_by_legacy(params)
         if normalized.startswith("SELECT gs.legacy_generated_document_id AS id, gs.server_id AS server_code, gs.document_kind AS document_kind, gs.created_at AS created_at, CAST(gs.context_snapshot_json AS TEXT) AS context_snapshot_json FROM generation_snapshots gs JOIN users u ON u.id = gs.user_id WHERE u.username = %s AND gs.legacy_generated_document_id = %s ORDER BY gs.id DESC LIMIT 1"):
             return self._fetch_generation_snapshot_by_legacy(params)
+        if normalized.startswith("SELECT gs.id AS generation_snapshot_id, gs.legacy_generated_document_id AS id, gs.server_id AS server_code, gs.document_kind AS document_kind, gs.created_at AS created_at, CAST(gs.context_snapshot_json AS TEXT) AS context_snapshot_json FROM generation_snapshots gs WHERE gs.legacy_generated_document_id = %s ORDER BY gs.id DESC LIMIT 1"):
+            return self._fetch_generation_snapshot_by_admin_legacy(params)
+        if normalized.startswith("SELECT gs.legacy_generated_document_id AS id, gs.id AS generation_snapshot_id, gs.server_id AS server_code, gs.document_kind AS document_kind, gs.created_at AS created_at, u.username AS username FROM generation_snapshots gs JOIN users u ON u.id = gs.user_id WHERE gs.legacy_generated_document_id IS NOT NULL ORDER BY gs.created_at DESC, gs.id DESC LIMIT %s"):
+            return self._list_recent_generated_documents_admin(params[0])
+        if normalized.startswith("SELECT id, document_version_id, server_id, format, status, storage_key, mime_type, size_bytes, checksum, created_by, job_run_id, CAST(metadata_json AS TEXT) AS metadata_json, created_at, updated_at FROM exports WHERE document_version_id = %s ORDER BY created_at DESC, id DESC"):
+            return self._list_exports_for_document_version(params[0])
+        if normalized.startswith("SELECT a.id, a.server_id, a.uploaded_by, a.storage_key, a.filename, a.mime_type, a.size_bytes, a.checksum, a.upload_status, CAST(a.metadata_json AS TEXT) AS metadata_json, a.created_at, l.link_type, l.created_by, l.created_at AS linked_at FROM document_version_attachment_links l JOIN attachments a ON a.id = l.attachment_id WHERE l.document_version_id = %s ORDER BY l.created_at DESC, l.id DESC"):
+            return self._list_attachments_for_document_version(params[0])
+        if normalized.startswith("SELECT gs.id, gs.server_id AS server_code, gs.document_kind AS document_kind, gs.created_at AS created_at, CAST(gs.context_snapshot_json AS TEXT) AS context_snapshot_json, CAST(gs.effective_config_snapshot_json AS TEXT) AS effective_config_snapshot_json, CAST(gs.content_workflow_ref_json AS TEXT) AS content_workflow_ref_json FROM generation_snapshots gs WHERE gs.id = %s LIMIT 1"):
+            return self._fetch_generation_snapshot_by_id(params[0])
 
         raise AssertionError(f"Unsupported fake postgres query: {normalized}")
 
@@ -915,6 +940,7 @@ class FakePostgresConnection:
         return FakeCursor(
             rowcount=1,
             one={
+                "generation_snapshot_id": row["id"],
                 "id": row["legacy_generated_document_id"],
                 "server_code": row["server_id"],
                 "document_kind": row["document_kind"],
@@ -922,6 +948,156 @@ class FakePostgresConnection:
                 "context_snapshot_json": json.dumps(row["context_snapshot_json"], ensure_ascii=False),
             },
         )
+
+    def _fetch_generation_snapshot_by_admin_legacy(self, params):
+        legacy_id = params[0]
+        matched = [
+            row for row in self.state["generation_snapshots"].values()
+            if int(row["legacy_generated_document_id"]) == int(legacy_id)
+        ]
+        if not matched:
+            return FakeCursor(rowcount=0, one=None)
+        matched.sort(key=lambda item: int(item["id"]), reverse=True)
+        row = matched[0]
+        return FakeCursor(
+            rowcount=1,
+            one={
+                "generation_snapshot_id": row["id"],
+                "id": row["legacy_generated_document_id"],
+                "server_code": row["server_id"],
+                "document_kind": row["document_kind"],
+                "created_at": row["created_at"],
+                "context_snapshot_json": json.dumps(row["context_snapshot_json"], ensure_ascii=False),
+            },
+        )
+
+    def _list_recent_generated_documents_admin(self, limit):
+        rows = [
+            {
+                "id": row["legacy_generated_document_id"],
+                "generation_snapshot_id": row["id"],
+                "server_code": row["server_id"],
+                "document_kind": row["document_kind"],
+                "created_at": row["created_at"],
+                "username": next(
+                    (
+                        username
+                        for username, user in self.state["users"].items()
+                        if int(user["id"]) == int(row["user_id"])
+                    ),
+                    "",
+                ),
+            }
+            for row in sorted(
+                self.state["generation_snapshots"].values(),
+                key=lambda item: (item["created_at"], item["id"]),
+                reverse=True,
+            )
+            if int(row.get("legacy_generated_document_id") or 0) > 0
+        ][: int(limit)]
+        return FakeCursor(rowcount=len(rows), rows=rows)
+
+    def _list_exports_for_document_version(self, document_version_id):
+        rows = [
+            {
+                **row,
+                "metadata_json": json.dumps(row.get("metadata_json") or {}, ensure_ascii=False),
+            }
+            for row in self.state["exports"].values()
+            if int(row.get("document_version_id") or 0) == int(document_version_id)
+        ]
+        rows.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
+        return FakeCursor(rowcount=len(rows), rows=rows)
+
+    def _list_attachments_for_document_version(self, document_version_id):
+        rows = []
+        for link in self.state["document_version_attachment_links"].values():
+            if int(link.get("document_version_id") or 0) != int(document_version_id):
+                continue
+            attachment = self.state["attachments"].get(int(link.get("attachment_id") or 0))
+            if attachment is None:
+                continue
+            rows.append(
+                {
+                    **attachment,
+                    "metadata_json": json.dumps(attachment.get("metadata_json") or {}, ensure_ascii=False),
+                    "link_type": str(link.get("link_type") or ""),
+                    "created_by": int(link.get("created_by") or 0),
+                    "linked_at": str(link.get("created_at") or ""),
+                }
+            )
+        rows.sort(key=lambda item: (item["linked_at"], item["id"]), reverse=True)
+        return FakeCursor(rowcount=len(rows), rows=rows)
+
+    def _get_latest_document_version_by_generation_snapshot_id(self, generation_snapshot_id):
+        matched = [
+            row for row in self.state["document_versions"].values()
+            if int(row.get("generation_snapshot_id") or 0) == int(generation_snapshot_id)
+        ]
+        if not matched:
+            return FakeCursor(rowcount=0, one=None)
+        matched.sort(key=lambda item: int(item["id"]), reverse=True)
+        row = matched[0]
+        return FakeCursor(
+            rowcount=1,
+            one={
+                "id": row["id"],
+                "document_id": row["document_id"],
+                "version_number": row["version_number"],
+                "content_json": json.dumps(row["content_json"], ensure_ascii=False),
+                "created_by": row["created_by"],
+                "generation_snapshot_id": row.get("generation_snapshot_id"),
+                "created_at": row["created_at"],
+            },
+        )
+
+    def _get_document_version(self, version_id):
+        row = self.state["document_versions"].get(int(version_id))
+        if row is None:
+            return FakeCursor(rowcount=0, one=None)
+        return FakeCursor(
+            rowcount=1,
+            one={
+                "id": row["id"],
+                "document_id": row["document_id"],
+                "version_number": row["version_number"],
+                "content_json": json.dumps(row["content_json"], ensure_ascii=False),
+                "created_by": row["created_by"],
+                "generation_snapshot_id": row.get("generation_snapshot_id"),
+                "created_at": row["created_at"],
+            },
+        )
+
+    def _fetch_generation_snapshot_by_id(self, snapshot_id):
+        row = self.state["generation_snapshots"].get(int(snapshot_id))
+        if row is None:
+            return FakeCursor(rowcount=0, one=None)
+        return FakeCursor(
+            rowcount=1,
+            one={
+                "id": row["id"],
+                "server_code": row["server_id"],
+                "document_kind": row["document_kind"],
+                "created_at": row["created_at"],
+                "context_snapshot_json": json.dumps(row.get("context_snapshot_json") or {}, ensure_ascii=False),
+                "effective_config_snapshot_json": json.dumps(row.get("effective_config_snapshot_json") or {}, ensure_ascii=False),
+                "content_workflow_ref_json": json.dumps(row.get("content_workflow_ref_json") or {}, ensure_ascii=False),
+            },
+        )
+
+    def _get_document_version_citations(self, document_version_id, server_id=None):
+        rows = []
+        for row in self.state.get("document_version_citations", {}).values():
+            if int(row.get("document_version_id") or 0) != int(document_version_id):
+                continue
+            if server_id is not None:
+                version = self.state["document_versions"].get(int(row["document_version_id"]))
+                document = self.state["case_documents"].get(int((version or {}).get("document_id") or 0))
+                if str((document or {}).get("server_id") or "").strip().lower() != str(server_id).strip().lower():
+                    continue
+            rows.append(dict(row))
+        rows.sort(key=lambda item: int(item.get("id") or 0))
+        return FakeCursor(rowcount=len(rows), rows=rows)
 
     def _insert_law_qa_run(self, params):
         server_id, user_id, question, answer_text, used_sources_json, selected_norms_json, metadata_json = params

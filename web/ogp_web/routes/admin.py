@@ -36,13 +36,16 @@ from ogp_web.schemas import (
     AdminPasswordResetPayload,
     AdminQuotaPayload,
     AdminRuntimeServerPayload,
+    DocumentVersionProvenanceResponse,
 )
 from ogp_web.services.law_admin_service import LawAdminService
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
 from ogp_web.services.law_rebuild_tasks import find_active_law_rebuild_task
 from ogp_web.services.law_version_service import resolve_active_law_version
 from ogp_web.services.auth_service import AuthError, AuthUser, require_admin_user
+from ogp_web.services.provenance_service import ProvenanceService
 from ogp_web.services.point3_policy_service import load_point3_eval_thresholds
+from ogp_web.services.validation_service import ValidationService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.content_contracts import normalize_content_type
@@ -51,6 +54,9 @@ from ogp_web.services.job_status_service import enrich_job_status
 from ogp_web.services.admin_dashboard_service import AdminDashboardService
 from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
+from ogp_web.storage.document_repository import DocumentRepository
+from ogp_web.storage.artifact_repository import ArtifactRepository
+from ogp_web.storage.validation_repository import ValidationRepository
 from ogp_web.storage.user_store import UserStore
 from ogp_web.storage.runtime_servers_store import RuntimeServerRecord, RuntimeServersStore
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
@@ -1483,6 +1489,184 @@ async def admin_exam_import_overview(
         "recent_failures": recent_failures[:5],
         "recent_row_failures": recent_row_failures[:5],
         "failed_entries": failed_entries[:5],
+    }
+
+
+@router.get("/api/admin/generated-documents/{document_id}/provenance", response_model=DocumentVersionProvenanceResponse)
+async def admin_generated_document_provenance(
+    document_id: int,
+    _: AuthUser = Depends(requires_permission("view_analytics")),
+    store: UserStore = Depends(get_user_store),
+) -> DocumentVersionProvenanceResponse:
+    snapshot = store.get_generation_snapshot_by_generated_document_id(document_id=document_id)
+    if snapshot is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Generated document not found."])
+    generation_snapshot_id = int(snapshot.get("generation_snapshot_id") or 0)
+    if generation_snapshot_id <= 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Generation snapshot not found."])
+    document_repository = DocumentRepository(store.backend)
+    version_row = document_repository.get_latest_document_version_by_generation_snapshot_id(
+        generation_snapshot_id=generation_snapshot_id,
+    )
+    if version_row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Document version not found."])
+    service = ProvenanceService(
+        document_repository=document_repository,
+        user_store=store,
+        validation_service=ValidationService(ValidationRepository(store.backend)),
+    )
+    payload = service.get_document_version_trace(document_version_id=int(version_row["id"]))
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Provenance trace not found."])
+    return DocumentVersionProvenanceResponse(**payload)
+
+
+@router.get("/api/admin/generated-documents/recent")
+async def admin_recent_generated_documents(
+    limit: int = Query(default=8, ge=1, le=20),
+    _: AuthUser = Depends(requires_permission("view_analytics")),
+    store: UserStore = Depends(get_user_store),
+):
+    return {
+        "items": store.list_recent_generated_documents_admin(limit=limit),
+    }
+
+
+@router.get("/api/admin/generated-documents/{document_id}/review-context")
+async def admin_generated_document_review_context(
+    document_id: int,
+    _: AuthUser = Depends(requires_permission("view_analytics")),
+    store: UserStore = Depends(get_user_store),
+):
+    snapshot = store.get_generation_snapshot_by_generated_document_id(document_id=document_id)
+    if snapshot is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Generated document not found."])
+    generation_snapshot_id = int(snapshot.get("generation_snapshot_id") or 0)
+    if generation_snapshot_id <= 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Generation snapshot not found."])
+
+    document_repository = DocumentRepository(store.backend)
+    version_row = document_repository.get_latest_document_version_by_generation_snapshot_id(
+        generation_snapshot_id=generation_snapshot_id,
+    )
+    if version_row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Document version not found."])
+
+    content_payload = {}
+    try:
+        content_payload = json.loads(str(version_row.get("content_json") or "{}"))
+    except json.JSONDecodeError:
+        content_payload = {}
+    if not isinstance(content_payload, dict):
+        content_payload = {}
+
+    validation_service = ValidationService(ValidationRepository(store.backend))
+    latest_validation = validation_service.get_latest_target_validation(
+        target_type="document_version",
+        target_id=int(version_row["id"]),
+    )
+    artifact_repository = ArtifactRepository(store.backend)
+    citations = store.get_document_version_citations(
+        document_version_id=int(version_row["id"]),
+        server_id=str(snapshot.get("server_code") or "").strip().lower() or None,
+    )
+    exports = artifact_repository.list_exports_for_document_version(document_version_id=int(version_row["id"]))
+    attachments = artifact_repository.list_attachments_for_document_version(document_version_id=int(version_row["id"]))
+    service = ProvenanceService(
+        document_repository=document_repository,
+        user_store=store,
+        validation_service=validation_service,
+    )
+    provenance = service.get_document_version_trace(document_version_id=int(version_row["id"]))
+
+    context_snapshot = dict(snapshot.get("context_snapshot") or {})
+    effective_config = dict(snapshot.get("effective_config_snapshot") or {})
+    workflow_ref = dict(snapshot.get("content_workflow_ref") or {})
+    bbcode_preview = str(content_payload.get("bbcode") or "").strip()
+    if len(bbcode_preview) > 600:
+        bbcode_preview = f"{bbcode_preview[:600].rstrip()}..."
+
+    return {
+        "generated_document": {
+            "id": int(snapshot["id"]),
+            "generation_snapshot_id": generation_snapshot_id,
+            "server_code": str(snapshot.get("server_code") or ""),
+            "document_kind": str(snapshot.get("document_kind") or ""),
+            "created_at": str(snapshot.get("created_at") or ""),
+        },
+        "snapshot_summary": {
+            "template_version": str(context_snapshot.get("template_version") or workflow_ref.get("template") or ""),
+            "law_version_set": str(context_snapshot.get("law_version_set") or effective_config.get("law_set_version") or ""),
+            "validation_rules_version": str(context_snapshot.get("validation_rules_version") or ""),
+            "procedure": str(workflow_ref.get("procedure") or ""),
+            "prompt_version": str(workflow_ref.get("prompt_version") or ""),
+        },
+        "document_version": {
+            "id": int(version_row["id"]),
+            "version_number": int(version_row.get("version_number") or 0),
+            "bbcode_preview": bbcode_preview,
+        },
+        "validation_summary": {
+            "latest_run_id": int((latest_validation or {}).get("id") or 0) or None,
+            "latest_status": str((latest_validation or {}).get("status") or ""),
+            "issues_count": len((latest_validation or {}).get("issues") or []),
+            "issues": [
+                {
+                    "issue_code": str(item.get("issue_code") or ""),
+                    "severity": str(item.get("severity") or ""),
+                    "message": str(item.get("message") or ""),
+                    "field_ref": str(item.get("field_ref") or ""),
+                }
+                for item in ((latest_validation or {}).get("issues") or [])[:5]
+            ],
+        },
+        "workflow_linkage": {
+            "direct_catalog_mapping_available": False,
+            "linkage_mode": "snapshot_refs_only",
+            "procedure_ref": str(workflow_ref.get("procedure") or ""),
+            "template_ref": str(workflow_ref.get("template") or ""),
+            "prompt_version": str(workflow_ref.get("prompt_version") or ""),
+            "server_config_version": str(effective_config.get("server_config_version") or ""),
+            "law_set_version": str(effective_config.get("law_set_version") or ""),
+            "document_version_id": int(version_row["id"]),
+            "generation_snapshot_id": generation_snapshot_id,
+            "latest_validation_run_id": int((latest_validation or {}).get("id") or 0) or None,
+        },
+        "citations_summary": {
+            "count": len(citations),
+            "items": [
+                {
+                    "id": int(item.get("id") or 0),
+                    "canonical_ref": str(item.get("canonical_ref") or ""),
+                    "usage_type": str(item.get("usage_type") or ""),
+                    "quoted_text": str(item.get("quoted_text") or ""),
+                }
+                for item in citations[:5]
+            ],
+        },
+        "artifact_summary": {
+            "exports_count": len(exports),
+            "attachments_count": len(attachments),
+            "exports": [
+                {
+                    "id": int(item.get("id") or 0),
+                    "format": str(item.get("format") or ""),
+                    "status": str(item.get("status") or ""),
+                    "created_at": str(item.get("created_at") or ""),
+                }
+                for item in exports[:5]
+            ],
+            "attachments": [
+                {
+                    "id": int(item.get("id") or 0),
+                    "filename": str(item.get("filename") or ""),
+                    "upload_status": str(item.get("upload_status") or ""),
+                    "link_type": str(item.get("link_type") or ""),
+                }
+                for item in attachments[:5]
+            ],
+        },
+        "provenance": provenance,
     }
 
 
