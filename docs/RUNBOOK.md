@@ -1,5 +1,8 @@
 # Point3 Legal Mode Runbook
 
+> Scope: incident actions for point3 legal mode.
+> Start from [`OPERATIONS_INDEX.md`](./OPERATIONS_INDEX.md) for full operational map.
+
 ## Incident Triggers
 - elevated retry rate
 - cost uplift beyond target

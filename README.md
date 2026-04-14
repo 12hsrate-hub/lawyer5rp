@@ -65,5 +65,6 @@ Deploy docs:
 
 - `AGENTS.md`
 - `docs/README.md`
+- `docs/OPERATIONS_INDEX.md`
 - `docs/github_deploy.md`
 - `docs/postgresql_migrations.md`
