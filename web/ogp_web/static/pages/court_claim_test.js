@@ -59,64 +59,7 @@ let representativeProfile = null;
 let draftSaveTimer = 0;
 let activeDraftCourtType = "";
 let activeDraftClaimKind = "";
-
-const COURT_CLAIM_KIND_OPTIONS = {
-  supreme: [
-    {
-      value: "supreme_admin_civil_with_representative",
-      label: "Административно-гражданское исковое заявление с участием представителя",
-      title: "Административно-гражданское исковое заявление с участием представителя",
-      description: "Шаблон обращения в Верховный суд, подготовленный для ситуации, когда документ подается представителем в интересах доверителя.",
-      ready: true,
-    },
-    {
-      value: "supreme_admin_civil",
-      label: "Административно-гражданское исковое заявление",
-      title: "Административно-гражданское исковое заявление",
-      description: "Шаблон административно-гражданского искового заявления для подачи в Верховный суд.",
-      ready: true,
-    },
-    {
-      value: "supreme_cassation",
-      label: "Кассационная жалоба",
-      title: "Кассационная жалоба",
-      description: "Шаблон кассационной жалобы для обжалования вступившего в силу судебного акта.",
-      ready: true,
-    },
-    {
-      value: "supreme_interpretation",
-      label: "Заявление о толковании и разъяснении правовых норм",
-      title: "Толкование и разъяснение правовых норм",
-      description: "Шаблон заявления о толковании и официальном разъяснении применимых правовых норм.",
-      ready: true,
-    },
-    {
-      value: "supreme_ai_warrant",
-      label: "Заявление о получении ордера AI",
-      title: "Получение ордера AI",
-      description: "Шаблон заявления о выдаче ордера AI в пределах компетенции Верховного суда.",
-      ready: true,
-    },
-  ],
-  appeal: [
-    {
-      value: "appeal_admin_civil_with_representative",
-      label: "Административно-гражданское исковое заявление с участием представителя",
-      title: "Административно-гражданское исковое заявление с участием представителя",
-      description: "Базовый шаблон обращения в Апелляционный суд с участием представителя.",
-      ready: false,
-    },
-  ],
-  federal: [
-    {
-      value: "federal_admin_civil_with_representative",
-      label: "Административно-гражданское исковое заявление с участием представителя",
-      title: "Административно-гражданское исковое заявление с участием представителя",
-      description: "Базовый шаблон обращения в Федеральный суд с участием представителя.",
-      ready: false,
-    },
-  ],
-};
+let documentBuilderBundle = null;
 
 function readValue(name) {
   const field = form?.elements?.namedItem(name);
@@ -249,7 +192,35 @@ function setErrors(text) {
 }
 
 function getClaimKindOptions(courtType) {
-  return COURT_CLAIM_KIND_OPTIONS[courtType] || [];
+  return documentBuilderBundle?.choice_sets?.claim_kind_by_court_type?.[courtType] || [];
+}
+
+function getCourtTypeOptions() {
+  return documentBuilderBundle?.choice_sets?.court_types || [];
+}
+
+function getRequiredFields(claimKind) {
+  const requiredMap = documentBuilderBundle?.validators?.required_fields_by_claim_kind || {};
+  return requiredMap[claimKind] || requiredMap.__default__ || [];
+}
+
+function renderCourtTypeOptions() {
+  if (!courtTypeField) {
+    return;
+  }
+  const selectedCourtType = readValue("court_type");
+  courtTypeField.innerHTML = "";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Выберите судебную инстанцию";
+  courtTypeField.appendChild(placeholder);
+  getCourtTypeOptions().forEach((option) => {
+    const optionElement = document.createElement("option");
+    optionElement.value = option.value;
+    optionElement.textContent = option.label;
+    courtTypeField.appendChild(optionElement);
+  });
+  courtTypeField.value = getCourtTypeOptions().some((item) => item.value === selectedCourtType) ? selectedCourtType : "";
 }
 
 function getActiveClaimKindOption() {
@@ -722,21 +693,12 @@ function handleBuild() {
     return;
   }
 
-  const requiredFields =
-    claimKind === "supreme_interpretation"
-      ? ["situation_description", "closing_request"]
-      : claimKind === "supreme_admin_civil"
-      ? ["defendant_name", "situation_description", "closing_request"]
-      : ["plaintiff_name", "defendant_name", "situation_description", "closing_request"];
+  const requiredFields = getRequiredFields(claimKind);
   const missing = requiredFields.filter((name) => !readValue(name));
   if (missing.length) {
-    setErrors(
-      claimKind === "supreme_interpretation"
-        ? "Заполни минимум: описательную часть и заключительную часть."
-        : claimKind === "supreme_admin_civil"
-        ? "Заполни минимум: ответчика, описательную часть и заключительную часть."
-        : "Заполни минимум: истец, ответчик, описательная часть и заключительная часть."
-    );
+    const fields = documentBuilderBundle?.fields || {};
+    const missingLabels = missing.map((fieldName) => fields?.[fieldName]?.label || fieldName);
+    setErrors(`Заполните обязательные поля: ${missingLabels.join(", ")}.`);
     scrollToErrors();
     return;
   }
@@ -794,6 +756,22 @@ async function loadRepresentativeProfile() {
 
   const payload = await parsePayload(response);
   representativeProfile = payload.representative || {};
+}
+
+async function loadDocumentBuilderBundle() {
+  const serverCode = String(form?.dataset?.serverCode || "").trim();
+  const query = new URLSearchParams({ document_type: "court_claim" });
+  if (serverCode) {
+    query.set("server_id", serverCode);
+  }
+  const response = await apiFetch(`/api/document-builder/bundle?${query.toString()}`, { method: "GET", headers: {} });
+  if (!response.ok) {
+    const payload = await parsePayload(response);
+    throw new Error(payload.detail || "Не удалось загрузить схему конструктора документов.");
+  }
+  documentBuilderBundle = await parsePayload(response);
+  renderCourtTypeOptions();
+  renderClaimKindTabs(readValue("court_type"));
 }
 
 function handleCourtTypeChange() {
@@ -896,6 +874,15 @@ resetPlaintiffOcrUi();
 activeDraftCourtType = readValue("court_type");
 activeDraftClaimKind = readValue("claim_kind");
 applyDraftState(loadDraft(activeDraftCourtType, activeDraftClaimKind));
+loadDocumentBuilderBundle()
+  .then(() => {
+    updateCourtSpecificUi();
+    activeDraftCourtType = readValue("court_type");
+    activeDraftClaimKind = readValue("claim_kind");
+  })
+  .catch((error) => {
+    setErrors(error?.message || "Не удалось загрузить схему конструктора документов.");
+  });
 loadRepresentativeProfile().catch((error) => {
   representativeProfile = {};
   setErrors(error?.message || "Не удалось загрузить профиль представителя.");

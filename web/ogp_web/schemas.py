@@ -276,6 +276,21 @@ class PrincipalScanResult(BaseModel):
         return _normalize_phone(value)
 
 
+class DocumentBuilderBundleResponse(BaseModel):
+    bundle_version: str = ""
+    server: str = ""
+    document_type: str = ""
+    sections: List[dict[str, Any]] = Field(default_factory=list)
+    fields: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    choice_sets: dict[str, Any] = Field(default_factory=dict)
+    validators: dict[str, Any] = Field(default_factory=dict)
+    template: dict[str, Any] = Field(default_factory=dict)
+    ai_profile: dict[str, Any] = Field(default_factory=dict)
+    features: dict[str, Any] = Field(default_factory=dict)
+    status: dict[str, Any] = Field(default_factory=dict)
+    allowed_actions: List[str] = Field(default_factory=list)
+
+
 class AuthPayload(BaseModel):
     username: str = ""
     email: str = ""

@@ -41,7 +41,7 @@
   <div id="court-claim-message" class="success-box legal-message ui-state ui-state--idle" hidden></div>
   <div id="court-claim-errors" class="errors legal-message ui-state ui-state--idle" hidden></div>
 
-  <form accept-charset="UTF-8" id="court-claim-form" class="legal-workspace legal-workspace--wide" novalidate data-username="{{ username }}">
+  <form accept-charset="UTF-8" id="court-claim-form" class="legal-workspace legal-workspace--wide" novalidate data-username="{{ username }}" data-server-code="{{ server_code }}">
     <div class="legal-workspace__main">
       <section id="court-section-params" class="panel legal-card legal-section">
         <div class="legal-section__header">
@@ -57,10 +57,7 @@
           <label class="legal-field">
             <span class="legal-field__label">Судебная инстанция</span>
             <select id="court-type" name="court_type">
-              <option value="">Выберите судебную инстанцию</option>
-              <option value="supreme">Верховный суд</option>
-              <option value="appeal">Апелляционный суд</option>
-              <option value="federal">Федеральный суд</option>
+              <option value="">Загрузка конфигурации…</option>
             </select>
           </label>
           <label class="legal-field">
