@@ -73,6 +73,7 @@ const DEFAULT_USER_MODAL_TITLE = userModalTitle?.textContent || "Карточк�
 
 let adminSearchTimer = null;
 let adminLiveTimer = null;
+let lawRebuildPollTimer = null;
 let selectedUser = null;
 let pendingAction = null;
 let selectedBulkUsers = new Set();
@@ -195,6 +196,68 @@ async function rebuildLawSources() {
   }
   showMessage(`Законы обновлены: версия ${String(payload?.law_version_id || "—")}, статей ${String(payload?.article_count || 0)}.`);
   await loadCatalog("laws");
+}
+
+function stopLawRebuildPolling() {
+  if (lawRebuildPollTimer) {
+    window.clearTimeout(lawRebuildPollTimer);
+    lawRebuildPollTimer = null;
+  }
+}
+
+async function pollLawRebuildTask(taskId) {
+  const statusHost = document.getElementById("law-sources-task-status");
+  const response = await apiFetch(`/api/admin/law-sources/tasks/${encodeURIComponent(taskId)}`);
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    stopLawRebuildPolling();
+    if (statusHost) {
+      statusHost.textContent = "Не удалось получить статус фоновой пересборки.";
+    }
+    return;
+  }
+  const status = String(payload?.status || "queued");
+  if (statusHost) {
+    statusHost.textContent = `Фоновая пересборка: ${status} (task: ${taskId})`;
+  }
+  if (status === "finished") {
+    stopLawRebuildPolling();
+    showMessage(`Фоновая пересборка завершена. Версия ${String(payload?.result?.law_version_id || "—")}.`);
+    await loadCatalog("laws");
+    return;
+  }
+  if (status === "failed") {
+    stopLawRebuildPolling();
+    setStateError(errorsHost, String(payload?.error || "Фоновая пересборка завершилась ошибкой."));
+    return;
+  }
+  lawRebuildPollTimer = window.setTimeout(() => {
+    void pollLawRebuildTask(taskId);
+  }, 2000);
+}
+
+async function rebuildLawSourcesAsync() {
+  const textarea = document.getElementById("law-sources-textarea");
+  const raw = String(textarea?.value || "");
+  const sourceUrls = raw
+    .split(/\r?\n/)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  const response = await apiFetch("/api/admin/law-sources/rebuild-async", {
+    method: "POST",
+    body: JSON.stringify({
+      source_urls: sourceUrls,
+      persist_sources: true,
+    }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось поставить пересборку в очередь."));
+    return;
+  }
+  showMessage(`Пересборка поставлена в очередь (task: ${String(payload?.task_id || "—")}).`);
+  stopLawRebuildPolling();
+  await pollLawRebuildTask(String(payload?.task_id || ""));
 }
 
 async function saveLawSourcesManifest() {
@@ -330,11 +393,13 @@ function renderCatalog(payload) {
           <button type="button" id="law-sources-sync" class="ghost-button">Синхронизировать текущие</button>
           <button type="button" id="law-sources-save" class="ghost-button">Сохранить без пересборки</button>
           <button type="button" id="law-sources-preview" class="ghost-button">Проверить ссылки</button>
+          <button type="button" id="law-sources-rebuild-async" class="ghost-button">Пересобрать в фоне</button>
           <button type="button" id="law-sources-rebuild" class="primary-button">Пересобрать законы</button>
         </div>
       </div>
       <p id="law-sources-status" class="legal-section__description">Загружаем источники и активную версию...</p>
       <p id="law-sources-validation" class="legal-section__description">Перед пересборкой можно проверить ссылки на валидность и дубликаты.</p>
+      <p id="law-sources-task-status" class="legal-section__description"></p>
       <label class="legal-field">
         <span class="legal-field__label">Ссылки на законы</span>
         <textarea id="law-sources-textarea" rows="8" placeholder="По одной ссылке на строку"></textarea>
@@ -3237,6 +3302,10 @@ catalogHost?.addEventListener("click", async (event) => {
   }
   if (target.id === "law-sources-rebuild") {
     await rebuildLawSources();
+    return;
+  }
+  if (target.id === "law-sources-rebuild-async") {
+    await rebuildLawSourcesAsync();
     return;
   }
   if (target.id === "law-sources-save") {
