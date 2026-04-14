@@ -115,3 +115,22 @@ class DocumentRepository:
         except Exception as exc:  # noqa: BLE001
             conn.rollback()
             raise self.backend.map_exception(exc) from exc
+
+    def transition_case_document_status(self, *, document_id: int, next_status: str, actor_user_id: int):
+        cursor = self._execute(
+            """
+            UPDATE case_documents
+            SET status = %s,
+                updated_at = NOW(),
+                metadata_json = jsonb_set(
+                    COALESCE(metadata_json, '{}'::jsonb),
+                    '{status_actor_user_id}',
+                    to_jsonb(%s::bigint),
+                    true
+                )
+            WHERE id = %s
+            RETURNING id, case_id, server_id, document_type, status, created_by, latest_version_id, CAST(metadata_json AS TEXT) AS metadata_json, created_at, updated_at
+            """,
+            (next_status, actor_user_id, document_id),
+        )
+        return cursor.fetchone()

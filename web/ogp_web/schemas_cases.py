@@ -67,6 +67,18 @@ class CaseDocumentResponse(BaseModel):
     updated_at: str = ""
 
 
+class CaseDocumentStatusUpdateRequest(BaseModel):
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        normalized = _require_non_empty(value, "status").lower()
+        if normalized not in {"draft", "reviewed", "published", "exported", "archived"}:
+            raise ValueError("unsupported_status")
+        return normalized
+
+
 class DocumentVersionCreateRequest(BaseModel):
     content_json: dict[str, Any] | list[Any] | str | int | float | bool
 

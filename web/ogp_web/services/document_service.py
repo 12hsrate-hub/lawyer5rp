@@ -98,3 +98,43 @@ class DocumentService:
         if str(doc_row.get("server_id") or "") != user_server_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Недостаточно прав для документа."])
         return [self._deserialize_version(row) for row in self.document_repository.list_document_versions(document_id=document_id)]
+
+    def transition_document_status(self, *, username: str, user_server_id: str, document_id: int, next_status: str):
+        doc_row = self.document_repository.get_case_document(document_id=document_id)
+        if doc_row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Документ не найден."])
+        if str(doc_row.get("server_id") or "") != user_server_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Недостаточно прав для документа."])
+        current_status = str(doc_row.get("status") or "").strip().lower()
+        target_status = str(next_status or "").strip().lower()
+        allowed_transitions = {
+            "draft": {"reviewed", "archived"},
+            "reviewed": {"draft", "published", "archived"},
+            "published": {"exported", "archived"},
+            "exported": {"archived"},
+            "archived": set(),
+        }
+        if target_status == current_status:
+            return self._deserialize_document(doc_row)
+        if target_status not in allowed_transitions.get(current_status, set()):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=["Недопустимый переход статуса документа."])
+        actor_id = self._resolve_actor(username)
+        updated = self.document_repository.transition_case_document_status(
+            document_id=document_id,
+            next_status=target_status,
+            actor_user_id=actor_id,
+        )
+        if not updated:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Документ не найден."])
+        self.case_repository.create_case_event(
+            case_id=int(updated["case_id"]),
+            server_id=str(updated["server_id"]),
+            event_type="document_status_changed",
+            actor_user_id=actor_id,
+            payload={
+                "document_id": int(updated["id"]),
+                "from_status": current_status,
+                "to_status": target_status,
+            },
+        )
+        return self._deserialize_document(updated)
