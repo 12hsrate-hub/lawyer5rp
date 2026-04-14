@@ -1617,6 +1617,81 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("citations_required_warn:missing_citations", response.json()["warnings"])
 
+    def test_law_qa_test_soft_missing_citations_does_not_call_citation_save(self):
+        self._register_verify_and_login("tester", "tester_law_soft@example.com")
+
+        original = complaint_route.ai_service.answer_law_question_details
+        original_run_retrieval = complaint_route.run_retrieval
+        original_save_answer_citations = complaint_route.save_answer_citations
+        original_get_user_id = self.store.get_user_id
+        original_create_law_qa_run = self.store.create_law_qa_run
+        original_evaluate = complaint_route.FeatureFlagService.evaluate
+
+        self.store.get_user_id = lambda username: 1
+        self.store.create_law_qa_run = lambda **kwargs: 77
+        complaint_route.run_retrieval = lambda **kwargs: type("RetrievalResult", (), {"retrieval_run_id": 55})()
+        complaint_route.save_answer_citations = lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("save_answer_citations should not be called without citations")
+        )
+        complaint_route.FeatureFlagService.evaluate = lambda self, flag, context: type(
+            "FlagDecision",
+            (),
+            {
+                "use_new_flow": True if flag == "citations_required" else False,
+                "enforcement": type("Enforcement", (), {"value": "soft"})(),
+                "mode": type("Mode", (), {"value": "all"})(),
+                "cohort": type("Cohort", (), {"value": "default"})(),
+            },
+        )()
+        complaint_route.ai_service.answer_law_question_details = lambda payload: type(
+            "LawQaAnswerResult",
+            (),
+            {
+                "text": "Ответ без привязанных цитат",
+                "generation_id": "gen-soft",
+                "used_sources": ["https://laws.example/base"],
+                "indexed_documents": 1,
+                "retrieval_confidence": "medium",
+                "retrieval_profile": "law_qa",
+                "guard_status": "pass",
+                "contract_version": "legal_pipeline.v1",
+                "bundle_status": "fresh",
+                "bundle_generated_at": "2026-04-11T12:00:00+00:00",
+                "bundle_fingerprint": "soft123",
+                "warnings": [],
+                "shadow": {"enabled": False},
+                "selected_norms": [],
+                "telemetry": {"model": "gpt-5.4"},
+                "budget_status": "ok",
+                "budget_warnings": [],
+                "budget_policy": {"flow": "law_qa"},
+                "selected_model": "gpt-5.4",
+                "selection_reason": "default",
+                "requested_model": "gpt-5.4",
+            },
+        )()
+        try:
+            response = self.client.post(
+                "/api/ai/law-qa-test",
+                json={
+                    "server_code": "blackberry",
+                    "question": "test question",
+                    "max_answer_chars": 2000,
+                },
+            )
+        finally:
+            complaint_route.ai_service.answer_law_question_details = original
+            complaint_route.run_retrieval = original_run_retrieval
+            complaint_route.save_answer_citations = original_save_answer_citations
+            self.store.get_user_id = original_get_user_id
+            self.store.create_law_qa_run = original_create_law_qa_run
+            complaint_route.FeatureFlagService.evaluate = original_evaluate
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["citations"], [])
+        self.assertIn("citations_required_warn:missing_citations", payload["warnings"])
+
 
     def test_generate_snapshot_includes_staged_citation_gate(self):
         self._register_verify_and_login("snapshot_gate", "snapshot_gate@example.com")

@@ -709,12 +709,16 @@ async def law_qa_test(
             retrieval_run_id=retrieval.retrieval_run_id,
             snapshot_id=str(payload.law_version_id or ""),
         )
-        citations = save_answer_citations(
-            store=store,
-            server_id=effective_server_code,
-            law_qa_run_id=law_qa_run_id,
-            retrieval_run_id=retrieval.retrieval_run_id,
-            citations=raw_citations,
+        citations = (
+            save_answer_citations(
+                store=store,
+                server_id=effective_server_code,
+                law_qa_run_id=law_qa_run_id,
+                retrieval_run_id=retrieval.retrieval_run_id,
+                citations=raw_citations,
+            )
+            if raw_citations
+            else []
         )
         metrics_store.log_event(
             event_type="ai_law_qa_test",
