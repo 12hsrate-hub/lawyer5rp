@@ -30,7 +30,7 @@ tasks:
     files:
       - "config/prompt_contract.yaml"
       - "config/quality_gates.yaml"
-      - "docs/IMPLEMENTATION_PLAN.md"
+      - "PLANS.md"
       - "docs/ACCEPTANCE_CHECKLIST.md"
     done_when:
       - "Контракт содержит modes: factual_only и factual_plus_legal"

@@ -22,7 +22,10 @@ Primary entrypoint for deploy, rollback, and live-operations work.
 
 ## Execution Docs
 
-- [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) - still-active execution plan
+- [`../PLANS.md`](../PLANS.md) - canonical execution plan
+- [`../MIGRATION_MAP.md`](../MIGRATION_MAP.md) - canonical migration baseline map
+- [`PRODUCT_BRIEF.md`](./PRODUCT_BRIEF.md) - active product/architecture brief
+- [`ARCHITECT_AGENT_GUIDE.md`](./ARCHITECT_AGENT_GUIDE.md) - active planning rules for Codex
 - [`CODEX_RUN_GUIDE.md`](./CODEX_RUN_GUIDE.md) - Codex task execution loop
 - [`adr/ADR-legal-workflow-stage.md`](./adr/ADR-legal-workflow-stage.md) - active staged-workflow invariant
 
