@@ -73,6 +73,7 @@ const DEFAULT_USER_MODAL_TITLE = userModalTitle?.textContent || "Карточк�
 
 let adminSearchTimer = null;
 let adminLiveTimer = null;
+let lawRebuildPollTimer = null;
 let selectedUser = null;
 let pendingAction = null;
 let selectedBulkUsers = new Set();
@@ -143,6 +144,35 @@ async function loadLawSourcesManager() {
     const origin = String(payload?.source_origin || "unknown");
     statusHost.textContent = `Источник ссылок: ${origin}. Активная версия закона: ${activeVersionId}. Статей в индексе: ${chunkCount}.`;
   }
+  await loadLawSourcesHistory();
+}
+
+function renderLawSourcesHistory(payload) {
+  const host = document.getElementById("law-sources-history");
+  if (!host) {
+    return;
+  }
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (!items.length) {
+    host.innerHTML = '<p class="legal-section__description">История пересборок пока пуста.</p>';
+    return;
+  }
+  host.innerHTML = `
+    <ul class="legal-section__description">
+      ${items
+        .map((item) => `<li>Версия #${escapeHtml(String(item.id || "—"))} • articles: ${escapeHtml(String(item.chunk_count || 0))} • generated: ${escapeHtml(String(item.generated_at_utc || "—"))}</li>`)
+        .join("")}
+    </ul>
+  `;
+}
+
+async function loadLawSourcesHistory() {
+  const response = await apiFetch("/api/admin/law-sources/history?limit=8");
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    return;
+  }
+  renderLawSourcesHistory(payload);
 }
 
 async function rebuildLawSources() {
@@ -166,6 +196,130 @@ async function rebuildLawSources() {
   }
   showMessage(`Законы обновлены: версия ${String(payload?.law_version_id || "—")}, статей ${String(payload?.article_count || 0)}.`);
   await loadCatalog("laws");
+}
+
+function stopLawRebuildPolling() {
+  if (lawRebuildPollTimer) {
+    window.clearTimeout(lawRebuildPollTimer);
+    lawRebuildPollTimer = null;
+  }
+}
+
+async function pollLawRebuildTask(taskId) {
+  const statusHost = document.getElementById("law-sources-task-status");
+  const response = await apiFetch(`/api/admin/law-sources/tasks/${encodeURIComponent(taskId)}`);
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    stopLawRebuildPolling();
+    if (statusHost) {
+      statusHost.textContent = "Не удалось получить статус фоновой пересборки.";
+    }
+    return;
+  }
+  const status = String(payload?.status || "queued");
+  if (statusHost) {
+    statusHost.textContent = `Фоновая пересборка: ${status} (task: ${taskId})`;
+  }
+  if (status === "finished") {
+    stopLawRebuildPolling();
+    showMessage(`Фоновая пересборка завершена. Версия ${String(payload?.result?.law_version_id || "—")}.`);
+    await loadCatalog("laws");
+    return;
+  }
+  if (status === "failed") {
+    stopLawRebuildPolling();
+    setStateError(errorsHost, String(payload?.error || "Фоновая пересборка завершилась ошибкой."));
+    return;
+  }
+  lawRebuildPollTimer = window.setTimeout(() => {
+    void pollLawRebuildTask(taskId);
+  }, 2000);
+}
+
+async function rebuildLawSourcesAsync() {
+  const textarea = document.getElementById("law-sources-textarea");
+  const raw = String(textarea?.value || "");
+  const sourceUrls = raw
+    .split(/\r?\n/)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  const response = await apiFetch("/api/admin/law-sources/rebuild-async", {
+    method: "POST",
+    body: JSON.stringify({
+      source_urls: sourceUrls,
+      persist_sources: true,
+    }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось поставить пересборку в очередь."));
+    return;
+  }
+  showMessage(`Пересборка поставлена в очередь (task: ${String(payload?.task_id || "—")}).`);
+  stopLawRebuildPolling();
+  await pollLawRebuildTask(String(payload?.task_id || ""));
+}
+
+async function saveLawSourcesManifest() {
+  const textarea = document.getElementById("law-sources-textarea");
+  const raw = String(textarea?.value || "");
+  const sourceUrls = raw
+    .split(/\r?\n/)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  const response = await apiFetch("/api/admin/law-sources/save", {
+    method: "POST",
+    body: JSON.stringify({
+      source_urls: sourceUrls,
+      persist_sources: true,
+    }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось сохранить источники законов."));
+    return;
+  }
+  showMessage("Источники законов сохранены в workflow.");
+  await loadCatalog("laws");
+}
+
+async function previewLawSources() {
+  const textarea = document.getElementById("law-sources-textarea");
+  const raw = String(textarea?.value || "");
+  const sourceUrls = raw
+    .split(/\r?\n/)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  const response = await apiFetch("/api/admin/law-sources/preview", {
+    method: "POST",
+    body: JSON.stringify({
+      source_urls: sourceUrls,
+      persist_sources: false,
+    }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось проверить ссылки законов."));
+    return;
+  }
+  const detailsHost = document.getElementById("law-sources-validation");
+  if (detailsHost) {
+    const invalidUrls = Array.isArray(payload?.invalid_urls) ? payload.invalid_urls : [];
+    const invalidDetails = Array.isArray(payload?.invalid_details) ? payload.invalid_details : [];
+    const duplicateUrls = Array.isArray(payload?.duplicate_urls) ? payload.duplicate_urls : [];
+    const invalidBlock = invalidDetails.length
+      ? `<br><strong>Невалидные ссылки:</strong><br>${invalidDetails
+        .map((item) => `${escapeHtml(String(item?.url || ""))} (${escapeHtml(String(item?.reason || "invalid"))})`)
+        .join("<br>")}`
+      : (invalidUrls.length
+        ? `<br><strong>Невалидные ссылки:</strong><br>${invalidUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
+        : "");
+    const duplicateBlock = duplicateUrls.length
+      ? `<br><strong>Дубликаты (после нормализации):</strong><br>${duplicateUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
+      : "";
+    detailsHost.innerHTML = `Принято: ${escapeHtml(String(payload?.accepted_count ?? 0))}. Дубликатов: ${escapeHtml(String(payload?.duplicate_count ?? 0))}. Невалидных: ${escapeHtml(String(payload?.invalid_count ?? 0))}.${invalidBlock}${duplicateBlock}`;
+  }
+  showMessage("Проверка ссылок выполнена.");
 }
 
 async function syncLawSourcesFromServerConfig() {
@@ -246,15 +400,21 @@ function renderCatalog(payload) {
         <strong>Источники законов</strong>
         <div>
           <button type="button" id="law-sources-sync" class="ghost-button">Синхронизировать текущие</button>
+          <button type="button" id="law-sources-save" class="ghost-button">Сохранить без пересборки</button>
+          <button type="button" id="law-sources-preview" class="ghost-button">Проверить ссылки</button>
+          <button type="button" id="law-sources-rebuild-async" class="ghost-button">Пересобрать в фоне</button>
           <button type="button" id="law-sources-rebuild" class="primary-button">Пересобрать законы</button>
         </div>
       </div>
       <p id="law-sources-status" class="legal-section__description">Загружаем источники и активную версию...</p>
+      <p id="law-sources-validation" class="legal-section__description">Перед пересборкой можно проверить ссылки на валидность и дубликаты.</p>
+      <p id="law-sources-task-status" class="legal-section__description"></p>
       <label class="legal-field">
         <span class="legal-field__label">Ссылки на законы</span>
         <textarea id="law-sources-textarea" rows="8" placeholder="По одной ссылке на строку"></textarea>
         <span class="legal-field__hint">После сохранения система скачает страницы, нарежет материалы на статьи и импортирует новую DB-версию закона для текущего сервера.</span>
       </label>
+      <div id="law-sources-history"></div>
     </div>
     ` : ""}
     <div class="legal-table-wrap">
@@ -3151,6 +3311,18 @@ catalogHost?.addEventListener("click", async (event) => {
   }
   if (target.id === "law-sources-rebuild") {
     await rebuildLawSources();
+    return;
+  }
+  if (target.id === "law-sources-rebuild-async") {
+    await rebuildLawSourcesAsync();
+    return;
+  }
+  if (target.id === "law-sources-save") {
+    await saveLawSourcesManifest();
+    return;
+  }
+  if (target.id === "law-sources-preview") {
+    await previewLawSources();
     return;
   }
   if (target.id === "catalog-create") {
