@@ -202,6 +202,24 @@ function renderCatalog(payload) {
     features: "Переключатели функций и rollout-настройки.",
     rules: "Правила публикации, редактирования и governance-политики.",
   };
+  const statusLabels = {
+    draft: "черновик",
+    in_review: "на ревью",
+    approved: "одобрено",
+    published: "опубликовано",
+    rolled_back: "откат",
+  };
+  const workflowActionLabels = {
+    submit_for_review: "Отправить на ревью",
+    approve: "Одобрить",
+    publish: "Опубликовать",
+    request_changes: "Запросить доработки",
+  };
+  const allowedActionsByState = {
+    draft: ["submit_for_review"],
+    in_review: ["approve", "request_changes"],
+    approved: ["publish"],
+  };
   const auditByEntityId = new Map();
   audit.forEach((row) => {
     const entityId = String(row?.entity_id || "").trim();
@@ -248,22 +266,29 @@ function renderCatalog(payload) {
             .map((item) => {
               const entityId = String(item.id || "");
               const auditRow = auditByEntityId.get(entityId) || {};
-              const state = String(item.status || item.state || "draft");
+              const state = String(item.active_change_request_status || item.status || item.state || "draft").trim().toLowerCase();
+              const stateLabel = statusLabels[state] || state;
+              const changeRequestId = Number(item.active_change_request_id || item.change_request_id || 0);
+              const workflowActions = changeRequestId ? (allowedActionsByState[state] || []) : [];
               const version = item.current_published_version_id ?? item.version_number ?? "—";
               const author = String(
                 auditRow.author || item.updated_by || item.created_by || "system"
               );
               return `
-              <tr>
+              <tr data-machine-state="${escapeHtml(state)}" data-change-request-id="${escapeHtml(String(changeRequestId || 0))}">
                 <td>${escapeHtml(String(item.title || ""))}</td>
-                <td>${escapeHtml(state)}</td>
+                <td>${escapeHtml(stateLabel)}</td>
                 <td>${escapeHtml(String(version))}</td>
                 <td>${escapeHtml(author)}</td>
                 <td>
                   <button type="button" class="ghost-button" data-catalog-view="${escapeHtml(String(item.id || ""))}">Поля</button>
                   <button type="button" class="ghost-button" data-catalog-edit="${escapeHtml(String(item.id || ""))}">Изменить</button>
                   <button type="button" class="ghost-button" data-catalog-preview="${escapeHtml(String(item.id || ""))}">Предпросмотр</button>
-                  <button type="button" class="ghost-button" data-catalog-next="${escapeHtml(String(item.id || ""))}">Далее</button>
+                  ${workflowActions
+                    .map(
+                      (action) => `<button type="button" class="ghost-button" data-catalog-workflow-item="${escapeHtml(String(item.id || ""))}" data-catalog-workflow-action="${escapeHtml(action)}" data-catalog-workflow-cr-id="${escapeHtml(String(changeRequestId || 0))}">${escapeHtml(workflowActionLabels[action] || action)}</button>`,
+                    )
+                    .join("")}
                   <button type="button" class="ghost-button" data-catalog-rollback="${escapeHtml(String(item.id || ""))}">Откат</button>
                   <button type="button" class="ghost-button" data-catalog-delete="${escapeHtml(String(item.id || ""))}">Удалить</button>
                 </td>
@@ -3130,7 +3155,6 @@ catalogHost?.addEventListener("click", async (event) => {
     return;
   }
   if (target.id === "catalog-create") {
-  if (target.id === "catalog-create") {
     const payload = await openCatalogFormDialog(activeCatalogEntity);
     if (!payload) return;
     await performAdminAction(catalogEndpoint(activeCatalogEntity), "Элемент создан.", payload);
@@ -3153,10 +3177,6 @@ catalogHost?.addEventListener("click", async (event) => {
     });
     return;
   }
-    return;
-  }
-  const editId = target.getAttribute("data-catalog-edit");
-  if (editId) {
   const editId = target.getAttribute("data-catalog-edit");
   if (editId) {
     const itemResponse = await apiFetch(catalogEndpoint(activeCatalogEntity, editId));
@@ -3175,7 +3195,24 @@ catalogHost?.addEventListener("click", async (event) => {
     await loadCatalog(activeCatalogEntity);
     return;
   }
+  const workflowItemId = target.getAttribute("data-catalog-workflow-item");
+  if (workflowItemId) {
+    const action = String(target.getAttribute("data-catalog-workflow-action") || "").trim().toLowerCase();
+    const changeRequestId = Number(target.getAttribute("data-catalog-workflow-cr-id") || "0");
+    if (!action || !changeRequestId) {
+      setStateError(errorsHost, "Не удалось определить действие workflow: отсутствует change request.");
+      return;
+    }
+    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, workflowItemId)}/workflow`, "Workflow обновлен.", {
+      action,
+      change_request_id: changeRequestId,
     });
+    await loadCatalog(activeCatalogEntity);
+    return;
+  }
+  const previewId = target.getAttribute("data-catalog-preview");
+  if (previewId) {
+    await loadCatalogPreview(previewId);
     return;
   }
   if (target.id === "catalog-preview-copy") {
@@ -3188,21 +3225,6 @@ catalogHost?.addEventListener("click", async (event) => {
     } catch {
       showMessage("Не удалось скопировать JSON.");
     }
-    return;
-  }
-  const previewId = target.getAttribute("data-catalog-preview");
-  if (previewId) {
-    await loadCatalogPreview(previewId);
-    return;
-  }
-  const nextId = target.getAttribute("data-catalog-next");
-  if (nextId) {
-    const row = Array.from(catalogHost.querySelectorAll("[data-catalog-next]")).find((el) => el.getAttribute("data-catalog-next") === nextId);
-    const tr = row?.closest("tr");
-    const state = tr?.children?.[1]?.textContent?.trim() || "draft";
-    const targetState = state === "draft" ? "review" : state === "review" ? "publish" : "draft";
-    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, nextId)}/workflow`, "Workflow обновлен.", { target_state: targetState });
-    await loadCatalog(activeCatalogEntity);
     return;
   }
   const rollbackId = target.getAttribute("data-catalog-rollback");
@@ -3326,4 +3348,3 @@ Promise.all([
 ]).then(() => {
   scheduleLiveRefresh();
 });
-

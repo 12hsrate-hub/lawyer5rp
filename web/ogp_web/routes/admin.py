@@ -888,6 +888,17 @@ def _resolve_active_change_request_id(item: dict[str, Any], change_requests: lis
     except (TypeError, ValueError, IndexError):
         return None
 
+def _resolve_active_change_request(item: dict[str, Any], change_requests: list[dict[str, Any]]) -> dict[str, Any] | None:
+    active_change_request_id = _resolve_active_change_request_id(item, change_requests)
+    if active_change_request_id is None:
+        return None
+    for change_request in change_requests:
+        try:
+            if int(change_request.get("id")) == active_change_request_id:
+                return change_request
+        except (TypeError, ValueError):
+            continue
+    return None
 
 def _build_catalog_payload_config(payload: AdminCatalogItemPayload) -> dict[str, Any]:
     typed_fields: dict[str, Any] = {
@@ -957,7 +968,13 @@ async def admin_catalog_list(
                 server_scope="server",
                 server_id=user.server_code,
             )
-            item_copy["active_change_request_id"] = _resolve_active_change_request_id(item_copy, change_requests)
+            active_change_request = _resolve_active_change_request(item_copy, change_requests)
+            item_copy["active_change_request_id"] = (
+                int(active_change_request.get("id")) if active_change_request and active_change_request.get("id") is not None else None
+            )
+            item_copy["active_change_request_status"] = (
+                str(active_change_request.get("status") or "").strip().lower() if active_change_request else ""
+            )
             enriched_items.append(item_copy)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
