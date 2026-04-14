@@ -30,6 +30,7 @@ from ogp_web.schemas import (
     AdminQuotaPayload,
 )
 from ogp_web.services.law_admin_service import LawAdminService
+from ogp_web.services.law_rebuild_tasks import find_active_law_rebuild_task
 from ogp_web.services.auth_service import AuthError, AuthUser, require_admin_user
 from ogp_web.services.point3_policy_service import load_point3_eval_thresholds
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -672,17 +673,7 @@ def _load_admin_task(task_id: str) -> dict[str, Any] | None:
 def _find_active_law_rebuild_task(*, server_code: str) -> dict[str, Any] | None:
     with _ADMIN_TASKS_LOCK:
         _load_admin_tasks_from_disk()
-        for item in _ADMIN_TASKS.values():
-            if not isinstance(item, dict):
-                continue
-            if str(item.get("scope") or "") != "law_sources_rebuild":
-                continue
-            if str(item.get("server_code") or "") != server_code:
-                continue
-            status_value = str(item.get("status") or "").lower()
-            if status_value in {"queued", "running"}:
-                return deepcopy(item)
-    return None
+        return find_active_law_rebuild_task(tasks=_ADMIN_TASKS, server_code=server_code)
 
 
 def _claim_law_rebuild_task(*, server_code: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
