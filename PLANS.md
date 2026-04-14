@@ -235,230 +235,203 @@ Standardize job states across import/export/law rebuild/generation:
 ### Deliverables
 - async operations runbook updates
 - job observability views
-- retry/idempotency policy matrix
+- retry/idempotency matrix
 
 ### Acceptance
-- duplicate prevention verified for pilot async flows.
-- failed jobs are visible and recoverable without DB manual edits.
+- No silent duplicate execution for covered job classes.
+- Failed async operations visible and retryable by operators/admins.
 
 ### Rollback/containment
-- Per-job kill switch + fallback to legacy execution path where available.
+- Per-job-type kill switches / queue pause / fallback to manual ops where needed.
 
-Dependencies: Phase D.
+Dependencies: Phase D for admin visibility, but partial hardening can start earlier if needed.
 
 ---
 
-## Phase F — AI/retrieval/citation provenance hardening (1 sprint)
+## Phase F — Provenance + legal/audit trace closure (1 sprint)
 
-### F.1 Mandatory provenance persistence
-Persist for every generated legal output:
+### F.1 Provenance schema
+Persist minimum explainability metadata for generated outputs:
 - server_id
-- server config version
-- procedure version
-- template version
-- law_set version
-- citation/fragment ids
+- server_config_version
+- procedure_version
+- template_version
+- law_set_version
+- retrieval/citation fragment ids
 - model/provider id
 - prompt version
 - generation timestamp
 
-### F.2 Audit and admin exposure
-- Add provenance panel in document review/admin audit views.
-- Allow export of provenance trace for incident/legal review.
+### F.2 Admin traceability surface
+- Show provenance in document review/admin/audit views.
+- Expose why a document used particular law/context inputs.
 
 ### Deliverables
-- provenance schema + persistence in generation pipeline
-- citation trace access in admin
+- provenance schema doc
+- stored trace pipeline
+- admin trace view for pilot scenario
 
 ### Acceptance
-- Any pilot generated document is explainable from stored provenance.
+- Pilot generated document can be traced end-to-end through legal/config/model context.
 
 ### Rollback/containment
-- If provenance capture fails, block publish-grade output or force fallback policy (configured per risk tolerance).
+- No cutover to full new runtime active mode without minimum provenance fields present.
 
-Dependencies: Phase D (and parallel integration with E).
+Dependencies: Phase B and Phase E.
 
 ---
 
-## Phase G — Pilot cutover + staged expansion (ongoing)
+## Phase G — Pilot cutover and measured scale-out (1 sprint + observation window)
 
-### G.1 Cutover for reference scenario
-- Move pilot scenario from `shadow_compare` to `new_runtime_active`.
-- Keep legacy adapter path for bounded rollback window.
+### G.1 Pilot activation
+- Enable `new_runtime_active` only for reference pilot scenario.
+- Keep all others on legacy or shadow mode.
 
-### G.2 Expansion waves
-Migrate by scenario batches (not file batches):
-- wave 1: nearest-neighbor scenarios
-- wave 2: medium complexity
-- wave 3: high-variance server-specific scenarios
+### G.2 Observation window
+- Monitor drift, support incidents, admin publish quality, async failures, provenance completeness.
+
+### G.3 Scale-out rules
+- Only add next server/procedure after pilot acceptance passes.
+- Reuse same migration template for each new scenario.
 
 ### Deliverables
-- per-wave migration checklists
-- deprecation list for legacy-only logic
+- pilot cutover report
+- scale-out checklist/template
+- deprecation list for removable legacy logic
 
 ### Acceptance
-- wave-level KPI stability + no critical drift.
+- Pilot stable across agreed observation window.
+- Next migration candidate selected with evidence, not guesswork.
 
 ### Rollback/containment
-- scenario-level rollback to legacy flag.
+- Revert pilot to `legacy_only` if drift/support/audit thresholds fail.
 
-Dependencies: B-F.
+Dependencies: Phases B-F.
 
 ---
 
-## 3) What to do first (next concrete actions)
+## 3) What to do first
 
-1. Create `MIGRATION_MAP.md` from current route/service/storage graph for critical flows.
-2. Freeze pilot server + pilot procedure + acceptance KPIs.
-3. Define initial versioned configuration schema draft.
-4. Implement feature-flag skeleton for scenario-level switching.
-5. Enable `shadow_compare` for pilot with mismatch logging.
+1. Finish Phase A inventory and lock pilot scenario.
+2. Model new versioned config entities only for the pilot path.
+3. Add adapter-backed read path for the pilot without changing external route contracts.
+4. Add shadow compare before any active cutover.
+5. Split admin read-only by domain before expanding mutation workflows.
 
 ## 4) What not to do
 
-- Do not migrate all servers at once.
-- Do not merge admin into one giant module/page.
-- Do not encode new server variance via Python enums/branching in route handlers.
-- Do not replace legacy async ops silently without observability.
-- Do not ship AI-generated legal outputs without provenance fields.
+- Do not rewrite all routes/services at once.
+- Do not expand legacy with more server-specific branching.
+- Do not build one giant generic admin page/module for all domains.
+- Do not migrate async operations invisibly without observability/idempotency.
+- Do not activate new runtime for multiple scenarios before pilot evidence.
 
 ## 5) What can be postponed
 
-- Full editable admin for all domains (read-only first).
-- Non-critical scenario migration (after pilot stabilization).
-- Advanced plugin extension points (only after config model limits are proven).
+- Full multi-server admin editability for all entities
+- Broad server rollout
+- Deep infra scaling optimizations
+- Full replacement of every legacy path
 
----
+Only postpone if pilot safety, async stability, and provenance guarantees remain intact.
 
-## Risk Register and Closure Strategy
+## 6) Risk Register and Closure Strategy
 
-### Risk 1 — Dual source of truth (legacy vs new runtime)
-- Priority: Critical (pre-launch blocker for each cutover scenario)
-- Owner area: backend + migration/rollout
-- Trigger/warning signs: conflicting outputs between legacy and new path; unknown runtime authority in incidents.
-- Why it matters: inconsistent legal/document outcomes and unpredictable behavior.
-- Where now/likely: `web/ogp_web/routes/*` calling mixed legacy service logic while new config-driven runtime is introduced.
-- Target rule: each migrated scenario has exactly one runtime authority; legacy becomes adapter-only.
+### Risk 1 — Dual source of truth between legacy logic and new DB-driven workflow
+- Priority: `critical`
+- Owner area: `backend` + `migration/rollout`
+- Trigger / warning signs:
+  - conflicting outputs between legacy and new runtime
+  - undocumented mixed reads from old config and new tables
 - Mitigation:
-  - scenario-level feature flags;
-  - shadow compare before activation;
-  - explicit cutover criteria;
-  - post-cutover deprecation milestone.
-- Earliest phase: B.
-- Validation: drift rate below agreed threshold for pilot + incident playbook tested.
-- Fallback/rollback: instant flag revert to `legacy_only`; keep adapter during rollback window.
-- Closure milestone: completion of pilot + wave 1 cutovers with adapter demotion complete.
+  - feature-flagged adapter strategy
+  - shadow compare before activation
+  - explicit per-scenario source-of-truth assignment
+- Validation:
+  - drift reports for pilot scenario
+  - contract regression checks stay green
+- Closure milestone:
+  - `Phase G` pilot cutover accepted
 
-### Risk 2 — Hardcoded server-specific logic
-- Priority: Critical (pre-scale blocker)
-- Owner area: backend + admin model
-- Trigger/warning signs: new `if server == ...` branches in routes/services; enum-driven legal divergence.
-- Why it matters: exponential maintenance cost and brittle onboarding of new servers.
-- Where now/likely: route/service conditionals in complaint/validation/document generation flows.
-- Target rule: server differences live in versioned data/config models; code only interprets model.
+### Risk 2 — Hardcoded server-specific business logic for new servers
+- Priority: `critical`
+- Owner area: `backend`
+- Trigger / warning signs:
+  - new `if server == ...` paths
+  - new enum/config hardcoding for server behavior
 - Mitigation:
-  - code review gate forbidding new server hardcoding;
-  - config schema coverage for procedure/forms/rules/templates/law sets;
-  - bounded plugin extension policy when config is insufficient.
-- Earliest phase: A (policy), B (implementation).
-- Validation: PR checks/review checklist + no new hardcoded server branches in migrated flows.
-- Fallback/rollback: if unavoidable hardcoded patch is needed, enforce temporary exception with removal deadline.
-- Closure milestone: wave 2 complete with all migrated scenarios config-driven.
+  - configuration-as-data rule
+  - review rejection for scattered server conditionals
+  - bounded extension points only when configuration is insufficient
+- Validation:
+  - migration review on pilot changes
+  - no new scattered server branching introduced
+- Closure milestone:
+  - `Phase B` foundation approved, then enforced continuously
 
-### Risk 3 — Monolithic admin UI complexity
-- Priority: High (pre-scale blocker)
-- Owner area: admin UI
-- Trigger/warning signs: one massive page/module owning all admin state/actions.
-- Why it matters: slows iteration, increases regression risk, hurts non-technical usability.
-- Where now/likely: expansion of existing admin routes/static modules without domain boundaries.
-- Target rule: domain-bounded modules + read-only-first + shared UI patterns.
+### Risk 3 — Frontend admin complexity collapsing into a monolithic admin UI
+- Priority: `high`
+- Owner area: `admin UI`
+- Trigger / warning signs:
+  - growth of one mega-page or mega-controller
+  - domain state and UI concerns collapsing into one surface
 - Mitigation:
-  - split by domain sections;
-  - route/module boundaries;
-  - shared component library for tables/forms/audit timeline.
-- Earliest phase: C.
-- Validation: separate module ownership and independent deploy/testing paths for admin domains.
-- Fallback/rollback: keep risky editable flows disabled; retain read-only visibility until stabilized.
-- Closure milestone: D completion for pilot entities with modular UI structure proven.
+  - domain-split read-only modules first
+  - reusable UI/shared patterns
+  - bounded editable workflows later
+- Validation:
+  - pilot domain navigation works through separate modules
+  - no single admin module owns all new behavior
+- Closure milestone:
+  - `Phase C` read-only modular admin accepted
 
-### Risk 4 — Async/jobs transitional instability
-- Priority: Critical (pre-launch blocker for migrated async flows)
-- Owner area: infra + backend
-- Trigger/warning signs: duplicate imports/exports, silent retries, invisible failed jobs.
-- Why it matters: data integrity and operational instability during migration.
-- Where now/likely: import/export/job endpoints and task services (`jobs`, `exam_import`, export/build pipelines).
-- Target rule: explicit job state machine + idempotency + observable retry semantics.
+### Risk 4 — Transitional instability of background jobs, imports, exports, retries, and async processing
+- Priority: `critical`
+- Owner area: `infra` + `backend`
+- Trigger / warning signs:
+  - duplicate execution
+  - invisible failed jobs
+  - retry storms or dead-letter growth
 - Mitigation:
-  - standard job states;
-  - dedup keys;
-  - retry matrix;
-  - failure dashboards.
-- Earliest phase: E (design prework from B).
-- Validation: chaos/retry tests pass; duplicate rate below threshold; failed-job MTTR target achieved.
-- Fallback/rollback: kill-switch and legacy execution fallback.
-- Closure milestone: E completion + two stable sprints post-pilot cutover.
+  - explicit job states
+  - idempotency keys
+  - retry matrix by job type
+  - ops/admin visibility
+- Validation:
+  - failed jobs visible and retryable
+  - no silent duplicates for covered flows
+- Closure milestone:
+  - `Phase E` accepted
 
-### Risk 5 — Missing AI/citation provenance
-- Priority: Critical (pre-launch blocker for legal-grade generated outputs)
-- Owner area: AI/retrieval + audit
-- Trigger/warning signs: generated document without traceable law/template/procedure context.
-- Why it matters: no audit explainability; legal/compliance risk.
-- Where now/likely: generation/retrieval/citation services and document output pipeline.
-- Target rule: every generated output stores complete provenance envelope.
+### Risk 5 — Incomplete AI / citation provenance for audit and explainability
+- Priority: `critical`
+- Owner area: `AI / retrieval`
+- Trigger / warning signs:
+  - generated output cannot be traced to law/config/model context
+  - admin review cannot explain legal inputs used
 - Mitigation:
-  - persist mandatory provenance fields;
-  - citation fragment tracking;
-  - admin/audit provenance views and exports.
-- Earliest phase: F (schema hooks can begin in B).
-- Validation: provenance completeness checks at generation time; audit export tests pass.
-- Fallback/rollback: block publish-grade output or downgrade mode until provenance restored.
-- Closure milestone: F completion + acceptance in pilot cutover gate.
+  - minimum provenance schema
+  - citation trace persistence
+  - admin traceability views
+- Validation:
+  - pilot generated output trace is complete end-to-end
+- Closure milestone:
+  - `Phase F` accepted before broad activation
 
----
+## 7) Acceptance gates by phase
 
-## 6) Acceptance gates by milestone
-
-### Gate G0 (after A)
-- migration map complete
-- pilot scenario selected
-- risk controls aligned
-
-### Gate G1 (after B+C)
-- shadow compare active
-- read-only admin visibility complete for pilot
-
-### Gate G2 (after D+E+F)
-- editable publish workflow stable
-- async reliability controls active
-- provenance complete for pilot outputs
-
-### Gate G3 (after G wave 1)
-- pilot cutover stable
-- first migration wave complete
-- legacy deprecation backlog prioritized with deadlines
-
----
-
-## 7) Documentation strategy
-
-Three layers maintained continuously:
-1. Admin/user docs (human terminology and UI flows).
-2. Ops docs (runbooks, incident/rollback, async operations).
-3. Developer docs (schema, adapters, feature flags, migration boundaries).
-
-Primary docs to keep updated during execution:
-- `PLANS.md` (this file)
-- `MIGRATION_MAP.md`
-- `DATA_MODEL_DRAFT.md`
-- `UI_ADMIN_STRUCTURE.md`
-- `docs/OPERATIONS_INDEX.md` and linked runbooks
-
----
-
-## 8) Ownership bootstrap (fill before Sprint 1)
-
-- Backend migration lead: TBD
-- Admin UI lead: TBD
-- Infra/async lead: TBD
-- AI/provenance lead: TBD
-- Rollout/incident lead: TBD
+- Phase A:
+  - critical flow map complete
+  - pilot fixed
+- Phase B:
+  - adapter-backed pilot read path works in shadow compare
+- Phase C:
+  - modular read-only admin for pilot config domains
+- Phase D:
+  - publish/rollback/audit works safely for pilot entities
+- Phase E:
+  - async operations observable, idempotent, retry-controlled
+- Phase F:
+  - provenance complete for pilot generated outputs
+- Phase G:
+  - pilot stable in observation window and rollback-ready
