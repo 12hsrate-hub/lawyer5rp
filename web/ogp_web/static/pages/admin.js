@@ -227,6 +227,7 @@ async function loadLawSourcesManager() {
     activeLawServerCode = payloadServerCode;
   }
   renderLawServerSelector();
+  await loadPlatformBlueprintStage();
   const textarea = document.getElementById("law-sources-textarea");
   const statusHost = document.getElementById("law-sources-status");
   if (textarea) {
@@ -311,6 +312,34 @@ async function loadLawSourcesDependencies() {
     return;
   }
   renderLawSourcesDependencies(payload);
+}
+
+function renderPlatformBlueprintStage(payload) {
+  const host = document.getElementById("platform-blueprint-stage");
+  if (!host) {
+    return;
+  }
+  const stage = payload?.stage || {};
+  const stageCode = String(stage?.stage_code || "phase_a_foundation").trim();
+  const stageLabel = String(stage?.stage_label || "Phase A - Stabilize foundation").trim();
+  host.innerHTML = `
+    <div class="legal-section__description"><strong>Этап платформы:</strong> ${escapeHtml(stageLabel)}</div>
+    <div class="legal-field__hint">code: <code>${escapeHtml(stageCode)}</code></div>
+  `;
+}
+
+async function loadPlatformBlueprintStage() {
+  const host = document.getElementById("platform-blueprint-stage");
+  if (!host) {
+    return;
+  }
+  const response = await apiFetch("/api/admin/platform-blueprint/status");
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить текущий этап платформы."))}</p>`;
+    return;
+  }
+  renderPlatformBlueprintStage(payload);
 }
 
 function parseLawSetItemsInput(raw) {
@@ -1083,6 +1112,7 @@ function renderCatalog(payload) {
         </div>
       </div>
       <p id="law-sources-status" class="legal-section__description">Загружаем источники и активную версию...</p>
+      <div id="platform-blueprint-stage" class="legal-subcard"></div>
       <p id="law-sources-validation" class="legal-section__description">Перед пересборкой можно проверить ссылки на валидность и дубликаты.</p>
       <p id="law-sources-task-status" class="legal-section__description"></p>
       <label class="legal-field">
