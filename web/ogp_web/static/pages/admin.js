@@ -1,4 +1,4 @@
-const errorsHost = document.getElementById("admin-errors");
+﻿const errorsHost = document.getElementById("admin-errors");
 const messageHost = document.getElementById("admin-message");
 const totalsHost = document.getElementById("admin-totals");
 const examImportHost = document.getElementById("admin-exam-import");
@@ -362,6 +362,222 @@ async function loadCatalogPreview(itemId) {
     return;
   }
   renderCatalogPreview(payload, itemId);
+}
+function slugifyCatalogKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_\-.а-яё]/gi, "")
+    .replace(/_+/g, "_");
+}
+
+function getCatalogEntityFieldMeta(entityType) {
+  const sharedHelp = "Заполните поля формы. JSON нужен только для редких/нестандартных атрибутов.";
+  const byEntity = {
+    servers: {
+      description: "Профиль сервера: модель, URL и технические ограничения.",
+      fields: [
+        { name: "server_code", label: "Код сервера", placeholder: "prod-1", help: "Уникальный код окружения." },
+        { name: "base_url", label: "Base URL", placeholder: "https://api.example.com", help: "Базовый URL сервера/интеграции." },
+        { name: "timeout_sec", label: "Timeout (сек)", type: "number", min: 1, placeholder: "30", help: "Таймаут запросов в секундах." },
+      ],
+    },
+    laws: {
+      description: "Нормативный источник и его реквизиты.",
+      fields: [
+        { name: "law_code", label: "Код закона", placeholder: "uk_rf_2026", help: "Внутренний код закона/сборника." },
+        { name: "source", label: "Источник", placeholder: "consultant", help: "Откуда взят текст (сервис/реестр)." },
+        { name: "effective_from", label: "Действует с", placeholder: "2026-01-01", help: "Дата в формате YYYY-MM-DD." },
+      ],
+    },
+    templates: {
+      description: "Шаблон документа: формат, цель и обязательные блоки.",
+      fields: [
+        { name: "template_type", label: "Тип шаблона", placeholder: "complaint", help: "Например: complaint, appeal, rehab." },
+        { name: "document_kind", label: "Вид документа", placeholder: "Жалоба", help: "Человекочитаемый вид документа." },
+        { name: "output_format", label: "Формат вывода", placeholder: "bbcode", help: "Например: bbcode, markdown, html." },
+      ],
+    },
+    features: {
+      description: "Фича-флаг: rollout и условия включения.",
+      fields: [
+        { name: "feature_flag", label: "Feature flag", placeholder: "new_law_qa", help: "Уникальный код флага." },
+        { name: "rollout_percent", label: "Rollout (%)", type: "number", min: 0, max: 100, placeholder: "25", help: "Доля пользователей в процентах." },
+        { name: "audience", label: "Аудитория", placeholder: "testers", help: "Кому включено: all/testers/staff/..." },
+      ],
+    },
+    rules: {
+      description: "Правило применения: приоритет, область и действие.",
+      fields: [
+        { name: "rule_type", label: "Тип правила", placeholder: "moderation", help: "Категория правила." },
+        { name: "priority", label: "Приоритет", type: "number", min: 0, placeholder: "100", help: "Чем больше число, тем выше приоритет." },
+        { name: "applies_to", label: "Область", placeholder: "complaint_generation", help: "Где применяется правило." },
+      ],
+    },
+  };
+  return byEntity[entityType] || { description: sharedHelp, fields: [] };
+}
+
+function buildCatalogFormValues(entityType, seed = {}) {
+  const config = seed.config && typeof seed.config === "object" ? seed.config : {};
+  const key = String(seed.key || config.key || slugifyCatalogKey(seed.title || "") || "");
+  const description = String(seed.description || config.description || "");
+  const status = String(seed.status || config.status || "draft");
+  const values = {
+    title: String(seed.title || ""),
+    key,
+    description,
+    status,
+    config,
+  };
+  const meta = getCatalogEntityFieldMeta(entityType);
+  meta.fields.forEach((field) => {
+    values[field.name] = seed[field.name] ?? config[field.name] ?? "";
+  });
+  return values;
+}
+
+function parseCatalogAdvancedJson(rawJson) {
+  const raw = String(rawJson || "").trim();
+  if (!raw) {
+    return {};
+  }
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Advanced JSON должен быть объектом.");
+  }
+  return parsed;
+}
+
+async function openCatalogFormDialog(entityType, seed = {}) {
+  const meta = getCatalogEntityFieldMeta(entityType);
+  const values = buildCatalogFormValues(entityType, seed);
+  const dialog = document.createElement("dialog");
+  const dynamicFields = meta.fields
+    .map((field) => {
+      const type = field.type || "text";
+      const value = String(values[field.name] ?? "");
+      const min = field.min !== undefined ? `min="${field.min}"` : "";
+      const max = field.max !== undefined ? `max="${field.max}"` : "";
+      return `
+        <label class="legal-field">
+          <span class="legal-field__label">${escapeHtml(field.label)}</span>
+          <input type="${escapeHtml(type)}" name="${escapeHtml(field.name)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.placeholder || "")}" ${min} ${max}>
+          <span class="legal-field__hint">${escapeHtml(field.help || "")}</span>
+        </label>
+      `;
+    })
+    .join("");
+  dialog.innerHTML = `
+    <form method="dialog" class="legal-section">
+      <h3>${seed.id ? "Редактирование" : "Создание"}: ${escapeHtml(entityType)}</h3>
+      <p class="legal-field__hint">${escapeHtml(meta.description || "")}</p>
+      <label class="legal-field">
+        <span class="legal-field__label">Название</span>
+        <input type="text" name="title" value="${escapeHtml(values.title)}" placeholder="Понятное имя записи" required>
+      </label>
+      <label class="legal-field">
+        <span class="legal-field__label">Ключ</span>
+        <input type="text" name="key" value="${escapeHtml(values.key)}" placeholder="server_main" required>
+        <span class="legal-field__hint">Уникальный ключ (латиница/цифры/подчеркивание). Пример: <code>main_ruleset</code></span>
+      </label>
+      <label class="legal-field">
+        <span class="legal-field__label">Описание</span>
+        <textarea name="description" rows="2" placeholder="Кратко: зачем нужна запись">${escapeHtml(values.description)}</textarea>
+      </label>
+      <label class="legal-field">
+        <span class="legal-field__label">Статус</span>
+        <select name="status">
+          ${["draft", "review", "published", "active", "disabled", "archived"]
+            .map((statusName) => `<option value="${statusName}" ${values.status === statusName ? "selected" : ""}>${statusName}</option>`)
+            .join("")}
+        </select>
+        <span class="legal-field__hint">Обычно для новых записей используется <code>draft</code>.</span>
+      </label>
+      ${dynamicFields}
+      <details>
+        <summary>Дополнительно (JSON)</summary>
+        <p class="legal-field__hint">Опционально. Добавьте редкие поля в JSON-объекте, например: {\"tags\":[\"beta\"],\"owner\":\"team-legal\"}</p>
+        <label class="legal-field">
+          <textarea name="advanced_config" rows="7" placeholder='{\"tags\":[\"beta\"],\"owner\":\"team-legal\"}'>${escapeHtml(JSON.stringify(values.config || {}, null, 2))}</textarea>
+        </label>
+      </details>
+      <menu style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+        <button type="button" class="ghost-button" data-action="cancel">Отмена</button>
+        <button type="submit" class="primary-button" data-action="submit">Сохранить</button>
+      </menu>
+    </form>
+  `;
+  document.body.appendChild(dialog);
+
+  return await new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      if (dialog.open) {
+        dialog.close();
+      }
+      dialog.remove();
+      resolve(value);
+    };
+    dialog.querySelector('[data-action="cancel"]')?.addEventListener("click", () => {
+      finish(null);
+    });
+    dialog.addEventListener("cancel", () => finish(null));
+    dialog.addEventListener("close", () => finish(null));
+    dialog.querySelector("form")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      if (!(form instanceof HTMLFormElement)) return;
+      const formData = new FormData(form);
+      try {
+        const title = String(formData.get("title") || "").trim();
+        const key = slugifyCatalogKey(String(formData.get("key") || ""));
+        const description = String(formData.get("description") || "").trim();
+        const status = String(formData.get("status") || "draft").trim().toLowerCase();
+        if (!title) {
+          throw new Error("Поле «Название» обязательно.");
+        }
+        if (!key) {
+          throw new Error("Поле «Ключ» обязательно.");
+        }
+        const advanced = parseCatalogAdvancedJson(formData.get("advanced_config"));
+        const payload = { title, key, description, status, config: advanced };
+        meta.fields.forEach((field) => {
+          const raw = formData.get(field.name);
+          if (raw === null) return;
+          const value = String(raw).trim();
+          if (!value) return;
+          payload[field.name] = field.type === "number" ? Number(value) : value;
+        });
+        finish(payload);
+      } catch (error) {
+        window.alert(String(error?.message || error));
+      }
+    });
+    dialog.showModal();
+  });
+}
+
+function extractCatalogEditableData(itemPayload) {
+  const item = itemPayload?.item || {};
+  const versions = Array.isArray(itemPayload?.versions) ? itemPayload.versions : [];
+  const topVersion = versions[0]?.payload_json;
+  const metadataConfig = item?.metadata_json?.config;
+  const config = (topVersion && typeof topVersion === "object" && !Array.isArray(topVersion) && Object.keys(topVersion).length)
+    ? topVersion
+    : (metadataConfig && typeof metadataConfig === "object" ? metadataConfig : {});
+  return {
+    id: item.id,
+    title: String(item.title || ""),
+    status: String(item.status || config.status || "draft"),
+    key: String(item.content_key || config.key || ""),
+    description: String(config.description || ""),
+    config,
+  };
+}
 }
 
 async function loadCatalog(entityType = activeCatalogEntity) {
@@ -2914,12 +3130,11 @@ catalogHost?.addEventListener("click", async (event) => {
     return;
   }
   if (target.id === "catalog-create") {
-    openCatalogModal({
-      mode: "edit",
-      isCreate: true,
-      item: { title: "", config: {} },
-      versions: [],
-    });
+  if (target.id === "catalog-create") {
+    const payload = await openCatalogFormDialog(activeCatalogEntity);
+    if (!payload) return;
+    await performAdminAction(catalogEndpoint(activeCatalogEntity), "Элемент создан.", payload);
+    await loadCatalog(activeCatalogEntity);
     return;
   }
   const viewId = target.getAttribute("data-catalog-view");
@@ -2938,30 +3153,28 @@ catalogHost?.addEventListener("click", async (event) => {
     });
     return;
   }
-  const viewId = target.getAttribute("data-catalog-view");
-  if (viewId) {
-    const response = await apiFetch(catalogEndpoint(activeCatalogEntity, viewId));
-    const payload = await parsePayload(response);
-    if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить поля элемента."));
-      return;
-    }
-    renderCatalogPreview(payload);
     return;
   }
   const editId = target.getAttribute("data-catalog-edit");
   if (editId) {
-    const response = await apiFetch(catalogEndpoint(activeCatalogEntity, editId));
-    const payload = await parsePayload(response);
-    if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить элемент catalog."));
+  const editId = target.getAttribute("data-catalog-edit");
+  if (editId) {
+    const itemResponse = await apiFetch(catalogEndpoint(activeCatalogEntity, editId));
+    const itemPayload = await parsePayload(itemResponse);
+    if (!itemResponse.ok) {
+      setStateError(errorsHost, formatHttpError(itemResponse, itemPayload, "Не удалось загрузить элемент catalog."));
       return;
     }
-    openCatalogModal({
-      mode: "edit",
-      itemId: editId,
-      item: payload?.item || {},
-      versions: Array.isArray(payload?.versions) ? payload.versions : [],
+    const payload = await openCatalogFormDialog(activeCatalogEntity, extractCatalogEditableData(itemPayload));
+    if (!payload) return;
+    const response = await apiFetch(catalogEndpoint(activeCatalogEntity, editId), {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    if (response.ok) showMessage("Элемент обновлен.");
+    await loadCatalog(activeCatalogEntity);
+    return;
+  }
     });
     return;
   }
@@ -3113,3 +3326,4 @@ Promise.all([
 ]).then(() => {
   scheduleLiveRefresh();
 });
+
