@@ -3,6 +3,15 @@
 Status: initial baseline  
 Date: 2026-04-14
 
+## Execution Status
+
+- Active phase: `Phase A`
+- Active task: `Phase A complete`
+- Status: `done`
+- Inventory slices completed: `5`
+- Next slice: `Phase B.1 data model draft and persistence skeleton`
+- Last updated: `2026-04-14`
+
 ## Critical user/admin journeys
 
 1. Authentication: `/login` + profile/session management.
@@ -92,3 +101,312 @@ Date: 2026-04-14
    - one procedure
 4. Freeze pilot acceptance KPIs and fallback criteria.
 
+## Verified inventory slices
+
+### Slice 1 — Authentication flow (`/api/auth/*`, `/api/profile*`)
+
+**Routes**
+- `web/ogp_web/routes/auth.py`
+- `web/ogp_web/routes/profile.py`
+
+**Primary dependencies**
+- `ogp_web.dependencies.get_user_store`
+- `ogp_web.dependencies.requires_permission`
+- `ogp_web.services.auth_service`
+- `ogp_web.services.profile_service`
+- `ogp_web.services.email_service`
+- `ogp_web.storage.user_store.UserStore`
+- `ogp_web.rate_limit.auth_rate_limit`
+
+**Confirmed route -> service -> storage map**
+- `GET /api/auth/me`
+  - route auth guard: `requires_permission()`
+  - session/user resolution: `auth_service.require_user` -> `request.app.state.user_store` or default `UserStore`
+  - storage authority: `UserStore.get_auth_user`, `UserStore.is_access_blocked`
+- `POST /api/auth/register`
+  - route: `auth.py`
+  - rate limit: `auth_rate_limit(..., "register", request.app.state.rate_limiter)`
+  - storage write authority: `UserStore.register(...)`
+  - side effect: `email_service.send_verification_email(...)` via threadpool
+- `POST /api/auth/login`
+  - route: `auth.py`
+  - rate limit: `auth_rate_limit(..., "login", request.app.state.rate_limiter)`
+  - storage read authority: `UserStore.authenticate(...)`
+  - session cookie authority: `auth_service.set_auth_cookie(...)`
+- `POST /api/auth/resend-verification`
+  - storage authority: `UserStore.issue_email_verification_token(...)`
+  - side effect: `email_service.send_verification_email(...)`
+- `POST /api/auth/logout`
+  - session cookie authority: `auth_service.clear_auth_cookie(...)`
+- `POST /api/auth/forgot-password`
+  - rate limit: `auth_rate_limit(..., "forgot-password", request.app.state.rate_limiter)`
+  - storage authority: `UserStore.issue_password_reset_token(...)`
+  - side effect: `email_service.send_password_reset_email(...)`
+- `POST /api/auth/reset-password`
+  - storage authority: `UserStore.reset_password(...)`
+  - session cookie authority: `auth_service.set_auth_cookie(...)`
+- `POST /api/auth/change-password`
+  - auth guard: `requires_permission()`
+  - storage authority: `UserStore.change_password(...)`
+  - session cookie authority: `auth_service.set_auth_cookie(...)`
+- `GET /api/profile`
+  - auth guard: `requires_permission()`
+  - service wrapper: `profile_service.get_profile_payload(...)`
+  - storage authority: `UserStore.get_representative_profile(...)`
+- `PUT /api/profile`
+  - auth guard: `requires_permission()`
+  - service wrapper: `profile_service.save_profile_payload(...)`
+  - storage authority: `UserStore.save_representative_profile(...)`
+- `PATCH /api/profile/selected-server`
+  - auth guard: `require_user`
+  - storage authority: `UserStore.set_selected_server_code(...)`, `UserStore.get_complaint_draft(...)`
+  - server config dependency: `server_config.registry.get_server_config(...)`
+  - draft normalization dependency: `complaint_draft_schema.normalize_complaint_draft(...)`, `classify_switch_actions(...)`
+
+**Storage/infrastructure anchor**
+- Primary storage authority for auth/profile/session state: `web/ogp_web/storage/user_store.py`
+- Backing repository abstraction: `web/ogp_web/storage/user_repository.py`
+- Backend factory: `web/ogp_web/db/factory.py`
+- Session token/cookie logic is not DB-backed directly; it is handled in `web/ogp_web/services/auth_service.py`
+
+**Current migration seam note**
+- This slice already mixes route-level auth/session logic, cookie/session logic, email side effects, and user/profile persistence around one storage authority (`UserStore`).
+- For migration planning, auth/profile should likely stay route-contract stable while persistence/runtime resolution moves behind adapter/service boundaries rather than being split first.
+
+### Slice 2 - Complaint/case flow (`/api/complaint-*`, `/api/generate*`, `/api/cases*`)
+
+**Routes**
+- `web/ogp_web/routes/complaint.py`
+- `web/ogp_web/routes/cases.py`
+- `web/ogp_web/routes/validation.py`
+- `web/ogp_web/routes/document_builder.py`
+
+**Primary dependencies**
+- `web/ogp_web/services/complaint_service.py`
+- `web/ogp_web/services/generation_orchestrator.py`
+- `web/ogp_web/services/case_service.py`
+- `web/ogp_web/services/document_service.py`
+- `web/ogp_web/services/validation_service.py`
+- `web/ogp_web/services/retrieval_service.py`
+- `web/ogp_web/services/citation_service.py`
+- `web/ogp_web/services/feature_flag_service.py`
+- `web/ogp_web/repositories/case_repository.py`
+- `web/ogp_web/repositories/document_repository.py`
+- `web/ogp_web/repositories/validation_repository.py`
+- `web/ogp_web/storage/user_store.py`
+- `web/ogp_web/storage/admin_metrics_store.py`
+
+**Confirmed route -> service -> storage map**
+- Complaint generation and related runtime endpoints in `web/ogp_web/routes/complaint.py` (`/api/complaint-draft`, `/api/generate`, `/api/generate-rehab`, generated document history/snapshot, AI suggestion, law QA, citations, feedback):
+  - payload/profile shaping: `web/ogp_web/services/complaint_service.py`
+  - generation persistence bridge: `web/ogp_web/services/generation_orchestrator.py`
+  - retrieval/citations: `web/ogp_web/services/retrieval_service.py`, `web/ogp_web/services/citation_service.py`
+  - validation reads: `web/ogp_web/services/validation_service.py` -> `web/ogp_web/repositories/validation_repository.py`
+  - user draft/profile authority: `web/ogp_web/storage/user_store.py`
+  - admin metrics side effects: `web/ogp_web/storage/admin_metrics_store.py`
+- Case/document workflow endpoints in `web/ogp_web/routes/cases.py` (`/api/cases`, `/api/cases/{id}`, `/api/cases/{id}/documents`, `/api/documents/{id}/versions`, `/api/documents/{id}/status`):
+  - case domain service: `web/ogp_web/services/case_service.py` -> `web/ogp_web/repositories/case_repository.py`
+  - document domain service: `web/ogp_web/services/document_service.py` -> `web/ogp_web/repositories/document_repository.py` + `CaseRepository`
+  - runtime gates: `web/ogp_web/services/feature_flag_service.py` (`cases_v1`, `documents_v2`)
+- Validation retrieval endpoints in `web/ogp_web/routes/validation.py` (`/api/document-versions/{version_id}/validation`, `/api/law-qa-runs/{run_id}/validation`, `/api/validation-runs/{run_id}`):
+  - thin route wrappers over `ValidationService` -> `ValidationRepository`
+- Document builder endpoint in `web/ogp_web/routes/document_builder.py` (`/api/document-builder/bundle`):
+  - bundle assembly path is still coupled to the same complaint/generation-side runtime flow rather than a separate modular backend boundary
+
+**Storage/infrastructure anchor**
+- Draft/profile context for complaint generation: `web/ogp_web/storage/user_store.py`
+- Generated case/document/version persistence: `web/ogp_web/repositories/case_repository.py`, `web/ogp_web/repositories/document_repository.py`
+- Validation persistence: `web/ogp_web/repositories/validation_repository.py`
+- Complaint generation snapshot building already resolves server-aware config inputs before persistence via `web/ogp_web/services/complaint_service.py`
+
+**Current migration seam note**
+- This slice is partially modularized already: request parsing and payload shaping live in `complaint_service`, while durable case/document/version writes are centralized in `generation_orchestrator`, `case_service`, and `document_service`.
+- The route layer still coordinates too many concerns directly: permissions, feature flags, retrieval, citations, validation, metrics, and persistence triggers.
+- For migration planning, the safest seam is to keep current request/response contracts stable and continue moving orchestration into dedicated domain services while preserving repository-backed persistence boundaries.
+- This slice depends on the auth/profile slice because selected-server and representative profile state materially affect complaint generation inputs.
+
+### Slice 3 - Admin review and configuration operations (`/admin*`, `/api/admin/*`)
+
+**Routes**
+- `web/ogp_web/routes/admin.py`
+- `web/ogp_web/routes/pages.py`
+
+**Primary dependencies**
+- `web/ogp_web/services/admin_dashboard_service.py`
+- `web/ogp_web/services/content_workflow_service.py`
+- `web/ogp_web/services/law_admin_service.py`
+- `web/ogp_web/services/synthetic_runner_service.py`
+- `web/ogp_web/services/law_bundle_service.py`
+- `web/ogp_web/services/law_version_service.py`
+- `web/ogp_web/storage/admin_metrics_store.py`
+- `web/ogp_web/storage/admin_catalog_store.py`
+- `web/ogp_web/storage/runtime_servers_store.py`
+- `web/ogp_web/storage/runtime_law_sets_store.py`
+- `web/ogp_web/storage/exam_answers_store.py`
+- `web/ogp_web/storage/content_workflow_repository.py`
+- `web/ogp_web/storage/admin_dashboard_repository.py`
+
+**Confirmed route -> service -> storage map**
+- Admin HTML shells (`/admin`, `/admin/dashboard`, `/admin/users`, `/admin/servers`, `/admin/laws`, `/admin/templates`, `/admin/features`, `/admin/rules`) in `admin.py` are still page-entry wrappers over one broad admin surface.
+- Runtime server and runtime law-set endpoints (`/api/admin/runtime-servers*`, `/api/admin/law-sets*`, `/api/admin/runtime-servers/{server_code}/law-bindings`) primarily use `RuntimeServersStore`, `RuntimeLawSetsStore`, and `AdminMetricsStore`.
+- Catalog and publication workflow endpoints (`/api/admin/catalog/*`, `/api/admin/change-requests/{id}/review`, rollback/workflow actions) primarily use `ContentWorkflowService` -> `ContentWorkflowRepository`, with legacy fallback context from `AdminCatalogStore` and law-specific publication flows from `LawAdminService`.
+- Dashboard/overview/quality/performance endpoints (`/api/admin/dashboard*`, `/api/admin/overview`, `/api/admin/ai-pipeline`, `/api/admin/performance`, `/api/admin/users*`, `/api/admin/role-history`, CSV exports) primarily use `AdminDashboardService` -> `AdminDashboardRepository`, `AdminMetricsStore`, `ExamAnswersStore`, and `SyntheticRunnerService`.
+- User moderation endpoints (`/api/admin/users/{username}/*`, bulk actions, task polling) still rely on route-level orchestration plus `UserStore`, `AdminMetricsStore`, and in-memory/file-backed admin task tracking inside `admin.py`.
+
+**Storage/infrastructure anchor**
+- Metrics and admin operational telemetry: `web/ogp_web/storage/admin_metrics_store.py`
+- Content workflow persistence boundary: `web/ogp_web/storage/content_workflow_repository.py`
+- Legacy admin catalog fallback: `web/ogp_web/storage/admin_catalog_store.py`
+- Runtime server and law-set persistence: `web/ogp_web/storage/runtime_servers_store.py`, `web/ogp_web/storage/runtime_law_sets_store.py`
+
+**Current migration seam note**
+- `admin.py` remains the largest monolithic route surface in the repo and is the clearest current hotspot for Risk 3.
+- A stronger modular seam already exists underneath it: dashboard, content workflow, law admin, runtime server, and synthetic runner services are separable bounded contexts even though the route layer still aggregates them in one file.
+- For migration planning, admin read surfaces should be split by domain first, while mutation flows continue to preserve current route contracts until service boundaries are tightened further.
+
+### Slice 4 - Exam import processing (`/api/exam-import/*`)
+
+**Routes**
+- `web/ogp_web/routes/exam_import.py`
+
+**Primary dependencies**
+- `web/ogp_web/services/exam_import_service.py`
+- `web/ogp_web/services/exam_import_tasks.py`
+- `web/ogp_web/services/exam_sheet_service.py`
+- `web/ogp_web/storage/exam_answers_store.py`
+- `web/ogp_web/storage/admin_metrics_store.py`
+- `shared/ogp_ai.py`
+
+**Confirmed route -> service -> storage map**
+- Sync/list/score endpoints in `exam_import.py` use `run_in_threadpool(...)` wrappers around `exam_import_service` and `ExamAnswersStore`.
+- Bulk score, failed-row rescore, row score, and task polling depend on `ExamImportTaskRegistry`, `ExamAnswersStore`, `AdminMetricsStore`, and `shared.ogp_ai` scoring helpers with batch and single-item proxy fallback.
+- `exam_import_service.py` owns retry policy for invalid batch results through batch retry, single-item retry, stage tracing, and scoring stats aggregation.
+
+**Storage/infrastructure anchor**
+- Imported exam rows and score state: `web/ogp_web/storage/exam_answers_store.py`
+- Task-state persistence and capacity enforcement: `web/ogp_web/services/exam_import_tasks.py`
+- Metrics and failure visibility: `web/ogp_web/storage/admin_metrics_store.py`
+
+**Current migration seam note**
+- This slice is already isolated enough to migrate independently, but it carries explicit async/retry risk because threadpool work, task registry state, and AI fallback logic are coordinated across route and service boundaries.
+- It is a strong candidate for Phase E stabilization work rather than early runtime-model migration.
+
+### Slice 5 - Exports/attachments lifecycle (`/api/document-versions/*/exports`, `/api/*attachments*`, `/api/jobs*`)
+
+**Routes**
+- `web/ogp_web/routes/exports.py`
+- `web/ogp_web/routes/attachments.py`
+- `web/ogp_web/routes/jobs.py`
+
+**Primary dependencies**
+- `web/ogp_web/services/export_service.py`
+- `web/ogp_web/services/attachment_service.py`
+- `web/ogp_web/services/async_job_service.py`
+- `web/ogp_web/services/object_storage_service.py`
+- `web/ogp_web/storage/artifact_repository.py`
+- `web/ogp_web/storage/case_repository.py`
+
+**Confirmed route -> service -> storage map**
+- Export endpoints in `exports.py` use `ExportService`, `ArtifactRepository`, `ObjectStorageService`, and `AsyncJobService` for async export mode.
+- Attachment endpoints in `attachments.py` use `AttachmentService`, `ArtifactRepository`, and `ObjectStorageService`.
+- Generic job endpoints in `jobs.py` use `AsyncJobService` and `CaseRepository.get_user_id_by_username(...)` for actor resolution, with server-scoped permission checks on reads, retries, and cancellation.
+- `AsyncJobService` already defines explicit job statuses, per-job retry policies, idempotency-key generation and deduplication, and a queue-provider publication boundary.
+
+**Storage/infrastructure anchor**
+- Artifact persistence boundary: `web/ogp_web/storage/artifact_repository.py`
+- Async job persistence boundary: `async_jobs` / `job_attempts` via `web/ogp_web/services/async_job_service.py`
+- Blob/object boundary: `web/ogp_web/services/object_storage_service.py`
+
+**Current migration seam note**
+- This slice already resembles the target architecture more than the older runtime flows do: artifacts are repository-backed, object storage is behind a service, and async jobs have explicit state transitions and retry semantics.
+- The main migration need is operational hardening and consistent visibility in admin/ops surfaces, not a large domain rewrite.
+
+## Hardcoded server-dependent paths (Phase A.1 inventory)
+
+### High risk
+- `web/ogp_web/server_config/blackberry.py`
+- `web/ogp_web/server_config/packs/blackberry.bootstrap.json`
+- `web/ogp_web/server_config/registry.py`
+- `web/ogp_web/storage/user_store.py`
+- `web/ogp_web/routes/pages.py`
+- `web/ogp_web/services/document_builder_bundle_service.py`
+
+Why high risk:
+- default server and bootstrap data still assume `blackberry`
+- only one bootstrap server pack is first-class in code and migrations
+- several entry points still fall back to `"blackberry"` directly instead of resolving fully from versioned config
+
+### Medium risk
+- `web/ogp_web/routes/complaint.py`
+- `web/ogp_web/services/complaint_service.py`
+- `web/ogp_web/services/ai_service.py`
+- `web/ogp_web/services/law_admin_service.py`
+- `web/ogp_web/routes/admin.py`
+
+Why medium risk:
+- these paths are already server-aware through `get_server_config(...)` and related services
+- risk is not direct hardcoded branching so much as continued coupling to legacy server config/runtime pack assumptions
+
+### Lower risk / expected guard paths
+- server-scope access checks in `cases.py`, `validation.py`, `attachment_service.py`, `export_service.py`, `document_service.py`, `case_service.py`
+
+Why lower risk:
+- these checks enforce tenant/server boundaries rather than encode server-specific business rules
+
+## Async operations and retry/error handling locations
+
+- `web/ogp_web/routes/exam_import.py`
+  - threadpool wrappers for sync I/O
+  - delegated task registry endpoints
+- `web/ogp_web/services/exam_import_service.py`
+  - batch retry and single-item retry for failed AI scoring
+  - failed-row aggregation and metrics logging
+- `web/ogp_web/services/exam_import_tasks.py`
+  - queued/running/failed/completed task lifecycle and capacity enforcement
+- `web/ogp_web/services/async_job_service.py`
+  - durable job state machine, idempotency, retries, dead-letter transitions, queue publication
+- `web/ogp_web/services/export_service.py`
+  - sync vs async export split; async export creation delegates into `AsyncJobService`
+- `web/ogp_web/routes/complaint.py`
+  - concurrency limiter and retry-after behavior for suggest/law-QA related AI operations
+- `web/ogp_web/services/ai_service.py`
+  - context-compaction and validation-retry flow for suggest/law-QA generation
+- `web/ogp_web/routes/admin.py`
+  - in-memory/file-backed task tracking for admin bulk actions and async law rebuild operations
+
+## Reference pilot (Phase A.2)
+
+- Reference server: `blackberry`
+- Reference procedure: `complaint`
+- Why this pilot:
+  - it is the only fully first-class bootstrap server in current repo state
+  - it touches the most important migration seams at once: auth/profile selection, server config lookup, complaint generation, validation, citations, case/document persistence, and admin review
+  - it is rich enough to validate config-as-data goals without starting with the more volatile exam-import async surface
+
+### Pilot acceptance checklist
+
+- `GET/PUT/PATCH /api/profile*` continues to resolve and persist selected server correctly.
+- `GET/PUT/DELETE /api/complaint-draft` remains behavior-compatible for `blackberry`.
+- `POST /api/generate` for `document_kind=complaint` produces stable persisted case/document/version output.
+- validation reads and citation reads still resolve against the generated document version.
+- admin overview and admin catalog/law-source read surfaces can explain the pilot server state without raw internal-only terminology.
+- no new scattered `if server == "blackberry"` logic is introduced while migrating the pilot.
+
+### Pilot KPIs and fallback criteria
+
+- KPI 1: route compatibility
+  - no contract regressions on auth/profile/complaint endpoints for the pilot scenario
+- KPI 2: output drift
+  - in shadow mode, complaint output mismatches are logged and classified before any active cutover
+- KPI 3: persistence integrity
+  - case/document/version rows, validation payloads, and citations remain server-scoped and queryable
+- KPI 4: admin observability
+  - admin overview can surface pilot release/integrity/validation state without requiring direct DB inspection
+- KPI 5: rollback readiness
+  - one-flag revert to legacy-only remains available for the pilot scenario until drift is acceptably low
+
+Fallback criteria:
+- any unexplained output drift in complaint generation
+- broken selected-server persistence
+- missing citations/provenance for generated pilot documents
+- async export/job instability affecting pilot documents
