@@ -531,6 +531,19 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 
 - Current active phase: `Phase G`
 - Last completed phase: `Phase F`
+- Phase G progress:
+  - pilot rollout visibility is now exposed in `admin/dashboard`
+  - the ops workspace now includes a `Pilot rollout` block backed by `/api/admin/dashboard/sections/release`
+  - the block derives canonical pilot state (`legacy_only` / `shadow_compare` / `new_runtime_active`) from `pilot_runtime_adapter_v1` and `pilot_shadow_compare_v1`
+  - fallback and rollback signals are now visible before any pilot activation change
+  - `PILOT_ACTIVATION_CHECKLIST.md` added as the first explicit preflight gate for `G.1`
+  - the dashboard rollout block now includes an inline activation checklist before cutover
+  - `SCALE_OUT_CHECKLIST_TEMPLATE.md` added as the first reusable template for `G.3`
+  - `LEGACY_DEPRECATION_CANDIDATES.md` added as the first cleanup list for post-observation removal work
+  - `PILOT_CUTOVER_REPORT_TEMPLATE.md` added as the first post-decision record template for `G.2`
+  - the dashboard rollout block now includes `Operator playbooks` so preflight, cutover, scale-out, and deprecation references stay visible in one place
+  - `PILOT_OBSERVATION_LOG_TEMPLATE.md` added for repeated observation-window checkpoints during `G.2`
+  - the dashboard rollout block now includes `Observation guidance` for warning signals, fallback usage, rollback readiness, and review journaling
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`

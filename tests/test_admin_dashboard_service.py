@@ -74,6 +74,9 @@ def test_dashboard_aggregation_contains_all_sections():
 
     assert set(payload.keys()) == {"release", "generation_law_qa", "jobs", "validation", "content", "integrity", "synthetic"}
     assert isinstance(payload["release"]["feature_flags"], list)
+    flags = {item["flag"] for item in payload["release"]["feature_flags"]}
+    assert "pilot_runtime_adapter_v1" in flags
+    assert "pilot_shadow_compare_v1" in flags
 
 
 def test_dashboard_scope_filtering_uses_user_server_scope():

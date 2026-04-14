@@ -454,6 +454,18 @@ Fallback criteria:
 
 - Current active phase: `Phase G`
 - Last completed phase: `Phase F`
+- Phase G progress:
+  - pilot rollout visibility is now exposed in the `admin/dashboard` ops workspace
+  - rollout state is derived from `pilot_runtime_adapter_v1` and `pilot_shadow_compare_v1`
+  - fallback signals and rollback history are now visible before enabling pilot cutover
+  - pilot preflight gating is now documented in `PILOT_ACTIVATION_CHECKLIST.md`
+  - the same preflight checklist is rendered inline in the `Pilot rollout` dashboard block
+  - `SCALE_OUT_CHECKLIST_TEMPLATE.md` added as the first reusable template for post-pilot server/procedure expansion
+  - `LEGACY_DEPRECATION_CANDIDATES.md` added to track which compatibility seams may become removable after observation
+  - `PILOT_CUTOVER_REPORT_TEMPLATE.md` added to record pilot rollout decisions, observation windows, and rollback outcomes
+  - the `Pilot rollout` block now surfaces operator playbooks for activation, cutover recording, scale-out, and legacy deprecation follow-up
+  - `PILOT_OBSERVATION_LOG_TEMPLATE.md` added for repeated observation-window reviews before sign-off
+  - the `Pilot rollout` block now includes `Observation guidance` so warning signals, fallback counts, rollback readiness, and review journaling stay visible in one place
 - Phase F outcome:
   - provenance baseline mapped in `PROVENANCE_SCHEMA.md` for `blackberry + complaint`
   - read-only provenance assembler and API added for `document_version_id`

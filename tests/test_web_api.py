@@ -738,6 +738,7 @@ class WebApiTests(unittest.TestCase):
 
         events_csv = self.client.get("/api/admin/events.csv")
         self.assertEqual(events_csv.status_code, 200)
+
         self.assertIn("text/csv", events_csv.headers["content-type"])
         self.assertIn("created_at,username,event_type,path", events_csv.text)
 
