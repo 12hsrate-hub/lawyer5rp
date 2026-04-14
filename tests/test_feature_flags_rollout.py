@@ -69,3 +69,13 @@ def test_enforcement_default_warn_for_policy_flags(monkeypatch):
     validation = service.evaluate(flag='validation_gate_v1', context=RolloutContext(username='u1', server_id='s1'))
     assert citations.enforcement == EnforcementMode.WARN
     assert validation.enforcement == EnforcementMode.WARN
+
+
+def test_pilot_flags_are_supported(monkeypatch):
+    _reset(monkeypatch)
+    monkeypatch.setenv('OGP_FEATURE_FLAG_PILOT_SHADOW_COMPARE_V1_MODE', 'all')
+    service = FeatureFlagService()
+    shadow = service.evaluate(flag='pilot_shadow_compare_v1', context=RolloutContext(username='u1', server_id='blackberry'))
+    adapter = service.evaluate(flag='pilot_runtime_adapter_v1', context=RolloutContext(username='u1', server_id='blackberry'))
+    assert shadow.use_new_flow is True
+    assert adapter.use_new_flow is False

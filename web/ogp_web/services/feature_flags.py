@@ -34,6 +34,8 @@ FEATURE_FLAGS = (
     "citations_required",
     "validation_gate_v1",
     "async_jobs_v1",
+    "pilot_runtime_adapter_v1",
+    "pilot_shadow_compare_v1",
 )
 
 

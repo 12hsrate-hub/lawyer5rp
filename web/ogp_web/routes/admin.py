@@ -1780,6 +1780,25 @@ async def admin_catalog_review_action(
     return {"ok": True, "result": result}
 
 
+@router.get("/api/admin/change-requests/{change_request_id}/validate")
+async def admin_catalog_validate_change_request(
+    change_request_id: int,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+):
+    try:
+        result = workflow_service.validate_change_request(
+            change_request_id=change_request_id,
+            server_scope="server",
+            server_id=user.server_code,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    except (KeyError, PermissionError) as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+    return {"ok": True, "result": result}
+
+
 
 
 @router.post("/api/admin/catalog/{entity_type}")

@@ -11,6 +11,18 @@ Date: 2026-04-14
 - Inventory slices completed: `5`
 - Next slice: `Phase B.1 data model draft and persistence skeleton`
 - Last updated: `2026-04-14`
+- Phase C progress:
+  - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
+  - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
+  - Initial glossary baseline added in `docs/ADMIN_GLOSSARY.md`.
+  - Explicit page-shell subdomains are in place for servers, laws, templates, features, and rules.
+- Phase D progress:
+  - `ContentWorkflowService` now exposes explicit change-request validation for pilot editable entities.
+  - Submit-for-review and publish paths now revalidate the candidate version before state transition.
+  - `EDITABLE_WORKFLOW_CHECKLIST.md` added as the first editable workflow contract for pilot entities.
+  - Existing catalog workflow UI now exposes a `validate draft` action path for workflow-backed entities in draft state.
+  - High-risk two-person approval is now enforced for `procedures`, `templates`, and `validation_rules`.
+  - `PUBLISH_RELEASE_CHECKLIST.md` added as the first release gate checklist for pilot publish actions.
 
 ## Critical user/admin journeys
 

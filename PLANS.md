@@ -6,9 +6,11 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 
 ## Current Execution State
 
+- Current phase: `Phase B — Runtime model foundation + single source-of-truth contract`
+- Current task: `Phase D complete`
+- Active execution phase override: `Phase D - Editable admin + draft/publish/rollback/audit`
+- Current micro-step: `Pilot editable workflow lifecycle completed with validation, review, publish, rollback, audit, and release checklist gates`
 - Current phase: `Phase A — Baseline inventory + migration map`
-- Current task: `Phase A complete`
-- Current micro-step: `Phase A deliverables completed and approved for handoff into Phase B`
 - Overall status: `done`
 - Last updated: `2026-04-14`
 - Notes:
@@ -120,7 +122,10 @@ Dependencies: none.
 
 ## Phase B — Runtime model foundation + single source-of-truth contract (1-2 sprints)
 
+Execution status: `done`
+
 ### B.1 Data model draft and persistence skeleton
+Status: `done`
 Introduce versioned DB model families (minimal first):
 - server_config_version
 - procedure_version
@@ -131,18 +136,23 @@ Introduce versioned DB model families (minimal first):
 - publication/audit events
 
 ### B.2 Read-path adapters
+Status: `done`
 - Keep legacy endpoints.
 - Add adapter layer that can resolve config from new model behind feature flags.
 - Default remains legacy for all non-pilot scenarios.
+- Initial implementation slice complete for `blackberry + complaint` via `pilot_runtime_adapter.py` and `pilot_runtime_adapter_v1`.
 
 ### B.3 Drift detection
+Status: `done`
 - Add shadow compare for pilot scenario: legacy output vs new-runtime-derived output.
 - Persist mismatch logs with reason category.
+- Initial implementation slice complete via `pilot_runtime_shadow_compare` metrics events and `scripts/report_pilot_drift.py`.
 
 ### Deliverables
 - `DATA_MODEL_DRAFT.md`
 - feature flags matrix (`legacy_only`, `shadow_compare`, `new_runtime_active`)
 - drift-report script/check
+- Implemented pilot adapter seam with workflow-backed published reads + legacy fallback for `blackberry + complaint`
 
 ### Acceptance
 - Pilot scenario can run in `shadow_compare` mode with measurable drift report.
@@ -158,6 +168,7 @@ Dependencies: Phase A.
 ## Phase C — Visual Admin read-only modules (1 sprint)
 
 ### C.1 Read-only domain slices
+Status: `done`
 Build separate admin views (read-only first):
 - Servers
 - Procedures
@@ -168,6 +179,7 @@ Build separate admin views (read-only first):
 - Publications/Audit
 
 ### C.2 UX language baseline
+Status: `done`
 - Human-readable naming dictionary (user/admin-facing).
 - Ban raw internal identifiers in visible labels by default.
 
@@ -175,6 +187,13 @@ Build separate admin views (read-only first):
 - `UI_ADMIN_STRUCTURE.md`
 - read-only pages for pilot domain entities
 - initial glossary
+- `docs/ADMIN_GLOSSARY.md`
+
+Current Phase C progress:
+- catalog-domain read-only shell added for `/admin/servers|laws|templates|features|rules`
+- first explicit law-domain submodule shell added for `Law Sources`, `Law Sets`, `Source Registry`, and `Server Bindings`
+- page-shell domain maps added for `Servers`, `Templates`, `Capabilities`, and `Validation Rules`
+- `Phase C` acceptance reached via separated read-only page shells and initial glossary-backed labeling
 
 ### Acceptance
 - Admin can navigate pilot scenario config end-to-end without code.
@@ -190,6 +209,7 @@ Dependencies: Phase B.
 ## Phase D — Editable admin + draft/publish/rollback/audit (2 sprints)
 
 ### D.1 Editable workflows
+Status: `done`
 For pilot entities, implement:
 - create draft
 - validate draft
@@ -197,7 +217,16 @@ For pilot entities, implement:
 - rollback to previous version
 - audit event timeline
 
+Current D.1 progress:
+- server-side `validate_change_request` added for workflow-backed pilot entities
+- submit-for-review and publish now revalidate candidate versions before state transition
+- `EDITABLE_WORKFLOW_CHECKLIST.md` added as the first editable workflow contract
+- existing catalog workflow UI now has a `validate draft` action path wired to the validation endpoint
+- `PUBLISH_RELEASE_CHECKLIST.md` added as the first publish gate checklist for pilot entities
+- high-risk two-person approval gate added for `procedures`, `templates`, and `validation_rules`
+
 ### D.2 Publication gates
+Status: `done`
 - Publish blocked on validation errors.
 - Two-person review option for high-risk entities (laws/templates/rules).
 
@@ -205,6 +234,8 @@ For pilot entities, implement:
 - publication workflow endpoints + UI
 - audit ledger for config changes
 - release checklist per published bundle
+- `EDITABLE_WORKFLOW_CHECKLIST.md`
+- `PUBLISH_RELEASE_CHECKLIST.md`
 
 ### Acceptance
 - Admin can safely change pilot scenario without touching code.

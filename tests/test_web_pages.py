@@ -157,6 +157,88 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn('/static/shared/admin_actions.js', response.text)
         self.assertIn('/static/shared/admin_law_runtime_controller.js', response.text)
         self.assertIn('/static/pages/admin.js', response.text)
+        self.assertIn('href="#admin-law-domain-map"', response.text)
+        self.assertIn("Law Domain Map", response.text)
+        self.assertIn("Law Sources", response.text)
+        self.assertIn("Law Sets", response.text)
+        self.assertIn("Server Bindings", response.text)
+
+    def test_admin_servers_page_contains_phase_c_read_only_domain_summary(self):
+        self.client.post("/api/auth/logout")
+        response = self.client.post(
+            "/api/auth/register",
+            json={"username": "12345", "email": "admin@example.com", "password": "Password123!"},
+        )
+        verify_url = response.json()["verification_url"]
+        split = urlsplit(verify_url)
+        self.client.get(f"{split.path}?{split.query}")
+        self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
+
+        response = self.client.get("/admin/servers")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('href="#admin-domain-summary"', response.text)
+        self.assertIn("Read-only domain slice", response.text)
+        self.assertIn("Configuration Catalog", response.text)
+        self.assertIn("Runtime and configuration workspace", response.text)
+        self.assertIn("Runtime inventory, active server state, and linked configuration bundles.", response.text)
+        self.assertIn('href="#admin-server-domain-map"', response.text)
+        self.assertIn("Server Domain Map", response.text)
+        self.assertIn("Activation State", response.text)
+        self.assertIn("Linked Configuration", response.text)
+
+    def test_admin_templates_page_contains_template_domain_map(self):
+        self.client.post("/api/auth/logout")
+        response = self.client.post(
+            "/api/auth/register",
+            json={"username": "12345", "email": "admin@example.com", "password": "Password123!"},
+        )
+        verify_url = response.json()["verification_url"]
+        split = urlsplit(verify_url)
+        self.client.get(f"{split.path}?{split.query}")
+        self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
+
+        response = self.client.get("/admin/templates")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('href="#admin-template-domain-map"', response.text)
+        self.assertIn("Template Domain Map", response.text)
+        self.assertIn("Document Templates", response.text)
+        self.assertIn("Preview and Versions", response.text)
+
+    def test_admin_features_page_contains_capability_domain_map(self):
+        self.client.post("/api/auth/logout")
+        response = self.client.post(
+            "/api/auth/register",
+            json={"username": "12345", "email": "admin@example.com", "password": "Password123!"},
+        )
+        verify_url = response.json()["verification_url"]
+        split = urlsplit(verify_url)
+        self.client.get(f"{split.path}?{split.query}")
+        self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
+
+        response = self.client.get("/admin/features")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('href="#admin-feature-domain-map"', response.text)
+        self.assertIn("Capability Domain Map", response.text)
+        self.assertIn("Capabilities", response.text)
+        self.assertIn("Scenario Impact", response.text)
+
+    def test_admin_rules_page_contains_rule_domain_map(self):
+        self.client.post("/api/auth/logout")
+        response = self.client.post(
+            "/api/auth/register",
+            json={"username": "12345", "email": "admin@example.com", "password": "Password123!"},
+        )
+        verify_url = response.json()["verification_url"]
+        split = urlsplit(verify_url)
+        self.client.get(f"{split.path}?{split.query}")
+        self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
+
+        response = self.client.get("/admin/rules")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('href="#admin-rule-domain-map"', response.text)
+        self.assertIn("Rule Domain Map", response.text)
+        self.assertIn("Validation Rules", response.text)
+        self.assertIn("Publishing Gate", response.text)
 
     def test_granted_tester_redirected_from_test_pages(self):
         response = self.client.post(
