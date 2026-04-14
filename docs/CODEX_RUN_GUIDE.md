@@ -37,5 +37,6 @@ If optional tooling is missing, checks must print a clear `skip` or `hint` messa
 ## Expected Checks
 - Python syntax validation for point3 test files
 - Point3 pytest suite
+- Admin runtime API pytest subset (`catalog_audit` / `platform_blueprint_status`) when `fastapi` dependency is available
 - `git diff --check`
 - optional shell lint when available
