@@ -82,10 +82,23 @@ const userIndex = new Map();
 let activeCatalogEntity = String(catalogHost?.dataset.catalogEntity || "servers");
 let activeSyntheticSuite = "";
 let pendingCatalogContext = null;
+let activeLawServerCode = "";
+let lawServerOptions = [];
 
 function catalogEndpoint(entityType, itemId = "") {
   const suffix = itemId ? `/${encodeURIComponent(itemId)}` : "";
   return `/api/admin/catalog/${encodeURIComponent(entityType)}${suffix}`;
+}
+
+function withLawServerQuery(path) {
+  const selected = String(activeLawServerCode || "").trim();
+  if (!selected) return path;
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}server_code=${encodeURIComponent(selected)}`;
+}
+
+function getLawServerSelect() {
+  return document.getElementById("law-sources-server-select");
 }
 
 function formatCatalogPreviewValue(value) {
@@ -124,16 +137,69 @@ function renderCatalogPreview(payload) {
   host.hidden = false;
 }
 
+function renderLawServerSelector() {
+  const select = getLawServerSelect();
+  if (!(select instanceof HTMLSelectElement)) {
+    return;
+  }
+  const options = lawServerOptions.length ? lawServerOptions : [{ code: activeLawServerCode, title: activeLawServerCode }];
+  const safeOptions = options.filter((item) => String(item?.code || "").trim());
+  select.innerHTML = safeOptions
+    .map((item) => {
+      const code = String(item.code || "").trim().toLowerCase();
+      const title = String(item.title || code).trim();
+      const isSelected = code === String(activeLawServerCode || "").trim().toLowerCase();
+      return `<option value="${escapeHtml(code)}" ${isSelected ? "selected" : ""}>${escapeHtml(`${title} (${code})`)}</option>`;
+    })
+    .join("");
+}
+
+async function loadLawServerOptions() {
+  if (!catalogHost || activeCatalogEntity !== "laws") return;
+  const response = await apiFetch("/api/admin/runtime-servers");
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    lawServerOptions = [];
+    return;
+  }
+  const rows = Array.isArray(payload?.items) ? payload.items : [];
+  lawServerOptions = rows
+    .filter((item) => item && String(item.code || "").trim())
+    .map((item) => ({
+      code: String(item.code || "").trim().toLowerCase(),
+      title: String(item.title || "").trim(),
+      is_active: Boolean(item.is_active),
+    }));
+  if (!activeLawServerCode) {
+    const firstActive = lawServerOptions.find((item) => item.is_active);
+    if (firstActive?.code) {
+      activeLawServerCode = firstActive.code;
+    } else if (lawServerOptions[0]?.code) {
+      activeLawServerCode = lawServerOptions[0].code;
+    }
+  }
+  renderLawServerSelector();
+}
+
 async function loadLawSourcesManager() {
   if (!catalogHost || activeCatalogEntity !== "laws") {
     return;
   }
-  const response = await apiFetch("/api/admin/law-sources");
+  const select = getLawServerSelect();
+  if (select instanceof HTMLSelectElement && select.value) {
+    activeLawServerCode = String(select.value || "").trim().toLowerCase();
+  }
+  const response = await apiFetch(withLawServerQuery("/api/admin/law-sources"));
   const payload = await parsePayload(response);
   if (!response.ok) {
     setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить источники законов."));
     return;
   }
+  const payloadServerCode = String(payload?.server_code || "").trim().toLowerCase();
+  if (payloadServerCode) {
+    activeLawServerCode = payloadServerCode;
+  }
+  renderLawServerSelector();
   const textarea = document.getElementById("law-sources-textarea");
   const statusHost = document.getElementById("law-sources-status");
   if (textarea) {
@@ -176,7 +242,7 @@ function renderLawSourcesHistory(payload) {
 }
 
 async function loadLawSourcesHistory() {
-  const response = await apiFetch("/api/admin/law-sources/history?limit=8");
+  const response = await apiFetch(withLawServerQuery("/api/admin/law-sources/history?limit=8"));
   const payload = await parsePayload(response);
   if (!response.ok) {
     return;
@@ -231,6 +297,7 @@ async function rebuildLawSources() {
   const response = await apiFetch("/api/admin/law-sources/rebuild", {
     method: "POST",
     body: JSON.stringify({
+      server_code: activeLawServerCode,
       source_urls: sourceUrls,
       persist_sources: true,
     }),
@@ -262,7 +329,7 @@ function setLawActionButtonsDisabled(disabled) {
 
 async function pollLawRebuildTask(taskId) {
   const statusHost = document.getElementById("law-sources-task-status");
-  const response = await apiFetch(`/api/admin/law-sources/tasks/${encodeURIComponent(taskId)}`);
+  const response = await apiFetch(withLawServerQuery(`/api/admin/law-sources/tasks/${encodeURIComponent(taskId)}`));
   const payload = await parsePayload(response);
   if (!response.ok) {
     stopLawRebuildPolling();
@@ -306,6 +373,7 @@ async function rebuildLawSourcesAsync() {
   const response = await apiFetch("/api/admin/law-sources/rebuild-async", {
     method: "POST",
     body: JSON.stringify({
+      server_code: activeLawServerCode,
       source_urls: sourceUrls,
       persist_sources: true,
     }),
@@ -343,6 +411,7 @@ async function saveLawSourcesManifest() {
   const response = await apiFetch("/api/admin/law-sources/save", {
     method: "POST",
     body: JSON.stringify({
+      server_code: activeLawServerCode,
       source_urls: sourceUrls,
       persist_sources: true,
     }),
@@ -366,6 +435,7 @@ async function previewLawSources() {
   const response = await apiFetch("/api/admin/law-sources/preview", {
     method: "POST",
     body: JSON.stringify({
+      server_code: activeLawServerCode,
       source_urls: sourceUrls,
       persist_sources: false,
     }),
@@ -396,7 +466,7 @@ async function previewLawSources() {
 }
 
 async function syncLawSourcesFromServerConfig() {
-  const response = await apiFetch("/api/admin/law-sources/sync", {
+  const response = await apiFetch(withLawServerQuery("/api/admin/law-sources/sync"), {
     method: "POST",
     body: JSON.stringify({}),
   });
@@ -484,6 +554,10 @@ function renderCatalog(payload) {
     <div class="legal-subcard">
       <div class="admin-section-toolbar">
         <strong>Источники законов</strong>
+        <label class="legal-field" style="min-width:260px">
+          <span class="legal-field__label">Сервер (обязательно)</span>
+          <select id="law-sources-server-select"></select>
+        </label>
         <div>
           <button type="button" id="law-sources-sync" class="ghost-button">Синхронизировать текущие</button>
           <button type="button" id="law-sources-save" class="ghost-button">Сохранить без пересборки</button>
@@ -952,6 +1026,7 @@ async function loadCatalog(entityType = activeCatalogEntity) {
     await loadRuntimeServersPanel();
   }
   if (entityType === "laws") {
+    await loadLawServerOptions();
     await loadLawSourcesManager();
   }
 }
@@ -3477,6 +3552,11 @@ catalogHost?.addEventListener("change", async (event) => {
   if (!(target instanceof HTMLElement)) return;
   if (target.id === "catalog-entity") {
     await loadCatalog(String(target.value || "servers"));
+    return;
+  }
+  if (target.id === "law-sources-server-select") {
+    activeLawServerCode = String(target.value || "").trim().toLowerCase();
+    await loadLawSourcesManager();
   }
 });
 

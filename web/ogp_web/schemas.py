@@ -560,5 +560,11 @@ class AdminCatalogRollbackPayload(BaseModel):
 
 
 class AdminLawSourcesPayload(BaseModel):
+    server_code: str = ""
     source_urls: list[str] = Field(default_factory=list)
     persist_sources: bool = True
+
+    @field_validator("server_code")
+    @classmethod
+    def validate_server_code(cls, value: str) -> str:
+        return str(value or "").strip().lower()

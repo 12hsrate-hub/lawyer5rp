@@ -1029,6 +1029,11 @@ def _resolve_actor_user_id(user_store: UserStore, username: str) -> int:
     return int(actor_user_id)
 
 
+def _resolve_law_sources_server_code(user: AuthUser, requested_server_code: str = "") -> str:
+    normalized = str(requested_server_code or "").strip().lower()
+    return normalized or user.server_code
+
+
 def _resolve_active_change_request_id(item: dict[str, Any], change_requests: list[dict[str, Any]]) -> int | None:
     item_status = str(item.get("status") or "").strip().lower()
     if not change_requests:
@@ -1411,22 +1416,24 @@ async def admin_catalog_rollback(
 
 @router.get("/api/admin/law-sources")
 async def admin_law_sources_status(
+    server_code: str = Query(default="", description="Runtime server code override"),
     user: AuthUser = Depends(requires_permission("manage_laws")),
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
+    target_server_code = _resolve_law_sources_server_code(user, server_code)
     service = LawAdminService(workflow_service)
-    snapshot = service.get_effective_sources(server_code=user.server_code)
+    snapshot = service.get_effective_sources(server_code=target_server_code)
     metrics_store.log_event(
         event_type="admin_law_sources_status",
         username=user.username,
-        server_code=user.server_code,
+        server_code=target_server_code,
         path="/api/admin/law-sources",
         method="GET",
         status_code=200,
     )
     return {
-        "server_code": user.server_code,
+        "server_code": target_server_code,
         "source_urls": list(snapshot.source_urls),
         "source_origin": snapshot.source_origin,
         "manifest_item": snapshot.manifest_item,
@@ -1439,16 +1446,18 @@ async def admin_law_sources_status(
 @router.post("/api/admin/law-sources/sync")
 async def admin_law_sources_sync(
     request: Request,
+    server_code: str = Query(default="", description="Runtime server code override"),
     user: AuthUser = Depends(requires_permission("manage_laws")),
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
+    target_server_code = _resolve_law_sources_server_code(user, server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     service = LawAdminService(workflow_service)
     try:
         result = service.sync_sources_manifest_from_server_config(
-            server_code=user.server_code,
+            server_code=target_server_code,
             actor_user_id=actor_user_id,
             request_id=getattr(request.state, "request_id", ""),
             safe_rerun=True,
@@ -1458,7 +1467,7 @@ async def admin_law_sources_sync(
     metrics_store.log_event(
         event_type="admin_law_sources_sync",
         username=user.username,
-        server_code=user.server_code,
+        server_code=target_server_code,
         path="/api/admin/law-sources/sync",
         method="POST",
         status_code=200,
@@ -1476,11 +1485,12 @@ async def admin_law_sources_rebuild(
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
+    target_server_code = _resolve_law_sources_server_code(user, payload.server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     service = LawAdminService(workflow_service)
     try:
         result = service.rebuild_index(
-            server_code=user.server_code,
+            server_code=target_server_code,
             source_urls=payload.source_urls,
             actor_user_id=actor_user_id,
             request_id=getattr(request.state, "request_id", ""),
@@ -1491,7 +1501,7 @@ async def admin_law_sources_rebuild(
     metrics_store.log_event(
         event_type="admin_law_sources_rebuild",
         username=user.username,
-        server_code=user.server_code,
+        server_code=target_server_code,
         path="/api/admin/law-sources/rebuild",
         method="POST",
         status_code=200,
@@ -1508,14 +1518,15 @@ async def admin_law_sources_rebuild_async(
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
+    target_server_code = _resolve_law_sources_server_code(user, payload.server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     request_id = getattr(request.state, "request_id", "")
-    active_task, queued_task = _claim_law_rebuild_task(server_code=user.server_code)
+    active_task, queued_task = _claim_law_rebuild_task(server_code=target_server_code)
     if active_task:
         metrics_store.log_event(
             event_type="admin_law_sources_rebuild_async_conflict",
             username=user.username,
-            server_code=user.server_code,
+            server_code=target_server_code,
             path="/api/admin/law-sources/rebuild-async",
             method="POST",
             status_code=409,
@@ -1534,7 +1545,7 @@ async def admin_law_sources_rebuild_async(
             workflow_service = _get_content_workflow_service_for_request(request)
             service = LawAdminService(workflow_service)
             result = service.rebuild_index(
-                server_code=user.server_code,
+                server_code=target_server_code,
                 source_urls=payload.source_urls,
                 actor_user_id=actor_user_id,
                 request_id=request_id,
@@ -1550,7 +1561,7 @@ async def admin_law_sources_rebuild_async(
             metrics_store.log_event(
                 event_type="admin_law_sources_rebuild_async_finished",
                 username=user.username,
-                server_code=user.server_code,
+                server_code=target_server_code,
                 path="/api/admin/law-sources/rebuild-async",
                 method="POST",
                 status_code=200,
@@ -1566,7 +1577,7 @@ async def admin_law_sources_rebuild_async(
             metrics_store.log_event(
                 event_type="admin_law_sources_rebuild_async_failed",
                 username=user.username,
-                server_code=user.server_code,
+                server_code=target_server_code,
                 path="/api/admin/law-sources/rebuild-async",
                 method="POST",
                 status_code=500,
@@ -1577,7 +1588,7 @@ async def admin_law_sources_rebuild_async(
     metrics_store.log_event(
         event_type="admin_law_sources_rebuild_async_queued",
         username=user.username,
-        server_code=user.server_code,
+        server_code=target_server_code,
         path="/api/admin/law-sources/rebuild-async",
         method="POST",
         status_code=200,
@@ -1595,11 +1606,12 @@ async def admin_law_sources_save(
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
+    target_server_code = _resolve_law_sources_server_code(user, payload.server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     service = LawAdminService(workflow_service)
     try:
         result = service.publish_sources_manifest(
-            server_code=user.server_code,
+            server_code=target_server_code,
             source_urls=payload.source_urls,
             actor_user_id=actor_user_id,
             request_id=getattr(request.state, "request_id", ""),
@@ -1610,7 +1622,7 @@ async def admin_law_sources_save(
     metrics_store.log_event(
         event_type="admin_law_sources_save",
         username=user.username,
-        server_code=user.server_code,
+        server_code=target_server_code,
         path="/api/admin/law-sources/save",
         method="POST",
         status_code=200,
@@ -1646,17 +1658,19 @@ async def admin_law_sources_preview(
 
 @router.get("/api/admin/law-sources/history")
 async def admin_law_sources_history(
+    server_code: str = Query(default="", description="Runtime server code override"),
     user: AuthUser = Depends(requires_permission("manage_laws")),
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
     limit: int = Query(default=10, ge=1, le=100),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
+    target_server_code = _resolve_law_sources_server_code(user, server_code)
     service = LawAdminService(workflow_service)
-    result = service.list_recent_versions(server_code=user.server_code, limit=limit)
+    result = service.list_recent_versions(server_code=target_server_code, limit=limit)
     metrics_store.log_event(
         event_type="admin_law_sources_history",
         username=user.username,
-        server_code=user.server_code,
+        server_code=target_server_code,
         path="/api/admin/law-sources/history",
         method="GET",
         status_code=200,
@@ -1689,20 +1703,22 @@ async def admin_law_sources_dependencies(
 @router.get("/api/admin/law-sources/tasks/{task_id}")
 async def admin_law_sources_task_status(
     task_id: str,
+    server_code: str = Query(default="", description="Runtime server code override"),
     user: AuthUser = Depends(requires_permission("manage_laws")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
+    target_server_code = _resolve_law_sources_server_code(user, server_code)
     task = _load_admin_task(task_id)
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Задача не найдена."])
     if task.get("scope") != "law_sources_rebuild":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Задача не найдена."])
-    if str(task.get("server_code") or "") != user.server_code:
+    if str(task.get("server_code") or "") != target_server_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Доступ запрещён."])
     metrics_store.log_event(
         event_type="admin_law_sources_task_status",
         username=user.username,
-        server_code=user.server_code,
+        server_code=target_server_code,
         path=f"/api/admin/law-sources/tasks/{task_id}",
         method="GET",
         status_code=200,
