@@ -80,6 +80,29 @@ class DocumentRepository:
             (document_id,),
         )
 
+    def get_document_version(self, *, version_id: int):
+        return self._fetchone(
+            """
+            SELECT id, document_id, version_number, CAST(content_json AS TEXT) AS content_json, created_by, generation_snapshot_id, created_at
+            FROM document_versions
+            WHERE id = %s
+            LIMIT 1
+            """,
+            (version_id,),
+        )
+
+    def get_latest_document_version_by_generation_snapshot_id(self, *, generation_snapshot_id: int):
+        return self._fetchone(
+            """
+            SELECT id, document_id, version_number, CAST(content_json AS TEXT) AS content_json, created_by, generation_snapshot_id, created_at
+            FROM document_versions
+            WHERE generation_snapshot_id = %s
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (generation_snapshot_id,),
+        )
+
     def create_document_version(self, *, document_id: int, content_json: Any, created_by: int, generation_snapshot_id: int | None = None):
         conn = self._connect()
         try:

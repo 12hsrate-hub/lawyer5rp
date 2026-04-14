@@ -288,6 +288,7 @@ class GenerationOrchestrator:
         row = conn.execute(
             """
             SELECT
+                gs.id AS generation_snapshot_id,
                 gs.legacy_generated_document_id AS id,
                 gs.server_id AS server_code,
                 gs.document_kind AS document_kind,
@@ -306,6 +307,7 @@ class GenerationOrchestrator:
             return None
         return {
             "id": int(row["id"]),
+            "generation_snapshot_id": int(row["generation_snapshot_id"]),
             "server_code": str(row["server_code"] or ""),
             "document_kind": str(row["document_kind"] or ""),
             "created_at": str(row["created_at"] or ""),

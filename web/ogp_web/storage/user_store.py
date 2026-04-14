@@ -859,6 +859,116 @@ class UserStore:
             "context_snapshot": snapshot,
         }
 
+    def get_generation_snapshot_by_generated_document_id(self, document_id: int) -> dict[str, Any] | None:
+        normalized_document_id = int(document_id or 0)
+        if normalized_document_id <= 0:
+            return None
+        row = self._pg_fetchone(
+            """
+            SELECT
+                gs.id AS generation_snapshot_id,
+                gs.legacy_generated_document_id AS id,
+                gs.server_id AS server_code,
+                gs.document_kind AS document_kind,
+                gs.created_at AS created_at,
+                CAST(gs.context_snapshot_json AS TEXT) AS context_snapshot_json
+            FROM generation_snapshots gs
+            WHERE gs.legacy_generated_document_id = %s
+            ORDER BY gs.id DESC
+            LIMIT 1
+            """,
+            (normalized_document_id,),
+        )
+        if row is None:
+            return None
+        try:
+            snapshot = json.loads(str(row["context_snapshot_json"] or "{}"))
+        except json.JSONDecodeError:
+            snapshot = {}
+        if not isinstance(snapshot, dict):
+            snapshot = {}
+        return {
+            "generation_snapshot_id": int(row["generation_snapshot_id"]),
+            "id": int(row["id"]),
+            "server_code": str(row["server_code"] or ""),
+            "document_kind": str(row["document_kind"] or ""),
+            "created_at": str(row["created_at"] or ""),
+            "context_snapshot": snapshot,
+        }
+
+    def list_recent_generated_documents_admin(self, *, limit: int = 10) -> list[dict[str, Any]]:
+        safe_limit = max(1, min(int(limit or 10), 50))
+        rows = self._pg_fetchall(
+            """
+            SELECT
+                gs.legacy_generated_document_id AS id,
+                gs.id AS generation_snapshot_id,
+                gs.server_id AS server_code,
+                gs.document_kind AS document_kind,
+                gs.created_at AS created_at,
+                u.username AS username
+            FROM generation_snapshots gs
+            JOIN users u ON u.id = gs.user_id
+            WHERE gs.legacy_generated_document_id IS NOT NULL
+            ORDER BY gs.created_at DESC, gs.id DESC
+            LIMIT %s
+            """,
+            (safe_limit,),
+        )
+        items: list[dict[str, Any]] = []
+        for row in rows or []:
+            items.append(
+                {
+                    "id": int(row["id"]),
+                    "generation_snapshot_id": int(row["generation_snapshot_id"]),
+                    "server_code": str(row["server_code"] or ""),
+                    "document_kind": str(row["document_kind"] or ""),
+                    "created_at": str(row["created_at"] or ""),
+                    "username": str(row["username"] or ""),
+                }
+            )
+        return items
+
+    def get_generation_snapshot_by_id(self, snapshot_id: int) -> dict[str, Any] | None:
+        normalized_snapshot_id = int(snapshot_id or 0)
+        if normalized_snapshot_id <= 0:
+            return None
+        row = self._pg_fetchone(
+            """
+            SELECT
+                gs.id,
+                gs.server_id AS server_code,
+                gs.document_kind AS document_kind,
+                gs.created_at AS created_at,
+                CAST(gs.context_snapshot_json AS TEXT) AS context_snapshot_json,
+                CAST(gs.effective_config_snapshot_json AS TEXT) AS effective_config_snapshot_json,
+                CAST(gs.content_workflow_ref_json AS TEXT) AS content_workflow_ref_json
+            FROM generation_snapshots gs
+            WHERE gs.id = %s
+            LIMIT 1
+            """,
+            (normalized_snapshot_id,),
+        )
+        if row is None:
+            return None
+
+        def _decode(value: Any) -> dict[str, Any]:
+            try:
+                payload = json.loads(str(value or "{}"))
+            except json.JSONDecodeError:
+                payload = {}
+            return payload if isinstance(payload, dict) else {}
+
+        return {
+            "id": int(row["id"]),
+            "server_code": str(row["server_code"] or ""),
+            "document_kind": str(row["document_kind"] or ""),
+            "created_at": str(row["created_at"] or ""),
+            "context_snapshot": _decode(row.get("context_snapshot_json")),
+            "effective_config_snapshot": _decode(row.get("effective_config_snapshot_json")),
+            "content_workflow_ref": _decode(row.get("content_workflow_ref_json")),
+        }
+
 
     def get_user_id(self, username: str) -> int | None:
         normalized_username = _normalize_username(username)

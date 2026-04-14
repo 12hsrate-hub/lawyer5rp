@@ -16,6 +16,13 @@ const syntheticHost = document.getElementById("admin-synthetic");
 const asyncJobsHost = document.getElementById("admin-async-jobs");
 const lawJobsHost = document.getElementById("admin-law-jobs");
 const examImportOpsHost = document.getElementById("admin-exam-import-ops");
+const provenanceTraceHost = document.getElementById("admin-provenance-trace");
+const provenanceTraceForm = document.getElementById("admin-provenance-form");
+const provenanceTraceVersionField = document.getElementById("admin-provenance-version-id");
+const provenanceTraceDocumentField = document.getElementById("admin-provenance-document-id");
+const provenanceTraceLoadButton = document.getElementById("admin-provenance-load");
+const generatedDocumentsReviewHost = document.getElementById("admin-generated-documents-review");
+const generatedDocumentContextHost = document.getElementById("admin-generated-document-context");
 const activeFiltersHost = document.getElementById("admin-active-filters");
 const userSearchField = document.getElementById("admin-user-search");
 const userSortField = document.getElementById("admin-user-sort");
@@ -1636,6 +1643,383 @@ function renderLoadingState(host, options = {}) {
   `;
 }
 
+function renderKeyValueField(label, value) {
+  return `
+    <div class="legal-field">
+      <span class="legal-field__label">${escapeHtml(label)}</span>
+      <div class="admin-user-cell__secondary">${escapeHtml(String(value || "—"))}</div>
+    </div>
+  `;
+}
+
+function renderProvenanceTraceMarkup(trace) {
+  if (!trace) {
+    return '<p class="legal-section__description">Trace не найден.</p>';
+  }
+  const config = trace.config || {};
+  const ai = trace.ai || {};
+  const retrieval = trace.retrieval || {};
+  const validation = trace.validation || {};
+  return `
+    <div class="admin-performance-grid">
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Document version</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(trace.document_version_id || "—"))}</strong>
+        <span class="admin-user-cell__secondary">${escapeHtml(String(trace.document_kind || "—"))}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Server</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(trace.server_id || "—"))}</strong>
+        <span class="admin-user-cell__secondary">Snapshot: ${escapeHtml(String(trace.generation_snapshot_id || "—"))}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Generated at</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(trace.generation_timestamp || "—"))}</strong>
+        <span class="admin-user-cell__secondary">Validation: ${escapeHtml(String(validation.latest_status || "—"))}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Retrieval</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(retrieval.citations_count || 0))}</strong>
+        <span class="admin-user-cell__secondary">Citations in final trace.</span>
+      </article>
+    </div>
+    <div class="legal-field-grid legal-field-grid--two">
+      <div class="legal-field">
+        <span class="legal-field__label">Configuration lineage</span>
+        <div class="legal-field-grid">
+          ${renderKeyValueField("Server config version", config.server_config_version)}
+          ${renderKeyValueField("Procedure version", config.procedure_version)}
+          ${renderKeyValueField("Template version", config.template_version)}
+          ${renderKeyValueField("Law set version", config.law_set_version)}
+          ${renderKeyValueField("Law version id", config.law_version_id)}
+        </div>
+      </div>
+      <div class="legal-field">
+        <span class="legal-field__label">Execution lineage</span>
+        <div class="legal-field-grid">
+          ${renderKeyValueField("AI provider", ai.provider)}
+          ${renderKeyValueField("Model id", ai.model_id)}
+          ${renderKeyValueField("Prompt version", ai.prompt_version)}
+          ${renderKeyValueField("Retrieval run id", retrieval.retrieval_run_id)}
+          ${renderKeyValueField("Citation ids", Array.isArray(retrieval.citation_ids) && retrieval.citation_ids.length ? retrieval.citation_ids.join(", ") : "—")}
+          ${renderKeyValueField("Latest validation run", validation.latest_run_id)}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderRecentGeneratedDocumentsMarkup(payload) {
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (!items.length) {
+    return '<p class="legal-section__description">Недавних generated documents сейчас нет.</p>';
+  }
+  return `
+    <div class="legal-table-shell">
+      <table class="legal-table admin-table admin-table--compact">
+        <thead><tr><th>Doc ID</th><th>User</th><th>Server</th><th>Kind</th><th>Created</th><th>Trace</th></tr></thead>
+        <tbody>
+          ${items
+            .map(
+              (item) => `
+                <tr>
+                  <td>${escapeHtml(String(item.id || "—"))}</td>
+                  <td>${escapeHtml(String(item.username || "—"))}</td>
+                  <td>${escapeHtml(String(item.server_code || "—"))}</td>
+                  <td>${escapeHtml(String(item.document_kind || "—"))}</td>
+                  <td>${escapeHtml(String(item.created_at || "—"))}</td>
+                  <td>
+                    <button
+                      type="button"
+                      class="ghost-button"
+                      data-provenance-generated-document-id="${escapeHtml(String(item.id || ""))}"
+                    >
+                      Inspect trace
+                    </button>
+                  </td>
+                </tr>
+              `,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderGeneratedDocumentContextMarkup(payload) {
+  const generatedDocument = payload?.generated_document || {};
+  const snapshotSummary = payload?.snapshot_summary || {};
+  const documentVersion = payload?.document_version || {};
+  const validationSummary = payload?.validation_summary || {};
+  const workflowLinkage = payload?.workflow_linkage || {};
+  const citationsSummary = payload?.citations_summary || {};
+  const artifactSummary = payload?.artifact_summary || {};
+  const citations = Array.isArray(citationsSummary.items) ? citationsSummary.items : [];
+  const exports = Array.isArray(artifactSummary.exports) ? artifactSummary.exports : [];
+  const attachments = Array.isArray(artifactSummary.attachments) ? artifactSummary.attachments : [];
+  return `
+    <div class="admin-performance-grid">
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Generated document</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(generatedDocument.id || "—"))}</strong>
+        <span class="admin-user-cell__secondary">${escapeHtml(String(generatedDocument.document_kind || "—"))}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Document version</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(documentVersion.id || "—"))}</strong>
+        <span class="admin-user-cell__secondary">Version: ${escapeHtml(String(documentVersion.version_number || "—"))}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Latest validation</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(validationSummary.latest_status || "—"))}</strong>
+        <span class="admin-user-cell__secondary">Issues: ${escapeHtml(String(validationSummary.issues_count || 0))}</span>
+      </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Snapshot</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(generatedDocument.generation_snapshot_id || "—"))}</strong>
+        <span class="admin-user-cell__secondary">${escapeHtml(String(generatedDocument.created_at || "—"))}</span>
+      </article>
+    </div>
+    <div class="admin-section-toolbar">
+      <a class="ghost-button" href="/api/generated-documents/${encodeURIComponent(String(generatedDocument.id || ""))}/snapshot" target="_blank" rel="noreferrer">Open snapshot API</a>
+      <a class="ghost-button" href="/api/document-versions/${encodeURIComponent(String(documentVersion.id || ""))}/validation" target="_blank" rel="noreferrer">Open validation API</a>
+      <a class="ghost-button" href="/api/document-versions/${encodeURIComponent(String(documentVersion.id || ""))}/citations" target="_blank" rel="noreferrer">Open citations API</a>
+      <a class="ghost-button" href="/api/document-versions/${encodeURIComponent(String(documentVersion.id || ""))}/exports" target="_blank" rel="noreferrer">Open exports API</a>
+    </div>
+    <div class="legal-field-grid legal-field-grid--two">
+      <div class="legal-field">
+        <span class="legal-field__label">Snapshot summary</span>
+        <div class="legal-field-grid">
+          ${renderKeyValueField("Server", generatedDocument.server_code)}
+          ${renderKeyValueField("Procedure", snapshotSummary.procedure)}
+          ${renderKeyValueField("Template version", snapshotSummary.template_version)}
+          ${renderKeyValueField("Law version set", snapshotSummary.law_version_set)}
+          ${renderKeyValueField("Validation rules", snapshotSummary.validation_rules_version)}
+          ${renderKeyValueField("Prompt version", snapshotSummary.prompt_version)}
+        </div>
+      </div>
+      <div class="legal-field">
+        <span class="legal-field__label">Content preview</span>
+        <div class="legal-table-shell">
+          <pre class="admin-ops-log">${escapeHtml(String(documentVersion.bbcode_preview || "—"))}</pre>
+        </div>
+      </div>
+    </div>
+    <div class="legal-field">
+      <span class="legal-field__label">Validation issue preview</span>
+      ${
+        Array.isArray(validationSummary.issues) && validationSummary.issues.length
+          ? `
+            <div class="legal-table-shell">
+              <table class="legal-table admin-table admin-table--compact">
+                <thead><tr><th>Code</th><th>Severity</th><th>Field</th><th>Message</th></tr></thead>
+                <tbody>
+                  ${validationSummary.issues
+                    .map(
+                      (item) => `
+                        <tr>
+                          <td>${escapeHtml(String(item.issue_code || "вЂ”"))}</td>
+                          <td>${escapeHtml(String(item.severity || "вЂ”"))}</td>
+                          <td>${escapeHtml(String(item.field_ref || "вЂ”"))}</td>
+                          <td>${escapeHtml(String(item.message || "вЂ”"))}</td>
+                        </tr>
+                      `,
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          `
+          : `<div class="admin-user-cell__secondary">Validation issues preview пока пустой.</div>`
+      }
+    </div>
+    <div class="legal-field">
+      <span class="legal-field__label">Workflow linkage</span>
+      <div class="legal-field-grid legal-field-grid--two">
+        ${renderKeyValueField("Linkage mode", workflowLinkage.linkage_mode || "вЂ”")}
+        ${renderKeyValueField("Direct catalog mapping", workflowLinkage.direct_catalog_mapping_available ? "yes" : "no")}
+        ${renderKeyValueField("Procedure ref", workflowLinkage.procedure_ref)}
+        ${renderKeyValueField("Template ref", workflowLinkage.template_ref)}
+        ${renderKeyValueField("Prompt version", workflowLinkage.prompt_version)}
+        ${renderKeyValueField("Server config version", workflowLinkage.server_config_version)}
+        ${renderKeyValueField("Law set version", workflowLinkage.law_set_version)}
+        ${renderKeyValueField("Validation run anchor", workflowLinkage.latest_validation_run_id)}
+      </div>
+      <div class="admin-user-cell__secondary">This block shows confirmed snapshot/workflow refs only. Direct change request linkage is not claimed yet.</div>
+    </div>
+    <div class="legal-field">
+      <span class="legal-field__label">Citation drilldown</span>
+      ${
+        citations.length
+          ? `
+            <div class="legal-table-shell">
+              <table class="legal-table admin-table admin-table--compact">
+                <thead><tr><th>Ref</th><th>Usage</th><th>Excerpt</th></tr></thead>
+                <tbody>
+                  ${citations
+                    .map(
+                      (item) => `
+                        <tr>
+                          <td>${escapeHtml(String(item.canonical_ref || "—"))}</td>
+                          <td>${escapeHtml(String(item.usage_type || "—"))}</td>
+                          <td>${escapeHtml(String(item.quoted_text || "—"))}</td>
+                        </tr>
+                      `,
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          `
+          : `<div class="admin-user-cell__secondary">Цитат в этом review context пока нет. Всего: ${escapeHtml(String(citationsSummary.count || 0))}</div>`
+      }
+    </div>
+    <div class="legal-field-grid legal-field-grid--two">
+      <div class="legal-field">
+        <span class="legal-field__label">Export artifacts</span>
+        ${
+          exports.length
+            ? `
+              <div class="legal-table-shell">
+                <table class="legal-table admin-table admin-table--compact">
+                  <thead><tr><th>ID</th><th>Format</th><th>Status</th><th>Created</th></tr></thead>
+                  <tbody>
+                    ${exports
+                      .map(
+                        (item) => `
+                          <tr>
+                            <td>${escapeHtml(String(item.id || "—"))}</td>
+                            <td>${escapeHtml(String(item.format || "—"))}</td>
+                            <td>${escapeHtml(String(item.status || "—"))}</td>
+                            <td>${escapeHtml(String(item.created_at || "—"))}</td>
+                          </tr>
+                        `,
+                      )
+                      .join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : `<div class="admin-user-cell__secondary">Export artifacts пока нет. Всего: ${escapeHtml(String(artifactSummary.exports_count || 0))}</div>`
+        }
+      </div>
+      <div class="legal-field">
+        <span class="legal-field__label">Attachments</span>
+        ${
+          attachments.length
+            ? `
+              <div class="legal-table-shell">
+                <table class="legal-table admin-table admin-table--compact">
+                  <thead><tr><th>ID</th><th>Filename</th><th>Status</th><th>Link</th></tr></thead>
+                  <tbody>
+                    ${attachments
+                      .map(
+                        (item) => `
+                          <tr>
+                            <td>${escapeHtml(String(item.id || "—"))}</td>
+                            <td>${escapeHtml(String(item.filename || "—"))}</td>
+                            <td>${escapeHtml(String(item.upload_status || "—"))}</td>
+                            <td>${escapeHtml(String(item.link_type || "—"))}</td>
+                          </tr>
+                        `,
+                      )
+                      .join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : `<div class="admin-user-cell__secondary">Attachments пока нет. Всего: ${escapeHtml(String(artifactSummary.attachments_count || 0))}</div>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+async function loadDocumentProvenanceTrace() {
+  if (!provenanceTraceHost || !provenanceTraceVersionField || !provenanceTraceDocumentField) {
+    return;
+  }
+  const versionId = Number(provenanceTraceVersionField.value || "0");
+  const generatedDocumentId = Number(provenanceTraceDocumentField.value || "0");
+  const hasVersionId = Number.isInteger(versionId) && versionId > 0;
+  const hasGeneratedDocumentId = Number.isInteger(generatedDocumentId) && generatedDocumentId > 0;
+  if (!hasVersionId && !hasGeneratedDocumentId) {
+    setStateError(errorsHost, "Укажите корректный document version id или generated document id.");
+    provenanceTraceVersionField.focus();
+    return;
+  }
+  clearMessage();
+  setStateIdle(errorsHost);
+  provenanceTraceLoadButton && (provenanceTraceLoadButton.disabled = true);
+  renderLoadingState(provenanceTraceHost, { count: 4, compact: true });
+  try {
+    const endpoint = hasVersionId
+      ? `/api/document-versions/${encodeURIComponent(String(versionId))}/provenance`
+      : `/api/admin/generated-documents/${encodeURIComponent(String(generatedDocumentId))}/provenance`;
+    const response = await apiFetch(endpoint);
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      const targetLabel = hasVersionId ? `version #${versionId}` : `generated document #${generatedDocumentId}`;
+      provenanceTraceHost.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, `Не удалось загрузить provenance trace для ${targetLabel}.`))}</p>`;
+      return;
+    }
+    provenanceTraceHost.innerHTML = renderProvenanceTraceMarkup(payload);
+    showMessage(
+      hasVersionId
+        ? `Provenance trace для document version #${versionId} загружен.`
+        : `Provenance trace для generated document #${generatedDocumentId} загружен.`,
+    );
+  } catch (error) {
+    provenanceTraceHost.innerHTML = `<p class="legal-section__description">${escapeHtml(error?.message || "Не удалось загрузить provenance trace.")}</p>`;
+  } finally {
+    provenanceTraceLoadButton && (provenanceTraceLoadButton.disabled = false);
+  }
+}
+
+async function loadRecentGeneratedDocuments({ silent = false } = {}) {
+  if (!generatedDocumentsReviewHost) {
+    return;
+  }
+  if (!silent) {
+    renderLoadingState(generatedDocumentsReviewHost, { count: 4, compact: true });
+  }
+  try {
+    const response = await apiFetch("/api/admin/generated-documents/recent?limit=8");
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      generatedDocumentsReviewHost.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить recent generated documents."))}</p>`;
+      return;
+    }
+    generatedDocumentsReviewHost.innerHTML = renderRecentGeneratedDocumentsMarkup(payload);
+  } catch (error) {
+    generatedDocumentsReviewHost.innerHTML = `<p class="legal-section__description">${escapeHtml(error?.message || "Не удалось загрузить recent generated documents.")}</p>`;
+  }
+}
+
+async function loadGeneratedDocumentReviewContext(documentId) {
+  if (!generatedDocumentContextHost) {
+    return;
+  }
+  const normalizedId = Number(documentId || "0");
+  if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
+    generatedDocumentContextHost.innerHTML = '<p class="legal-section__description">Выберите корректный generated document.</p>';
+    return;
+  }
+  renderLoadingState(generatedDocumentContextHost, { count: 4, compact: true });
+  try {
+    const response = await apiFetch(`/api/admin/generated-documents/${encodeURIComponent(String(normalizedId))}/review-context`);
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      generatedDocumentContextHost.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, `Не удалось загрузить review context для generated document #${normalizedId}.`))}</p>`;
+      return;
+    }
+    generatedDocumentContextHost.innerHTML = renderGeneratedDocumentContextMarkup(payload);
+  } catch (error) {
+    generatedDocumentContextHost.innerHTML = `<p class="legal-section__description">${escapeHtml(error?.message || "Не удалось загрузить review context.")}</p>`;
+  }
+}
+
 function showOverviewLoading() {
   renderLoadingState(totalsHost, { count: 6 });
   renderLoadingState(performanceHost, { count: 4, compact: true });
@@ -2846,6 +3230,7 @@ refreshNowButton?.addEventListener("click", async () => {
     loadAdminAsyncJobs(),
     loadLawJobsOverview(),
     loadExamImportOps(),
+    loadRecentGeneratedDocuments({ silent: true }),
     loadAiPipeline(),
     loadRoleHistory(),
   ]);
@@ -2867,6 +3252,26 @@ asyncJobsHost?.addEventListener("click", async (event) => {
     return;
   }
   await handleAsyncJobAction(target);
+});
+provenanceTraceForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await loadDocumentProvenanceTrace();
+});
+generatedDocumentsReviewHost?.addEventListener("click", async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  const button = target.closest("[data-provenance-generated-document-id]");
+  if (!(button instanceof HTMLButtonElement) || !provenanceTraceDocumentField) {
+    return;
+  }
+  provenanceTraceVersionField && (provenanceTraceVersionField.value = "");
+  provenanceTraceDocumentField.value = String(button.getAttribute("data-provenance-generated-document-id") || "");
+  await Promise.all([
+    loadDocumentProvenanceTrace(),
+    loadGeneratedDocumentReviewContext(provenanceTraceDocumentField.value),
+  ]);
 });
 
 userModal.bind(
@@ -2918,6 +3323,7 @@ document.addEventListener("visibilitychange", () => {
       loadAdminAsyncJobs({ silent: true }),
       loadLawJobsOverview(),
       loadExamImportOps({ silent: true }),
+      loadRecentGeneratedDocuments({ silent: true }),
       loadAiPipeline({ silent: true }),
       loadRoleHistory({ silent: true }),
     ]);
@@ -2933,6 +3339,7 @@ Promise.all([
   loadAdminAsyncJobs(),
   loadLawJobsOverview(),
   loadExamImportOps(),
+  loadRecentGeneratedDocuments(),
   loadAiPipeline(),
   loadRoleHistory(),
   loadCatalog(),

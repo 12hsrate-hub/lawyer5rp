@@ -331,6 +331,41 @@
             <span class="admin-user-cell__secondary">Pending scoring, failed entries, and recent import/scoring failures.</span>
           </div>
           <div id="admin-exam-import-ops"></div>
+          <div class="admin-section-toolbar">
+            <span class="legal-field__label">Document provenance trace</span>
+            <span class="admin-user-cell__secondary">Read-only trace for one generated document version: config, model, retrieval, and validation lineage.</span>
+          </div>
+          <form id="admin-provenance-form" class="legal-field-grid legal-field-grid--two">
+            <label class="legal-field legal-field--full">
+              <span class="legal-field__label">Document version ID</span>
+              <input id="admin-provenance-version-id" type="number" min="1" step="1" inputmode="numeric" placeholder="Например, 101" />
+            </label>
+            <label class="legal-field legal-field--full">
+              <span class="legal-field__label">Generated document ID</span>
+              <input id="admin-provenance-document-id" type="number" min="1" step="1" inputmode="numeric" placeholder="Например, 25" />
+            </label>
+            <div class="admin-section-toolbar">
+              <button type="submit" id="admin-provenance-load" class="ghost-button">Load trace</button>
+              <span class="admin-user-cell__secondary">Приоритет у `document version id`; если он пустой, admin bridge использует `generated document id`.</span>
+            </div>
+          </form>
+          <div id="admin-provenance-trace">
+            <p class="legal-section__description">Укажите `document version id`, чтобы загрузить provenance trace для pilot complaint flow.</p>
+          </div>
+          <div class="admin-section-toolbar">
+            <span class="legal-field__label">Recent generated documents</span>
+            <span class="admin-user-cell__secondary">Inline review surface for quick provenance lookup from the latest generated complaint outputs.</span>
+          </div>
+          <div id="admin-generated-documents-review">
+            <p class="legal-section__description">Загружаем последние generated documents...</p>
+          </div>
+          <div class="admin-section-toolbar">
+            <span class="legal-field__label">Generated document review</span>
+            <span class="admin-user-cell__secondary">Inline review context with snapshot summary, latest validation, and short content preview.</span>
+          </div>
+          <div id="admin-generated-document-context">
+            <p class="legal-section__description">Выберите recent generated document, чтобы открыть review context рядом с provenance.</p>
+          </div>
         </div>
       </section>
       {% endif %}

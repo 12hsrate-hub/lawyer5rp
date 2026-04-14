@@ -142,6 +142,15 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn('id="admin-law-jobs"', response.text)
         self.assertIn("Exam import", response.text)
         self.assertIn('id="admin-exam-import-ops"', response.text)
+        self.assertIn("Document provenance trace", response.text)
+        self.assertIn('id="admin-provenance-form"', response.text)
+        self.assertIn('id="admin-provenance-version-id"', response.text)
+        self.assertIn('id="admin-provenance-document-id"', response.text)
+        self.assertIn('id="admin-provenance-trace"', response.text)
+        self.assertIn("Recent generated documents", response.text)
+        self.assertIn('id="admin-generated-documents-review"', response.text)
+        self.assertIn("Generated document review", response.text)
+        self.assertIn('id="admin-generated-document-context"', response.text)
 
     def test_admin_laws_page_contains_guided_server_setup_block(self):
         self.client.post("/api/auth/logout")

@@ -119,10 +119,12 @@ class GeneratedDocumentHistoryResponse(BaseModel):
 
 class GeneratedDocumentSnapshotResponse(BaseModel):
     id: int
+    generation_snapshot_id: int | None = None
     server_code: str = ""
     document_kind: str = ""
     created_at: str = ""
     context_snapshot: dict[str, Any] = Field(default_factory=dict)
+    provenance: DocumentVersionProvenanceResponse | None = None
 
 
 class RehabPayload(BaseModel):
@@ -211,6 +213,43 @@ class DocumentVersionCitationsResponse(BaseModel):
 
 class LawQaRunCitationsResponse(BaseModel):
     items: List[CitationRecord] = Field(default_factory=list)
+
+
+class DocumentVersionProvenanceConfig(BaseModel):
+    server_config_version: str = ""
+    procedure_version: str = ""
+    template_version: str = ""
+    law_set_version: str = ""
+    law_version_id: int | None = None
+
+
+class DocumentVersionProvenanceAi(BaseModel):
+    provider: str = ""
+    model_id: str = ""
+    prompt_version: str = ""
+
+
+class DocumentVersionProvenanceRetrieval(BaseModel):
+    retrieval_run_id: int | None = None
+    citation_ids: List[int] = Field(default_factory=list)
+    citations_count: int = 0
+
+
+class DocumentVersionProvenanceValidation(BaseModel):
+    latest_run_id: int | None = None
+    latest_status: str = ""
+
+
+class DocumentVersionProvenanceResponse(BaseModel):
+    document_version_id: int
+    server_id: str = ""
+    document_kind: str = ""
+    generation_timestamp: str = ""
+    generation_snapshot_id: int | None = None
+    config: DocumentVersionProvenanceConfig = Field(default_factory=DocumentVersionProvenanceConfig)
+    ai: DocumentVersionProvenanceAi = Field(default_factory=DocumentVersionProvenanceAi)
+    retrieval: DocumentVersionProvenanceRetrieval = Field(default_factory=DocumentVersionProvenanceRetrieval)
+    validation: DocumentVersionProvenanceValidation = Field(default_factory=DocumentVersionProvenanceValidation)
 
 
 class LawQaResponse(BaseModel):

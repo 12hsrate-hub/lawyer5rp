@@ -12,6 +12,11 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current micro-step: `Phase E checkpoint prepared for git push`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
+- Execution override update:
+  - `Phase E` is accepted.
+  - Active start is now `Phase F`.
+  - Active task is `F.1 Provenance schema`.
+  - Active micro-step is the provenance baseline in `PROVENANCE_SCHEMA.md`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -340,6 +345,14 @@ Persist minimum explainability metadata for generated outputs:
 - prompt version
 - generation timestamp
 
+Status update:
+- `in_progress`
+- provenance baseline documented in `PROVENANCE_SCHEMA.md`
+- read-only trace assembler implemented for `document_version_id`
+- read-only API surface added for `GET /api/document-versions/{version_id}/provenance`
+- generated document snapshot now includes provenance as a first traceable read surface
+- next micro-step: expose the same trace in a dedicated admin trace section instead of snapshot-only access
+
 ### F.2 Admin traceability surface
 - Show provenance in document review/admin/audit views.
 - Expose why a document used particular law/context inputs.
@@ -513,3 +526,21 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
   - provenance complete for pilot generated outputs
 - Phase G:
   - pilot stable in observation window and rollback-ready
+
+## Execution override update
+
+- Current active phase: `Phase G`
+- Last completed phase: `Phase F`
+- Phase F completed:
+  - provenance baseline documented in `PROVENANCE_SCHEMA.md`
+  - read-only provenance assembler implemented for `document_version_id`
+  - read-only provenance API added at `/api/document-versions/{id}/provenance`
+  - generated document snapshot now includes `generation_snapshot_id` and `provenance`
+  - admin dashboard now includes provenance lookup by `document version id` and `generated document id`
+  - admin dashboard now includes a recent-generated-documents review surface with one-click `Inspect trace`
+  - review context now combines snapshot summary, workflow linkage, validation summary, validation issue preview, content preview, citation drilldown, and artifact/export summary
+  - safe review drilldown links now exist for snapshot/validation/citations/exports APIs
+- Phase F acceptance:
+  - pilot generated output trace is explainable end-to-end from admin UI without direct DB inspection
+- Next phase:
+  - `Phase G` observation window, stabilization, and rollout checkpointing

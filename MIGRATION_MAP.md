@@ -449,3 +449,21 @@ Fallback criteria:
 - broken selected-server persistence
 - missing citations/provenance for generated pilot documents
 - async export/job instability affecting pilot documents
+
+## Execution Status
+
+- Current active phase: `Phase G`
+- Last completed phase: `Phase F`
+- Phase F outcome:
+  - provenance baseline mapped in `PROVENANCE_SCHEMA.md` for `blackberry + complaint`
+  - read-only provenance assembler and API added for `document_version_id`
+  - generated document snapshot enriched with provenance payload
+  - admin dashboard now includes provenance lookup by both `document version id` and `generated document id`
+  - admin dashboard now includes an inline review surface with recent generated documents and `Inspect trace`
+  - review context now includes snapshot summary, validation summary, validation issue preview, content preview, citation drilldown, artifact/export summary, and workflow-linkage anchors
+  - safe drilldown links now exist for snapshot/validation/citations/exports APIs
+- Phase F acceptance:
+  - pilot generated output trace is now visible end-to-end in admin review context without DB inspection
+  - explainability surface covers config/model/retrieval/validation/artifact context for the pilot complaint flow
+- Next phase:
+  - `Phase G` observation, stabilization, and rollout checkpointing

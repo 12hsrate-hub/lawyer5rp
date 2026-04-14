@@ -24,6 +24,7 @@ from ogp_web.schemas import (
     GeneratedDocumentSnapshotResponse,
     LawQaPayload,
     DocumentVersionCitationsResponse,
+    DocumentVersionProvenanceResponse,
     LawQaResponse,
     LawQaRunCitationsResponse,
     PrincipalScanPayload,
@@ -46,6 +47,7 @@ from ogp_web.services.pilot_runtime_adapter import (
     resolve_pilot_complaint_runtime_context,
     supports_pilot_runtime_adapter,
 )
+from ogp_web.services.provenance_service import ProvenanceService
 from ogp_web.services.regression_metrics import (
     build_rollout_labels,
     record_async_queue_lag,
@@ -56,6 +58,7 @@ from ogp_web.services.regression_metrics import (
 from ogp_web.services.validation_service import ValidationService
 from ogp_web.services.retrieval_service import run_retrieval
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
+from ogp_web.storage.document_repository import DocumentRepository
 from ogp_web.storage.user_store import UserStore
 from ogp_web.storage.validation_repository import ValidationRepository
 
@@ -532,7 +535,22 @@ async def generated_document_snapshot(
     )
     if snapshot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Документ не найден."])
-    return GeneratedDocumentSnapshotResponse(**snapshot)
+    payload = dict(snapshot)
+    provenance = None
+    generation_snapshot_id = int(payload.get("generation_snapshot_id") or 0)
+    if generation_snapshot_id > 0:
+        document_repository = DocumentRepository(store.backend)
+        version_row = document_repository.get_latest_document_version_by_generation_snapshot_id(
+            generation_snapshot_id=generation_snapshot_id,
+        )
+        if version_row:
+            service = ProvenanceService(
+                document_repository=document_repository,
+                user_store=store,
+                validation_service=ValidationService(ValidationRepository(store.backend)),
+            )
+            provenance = service.get_document_version_trace(document_version_id=int(version_row["id"]))
+    return GeneratedDocumentSnapshotResponse(**payload, provenance=provenance)
 
 
 @router.post("/api/ai/suggest", response_model=SuggestResponse)
@@ -889,6 +907,30 @@ async def document_version_citations(
     _ = user
     items = store.get_document_version_citations(document_version_id=version_id, server_id=user.server_code)
     return DocumentVersionCitationsResponse(items=items)
+
+
+@router.get("/api/document-versions/{version_id}/provenance", response_model=DocumentVersionProvenanceResponse)
+async def document_version_provenance(
+    version_id: int,
+    user: AuthUser = Depends(requires_permission()),
+    store: UserStore = Depends(get_user_store),
+) -> DocumentVersionProvenanceResponse:
+    validation_repository = ValidationRepository(store.backend)
+    target = validation_repository.get_document_version_target(version_id=version_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Document version not found."])
+    if str(target.get("server_id") or "") != user.server_code:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Недостаточно прав для документа."])
+
+    service = ProvenanceService(
+        document_repository=DocumentRepository(store.backend),
+        user_store=store,
+        validation_service=ValidationService(validation_repository),
+    )
+    payload = service.get_document_version_trace(document_version_id=version_id)
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Provenance trace not found."])
+    return DocumentVersionProvenanceResponse(**payload)
 
 
 @router.get("/api/law-qa-runs/{run_id}/citations", response_model=LawQaRunCitationsResponse)
