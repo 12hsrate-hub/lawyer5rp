@@ -12,7 +12,11 @@ from ogp_web.services.law_bundle_service import (
     resolve_law_bundle_path,
     write_law_bundle,
 )
-from ogp_web.services.law_version_service import import_law_snapshot, resolve_active_law_version
+from ogp_web.services.law_version_service import (
+    import_law_snapshot,
+    list_recent_law_versions,
+    resolve_active_law_version,
+)
 
 
 LAW_SOURCES_CONTENT_TYPE = "laws"
@@ -317,4 +321,12 @@ class LawAdminService:
             "duplicate_count": validation.duplicate_count,
             "accepted_count": len(validation.accepted_urls),
             "invalid_count": len(validation.invalid_urls),
+        }
+
+    def list_recent_versions(self, *, server_code: str, limit: int = 10) -> dict[str, Any]:
+        rows = list_recent_law_versions(server_code=server_code, limit=limit)
+        return {
+            "ok": True,
+            "items": [row.__dict__ for row in rows],
+            "count": len(rows),
         }
