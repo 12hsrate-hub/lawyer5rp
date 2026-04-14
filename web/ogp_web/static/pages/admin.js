@@ -75,6 +75,42 @@ function catalogEndpoint(entityType, itemId = "") {
   return `/api/admin/catalog/${encodeURIComponent(entityType)}${suffix}`;
 }
 
+function formatCatalogPreviewValue(value) {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+  if (typeof value === "string") {
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2);
+    } catch {
+      return value;
+    }
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value, null, 2);
+  }
+  return String(value);
+}
+
+function renderCatalogPreview(payload) {
+  const host = document.getElementById("catalog-preview");
+  const summaryHost = document.getElementById("catalog-preview-summary");
+  const bodyHost = document.getElementById("catalog-preview-body");
+  if (!host || !summaryHost || !bodyHost) {
+    return;
+  }
+  const item = payload?.item || {};
+  const effectivePayload = payload?.effective_payload || {};
+  const effectiveVersion = payload?.effective_version || {};
+  summaryHost.innerHTML = `
+    <strong>${escapeHtml(String(item.title || "—"))}</strong>
+    <span class="admin-user-cell__secondary">status: ${escapeHtml(String(item.status || item.state || "draft"))}</span>
+    <span class="admin-user-cell__secondary">version: ${escapeHtml(String(effectiveVersion?.version_number ?? item.current_published_version_id ?? item.version_number ?? "—"))}</span>
+  `;
+  bodyHost.textContent = formatCatalogPreviewValue(effectivePayload);
+  host.hidden = false;
+}
+
 function renderCatalog(payload) {
   if (!catalogHost) return;
   const entityType = payload?.entity_type || activeCatalogEntity;
@@ -136,6 +172,7 @@ function renderCatalog(payload) {
                 <td>${escapeHtml(String(version))}</td>
                 <td>${escapeHtml(author)}</td>
                 <td>
+                  <button type="button" class="ghost-button" data-catalog-view="${escapeHtml(String(item.id || ""))}">Поля</button>
                   <button type="button" class="ghost-button" data-catalog-edit="${escapeHtml(String(item.id || ""))}">Изменить</button>
                   <button type="button" class="ghost-button" data-catalog-next="${escapeHtml(String(item.id || ""))}">Далее</button>
                   <button type="button" class="ghost-button" data-catalog-rollback="${escapeHtml(String(item.id || ""))}">Откат</button>
@@ -148,6 +185,10 @@ function renderCatalog(payload) {
             : '<tr><td colspan="5" class="legal-section__description">Для этого раздела пока нет записей.</td></tr>'}
         </tbody>
       </table>
+      <div id="catalog-preview" class="legal-subcard" hidden>
+        <div id="catalog-preview-summary" class="legal-section__description"></div>
+        <pre id="catalog-preview-body" class="legal-field__hint">—</pre>
+      </div>
     </div>
     <p class="legal-section__description">Журнал изменений (автор и diff):</p>
     <pre class="legal-field__hint">${escapeHtml(audit.slice(0, 8).map((row) => `${row.created_at} ${row.author} ${row.action} ${row.workflow_from || ""}->${row.workflow_to || ""}\n${row.diff || ""}`).join("\n\n"))}</pre>
@@ -2503,6 +2544,17 @@ catalogHost?.addEventListener("click", async (event) => {
       config: JSON.parse(raw),
     });
     await loadCatalog(activeCatalogEntity);
+    return;
+  }
+  const viewId = target.getAttribute("data-catalog-view");
+  if (viewId) {
+    const response = await apiFetch(catalogEndpoint(activeCatalogEntity, viewId));
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить поля элемента."));
+      return;
+    }
+    renderCatalogPreview(payload);
     return;
   }
   const editId = target.getAttribute("data-catalog-edit");
