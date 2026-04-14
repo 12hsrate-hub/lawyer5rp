@@ -202,7 +202,6 @@ class WebApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 200)
-
         response = self.client.post(
             "/api/generate",
             json={
@@ -252,6 +251,30 @@ class WebApiTests(unittest.TestCase):
         self.assertGreaterEqual(len(backend_state["document_versions"]), 1)
         bridged_versions = list(backend_state["document_versions"].values())
         self.assertIsNotNone(bridged_versions[-1].get("generation_snapshot_id"))
+
+    def test_document_builder_bundle_endpoint(self):
+        self._register_verify_and_login("bundle_user", "bundle_user@example.com")
+        response = self.client.get("/api/document-builder/bundle", params={"server_id": "blackberry", "document_type": "court_claim"})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["bundle_version"], "1.0.0")
+        self.assertEqual(payload["server"], "blackberry")
+        self.assertEqual(payload["document_type"], "court_claim")
+        self.assertIn("sections", payload)
+        self.assertIn("fields", payload)
+        self.assertIn("choice_sets", payload)
+        self.assertIn("validators", payload)
+        self.assertIn("template", payload)
+        self.assertIn("ai_profile", payload)
+        self.assertIn("features", payload)
+        self.assertIn("status", payload)
+        self.assertIn("allowed_actions", payload)
+        self.assertIn("supreme", payload["choice_sets"]["claim_kind_by_court_type"])
+
+    def test_document_builder_bundle_unknown_document_type(self):
+        self._register_verify_and_login("bundle_user_unknown", "bundle_user_unknown@example.com")
+        response = self.client.get("/api/document-builder/bundle", params={"server_id": "blackberry", "document_type": "unknown"})
+        self.assertEqual(response.status_code, 404)
 
     def test_generate_creates_case_and_versions_append_only_in_bridge(self):
         self._register_verify_and_login("bridge_user", "bridge_user@example.com")
