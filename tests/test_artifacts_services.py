@@ -166,10 +166,14 @@ class GateHardBlock:
         return ExportGateResult(mode="hard_block", reason="blocked")
 
 
-class InlineJobLayer:
-    def submit(self, *, job_name: str, run):
-        run()
-        return "job-1"
+class InlineAsyncJobService:
+    def __init__(self):
+        self._seq = 1
+
+    def create_job(self, **kwargs):
+        job = {"id": self._seq, **kwargs}
+        self._seq += 1
+        return job
 
 
 def test_attachment_linked_to_document_version_and_finalized():
@@ -220,7 +224,7 @@ def test_export_sync_creates_versioned_artifact_new_version_new_export():
         repository=repo,
         storage_service=storage,
         validation_gate_provider=GateWarn(),
-        job_layer=InlineJobLayer(),
+        async_job_service=InlineAsyncJobService(),
     )
     first = service.create_export(
         username="alice",
@@ -247,7 +251,7 @@ def test_export_async_lifecycle_and_download_ready_only():
         repository=repo,
         storage_service=FakeStorageService(),
         validation_gate_provider=GateWarn(),
-        job_layer=InlineJobLayer(),
+        async_job_service=InlineAsyncJobService(),
     )
     created = service.create_export(
         username="alice",
@@ -256,8 +260,8 @@ def test_export_async_lifecycle_and_download_ready_only():
         export_format="json",
         execution_mode="async",
     )
-    assert created["status"] == "ready"
-    assert {"pending", "processing", "ready"}.issubset(set(repo.export_status_history))
+    assert created["status"] == "pending"
+    assert "pending" in set(repo.export_status_history)
 
 
 def test_export_gate_modes_enforced():
@@ -265,7 +269,7 @@ def test_export_gate_modes_enforced():
     base_kwargs = dict(
         repository=repo,
         storage_service=FakeStorageService(),
-        job_layer=InlineJobLayer(),
+        async_job_service=InlineAsyncJobService(),
     )
     warn_service = ExportService(validation_gate_provider=GateWarn(), **base_kwargs)
     allowed = warn_service.create_export(
@@ -297,7 +301,7 @@ def test_download_url_permissions_and_ready_status():
         repository=repo,
         storage_service=storage,
         validation_gate_provider=GateWarn(),
-        job_layer=InlineJobLayer(),
+        async_job_service=InlineAsyncJobService(),
     )
 
     upload = attachment_service.create_upload_url(

@@ -40,6 +40,9 @@ from ogp_web.routes.validation import router as validation_router
 from ogp_web.server_config import get_server_config
 from ogp_web.services.auth_service import _get_secret_key, get_current_user, is_admin_user
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
+from ogp_web.services.async_job_service import AsyncJobService
+from ogp_web.providers.queue_provider import build_queue_provider_from_env
+from ogp_web.workers import JobWorker, JobWorkerPool
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore, get_default_admin_metrics_store
 from ogp_web.storage.admin_catalog_store import AdminCatalogStore, get_default_admin_catalog_store
 from ogp_web.storage.exam_answers_store import ExamAnswersStore, get_default_exam_answers_store
@@ -214,7 +217,12 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        worker_pool = getattr(app.state, "job_worker_pool", None)
+        if worker_pool is not None:
+            worker_pool.start()
         yield
+        if worker_pool is not None:
+            worker_pool.stop()
         _close_app_resources(app)
 
     app = FastAPI(title="OGP Builder Web", version="1.3.0", lifespan=lifespan)
@@ -237,6 +245,16 @@ def create_app(
         backend=exam_import_tasks_backend,
     )
     app.state.server_config = get_server_config(os.getenv("OGP_DEFAULT_SERVER_CODE", "blackberry"))
+    app.state.queue_provider = build_queue_provider_from_env()
+    app.state.job_worker_pool = None
+    if (os.getenv("OGP_JOB_WORKER_POOL_ENABLED") or "0").strip().lower() in {"1", "true", "yes"}:
+        async_job_service = AsyncJobService(app.state.user_store.backend, queue_provider=app.state.queue_provider)
+        worker = JobWorker(service=async_job_service, server_id=None)
+        app.state.job_worker_pool = JobWorkerPool(
+            worker=worker,
+            queue_provider=app.state.queue_provider,
+            concurrency=int(os.getenv("OGP_JOB_WORKER_CONCURRENCY", "2") or "2"),
+        )
 
     @app.middleware("http")
     async def attach_request_id(request, call_next):
