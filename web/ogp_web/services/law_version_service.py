@@ -18,6 +18,34 @@ class ResolvedLawVersion:
     chunk_count: int
 
 
+def list_recent_law_versions(*, server_code: str, limit: int = 10) -> tuple[ResolvedLawVersion, ...]:
+    backend = get_database_backend()
+    safe_limit = max(1, min(int(limit or 10), 100))
+    with backend.connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, server_code, generated_at_utc, effective_from, effective_to, fingerprint, chunk_count
+            FROM law_versions
+            WHERE server_code = %s
+            ORDER BY effective_from DESC, id DESC
+            LIMIT %s
+            """,
+            (server_code, safe_limit),
+        ).fetchall()
+    return tuple(
+        ResolvedLawVersion(
+            id=int(row["id"]),
+            server_code=str(row.get("server_code") or server_code),
+            generated_at_utc=_to_iso(row.get("generated_at_utc")),
+            effective_from=_to_iso(row.get("effective_from")),
+            effective_to=_to_iso(row.get("effective_to")),
+            fingerprint=str(row.get("fingerprint") or "").strip(),
+            chunk_count=int(row.get("chunk_count") or 0),
+        )
+        for row in rows
+    )
+
+
 def resolve_active_law_version(
     *,
     server_code: str,

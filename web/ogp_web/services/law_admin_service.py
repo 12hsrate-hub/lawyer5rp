@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ogp_web.server_config import get_server_config
+from ogp_web.server_config import get_server_config, list_server_configs
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.law_bundle_service import (
     build_law_bundle,
@@ -11,7 +11,13 @@ from ogp_web.services.law_bundle_service import (
     resolve_law_bundle_path,
     write_law_bundle,
 )
-from ogp_web.services.law_version_service import import_law_snapshot, resolve_active_law_version
+from ogp_web.services.law_version_service import (
+    import_law_snapshot,
+    list_recent_law_versions,
+    resolve_active_law_version,
+)
+from ogp_web.services.law_sources_dependencies import build_sources_dependency_payload
+from ogp_web.services.law_sources_validation import normalize_source_urls, validate_source_urls
 
 
 LAW_SOURCES_CONTENT_TYPE = "laws"
@@ -27,20 +33,6 @@ class LawSourcesSnapshot:
     manifest_version: dict[str, Any] | None
     active_law_version: dict[str, Any] | None
     bundle_meta: dict[str, Any] | None
-
-
-def normalize_source_urls(source_urls: list[str] | tuple[str, ...]) -> tuple[str, ...]:
-    normalized: list[str] = []
-    seen: set[str] = set()
-    for raw in source_urls:
-        value = str(raw or "").strip()
-        if not value:
-            continue
-        if value in seen:
-            continue
-        seen.add(value)
-        normalized.append(value)
-    return tuple(normalized)
 
 
 class LawAdminService:
@@ -125,9 +117,12 @@ class LawAdminService:
         request_id: str,
         comment: str = "",
     ) -> dict[str, Any]:
-        normalized_urls = normalize_source_urls(source_urls)
+        validation = validate_source_urls(source_urls)
+        normalized_urls = validation.accepted_urls
         if not normalized_urls:
             raise ValueError("source_urls_required")
+        if validation.invalid_urls:
+            raise ValueError("source_urls_invalid")
 
         item = self.repository.get_content_item_by_identity(
             server_scope="server",
@@ -205,9 +200,12 @@ class LawAdminService:
         request_id: str,
         persist_sources: bool = True,
     ) -> dict[str, Any]:
-        effective_urls = normalize_source_urls(source_urls or list(self.get_effective_sources(server_code=server_code).source_urls))
+        validation = validate_source_urls(source_urls or list(self.get_effective_sources(server_code=server_code).source_urls))
+        effective_urls = validation.accepted_urls
         if not effective_urls:
             raise ValueError("source_urls_required")
+        if validation.invalid_urls:
+            raise ValueError("source_urls_invalid")
 
         manifest_result = None
         if persist_sources:
@@ -238,3 +236,43 @@ class LawAdminService:
             "law_version_id": version_id,
             "manifest": manifest_result,
         }
+
+    def preview_sources(
+        self,
+        *,
+        source_urls: list[str],
+    ) -> dict[str, Any]:
+        validation = validate_source_urls(source_urls)
+        return {
+            "ok": True,
+            "accepted_urls": list(validation.accepted_urls),
+            "invalid_urls": list(validation.invalid_urls),
+            "invalid_details": list(validation.invalid_details),
+            "duplicate_count": validation.duplicate_count,
+            "duplicate_urls": list(validation.duplicate_urls),
+            "accepted_count": len(validation.accepted_urls),
+            "invalid_count": len(validation.invalid_urls),
+        }
+
+    def list_recent_versions(self, *, server_code: str, limit: int = 10) -> dict[str, Any]:
+        rows = list_recent_law_versions(server_code=server_code, limit=limit)
+        return {
+            "ok": True,
+            "items": [row.__dict__ for row in rows],
+            "count": len(rows),
+        }
+
+    def describe_sources_dependencies(self) -> dict[str, Any]:
+        server_rows: list[dict[str, Any]] = []
+        for config in list_server_configs():
+            snapshot = self.get_effective_sources(server_code=config.code)
+            server_rows.append(
+                {
+                    "server_code": config.code,
+                    "server_name": getattr(config, "name", config.code),
+                    "source_origin": snapshot.source_origin,
+                    "source_urls": list(snapshot.source_urls),
+                    "active_law_version_id": (snapshot.active_law_version or {}).get("id") if isinstance(snapshot.active_law_version, dict) else None,
+                }
+            )
+        return build_sources_dependency_payload(server_rows)
