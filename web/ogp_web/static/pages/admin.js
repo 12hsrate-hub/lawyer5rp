@@ -268,7 +268,6 @@ function renderLawSourcesHistory(payload) {
         .join("")}
     </ul>
   `;
-  host.innerHTML = renderLawJobsMarkup(payload, { escapeHtml });
 }
 
 async function loadLawSourcesHistory() {
@@ -626,9 +625,8 @@ async function loadLawJobsOverview() {
     host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить jobs/alerts."))}</p>`;
     return;
   }
-  const summary = payload?.summary || {};
-  const alerts = Array.isArray(payload?.alerts) ? payload.alerts : [];
-  const running = Array.isArray(payload?.running) ? payload.running : [];
+  host.innerHTML = renderLawJobsMarkup(payload, { escapeHtml });
+  /*
   host.innerHTML = `
     <div class="legal-section__description">
       jobs: total=${escapeHtml(String(summary.total_tasks || 0))}, running=${escapeHtml(String(summary.running_tasks || 0))}, failed=${escapeHtml(String(summary.failed_tasks || 0))}, alerts=${escapeHtml(String(summary.alerts_count || 0))}
@@ -642,6 +640,7 @@ async function loadLawJobsOverview() {
       <pre class="legal-field__hint">${escapeHtml(JSON.stringify(running, null, 2) || "[]")}</pre>
     </details>
   `;
+  */
 }
 
 async function rebuildLawSources() {
