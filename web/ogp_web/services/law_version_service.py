@@ -4,9 +4,14 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ogp_web.db.factory import get_database_backend
+
+if TYPE_CHECKING:
+    from ogp_web.services.law_bundle_service import LawChunk
+
+
 @dataclass(frozen=True)
 class ResolvedLawVersion:
     id: int
@@ -91,7 +96,7 @@ def resolve_active_law_version(
     )
 
 
-def load_law_chunks_by_version(server_code: str, law_version_id: int) -> tuple[LawChunk, ...]:
+def load_law_chunks_by_version(server_code: str, law_version_id: int) -> tuple["LawChunk", ...]:
     from ogp_web.services.law_bundle_service import LawChunk
 
     backend = get_database_backend()
