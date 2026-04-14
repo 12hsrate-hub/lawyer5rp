@@ -10,6 +10,7 @@ from ogp_web.storage.content_workflow_repository import ContentWorkflowRepositor
 ALLOWED_SERVER_SCOPES = {"server", "global"}
 REVIEW_DECISIONS = {"approve", "reject", "request_changes"}
 CHANGE_REQUEST_STATUSES = {"draft", "in_review", "approved", "rejected", "published", "rolled_back"}
+HIGH_RISK_TWO_PERSON_TYPES = {"procedures", "templates", "validation_rules"}
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,10 @@ class ContentWorkflowService:
         scope = self._validate_scope(server_scope=server_scope, server_id=server_id)
         if item.get("server_scope") != scope.server_scope or item.get("server_id") != scope.server_id:
             raise PermissionError("scope_mismatch")
+
+    @staticmethod
+    def _requires_two_person_review(content_type: str) -> bool:
+        return str(content_type or "").strip().lower() in HIGH_RISK_TWO_PERSON_TYPES
 
     def list_content_items(
         self,
@@ -168,6 +173,42 @@ class ContentWorkflowService:
         )
         return {"content_item": item, "version": version, "change_request": cr}
 
+    def validate_change_request(
+        self,
+        *,
+        change_request_id: int,
+        server_scope: str,
+        server_id: str | None,
+    ) -> dict[str, Any]:
+        cr = self.repository.get_change_request(change_request_id=change_request_id)
+        if not cr:
+            raise KeyError("not_found")
+        item = self.get_content_item(
+            content_item_id=int(cr["content_item_id"]),
+            server_scope=server_scope,
+            server_id=server_id,
+        )
+        candidate_version_id = cr.get("candidate_version_id")
+        if candidate_version_id is None:
+            raise ValueError("change_request_has_no_candidate_version")
+        version = self.repository.get_content_version(version_id=int(candidate_version_id))
+        if not version:
+            raise KeyError("candidate_version_not_found")
+        payload = version.get("payload_json")
+        content_type = normalize_content_type(str(item.get("content_type") or ""))
+        validation = validate_payload_contract(
+            content_type=content_type,
+            payload_json=dict(payload or {}) if isinstance(payload, dict) else {},
+        )
+        return {
+            "ok": validation.ok,
+            "errors": list(validation.errors),
+            "content_item": item,
+            "change_request": cr,
+            "version": version,
+            "content_type": content_type,
+        }
+
     def submit_change_request(
         self,
         *,
@@ -183,6 +224,13 @@ class ContentWorkflowService:
         item = self.get_content_item(content_item_id=int(cr["content_item_id"]), server_scope=server_scope, server_id=server_id)
         if cr.get("status") != "draft":
             raise ValueError("change_request_must_be_draft")
+        validation = self.validate_change_request(
+            change_request_id=change_request_id,
+            server_scope=server_scope,
+            server_id=server_id,
+        )
+        if not validation["ok"]:
+            raise ValueError(f"change_request_validation_failed:{';'.join(validation['errors'])}")
         updated = self.repository.update_change_request_status(change_request_id=change_request_id, status="in_review")
         self._audit(
             server_id=item.get("server_id"),
@@ -219,6 +267,13 @@ class ContentWorkflowService:
         item = self.get_content_item(content_item_id=int(cr["content_item_id"]), server_scope=server_scope, server_id=server_id)
         if cr.get("status") != "in_review":
             raise ValueError("change_request_must_be_in_review")
+        content_type = normalize_content_type(str(item.get("content_type") or ""))
+        if (
+            normalized_decision == "approve"
+            and self._requires_two_person_review(content_type)
+            and int(cr.get("proposed_by") or 0) == int(reviewer_user_id)
+        ):
+            raise ValueError("two_person_review_required_for_high_risk_entity")
         review = self.repository.create_review(
             change_request_id=change_request_id,
             reviewer_user_id=reviewer_user_id,
@@ -259,6 +314,13 @@ class ContentWorkflowService:
             raise KeyError("not_found")
         if cr.get("status") != "approved":
             raise ValueError("publish_requires_approved_change_request")
+        validation = self.validate_change_request(
+            change_request_id=change_request_id,
+            server_scope=server_scope,
+            server_id=server_id,
+        )
+        if not validation["ok"]:
+            raise ValueError(f"change_request_validation_failed:{';'.join(validation['errors'])}")
         item = self.get_content_item(content_item_id=int(cr["content_item_id"]), server_scope=server_scope, server_id=server_id)
         candidate_version_id = int(cr["candidate_version_id"])
         previous_version_id = item.get("current_published_version_id")

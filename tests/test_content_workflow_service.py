@@ -234,3 +234,129 @@ def test_create_draft_version_validates_schema_contract():
         assert False, "expected ValueError"
     except ValueError as exc:
         assert str(exc).startswith("content_payload_contract_violation:")
+
+
+def test_validate_change_request_returns_contract_errors_for_broken_candidate_version():
+    service = _service()
+    item = service.create_content_item(
+        server_scope="server",
+        server_id="blackberry",
+        content_type="templates",
+        content_key="tpl1",
+        title="Template",
+        metadata_json={},
+        actor_user_id=1,
+        request_id="r",
+    )
+    draft = service.create_draft_version(
+        content_item_id=item["id"],
+        payload_json={"template_code": "tpl1", "title": "Template", "body": "draft"},
+        schema_version=1,
+        actor_user_id=1,
+        request_id="r",
+        server_scope="server",
+        server_id="blackberry",
+    )
+    draft["version"]["payload_json"] = {"template_code": "tpl1", "title": "Template", "body": 42}
+
+    validation = service.validate_change_request(
+        change_request_id=draft["change_request"]["id"],
+        server_scope="server",
+        server_id="blackberry",
+    )
+
+    assert validation["ok"] is False
+    assert "invalid_field_type:body:string_required" in validation["errors"]
+
+
+def test_submit_change_request_revalidates_candidate_version_before_review():
+    service = _service()
+    item = service.create_content_item(
+        server_scope="server",
+        server_id="blackberry",
+        content_type="features",
+        content_key="f2",
+        title="Feature 2",
+        metadata_json={},
+        actor_user_id=1,
+        request_id="r",
+    )
+    draft = service.create_draft_version(
+        content_item_id=item["id"],
+        payload_json={"feature_code": "f2", "title": "Feature 2", "enabled": True},
+        schema_version=1,
+        actor_user_id=1,
+        request_id="r",
+        server_scope="server",
+        server_id="blackberry",
+    )
+    draft["version"]["payload_json"] = {"feature_code": "f2", "title": "Feature 2", "enabled": "broken"}
+
+    try:
+        service.submit_change_request(
+            change_request_id=draft["change_request"]["id"],
+            actor_user_id=2,
+            request_id="r",
+            server_scope="server",
+            server_id="blackberry",
+        )
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert str(exc).startswith("change_request_validation_failed:")
+
+
+def test_high_risk_entities_require_second_reviewer_for_approval():
+    service = _service()
+    item = service.create_content_item(
+        server_scope="server",
+        server_id="blackberry",
+        content_type="templates",
+        content_key="tpl2",
+        title="Template 2",
+        metadata_json={},
+        actor_user_id=11,
+        request_id="r",
+    )
+    draft = service.create_draft_version(
+        content_item_id=item["id"],
+        payload_json={"template_code": "tpl2", "title": "Template 2", "body": "body"},
+        schema_version=1,
+        actor_user_id=11,
+        request_id="r",
+        server_scope="server",
+        server_id="blackberry",
+    )
+    service.submit_change_request(
+        change_request_id=draft["change_request"]["id"],
+        actor_user_id=11,
+        request_id="r",
+        server_scope="server",
+        server_id="blackberry",
+    )
+
+    try:
+        service.review_change_request(
+            change_request_id=draft["change_request"]["id"],
+            reviewer_user_id=11,
+            decision="approve",
+            comment="self-approve",
+            diff_json={},
+            request_id="r",
+            server_scope="server",
+            server_id="blackberry",
+        )
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert str(exc) == "two_person_review_required_for_high_risk_entity"
+
+    approved = service.review_change_request(
+        change_request_id=draft["change_request"]["id"],
+        reviewer_user_id=22,
+        decision="approve",
+        comment="peer-approve",
+        diff_json={},
+        request_id="r",
+        server_scope="server",
+        server_id="blackberry",
+    )
+    assert approved["change_request"]["status"] == "approved"

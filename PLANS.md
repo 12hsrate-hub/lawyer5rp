@@ -7,9 +7,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase B — Runtime model foundation + single source-of-truth contract`
-- Current task: `Phase C complete`
-- Active execution phase override: `Phase C - Visual Admin read-only modules`
-- Current micro-step: `Read-only shells and glossary baseline completed for servers, laws, templates, features, and rules`
+- Current task: `Phase D complete`
+- Active execution phase override: `Phase D - Editable admin + draft/publish/rollback/audit`
+- Current micro-step: `Pilot editable workflow lifecycle completed with validation, review, publish, rollback, audit, and release checklist gates`
 - Overall status: `done`
 - Last updated: `2026-04-14`
 - Notes:
@@ -208,6 +208,7 @@ Dependencies: Phase B.
 ## Phase D — Editable admin + draft/publish/rollback/audit (2 sprints)
 
 ### D.1 Editable workflows
+Status: `done`
 For pilot entities, implement:
 - create draft
 - validate draft
@@ -215,7 +216,16 @@ For pilot entities, implement:
 - rollback to previous version
 - audit event timeline
 
+Current D.1 progress:
+- server-side `validate_change_request` added for workflow-backed pilot entities
+- submit-for-review and publish now revalidate candidate versions before state transition
+- `EDITABLE_WORKFLOW_CHECKLIST.md` added as the first editable workflow contract
+- existing catalog workflow UI now has a `validate draft` action path wired to the validation endpoint
+- `PUBLISH_RELEASE_CHECKLIST.md` added as the first publish gate checklist for pilot entities
+- high-risk two-person approval gate added for `procedures`, `templates`, and `validation_rules`
+
 ### D.2 Publication gates
+Status: `done`
 - Publish blocked on validation errors.
 - Two-person review option for high-risk entities (laws/templates/rules).
 
@@ -223,6 +233,8 @@ For pilot entities, implement:
 - publication workflow endpoints + UI
 - audit ledger for config changes
 - release checklist per published bundle
+- `EDITABLE_WORKFLOW_CHECKLIST.md`
+- `PUBLISH_RELEASE_CHECKLIST.md`
 
 ### Acceptance
 - Admin can safely change pilot scenario without touching code.

@@ -109,6 +109,23 @@ class _FakeContentWorkflowService:
             }
         ]
 
+    def validate_change_request(self, *, change_request_id: int, server_scope: str, server_id: str | None):
+        self.calls.append(
+            {
+                "kind": "validate_change_request",
+                "change_request_id": change_request_id,
+                "server_scope": server_scope,
+                "server_id": server_id,
+            }
+        )
+        return {
+            "ok": True,
+            "errors": [],
+            "content_type": "templates",
+            "change_request": {"id": change_request_id, "status": "draft"},
+            "version": {"id": 7},
+        }
+
 
 class _FakeContentWorkflowServiceError:
     def __init__(self, error: Exception):
@@ -397,3 +414,17 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertIn("forbidden_scope", response.json().get("detail", []))
         self.assertEqual(response.headers.get("x-error-code"), "admin_catalog_audit_not_found")
+
+    def test_change_request_validate_endpoint_returns_validation_payload(self):
+        fake_workflow = _FakeContentWorkflowService()
+        self.client.app.dependency_overrides[get_content_workflow_service] = lambda: fake_workflow
+
+        response = self.client.get("/api/admin/change-requests/17/validate")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["result"]["ok"])
+        self.assertEqual(payload["result"]["change_request"]["id"], 17)
+        self.assertEqual(fake_workflow.calls[-1]["kind"], "validate_change_request")
+        self.assertEqual(fake_workflow.calls[-1]["change_request_id"], 17)

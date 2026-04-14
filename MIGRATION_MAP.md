@@ -16,6 +16,13 @@ Date: 2026-04-14
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
   - Initial glossary baseline added in `docs/ADMIN_GLOSSARY.md`.
   - Explicit page-shell subdomains are in place for servers, laws, templates, features, and rules.
+- Phase D progress:
+  - `ContentWorkflowService` now exposes explicit change-request validation for pilot editable entities.
+  - Submit-for-review and publish paths now revalidate the candidate version before state transition.
+  - `EDITABLE_WORKFLOW_CHECKLIST.md` added as the first editable workflow contract for pilot entities.
+  - Existing catalog workflow UI now exposes a `validate draft` action path for workflow-backed entities in draft state.
+  - High-risk two-person approval is now enforced for `procedures`, `templates`, and `validation_rules`.
+  - `PUBLISH_RELEASE_CHECKLIST.md` added as the first release gate checklist for pilot publish actions.
 
 ## Critical user/admin journeys
 

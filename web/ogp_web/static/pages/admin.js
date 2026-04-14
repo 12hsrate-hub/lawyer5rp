@@ -2636,6 +2636,27 @@ catalogHost?.addEventListener("click", async (event) => {
       setStateError(errorsHost, "Не удалось определить действие workflow: отсутствует change request.");
       return;
     }
+    if (action === "validate") {
+      clearMessage();
+      setStateIdle(errorsHost);
+      const response = await apiFetch(`/api/admin/change-requests/${encodeURIComponent(String(changeRequestId))}/validate`);
+      const payload = await parsePayload(response);
+      if (!response.ok) {
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось проверить черновик."));
+        return;
+      }
+      const result = payload?.result || {};
+      const validationErrors = Array.isArray(result?.errors) ? result.errors.filter(Boolean) : [];
+      if (result?.ok) {
+        showMessage(`Черновик #${changeRequestId} прошел валидацию и готов к отправке на ревью.`);
+      } else {
+        setStateError(
+          errorsHost,
+          `Черновик #${changeRequestId} не прошел валидацию: ${validationErrors.join("; ") || "есть ошибки контракта."}`,
+        );
+      }
+      return;
+    }
     await performAdminAction(`${catalogEndpoint(activeCatalogEntity, workflowItemId)}/workflow`, "Workflow обновлен.", {
       action,
       change_request_id: changeRequestId,

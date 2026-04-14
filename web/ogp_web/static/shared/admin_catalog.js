@@ -108,13 +108,14 @@ window.OGPAdminCatalog = {
       rolled_back: "откат",
     };
     const workflowActionLabels = {
+      validate: "Validate draft",
       submit_for_review: "Отправить на ревью",
       approve: "Одобрить",
       publish: "Опубликовать",
       request_changes: "Запросить доработки",
     };
     const allowedActionsByState = {
-      draft: ["submit_for_review"],
+      draft: ["validate", "submit_for_review"],
       in_review: ["approve", "request_changes"],
       approved: ["publish"],
     };
