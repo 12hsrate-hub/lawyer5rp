@@ -88,6 +88,7 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn("ai-focus-hint", response.text)
         self.assertIn("complaint-basis", response.text)
         self.assertIn("save-draft-btn", response.text)
+        self.assertIn("preview-bbcode-btn", response.text)
         self.assertIn("generate-bbcode-btn", response.text)
         self.assertIn("bbcode-status-text", response.text)
         self.assertIn("Статус: готово к формированию BBCode.", response.text)

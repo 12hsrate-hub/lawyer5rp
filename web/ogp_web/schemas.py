@@ -85,6 +85,15 @@ class GenerateResponse(BaseModel):
     generated_document_id: int | None = None
 
 
+class ComplaintValidationResponse(BaseModel):
+    ok: bool = False
+    errors: List[str] = Field(default_factory=list)
+
+
+class ComplaintPreviewResponse(BaseModel):
+    preview: str = ""
+
+
 class ComplaintDraftPayload(BaseModel):
     draft: dict = Field(default_factory=dict)
 

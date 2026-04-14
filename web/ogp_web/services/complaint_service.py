@@ -7,6 +7,7 @@ from datetime import datetime
 from fastapi import HTTPException, status
 
 from ogp_web.schemas import ComplaintPayload, RehabPayload
+from ogp_web.server_config.types import ComplaintTemplateProfile
 from ogp_web.services.auth_service import AuthUser
 from ogp_web.services.profile_service import get_profile_payload
 from ogp_web.storage.user_store import UserStore
@@ -18,8 +19,13 @@ from shared.ogp_core import (
     Representative,
     Victim,
     build_bbcode,
+    build_evidence_line,
     build_rehab_bbcode,
     collect_evidence_items,
+    escape_bbcode_text,
+    format_phone_for_bbcode,
+    normalize_discord_to_email,
+    sanitize_url,
     validate_complaint_input,
     validate_rehab_input,
 )
@@ -65,10 +71,36 @@ def to_domain_model(store: UserStore, payload: ComplaintPayload, user: AuthUser)
 
 def generate_bbcode_text(store: UserStore, payload: ComplaintPayload, user: AuthUser) -> str:
     complaint = to_domain_model(store, payload, user)
-    errors = validate_complaint_input(complaint)
+    errors = validate_complaint_with_profile(store, complaint, user)
     if errors:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=errors)
-    return build_bbcode(complaint)
+    return render_complaint_with_server_template(store, complaint, user)
+
+
+def validate_complaint_with_profile(store: UserStore, complaint: ComplaintInput, user: AuthUser) -> list[str]:
+    errors = list(validate_complaint_input(complaint))
+    profile = _get_template_profile(store, user)
+    if profile is None:
+        return errors
+    errors.extend(_validate_profile_required_requisites(profile, complaint))
+    errors.extend(_validate_profile_required_evidence(profile, complaint))
+    return errors
+
+
+def render_complaint_preview(store: UserStore, payload: ComplaintPayload, user: AuthUser) -> str:
+    complaint = to_domain_model(store, payload, user)
+    errors = validate_complaint_with_profile(store, complaint, user)
+    if errors:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=errors)
+    return render_complaint_with_server_template(store, complaint, user)
+
+
+def render_complaint_with_server_template(store: UserStore, complaint: ComplaintInput, user: AuthUser) -> str:
+    profile = _get_template_profile(store, user)
+    if profile is None or not profile.bundle_template.strip():
+        return build_bbcode(complaint)
+    template_data = _build_template_data(complaint, profile)
+    return str(profile.bundle_template).format_map(template_data)
 
 
 def generate_rehab_bbcode_text(store: UserStore, payload: RehabPayload, user: AuthUser) -> str:
@@ -103,7 +135,7 @@ def _short_hash(value: str) -> str:
 def _template_hash(document_kind: str) -> str:
     if document_kind == "rehab":
         return _short_hash(inspect.getsource(build_rehab_bbcode))
-    return _short_hash(inspect.getsource(build_bbcode))
+    return "complaint_template_bundle_v1"
 
 
 def _validation_rules_version(document_kind: str) -> str:
@@ -132,4 +164,64 @@ def build_generation_context_snapshot(store: UserStore, user: AuthUser, *, docum
         },
         "validation_rules_version": _validation_rules_version(document_kind),
         "feature_flags": sorted(server_config.feature_flags),
+    }
+
+
+def _get_template_profile(store: UserStore, user: AuthUser) -> ComplaintTemplateProfile | None:
+    server_code = user.server_code or store.get_server_code(user.username)
+    server_config = get_server_config(server_code)
+    return server_config.complaint_template_profile
+
+
+def _get_nested_value(data: ComplaintInput, path: str) -> str:
+    current = data
+    for segment in str(path or "").split("."):
+        if not segment:
+            continue
+        current = getattr(current, segment, "")
+    return str(current or "").strip()
+
+
+def _validate_profile_required_requisites(profile: ComplaintTemplateProfile, complaint: ComplaintInput) -> list[str]:
+    missing: list[str] = []
+    for path, label in profile.required_requisites:
+        if not _get_nested_value(complaint, path):
+            missing.append(f"Обязательный реквизит не заполнен: {label}.")
+    return missing
+
+
+def _validate_profile_required_evidence(profile: ComplaintTemplateProfile, complaint: ComplaintInput) -> list[str]:
+    titles = {title for title, _ in complaint.evidence_items if str(title).strip()}
+    missing: list[str] = []
+    for required_title in profile.required_evidence_titles:
+        if required_title not in titles:
+            missing.append(f"Обязательное доказательство отсутствует: {required_title}.")
+    return missing
+
+
+def _build_template_data(complaint: ComplaintInput, profile: ComplaintTemplateProfile) -> dict[str, str]:
+    legal_insertions = [item.strip() for item in profile.legal_insertions if str(item).strip()]
+    return {
+        "addressee": escape_bbcode_text(profile.addressee),
+        "legal_insertions_block": "\n".join(f"[*]{escape_bbcode_text(item)}" for item in legal_insertions) or "[*]-",
+        "org_name": escape_bbcode_text(profile.authority_name_format.format(org=complaint.org.strip())),
+        "appeal_no": escape_bbcode_text(complaint.appeal_no),
+        "subject_names": escape_bbcode_text(complaint.subject_names),
+        "situation_description": escape_bbcode_text(complaint.situation_description),
+        "violation_short": escape_bbcode_text(complaint.violation_short),
+        "event_dt": escape_bbcode_text(complaint.event_dt),
+        "today_date": escape_bbcode_text(complaint.today_date),
+        "evidence_line": build_evidence_line(complaint.evidence_items),
+        "representative_name": escape_bbcode_text(complaint.representative.name),
+        "representative_passport": escape_bbcode_text(complaint.representative.passport),
+        "representative_address": escape_bbcode_text(complaint.representative.address),
+        "representative_phone": escape_bbcode_text(format_phone_for_bbcode(complaint.representative.phone)),
+        "representative_email": escape_bbcode_text(normalize_discord_to_email(complaint.representative.discord)),
+        "representative_scan_url": sanitize_url(complaint.representative.passport_scan_url),
+        "victim_name": escape_bbcode_text(complaint.victim.name),
+        "victim_passport": escape_bbcode_text(complaint.victim.passport),
+        "victim_address": escape_bbcode_text(complaint.victim.address),
+        "victim_phone": escape_bbcode_text(format_phone_for_bbcode(complaint.victim.phone)),
+        "victim_email": escape_bbcode_text(normalize_discord_to_email(complaint.victim.discord)),
+        "victim_scan_url": sanitize_url(complaint.victim.passport_scan_url),
     }

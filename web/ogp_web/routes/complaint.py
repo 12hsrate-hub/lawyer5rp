@@ -18,6 +18,8 @@ from ogp_web.schemas import (
     ComplaintDraftPayload,
     ComplaintDraftResponse,
     ComplaintPayload,
+    ComplaintPreviewResponse,
+    ComplaintValidationResponse,
     GenerateResponse,
     GeneratedDocumentHistoryResponse,
     GeneratedDocumentSnapshotResponse,
@@ -35,7 +37,12 @@ from ogp_web.server_config import get_server_config
 from ogp_web.services import ai_service
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
-from ogp_web.services.complaint_service import build_generation_context_snapshot
+from ogp_web.services.complaint_service import (
+    build_generation_context_snapshot,
+    render_complaint_preview,
+    to_domain_model,
+    validate_complaint_with_profile,
+)
 from ogp_web.services.citation_service import save_answer_citations
 from ogp_web.services.feature_flags import FeatureFlagService, RolloutContext
 from ogp_web.services.generation_orchestrator import GenerationOrchestrator
@@ -297,6 +304,9 @@ async def generate(
         context=RolloutContext(username=user.username, server_id=user.server_code),
     )
     _validate_server_payload(store, user, org=payload.org)
+    validation_errors = validate_complaint_with_profile(store, to_domain_model(store, payload, user), user)
+    if validation_errors:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=validation_errors)
     context_snapshot = build_generation_context_snapshot(store, user, document_kind="complaint")
     context_snapshot["citations_policy_gate"] = {"mode": "shadow", "status": "flagged_no_citations"}
     bbcode = generate_bbcode_text(store, payload, user)
@@ -368,6 +378,28 @@ async def generate(
         started_at=started_at,
     )
     return GenerateResponse(bbcode=bbcode, generated_document_id=document_id)
+
+
+@router.post("/api/complaint-validate", response_model=ComplaintValidationResponse)
+async def validate_complaint(
+    payload: ComplaintPayload,
+    user: AuthUser = Depends(requires_permission()),
+    store: UserStore = Depends(get_user_store),
+) -> ComplaintValidationResponse:
+    _validate_server_payload(store, user, org=payload.org)
+    errors = validate_complaint_with_profile(store, to_domain_model(store, payload, user), user)
+    return ComplaintValidationResponse(ok=not errors, errors=errors)
+
+
+@router.post("/api/complaint-preview", response_model=ComplaintPreviewResponse)
+async def complaint_preview(
+    payload: ComplaintPayload,
+    user: AuthUser = Depends(requires_permission()),
+    store: UserStore = Depends(get_user_store),
+) -> ComplaintPreviewResponse:
+    _validate_server_payload(store, user, org=payload.org)
+    preview = render_complaint_preview(store, payload, user)
+    return ComplaintPreviewResponse(preview=preview)
 
 
 @router.post("/api/generate-rehab", response_model=GenerateResponse)

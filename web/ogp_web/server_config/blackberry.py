@@ -4,7 +4,7 @@ from ogp_web.services.exam_sheet_service import EXAM_SHEET_URL
 
 from shared.ogp_core import BASE_EVIDENCE_FIELDS
 
-from .types import ComplaintBasisConfig, EvidenceFieldConfig, NavItemConfig, ServerConfig
+from .types import ComplaintBasisConfig, ComplaintTemplateProfile, EvidenceFieldConfig, NavItemConfig, ServerConfig
 
 
 BLACKBERRY_TEST_COMPLAINT_PRESET = {
@@ -179,4 +179,74 @@ BLACKBERRY_SERVER_CONFIG = ServerConfig(
     exam_sheet_url=EXAM_SHEET_URL,
     complaint_forum_url="https://forum.gta5rp.com/forums/zhaloby-v-prokuraturu.748/",
     complaint_test_preset=BLACKBERRY_TEST_COMPLAINT_PRESET,
+    complaint_template_profile=ComplaintTemplateProfile(
+        addressee="Attorney General's office, San-Andreas, Burton, Eastbourne Way. Dear Attorney General Konstantin Belonozhkin.",
+        legal_insertions=(
+            "Прошу рассмотреть обращение в соответствии с действующим законодательством штата Сан-Андреас.",
+        ),
+        authority_name_format="{org}",
+        required_requisites=(
+            ("appeal_no", "Номер обращения"),
+            ("org", "Организация"),
+            ("subject_names", "Объект заявления"),
+            ("event_dt", "Дата и время события"),
+            ("victim.name", "ФИО потерпевшего"),
+            ("victim.passport", "Паспорт потерпевшего"),
+            ("victim.phone", "Телефон потерпевшего"),
+            ("victim.discord", "Discord потерпевшего"),
+            ("victim.passport_scan_url", "Скан паспорта потерпевшего (URL)"),
+            ("representative.name", "Профиль: ФИО представителя"),
+            ("representative.passport", "Профиль: паспорт"),
+            ("representative.address", "Профиль: адрес"),
+            ("representative.phone", "Профиль: телефон"),
+            ("representative.discord", "Профиль: Discord"),
+            ("representative.passport_scan_url", "Профиль: скан паспорта (URL)"),
+        ),
+        required_evidence_titles=("Договор на оказание юридических услуг",),
+        bundle_template="""[RIGHT][I]To: {addressee}[/I][/RIGHT]
+
+[CENTER]
+[SIZE=5]Обращение №{appeal_no}[/SIZE]
+Я, гражданин штата Сан-Андреас {representative_name}, являясь законным представителем гражданина {victim_name} и в его интересах, обращаюсь к Вам с просьбой рассмотреть следующую ситуацию и принять необходимые меры в соответствии с законом:
+[/CENTER]
+
+[B]Суть обращения:[/B]
+[LIST=1]
+[*]Организация, в которой состоит объект заявления: {org_name}
+[*]Объект заявления (имя и фамилия, удостоверение, бейджик, нашивка, жетон): {subject_names}
+[*]Подробное описание ситуации: {situation_description}
+[*]Формулировка сути нарушения: {violation_short}
+[*]Дата и время описываемых событий: {event_dt}
+[*]Доказательства: {evidence_line}
+[/LIST]
+
+[B]Правовые вставки:[/B]
+[LIST]
+{legal_insertions_block}
+[/LIST]
+
+[B]Информация о представителе:[/B]
+[LIST=1]
+[*]Имя, фамилия: {representative_name}
+[*]Номер паспорта: {representative_passport}
+[*]Адрес проживания: {representative_address}
+[*]Номер телефона: {representative_phone}
+[*]Адрес электронной почты (( discord )): [EMAIL]{representative_email}[/EMAIL]
+[*]Ксерокопия паспорта (( imgur.com )): [URL='{representative_scan_url}']Паспорт[/URL]
+[/LIST]
+
+[B]Информация о потерпевшем:[/B]
+[LIST=1]
+[*]Имя, фамилия: {victim_name}
+[*]Номер паспорта: {victim_passport}
+[*]Адрес проживания: {victim_address}
+[*]Номер телефона: {victim_phone}
+[*]Адрес электронной почты (( discord )): [EMAIL]{victim_email}[/EMAIL]
+[*]Ксерокопия паспорта (( imgur.com )): [URL='{victim_scan_url}']Паспорт[/URL]
+[/LIST]
+
+[B][FONT=trebuchet ms]Дата: [/FONT][/B][FONT=trebuchet ms][U]{today_date} г.[/U][/FONT]
+[B][FONT=trebuchet ms]Подпись: {representative_name}[/FONT][/B]
+""",
+    ),
 )

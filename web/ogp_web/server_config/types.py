@@ -26,6 +26,16 @@ class EvidenceFieldConfig:
 
 
 @dataclass(frozen=True)
+class ComplaintTemplateProfile:
+    addressee: str
+    legal_insertions: tuple[str, ...] = ()
+    authority_name_format: str = "{org}"
+    required_requisites: tuple[tuple[str, str], ...] = ()
+    required_evidence_titles: tuple[str, ...] = ()
+    bundle_template: str = ""
+
+
+@dataclass(frozen=True)
 class ServerConfig:
     code: str
     name: str
@@ -47,6 +57,7 @@ class ServerConfig:
     exam_sheet_url: str = ""
     complaint_forum_url: str = ""
     complaint_test_preset: dict[str, object] = field(default_factory=dict)
+    complaint_template_profile: ComplaintTemplateProfile | None = None
 
     def has_feature(self, feature_name: str) -> bool:
         return feature_name in self.feature_flags

@@ -30,16 +30,20 @@
   </div>
 
   <div class="actions legal-toolbar legal-toolbar--result">
+    <button type="button" id="preview-bbcode-btn" class="ghost-button">Предпросмотр</button>
     <button type="button" id="generate-bbcode-btn" class="primary-button">Сгенерировать BBCode</button>
+    <button type="button" id="copy-btn" class="secondary-button">Копировать результат</button>
     {% if not is_test_mode %}
     <button type="button" id="save-draft-btn" class="secondary-button">Сохранить жалобу</button>
     {% endif %}
-    <button type="button" id="copy-btn" class="secondary-button">Копировать результат</button>
     {% if complaint_forum_url %}
     <a class="button-link ghost-button" href="{{ complaint_forum_url }}" target="_blank" rel="noopener noreferrer">Создать тему</a>
     {% endif %}
-    {% if not is_test_mode %}
-    <button type="button" id="reset-draft-btn" class="ghost-button">Очистить жалобу</button>
-    {% endif %}
   </div>
+
+  {% if not is_test_mode %}
+  <div class="actions legal-toolbar legal-toolbar--result">
+    <button type="button" id="reset-draft-btn" class="ghost-button">Очистить жалобу</button>
+  </div>
+  {% endif %}
 </section>

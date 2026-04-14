@@ -3,6 +3,7 @@ const result = document.getElementById("result");
 const errors = document.getElementById("errors");
 const copyBtn = document.getElementById("copy-btn");
 const generateBbcodeBtn = document.getElementById("generate-bbcode-btn");
+const previewBbcodeBtn = document.getElementById("preview-bbcode-btn");
 const saveDraftBtn = document.getElementById("save-draft-btn");
 const resetDraftBtn = document.getElementById("reset-draft-btn");
 const template = document.getElementById("url-field-template");
@@ -153,6 +154,9 @@ function setAiBusy(isBusy, text = "") {
 }
 
 function setBbcodeBusy(isBusy, text = "") {
+  if (previewBbcodeBtn) {
+    previewBbcodeBtn.disabled = isBusy;
+  }
   if (generateBbcodeBtn) {
     generateBbcodeBtn.disabled = isBusy;
   }
@@ -461,12 +465,32 @@ async function generateBbcode(event) {
   event?.preventDefault?.();
   clearErrors();
   syncEventDateTimeField();
-  setBbcodeBusy(true, "Статус: собираю данные жалобы и формирую BBCode...");
+  setBbcodeBusy(true, "Статус: проверяю обязательные реквизиты...");
+  const requestPayload = buildPayload({ form, presetPayload });
 
   try {
+    const validationResponse = await apiFetch("/api/complaint-validate", {
+      method: "POST",
+      body: JSON.stringify(requestPayload),
+    });
+    const validationPayload = await parsePayload(validationResponse);
+    if (!validationResponse.ok || !validationPayload.ok) {
+      const details = Array.isArray(validationPayload.errors) && validationPayload.errors.length
+        ? validationPayload.errors
+        : Array.isArray(validationPayload.detail)
+          ? validationPayload.detail
+          : [validationPayload.detail || "Проверьте обязательные реквизиты перед генерацией."];
+      setBbcodeBusy(false, "Статус: обязательные реквизиты не заполнены.");
+      showErrors(details);
+      scrollToErrors();
+      redirectIfUnauthorized(validationResponse.status);
+      return;
+    }
+
+    setBbcodeBusy(true, "Статус: собираю данные жалобы и формирую BBCode...");
     const response = await apiFetch("/api/generate", {
       method: "POST",
-      body: JSON.stringify(buildPayload({ form, presetPayload })),
+      body: JSON.stringify(requestPayload),
     });
 
     if (!response.ok) {
@@ -496,6 +520,33 @@ async function generateBbcode(event) {
     showErrors(error?.message || "Не удалось выполнить генерацию BBCode.");
     showAppMessage("Генерация BBCode прервана из-за ошибки на странице.");
     scrollToErrors();
+  }
+}
+
+async function previewBbcode() {
+  clearErrors();
+  syncEventDateTimeField();
+  setBbcodeBusy(true, "Статус: формирую предпросмотр...");
+  try {
+    const response = await apiFetch("/api/complaint-preview", {
+      method: "POST",
+      body: JSON.stringify(buildPayload({ form, presetPayload })),
+    });
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      const details = Array.isArray(payload.detail) ? payload.detail : [payload.detail || "Не удалось построить предпросмотр."];
+      setBbcodeBusy(false, "Статус: предпросмотр не построен.");
+      showErrors(details);
+      scrollToErrors();
+      redirectIfUnauthorized(response.status);
+      return;
+    }
+    result.value = String(payload.preview || "");
+    setBbcodeBusy(false, "Статус: предпросмотр готов.");
+    scrollToResult();
+  } catch (error) {
+    setBbcodeBusy(false, "Статус: предпросмотр прерван из-за ошибки.");
+    showErrors(error?.message || "Не удалось выполнить предпросмотр.");
   }
 }
 
@@ -592,6 +643,7 @@ form.addEventListener("keydown", (event) => {
   }
 });
 generateBbcodeBtn?.addEventListener("click", generateBbcode);
+previewBbcodeBtn?.addEventListener("click", previewBbcode);
 copyBtn.addEventListener("click", copyResult);
 aiBtn.addEventListener("click", requestAiSuggestion);
 saveDraftBtn?.addEventListener("click", async () => {

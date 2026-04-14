@@ -185,7 +185,55 @@ class WebApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("Обращение", response.json()["bbcode"])
+        self.assertIn("Правовые вставки", response.json()["bbcode"])
         self.assertIsInstance(response.json().get("generated_document_id"), int)
+
+    def test_complaint_validate_and_preview_endpoints(self):
+        self._register_verify_and_login("preview_user", "preview_user@example.com")
+        self.client.put(
+            "/api/profile",
+            json={
+                "name": "Rep",
+                "passport": "AA",
+                "address": "Addr",
+                "phone": "1234567",
+                "discord": "disc",
+                "passport_scan_url": "https://example.com/rep",
+            },
+        )
+        payload = {
+            "appeal_no": "1234",
+            "org": "LSPD",
+            "subject_names": "John Doe",
+            "situation_description": "Описание",
+            "violation_short": "Нарушение",
+            "event_dt": "08.04.2026 14:30",
+            "today_date": "08.04.2026",
+            "victim": {
+                "name": "Victim",
+                "passport": "BB",
+                "address": "Addr",
+                "phone": "7654321",
+                "discord": "victim",
+                "passport_scan_url": "https://example.com/victim",
+            },
+            "contract_url": "https://example.com/contract",
+            "bar_request_url": "",
+            "official_answer_url": "",
+            "mail_notice_url": "",
+            "arrest_record_url": "",
+            "personnel_file_url": "",
+            "video_fix_urls": [],
+            "provided_video_urls": [],
+        }
+
+        validate_response = self.client.post("/api/complaint-validate", json=payload)
+        self.assertEqual(validate_response.status_code, 200)
+        self.assertTrue(validate_response.json()["ok"])
+
+        preview_response = self.client.post("/api/complaint-preview", json=payload)
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertIn("Обращение", preview_response.json()["preview"])
 
     def test_generated_document_snapshot_history_endpoint(self):
         self._register_verify_and_login("snapshot_user", "snapshot@example.com")
