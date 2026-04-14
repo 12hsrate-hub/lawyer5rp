@@ -253,7 +253,7 @@ class WebApiTests(unittest.TestCase):
         self.assertIsNotNone(bridged_versions[-1].get("generation_snapshot_id"))
 
     def test_document_builder_bundle_endpoint(self):
-        self._register_verify_and_login("bundle_user", "bundle_user@example.com")
+        self._register_verify_and_login("tester", "bundle_tester@example.com")
         response = self.client.get("/api/document-builder/bundle", params={"server_id": "blackberry", "document_type": "court_claim"})
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -272,7 +272,7 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("supreme", payload["choice_sets"]["claim_kind_by_court_type"])
 
     def test_document_builder_bundle_unknown_document_type(self):
-        self._register_verify_and_login("bundle_user_unknown", "bundle_user_unknown@example.com")
+        self._register_verify_and_login("tester", "bundle_tester_unknown@example.com")
         response = self.client.get("/api/document-builder/bundle", params={"server_id": "blackberry", "document_type": "unknown"})
         self.assertEqual(response.status_code, 404)
 
