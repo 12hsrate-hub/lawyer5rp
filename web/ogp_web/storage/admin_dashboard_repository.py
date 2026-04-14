@@ -303,7 +303,7 @@ class AdminDashboardRepository:
                 """
                 SELECT COUNT(*) AS total
                 FROM document_versions dv
-                LEFT JOIN documents d ON d.id = dv.document_id
+                LEFT JOIN case_documents d ON d.id = dv.document_id
                 WHERE d.id IS NULL
                 """
             ).fetchone()
