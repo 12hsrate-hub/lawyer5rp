@@ -39,6 +39,7 @@ class LawAdminServiceHelpersTests(unittest.TestCase):
                 "ftp://example.com/law/a",
                 "https://example.com/law/a",
                 "invalid-url",
+                "http://user:pass@",
                 "http://example.com/law/b",
             ]
         )
@@ -55,6 +56,7 @@ class LawAdminServiceHelpersTests(unittest.TestCase):
             (
                 "ftp://example.com/law/a",
                 "invalid-url",
+                "http://user:pass@",
             ),
         )
         self.assertEqual(validation.duplicate_count, 1)

@@ -56,7 +56,13 @@ def is_valid_source_url(value: str) -> bool:
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"}:
         return False
-    return bool(parsed.netloc)
+    if not parsed.hostname:
+        return False
+    try:
+        _ = parsed.port
+    except ValueError:
+        return False
+    return True
 
 
 def validate_source_urls(source_urls: list[str] | tuple[str, ...]) -> LawSourcesValidation:
