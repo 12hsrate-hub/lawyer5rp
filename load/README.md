@@ -165,4 +165,4 @@ py scripts/evaluate_suggest_rollout.py `
 
 For staged enablement, rollback order, and operational thresholds, see:
 
-- [docs/suggest_rollout_safety_runbook.md](../docs/suggest_rollout_safety_runbook.md)
+- [docs/archive/2026-04/suggest_rollout_safety_runbook.md](../docs/archive/2026-04/suggest_rollout_safety_runbook.md)

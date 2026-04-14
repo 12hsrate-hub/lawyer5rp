@@ -8,7 +8,10 @@ OGP Builder for `lawyer5rp`: shared domain logic and a FastAPI-based web applica
 - `web/` - FastAPI web app, templates, static files, database integration
 - `scripts/` - migrations, backups, and maintenance utilities
 - `tests/` - unit and integration-style test coverage
-- `docs/` - deployment and migration notes
+- `docs/` - active operational and architecture docs (see `docs/README.md`)
+- `docs/archive/` - historical plans, audits, and one-off runbooks
+- `examples/` - code starters and non-runtime examples
+- `artifacts/` - generated exports and run artifacts
 
 ## Current Runtime Direction
 
@@ -61,5 +64,6 @@ Recommended deploy path:
 Deploy docs:
 
 - `AGENTS.md`
+- `docs/README.md`
 - `docs/github_deploy.md`
 - `docs/postgresql_migrations.md`
