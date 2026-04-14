@@ -1016,6 +1016,12 @@
   text-overflow: ellipsis;
 }
 
+.admin-ops-wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .admin-badge-row {
   display: flex;
   flex-wrap: wrap;
