@@ -88,7 +88,7 @@ class GenerationOrchestrator:
             conn,
             """
             INSERT INTO case_documents (case_id, server_id, document_type, status, created_by, metadata_json)
-            VALUES (%s, %s, %s, 'generated', %s, '{}'::jsonb)
+            VALUES (%s, %s, %s, 'draft', %s, '{}'::jsonb)
             RETURNING id
             """,
             (case_id, server_code, document_kind, user_id),
@@ -107,6 +107,12 @@ class GenerationOrchestrator:
         context_snapshot: dict[str, Any],
         legacy_generated_document_id: int | None,
     ) -> tuple[int, int]:
+        effective_config_snapshot = context_snapshot.get("effective_config_snapshot") if isinstance(context_snapshot, dict) else None
+        if not isinstance(effective_config_snapshot, dict):
+            raise RuntimeError("effective_config_snapshot is required in generation context snapshot.")
+        content_workflow_ref = context_snapshot.get("content_workflow") if isinstance(context_snapshot, dict) else None
+        if not isinstance(content_workflow_ref, dict):
+            raise RuntimeError("content_workflow is required in generation context snapshot.")
         row = self._fetchone(
             conn,
             """
@@ -117,9 +123,11 @@ class GenerationOrchestrator:
                 payload_json,
                 result_text,
                 context_snapshot_json,
+                effective_config_snapshot_json,
+                content_workflow_ref_json,
                 legacy_generated_document_id
             )
-            VALUES (%s, %s, %s, %s::jsonb, %s, %s::jsonb, %s)
+            VALUES (%s, %s, %s, %s::jsonb, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s)
             RETURNING id
             """,
             (
@@ -129,6 +137,8 @@ class GenerationOrchestrator:
                 json.dumps(payload or {}, ensure_ascii=False),
                 result_text,
                 json.dumps(context_snapshot or {}, ensure_ascii=False),
+                json.dumps(effective_config_snapshot, ensure_ascii=False),
+                json.dumps(content_workflow_ref, ensure_ascii=False),
                 legacy_generated_document_id,
             ),
         )

@@ -246,6 +246,8 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("template_version", snapshot)
         self.assertIn("law_version_set", snapshot)
         self.assertIn("validation_rules_version", snapshot)
+        self.assertIn("effective_config_snapshot", snapshot)
+        self.assertIn("content_workflow", snapshot)
         self.assertIn("feature_flags", snapshot)
 
         backend_state = self.store.repository.backend._state

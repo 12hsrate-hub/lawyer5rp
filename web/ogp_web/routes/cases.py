@@ -7,6 +7,7 @@ from ogp_web.schemas_cases import (
     CaseCreateRequest,
     CaseDocumentCreateRequest,
     CaseDocumentResponse,
+    CaseDocumentStatusUpdateRequest,
     CaseResponse,
     DocumentVersionCreateRequest,
     DocumentVersionListResponse,
@@ -135,3 +136,21 @@ async def list_document_versions(
         document_id=document_id,
     )
     return DocumentVersionListResponse(items=[DocumentVersionResponse(**item) for item in items])
+
+
+@router.post("/api/documents/{document_id}/status", response_model=CaseDocumentResponse)
+async def transition_document_status(
+    document_id: int,
+    payload: CaseDocumentStatusUpdateRequest,
+    user: AuthUser = Depends(requires_permission()),
+    store: UserStore = Depends(get_user_store),
+    flag_service: FeatureFlagService = Depends(get_feature_flag_service),
+) -> CaseDocumentResponse:
+    _ensure_enabled(flag_service=flag_service, flag="documents_v2", username=user.username, server_id=user.server_code)
+    item = _document_service(store).transition_document_status(
+        username=user.username,
+        user_server_id=user.server_code,
+        document_id=document_id,
+        next_status=payload.status,
+    )
+    return CaseDocumentResponse(**item)

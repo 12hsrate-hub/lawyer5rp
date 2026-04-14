@@ -182,6 +182,8 @@ class FakePostgresConnection:
             return self._update_case_document_latest_version(params)
         if normalized.startswith("UPDATE case_documents SET latest_version_id = %s, updated_at = NOW(), metadata_json = jsonb_set("):
             return self._update_case_document_bridge_metadata(params)
+        if normalized.startswith("UPDATE case_documents SET status = %s, updated_at = NOW(), metadata_json = jsonb_set("):
+            return self._update_case_document_status(params)
         if normalized.startswith("SELECT id, document_id, version_number, CAST(content_json AS TEXT) AS content_json, created_by, generation_snapshot_id, created_at FROM document_versions WHERE document_id = %s ORDER BY version_number ASC"):
             return self._list_document_versions(params[0])
         if (
@@ -446,7 +448,17 @@ class FakePostgresConnection:
         return FakeCursor(rowcount=1, one={"document_id": top["id"], "case_id": top["case_id"]})
 
     def _insert_generation_snapshot(self, params):
-        server_id, user_id, document_kind, payload_json, result_text, context_snapshot_json, legacy_id = params
+        (
+            server_id,
+            user_id,
+            document_kind,
+            payload_json,
+            result_text,
+            context_snapshot_json,
+            effective_config_snapshot_json,
+            content_workflow_ref_json,
+            legacy_id,
+        ) = params
         snapshot_id = self.state["next_generation_snapshot_id"]
         self.state["next_generation_snapshot_id"] += 1
         row = {
@@ -457,6 +469,8 @@ class FakePostgresConnection:
             "payload_json": json.loads(payload_json),
             "result_text": str(result_text),
             "context_snapshot_json": json.loads(context_snapshot_json),
+            "effective_config_snapshot_json": json.loads(effective_config_snapshot_json),
+            "content_workflow_ref_json": json.loads(content_workflow_ref_json),
             "legacy_generated_document_id": int(legacy_id) if legacy_id is not None else None,
             "created_at": self._now(),
         }
@@ -556,6 +570,18 @@ class FakePostgresConnection:
         row["metadata_json"]["bridge"] = bridge
         row["updated_at"] = self._now()
         return FakeCursor(rowcount=1)
+
+    def _update_case_document_status(self, params):
+        status, actor_user_id, document_id = params
+        row = self.state["case_documents"].get(int(document_id))
+        if row is None:
+            return FakeCursor(rowcount=0, one=None)
+        row["status"] = str(status)
+        metadata = dict(row.get("metadata_json") or {})
+        metadata["status_actor_user_id"] = int(actor_user_id)
+        row["metadata_json"] = metadata
+        row["updated_at"] = self._now()
+        return FakeCursor(rowcount=1, one={**row, "metadata_json": json.dumps(row["metadata_json"], ensure_ascii=False)})
 
     def _list_document_versions(self, document_id: int):
         rows = [
