@@ -27,6 +27,150 @@ Do not jump into implementation for large migration tasks unless explicitly aske
 9. Prefer staged migration over full rewrite.
 10. Preserve working behavior when possible through adapters and phased replacement.
 
+## Non-negotiable migration risk controls
+
+The following risks are mandatory planning constraints.
+They are not optional observations.
+Any migration plan is incomplete unless each risk is explicitly addressed in `PLANS.md`.
+
+For each risk below, `PLANS.md` must include:
+- why it matters
+- where it exists now or is likely to appear
+- target architectural rule that prevents it
+- mitigation steps
+- earliest phase where it must be addressed
+- validation / acceptance criteria
+- fallback / rollback / containment plan
+- whether it is a pre-launch blocker, pre-scale blocker, or later optimization
+
+### Risk 1 — Dual source of truth between legacy logic and new DB-driven workflow
+This is a critical migration risk.
+Do not allow legacy runtime rules and new configuration-driven runtime rules to coexist as long-term competing sources of truth.
+
+Required planning stance:
+- define the future single source of truth per migrated scenario
+- define when legacy becomes adapter-only
+- define temporary compatibility boundaries
+- define detection of behavior drift between old and new paths
+- define cutover criteria
+
+Required mitigation expectations:
+- feature flags or explicit route/use-case switching
+- adapter strategy for legacy endpoints
+- comparison or shadow-mode validation where useful
+- removal plan for duplicated decision logic
+
+### Risk 2 — Hardcoded server-specific business logic for new servers
+Do not solve server differences via scattered conditionals, ad hoc enums, or one-off code branches.
+
+Required planning stance:
+- server-specific behavior must move into versioned configuration/data models
+- server differences must be represented through server configs, procedures, BB catalogs, forms, rules, templates, law sets, and capabilities
+- any unavoidable code-level extension must be explicit, bounded, and justified
+
+Required mitigation expectations:
+- prohibit new server-specific hardcoded logic in migration phases
+- define review rules for rejecting scattered server conditionals
+- define where configuration ends and plugin-style extension begins
+
+### Risk 3 — Frontend admin complexity collapsing into a monolithic admin UI
+Do not allow the admin surface to become one giant tightly coupled module.
+
+Required planning stance:
+- split admin UI by domain areas
+- keep human-readable user flows as a first-class requirement
+- distinguish read-only discovery views from later editable tools
+- define reusable UI patterns, shared components, and boundaries
+
+Required mitigation expectations:
+- separate sections such as Servers, Process Types, BB Codes, Forms, Validation Rules, Templates, Law Sets, Publications, Audit, Users & Permissions
+- avoid one mega-page or one mega-module owning the whole admin surface
+- define how state, routing, and data-fetching boundaries remain modular
+
+### Risk 4 — Transitional instability of background jobs, imports, exports, retries, and async processing
+Migration often destabilizes async behavior before the core product appears broken.
+
+Required planning stance:
+- treat jobs, imports, exports, retries, queues, and workers as a dedicated migration concern
+- define idempotency expectations
+- define status visibility in admin UI
+- define failure handling, retry policy, and containment strategy
+
+Required mitigation expectations:
+- explicit job states
+- retry strategy
+- failed-job visibility
+- duplicate prevention where needed
+- phased migration of exports/imports rather than silent replacement
+- operational acceptance criteria before broader rollout
+
+### Risk 5 — Incomplete AI / citation provenance for audit and explainability
+Do not leave AI generation, retrieval, or citation behavior without traceability.
+
+Required planning stance:
+- every generated output must be attributable to server context, procedure context, law set version, and template/prompt context
+- provenance is a product and audit requirement, not an optional enhancement
+
+Required mitigation expectations:
+- define minimum provenance fields to persist
+- define citation trace storage
+- define how provenance is surfaced in admin / audit / document review flows
+- define acceptance criteria for explainability
+
+Minimum provenance fields expected in planning:
+- server_id
+- server configuration version
+- procedure version
+- template version
+- law_set version
+- citation / fragment identifiers
+- model/provider identifier
+- prompt version
+- generation timestamp
+
+## Mandatory Risk Register section for PLANS.md
+
+`PLANS.md` must contain a dedicated section named:
+
+## Risk Register and Closure Strategy
+
+That section must include, for each mandatory risk:
+- priority
+- owner area
+- trigger / warning signs
+- mitigation
+- validation
+- closure milestone
+
+Owner area examples:
+- backend
+- admin UI
+- infra
+- AI / retrieval
+- migration / rollout
+
+## Definition of incomplete plan
+
+A plan is incomplete if any of the following is missing:
+- explicit treatment of all 5 mandatory risks
+- single-source-of-truth transition strategy
+- anti-hardcoding strategy for server differences
+- modular admin UI strategy
+- async/jobs stabilization strategy
+- AI/citation provenance strategy
+- acceptance criteria for each major phase
+- rollback / containment thinking for risky migrations
+
+If a risk is deferred, the plan must explicitly say:
+- why it is deferred
+- what boundary keeps the system safe until then
+- what milestone closes it later
+
+## Review rule for major planning tasks
+
+For large migration tasks, do not approve a plan that ignores or vaguely mentions the mandatory risks above.
+A valid plan must stage them, constrain them, and define how they will be closed.
+
 ## Product-specific architectural intent
 The platform is multi-server and server-aware.
 Common logic should be:
@@ -139,3 +283,4 @@ A good result is:
 - admin-first
 - readable for humans
 - explicit about risks and tradeoffs
+When in doubt, prefer a safer staged migration plan over a cleaner but riskier rewrite-style plan.
