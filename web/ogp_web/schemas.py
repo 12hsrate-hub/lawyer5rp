@@ -620,3 +620,11 @@ class AdminLawSetPayload(BaseModel):
         if not normalized:
             raise ValueError("law_set_name_required")
         return normalized
+
+
+class AdminLawSetRebuildPayload(BaseModel):
+    dry_run: bool = False
+
+
+class AdminLawSetRollbackPayload(BaseModel):
+    law_version_id: int | None = None

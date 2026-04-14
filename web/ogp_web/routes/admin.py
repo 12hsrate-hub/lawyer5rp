@@ -28,6 +28,8 @@ from ogp_web.schemas import (
     AdminExamScoreResetPayload,
     AdminLawSourcesPayload,
     AdminLawSetPayload,
+    AdminLawSetRebuildPayload,
+    AdminLawSetRollbackPayload,
     AdminLawSourceRegistryPayload,
     AdminPasswordResetPayload,
     AdminQuotaPayload,
@@ -913,7 +915,7 @@ async def admin_rules_page(request: Request, user: AuthUser = Depends(require_ad
 
 @router.get("/api/admin/runtime-servers")
 async def admin_runtime_servers_list(
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
 ):
     _ = user
@@ -924,7 +926,7 @@ async def admin_runtime_servers_list(
 @router.post("/api/admin/runtime-servers")
 async def admin_runtime_servers_create(
     payload: AdminRuntimeServerPayload,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
@@ -948,7 +950,7 @@ async def admin_runtime_servers_create(
 async def admin_runtime_servers_update(
     server_code: str,
     payload: AdminRuntimeServerPayload,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
@@ -976,7 +978,7 @@ async def admin_runtime_servers_update(
 @router.post("/api/admin/runtime-servers/{server_code}/activate")
 async def admin_runtime_servers_activate(
     server_code: str,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
@@ -1002,7 +1004,7 @@ async def admin_runtime_servers_activate(
 @router.post("/api/admin/runtime-servers/{server_code}/deactivate")
 async def admin_runtime_servers_deactivate(
     server_code: str,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
@@ -1028,7 +1030,7 @@ async def admin_runtime_servers_deactivate(
 @router.get("/api/admin/runtime-servers/{server_code}/law-sets")
 async def admin_runtime_server_law_sets(
     server_code: str,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
 ):
     _ = user
@@ -1041,7 +1043,7 @@ async def admin_runtime_server_law_sets(
 async def admin_runtime_server_law_sets_create(
     server_code: str,
     payload: AdminLawSetPayload,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
@@ -1070,7 +1072,7 @@ async def admin_runtime_server_law_sets_create(
 async def admin_law_set_update(
     law_set_id: int,
     payload: AdminLawSetPayload,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
@@ -1096,7 +1098,7 @@ async def admin_law_set_update(
 @router.post("/api/admin/law-sets/{law_set_id}/publish")
 async def admin_law_set_publish(
     law_set_id: int,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("publish_law_sets")),
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
@@ -1119,8 +1121,9 @@ async def admin_law_set_publish(
 @router.post("/api/admin/law-sets/{law_set_id}/rebuild")
 async def admin_law_set_rebuild(
     law_set_id: int,
+    payload: AdminLawSetRebuildPayload,
     request: Request,
-    user: AuthUser = Depends(requires_permission("manage_laws")),
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
     user_store: UserStore = Depends(get_user_store),
@@ -1140,6 +1143,7 @@ async def admin_law_set_rebuild(
         actor_user_id=actor_user_id,
         request_id=getattr(request.state, "request_id", ""),
         persist_sources=True,
+        dry_run=bool(payload.dry_run),
     )
     metrics_store.log_event(
         event_type="admin_law_set_rebuild",
@@ -1153,9 +1157,39 @@ async def admin_law_set_rebuild(
     return {"ok": True, "law_set_id": law_set_id, "server_code": server_code, "source_urls": source_urls, "result": result}
 
 
+@router.post("/api/admin/law-sets/{law_set_id}/rollback")
+async def admin_law_set_rollback(
+    law_set_id: int,
+    payload: AdminLawSetRollbackPayload,
+    user: AuthUser = Depends(requires_permission("publish_law_sets")),
+    store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        server_code, _ = store.list_source_urls_for_law_set(law_set_id=law_set_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+    service = LawAdminService(workflow_service)
+    try:
+        result = service.rollback_active_version(server_code=server_code, law_version_id=payload.law_version_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    metrics_store.log_event(
+        event_type="admin_law_set_rollback",
+        username=user.username,
+        server_code=server_code,
+        path=f"/api/admin/law-sets/{law_set_id}/rollback",
+        method="POST",
+        status_code=200,
+        meta={"law_set_id": law_set_id, "law_version_id": payload.law_version_id},
+    )
+    return {"ok": True, "law_set_id": law_set_id, "result": result}
+
+
 @router.get("/api/admin/law-source-registry")
 async def admin_law_source_registry_list(
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
 ):
     _ = user
@@ -1166,7 +1200,7 @@ async def admin_law_source_registry_list(
 @router.post("/api/admin/law-source-registry")
 async def admin_law_source_registry_create(
     payload: AdminLawSourceRegistryPayload,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
@@ -1186,11 +1220,42 @@ async def admin_law_source_registry_create(
     return {"ok": True, "item": row.__dict__}
 
 
+@router.get("/api/admin/law-jobs/overview")
+async def admin_law_jobs_overview(
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+):
+    _ = user
+    tasks = _load_admin_tasks()
+    law_tasks = [task for task in tasks if str(task.get("scope") or "") == "law_sources_rebuild"]
+    failed = [task for task in law_tasks if str(task.get("status") or "") == "failed"]
+    running = [task for task in law_tasks if str(task.get("status") or "") in {"queued", "running"}]
+    alerts = [
+        {
+            "kind": "failed_rebuild",
+            "task_id": task.get("task_id"),
+            "server_code": task.get("server_code"),
+            "error": task.get("error"),
+        }
+        for task in failed[:20]
+    ]
+    return {
+        "ok": True,
+        "summary": {
+            "total_tasks": len(law_tasks),
+            "running_tasks": len(running),
+            "failed_tasks": len(failed),
+            "alerts_count": len(alerts),
+        },
+        "alerts": alerts,
+        "running": running[:20],
+    }
+
+
 @router.put("/api/admin/law-source-registry/{source_id}")
 async def admin_law_source_registry_update(
     source_id: int,
     payload: AdminLawSourceRegistryPayload,
-    user: AuthUser = Depends(require_admin_user),
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):

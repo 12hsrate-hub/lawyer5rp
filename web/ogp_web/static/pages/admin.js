@@ -349,6 +349,7 @@ function renderLawSets(payload) {
               <button type="button" class="ghost-button" data-law-set-edit="${escapeHtml(String(item.id || ""))}" data-law-set-name="${escapeHtml(String(item.name || ""))}" data-law-set-active="${item.is_active ? "1" : "0"}">Изменить</button>
               <button type="button" class="ghost-button" data-law-set-publish="${escapeHtml(String(item.id || ""))}">Опубликовать</button>
               <button type="button" class="ghost-button" data-law-set-rebuild="${escapeHtml(String(item.id || ""))}">Rebuild</button>
+              <button type="button" class="ghost-button" data-law-set-rollback="${escapeHtml(String(item.id || ""))}">Rollback</button>
             </td>
           </tr>
         `).join("") : '<tr><td colspan="6" class="legal-section__description">Наборы законов пока не созданы.</td></tr>'}
@@ -443,14 +444,42 @@ async function publishLawSetFlow(lawSetId) {
 }
 
 async function rebuildLawSetFlow(lawSetId) {
-  const response = await apiFetch(`/api/admin/law-sets/${encodeURIComponent(String(lawSetId))}/rebuild`, { method: "POST" });
+  const dryRun = window.confirm("Dry-run? ОК = только проверка без записи версии.");
+  const response = await apiFetch(`/api/admin/law-sets/${encodeURIComponent(String(lawSetId))}/rebuild`, {
+    method: "POST",
+    body: JSON.stringify({ dry_run: dryRun }),
+  });
   const payload = await parsePayload(response);
+  if (payload?.result?.dry_run) {
+    showMessage(`Dry-run выполнен. Ожидаемо статей: ${String(payload?.result?.article_count || 0)}.`);
+    await loadLawSourcesManager();
+    await loadLawJobsOverview();
+    return;
+  }
   if (!response.ok) {
     setStateError(errorsHost, formatHttpError(response, payload, "Не удалось пересобрать набор."));
     return;
   }
   showMessage(`Набор #${lawSetId} пересобран. Версия: ${String(payload?.result?.law_version_id || "—")}.`);
   await loadLawSourcesManager();
+  await loadLawJobsOverview();
+}
+
+async function rollbackLawSetFlow(lawSetId) {
+  const versionRaw = String(window.prompt("ID версии для отката (пусто = предыдущая)", "") || "").trim();
+  const lawVersionId = versionRaw ? Number(versionRaw) : null;
+  const response = await apiFetch(`/api/admin/law-sets/${encodeURIComponent(String(lawSetId))}/rollback`, {
+    method: "POST",
+    body: JSON.stringify({ law_version_id: Number.isFinite(lawVersionId) ? lawVersionId : null }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось выполнить rollback."));
+    return;
+  }
+  showMessage(`Rollback выполнен. Активная версия: ${String(payload?.result?.active_law_version_id || "вЂ”")}.`);
+  await loadLawSourcesManager();
+  await loadLawJobsOverview();
 }
 
 function renderLawSourceRegistry(payload) {
@@ -526,6 +555,33 @@ async function editLawSourceRegistryFlow(sourceId, currentName, currentKind, cur
   }
   showMessage("Источник обновлен.");
   await loadLawSourceRegistry();
+}
+
+async function loadLawJobsOverview() {
+  const host = document.getElementById("law-jobs-host");
+  if (!host) return;
+  const response = await apiFetch("/api/admin/law-jobs/overview");
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить jobs/alerts."))}</p>`;
+    return;
+  }
+  const summary = payload?.summary || {};
+  const alerts = Array.isArray(payload?.alerts) ? payload.alerts : [];
+  const running = Array.isArray(payload?.running) ? payload.running : [];
+  host.innerHTML = `
+    <div class="legal-section__description">
+      jobs: total=${escapeHtml(String(summary.total_tasks || 0))}, running=${escapeHtml(String(summary.running_tasks || 0))}, failed=${escapeHtml(String(summary.failed_tasks || 0))}, alerts=${escapeHtml(String(summary.alerts_count || 0))}
+    </div>
+    <details ${alerts.length ? "open" : ""}>
+      <summary>Алерты</summary>
+      <pre class="legal-field__hint">${escapeHtml(JSON.stringify(alerts, null, 2) || "[]")}</pre>
+    </details>
+    <details>
+      <summary>Running jobs</summary>
+      <pre class="legal-field__hint">${escapeHtml(JSON.stringify(running, null, 2) || "[]")}</pre>
+    </details>
+  `;
 }
 
 async function rebuildLawSources() {
@@ -835,6 +891,14 @@ function renderCatalog(payload) {
         </div>
       </div>
       <div id="law-source-registry-host"></div>
+      <hr>
+      <div class="admin-section-toolbar">
+        <strong>Jobs / Alerts</strong>
+        <div>
+          <button type="button" id="law-jobs-refresh" class="ghost-button">Обновить jobs</button>
+        </div>
+      </div>
+      <div id="law-jobs-host"></div>
     </div>
     ` : ""}
     <div class="legal-table-wrap">
@@ -1289,6 +1353,7 @@ async function loadCatalog(entityType = activeCatalogEntity) {
     await loadLawSourcesManager();
     await loadLawSets();
     await loadLawSourceRegistry();
+    await loadLawJobsOverview();
   }
 }
 
@@ -3881,6 +3946,10 @@ catalogHost?.addEventListener("click", async (event) => {
     await createLawSourceRegistryFlow();
     return;
   }
+  if (target.id === "law-jobs-refresh") {
+    await loadLawJobsOverview();
+    return;
+  }
   const lawSetEditId = target.getAttribute("data-law-set-edit");
   if (lawSetEditId) {
     const currentName = String(target.getAttribute("data-law-set-name") || "");
@@ -3896,6 +3965,11 @@ catalogHost?.addEventListener("click", async (event) => {
   const lawSetRebuildId = target.getAttribute("data-law-set-rebuild");
   if (lawSetRebuildId) {
     await rebuildLawSetFlow(lawSetRebuildId);
+    return;
+  }
+  const lawSetRollbackId = target.getAttribute("data-law-set-rollback");
+  if (lawSetRollbackId) {
+    await rollbackLawSetFlow(lawSetRollbackId);
     return;
   }
   const lawSourceEditId = target.getAttribute("data-law-source-edit");
