@@ -35,6 +35,7 @@ from ogp_web.server_config import get_server_config
 from ogp_web.services import ai_service
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
+from ogp_web.services.complaint_draft_schema import normalize_complaint_draft
 from ogp_web.services.complaint_service import build_generation_context_snapshot
 from ogp_web.services.citation_service import save_answer_citations
 from ogp_web.services.feature_flags import FeatureFlagService, RolloutContext
@@ -231,9 +232,11 @@ async def get_complaint_draft(
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ) -> ComplaintDraftResponse:
+    server_config = _server_config_for_user(store, user)
     draft = store.get_complaint_draft(user.username, server_code=user.server_code)
+    normalized = normalize_complaint_draft(draft.get("draft", {}), config=server_config)
     return ComplaintDraftResponse(
-        draft=draft.get("draft", {}),
+        draft=normalized.draft,
         updated_at=str(draft.get("updated_at", "") or ""),
         message="Черновик жалобы загружен.",
     )
@@ -246,15 +249,23 @@ async def save_complaint_draft(
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ComplaintDraftResponse:
-    draft = store.save_complaint_draft(user.username, payload.draft, server_code=user.server_code)
+    server_config = _server_config_for_user(store, user)
+    normalized = normalize_complaint_draft(payload.draft, config=server_config)
+    if normalized.unknown_keys:
+        unknown = ", ".join(normalized.unknown_keys)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=[f"Unknown complaint draft keys: {unknown}. Supported semantic keys are configured per server."],
+        )
+    draft = store.save_complaint_draft(user.username, normalized.draft, server_code=user.server_code)
     metrics_store.log_event(
         event_type="complaint_draft_saved",
         username=user.username,
         path="/api/complaint-draft",
         method="PUT",
         status_code=200,
-        resource_units=len(str(payload.draft or {})),
-        meta={"keys_count": len(payload.draft or {}), "server_code": user.server_code},
+        resource_units=len(str(normalized.draft or {})),
+        meta={"keys_count": len(normalized.draft or {}), "server_code": user.server_code, "draft_actions": normalized.actions or {}},
     )
     return ComplaintDraftResponse(
         draft=draft.get("draft", {}),

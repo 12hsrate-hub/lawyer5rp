@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from ogp_web.services.complaint_draft_schema import (
+    DEFAULT_VALUE_TRANSFORM_RULES,
+    LEGACY_FIELD_ALIASES,
+    SEMANTIC_KEY_SPECS,
+)
 from ogp_web.services.exam_sheet_service import EXAM_SHEET_URL
 
 from shared.ogp_core import BASE_EVIDENCE_FIELDS
@@ -179,4 +184,7 @@ BLACKBERRY_SERVER_CONFIG = ServerConfig(
     exam_sheet_url=EXAM_SHEET_URL,
     complaint_forum_url="https://forum.gta5rp.com/forums/zhaloby-v-prokuraturu.748/",
     complaint_test_preset=BLACKBERRY_TEST_COMPLAINT_PRESET,
+    complaint_supported_keys=tuple(SEMANTIC_KEY_SPECS.keys()),
+    complaint_legacy_key_map=dict(LEGACY_FIELD_ALIASES),
+    complaint_value_transforms=dict(DEFAULT_VALUE_TRANSFORM_RULES),
 )
