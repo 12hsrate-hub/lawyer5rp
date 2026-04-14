@@ -15,6 +15,10 @@ const rowsHost = document.getElementById("exam-import-rows");
 const rowSearchField = document.getElementById("exam-row-search");
 const rowFilterField = document.getElementById("exam-row-filter");
 const rowQuickStats = document.getElementById("exam-row-quick-stats");
+const pageMeta = document.getElementById("exam-rows-page-meta");
+const pageSizeField = document.getElementById("exam-page-size");
+const pagePrevButton = document.getElementById("exam-page-prev");
+const pageNextButton = document.getElementById("exam-page-next");
 const logoutBtn = document.getElementById("logout-btn");
 const detailMeta = document.getElementById("exam-detail-meta");
 const detailBody = document.getElementById("exam-detail-body");
@@ -47,6 +51,9 @@ let progressStartedAt = 0;
 let progressBaseText = "";
 let latestEntries = [];
 let initialEntriesLoaded = false;
+let entriesPageOffset = 0;
+let entriesPageLimit = 20;
+let entriesTotalRows = 0;
 
 function showErrors(lines) {
   setStateError(errorBox, Array.isArray(lines) ? lines.join("\n") : String(lines || ""));
@@ -324,10 +331,55 @@ function renderCurrentRows() {
 function setEntries(entries) {
   latestEntries = Array.isArray(entries) ? [...entries] : [];
   renderCurrentRows();
+  updateEntriesPagination(latestEntries.length);
+}
+
+function updateEntriesPagination(currentCount = latestEntries.length) {
+  if (!pageMeta) {
+    return;
+  }
+  const total = Math.max(0, Number(entriesTotalRows || 0));
+  const normalizedLimit = Math.max(1, Number(entriesPageLimit || 20));
+  const normalizedOffset = Math.max(0, Number(entriesPageOffset || 0));
+  const hasRows = total > 0 && currentCount > 0;
+  const from = hasRows ? normalizedOffset + 1 : 0;
+  const to = hasRows ? Math.min(normalizedOffset + currentCount, total) : 0;
+  const pageNumber = total > 0 ? Math.floor(normalizedOffset / normalizedLimit) + 1 : 1;
+  const pagesTotal = total > 0 ? Math.max(1, Math.ceil(total / normalizedLimit)) : 1;
+
+  pageMeta.textContent = `Показано ${from}-${to} из ${total}. Страница ${pageNumber}/${pagesTotal}.`;
+  if (pagePrevButton) {
+    pagePrevButton.disabled = normalizedOffset <= 0;
+  }
+  if (pageNextButton) {
+    pageNextButton.disabled = normalizedOffset + currentCount >= total;
+  }
+}
+
+async function loadEntriesPage({ offset = entriesPageOffset, limit = entriesPageLimit } = {}) {
+  const safeLimit = Math.max(1, Math.min(200, Number(limit || entriesPageLimit || 20)));
+  const safeOffset = Math.max(0, Number(offset || 0));
+  try {
+    const payload = await requestJson(
+      `/api/exam-import/entries?limit=${encodeURIComponent(String(safeLimit))}&offset=${encodeURIComponent(String(safeOffset))}`,
+      "Не удалось загрузить список ответов.",
+    );
+    entriesPageLimit = safeLimit;
+    entriesPageOffset = safeOffset;
+    entriesTotalRows = Number(payload?.total || 0);
+    if (pageSizeField && String(pageSizeField.value) !== String(safeLimit)) {
+      pageSizeField.value = String(safeLimit);
+    }
+    setEntries(Array.isArray(payload?.items) ? payload.items : []);
+  } catch (error) {
+    showErrors(error?.message || "Не удалось загрузить список ответов.");
+  }
 }
 
 function applySummary(payload) {
   const totalRows = String(payload.total_rows ?? 0);
+  entriesTotalRows = Number(payload.total_rows ?? entriesTotalRows ?? 0);
+  entriesPageOffset = 0;
   if (totalRowsValue) {
     totalRowsValue.textContent = totalRows;
   }
@@ -347,6 +399,7 @@ function applySummary(payload) {
     setEntries(payload.latest_entries);
   } else {
     renderCurrentRows();
+    updateEntriesPagination(latestEntries.length);
   }
 }
 
@@ -595,6 +648,7 @@ async function runImport() {
       { method: "POST", body: JSON.stringify({}) },
     );
     applySummary(payload);
+    await loadEntriesPage({ offset: 0, limit: entriesPageLimit });
     showMessage(
       `Импорт завершен: добавлено ${payload.inserted_count ?? 0}, пропущено как уже существующие ${payload.skipped_count ?? 0}, всего прочитано ${payload.imported_count ?? 0} строк.`,
     );
@@ -621,6 +675,7 @@ async function runScoring() {
     saveActiveTask(task);
     const payload = await pollTaskUntilFinished(task.task_id, "Не удалось проверить тесты.");
     applySummary(payload);
+    await loadEntriesPage({ offset: 0, limit: entriesPageLimit });
     showMessage(buildBulkResultMessage(payload, "default"));
   } catch (error) {
     clearActiveTask();
@@ -646,6 +701,7 @@ async function runRescoreFailed() {
     saveActiveTask(task);
     const payload = await pollTaskUntilFinished(task.task_id, "Не удалось перепроверить некорректные ответы.");
     applySummary(payload);
+    await loadEntriesPage({ offset: 0, limit: entriesPageLimit });
     showMessage(buildBulkResultMessage(payload, "rescore"));
   } catch (error) {
     clearActiveTask();
@@ -668,6 +724,7 @@ async function resumeActiveTask() {
   try {
     const payload = await pollTaskUntilFinished(activeTask.task_id, "Не удалось завершить фоновую проверку.");
     applySummary(payload);
+    await loadEntriesPage({ offset: 0, limit: entriesPageLimit });
 
     if (activeTask.task_type === "row_score" && activeTask.source_row) {
       updateRowAverage(activeTask.source_row, ExamView.formatAverage(payload));
@@ -706,6 +763,23 @@ rescoreFailedButton?.addEventListener("click", runRescoreFailed);
 
 rowSearchField?.addEventListener("input", renderCurrentRows);
 rowFilterField?.addEventListener("change", renderCurrentRows);
+pagePrevButton?.addEventListener("click", async () => {
+  if (entriesPageOffset <= 0) {
+    return;
+  }
+  await loadEntriesPage({ offset: Math.max(0, entriesPageOffset - entriesPageLimit), limit: entriesPageLimit });
+});
+pageNextButton?.addEventListener("click", async () => {
+  if (entriesPageOffset + latestEntries.length >= entriesTotalRows) {
+    return;
+  }
+  await loadEntriesPage({ offset: entriesPageOffset + entriesPageLimit, limit: entriesPageLimit });
+});
+pageSizeField?.addEventListener("change", async () => {
+  const nextLimit = Math.max(1, Math.min(200, Number(pageSizeField?.value || entriesPageLimit || 20)));
+  entriesPageLimit = nextLimit;
+  await loadEntriesPage({ offset: 0, limit: nextLimit });
+});
 
 rowsHost?.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : null;
@@ -747,5 +821,9 @@ document.addEventListener("keydown", (event) => {
 
 bindLogout(logoutBtn);
 ensureInitialEntries();
+entriesTotalRows = Math.max(0, Number(totalRowsValue?.textContent || 0));
+entriesPageLimit = Math.max(1, Math.min(200, Number(pageSizeField?.value || entriesPageLimit || 20)));
+entriesPageOffset = 0;
 renderCurrentRows();
+updateEntriesPagination(latestEntries.length);
 resumeActiveTask();

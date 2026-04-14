@@ -210,7 +210,7 @@ async def exam_import_page(
             permissions=permissions,
             nav_active="exam_import",
             exam_sheet_url=server_config.exam_sheet_url,
-            exam_entries=store.list_entries(),
+            exam_entries=store.list_entries(limit=20, offset=0),
             exam_total_rows=store.count(),
         ),
     )

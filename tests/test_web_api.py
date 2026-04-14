@@ -2418,6 +2418,56 @@ class WebApiTests(unittest.TestCase):
         overview_response = self.client.get("/api/admin/overview")
         self.assertEqual(overview_response.status_code, 403)
 
+    def test_exam_import_entries_support_pagination(self):
+        self._register_verify_and_login("tester", "tester-entries@example.com")
+        rows = []
+        for source_row in range(2, 27):
+            rows.append(
+                {
+                    "source_row": source_row,
+                    "submitted_at": f"2026-04-08 12:{source_row:02d}:00",
+                    "full_name": f"Student {source_row}",
+                    "discord_tag": f"student{source_row}",
+                    "passport": f"{source_row:06d}",
+                    "exam_format": "Очно",
+                    "payload": {
+                        "Ваше Имя/Фамилия?": f"Student {source_row}",
+                        "Ваш DiscordTag": f"student{source_row}",
+                        "Ваш номер паспорта?": f"{source_row:06d}",
+                        "Формат экзамена": "Очно",
+                        "Вопрос F": "Ответ F",
+                    },
+                    "answer_count": 1,
+                }
+            )
+        self.exam_store.import_rows(rows)
+
+        first_page = self.client.get("/api/exam-import/entries?limit=10&offset=0")
+        self.assertEqual(first_page.status_code, 200)
+        first_payload = first_page.json()
+        self.assertEqual(first_payload["total"], 25)
+        self.assertEqual(first_payload["limit"], 10)
+        self.assertEqual(first_payload["offset"], 0)
+        self.assertTrue(first_payload["has_next"])
+        self.assertEqual(len(first_payload["items"]), 10)
+        self.assertEqual(first_payload["items"][0]["source_row"], 26)
+
+        second_page = self.client.get("/api/exam-import/entries?limit=10&offset=10")
+        self.assertEqual(second_page.status_code, 200)
+        second_payload = second_page.json()
+        self.assertEqual(second_payload["total"], 25)
+        self.assertEqual(second_payload["offset"], 10)
+        self.assertTrue(second_payload["has_next"])
+        self.assertEqual(len(second_payload["items"]), 10)
+
+        last_page = self.client.get("/api/exam-import/entries?limit=10&offset=20")
+        self.assertEqual(last_page.status_code, 200)
+        last_payload = last_page.json()
+        self.assertEqual(last_payload["total"], 25)
+        self.assertEqual(last_payload["offset"], 20)
+        self.assertFalse(last_payload["has_next"])
+        self.assertEqual(len(last_payload["items"]), 5)
+
     def test_exam_import_background_tasks_support_row_and_bulk_scoring(self):
         self._register_verify_and_login("tester", "tester-task@example.com")
         self.exam_store.import_rows(

@@ -889,7 +889,9 @@ class ExamAnswersStore:
             conn.commit()
         return int(getattr(row, "rowcount", 0) or 0)
 
-    def list_entries(self, limit: int = 20) -> list[dict[str, object]]:
+    def list_entries(self, limit: int = 20, offset: int = 0) -> list[dict[str, object]]:
+        safe_limit = max(1, int(limit or 20))
+        safe_offset = max(0, int(offset or 0))
         with closing(self._connect()) as conn:
             rows = conn.execute(
                 f"""
@@ -909,8 +911,9 @@ class ExamAnswersStore:
                 WHERE source_row > 0
                 ORDER BY source_row DESC
                 LIMIT {self._placeholder()}
+                OFFSET {self._placeholder()}
                 """,
-                (limit,),
+                (safe_limit, safe_offset),
             ).fetchall()
         return [dict(row) for row in rows]
 
