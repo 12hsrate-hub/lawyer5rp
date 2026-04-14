@@ -1,606 +1,446 @@
-# PLANS.md — Multi-server Legal Platform Staged Migration (Execution-oriented)
+# PLANS.md — Migration Plan for Multi-Server Legal Platform (Staged, Repo-Aware)
 
-## Planning assumptions
-- Source inputs read before planning: `AGENTS.md`, `docs/agents.md`, `docs/brief.md`, `docs/IMPLEMENTATION_PLAN.md`.
-- `BRIEF.md` and prior root `PLANS.md` were not present; this file is rebuilt as the executable baseline.
-- This plan treats the 5 mandatory risks from AGENTS as **binding constraints**.
+Status: draft v1 (execution-ready baseline)
+Date: 2026-04-14
+Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared`) without full rewrite.
 
-## Mandatory risk constraints (binding)
-1. Dual source of truth between legacy logic and DB-driven runtime.
-2. Hardcoded server-specific business logic.
-3. Monolithic admin UI complexity.
-4. Async/jobs/import/export migration instability.
-5. Incomplete AI/citation provenance for audit/explainability.
+## 0) Goals and boundaries
 
----
+### Business goal
+Build a multi-server legal platform where non-technical admins configure server-specific behavior via visual admin UI, while runtime stays stable for current users.
 
-## Phase 1 — Baseline architecture inventory and migration boundaries
-**Goal**  
-Freeze a repo-aware baseline: current modules, legacy/new boundaries, and first reference migration scenario.
+### Hard constraints
+- No big-bang rewrite.
+- No new scattered server-specific `if/else` logic in runtime routes/services.
+- Preserve current production behavior during migration via adapters and feature flags.
+- New model must support draft/publish/rollback/audit/versioning for key admin-managed entities.
 
-**Why now**  
-Without this, subsequent phases risk accidental rewrites and uncontrolled scope.
-
-**Dependencies**  
-None.
-
-**Risks**  
-R1, R2 (wrong boundaries create long-term drift).
-
-**Acceptance criteria**  
-- Migration map exists with explicit "legacy adapter" boundaries.
-- First reference scenario selected (1 server + 1 procedure path).
-- No ambiguous ownership for runtime decisions.
-
-**Deliverables / artifacts**  
-- `PLANS.md` (this file)
-- `docs/MIGRATION_MAP.md`
-- `docs/ARCHITECTURE_NOTES.md`
-
-**Read-only first vs editable later**  
-- Read-only now: discovery and mapping only.
-- Editable later: code moves and adapters.
-
-**Legacy compatibility notes**  
-All legacy routes/services remain functional; this phase only defines boundaries.
-
-**Proposed task(s)**
-
-### Task P1-T1 — Build current-state module map
-- **One-sentence execution goal:** Produce a precise map of backend routes/services/stores/workers and their domain ownership.
-- **Scope / boundaries:** Static inventory only; no schema or behavior changes.
-- **Files or modules to inspect/change:** `web/ogp_web/routes/*`, `web/ogp_web/services/*`, `web/ogp_web/db/*`, `web/ogp_web/workers/*`, `tests/test_*` (contract tests).
-- **Deliverable:** `docs/ARCHITECTURE_NOTES.md` section "Current state map".
-- **Validation / acceptance checks:** Every production route maps to a primary service owner and storage dependency.
-- **Rollback / containment note:** Documentation-only task; no runtime impact.
-- **Blocking dependencies:** None.
-- **Priority (P0/P1/P2):** P0.
-
-### Task P1-T2 — Define migration seams and adapter boundaries
-- **One-sentence execution goal:** Mark which legacy modules become adapter-only and where new runtime owns decisions.
-- **Scope / boundaries:** Decision-boundary design for selected reference scenario.
-- **Files or modules to inspect/change:** `web/ogp_web/routes/complaint.py`, `web/ogp_web/routes/validation.py`, `web/ogp_web/services/generation_orchestrator.py`, `web/ogp_web/services/legal_pipeline_service.py`, `docs/MIGRATION_MAP.md`.
-- **Deliverable:** `docs/MIGRATION_MAP.md` with seam diagram and cutover criteria.
-- **Validation / acceptance checks:** Single source of truth identified for each migrated decision point.
-- **Rollback / containment note:** If seam unclear, keep legacy path as default and delay cutover.
-- **Blocking dependencies:** P1-T1.
-- **Priority (P0/P1/P2):** P0.
+### Current architecture anchors in repo
+- Runtime entry and app composition: `web/ogp_web/app.py`.
+- Legacy route surface: `web/ogp_web/routes/*.py` (auth/profile/complaint/cases/validation/exam_import/jobs/document_builder/attachments/exports/admin/pages).
+- Current service layer: `web/ogp_web/services/*.py` including legal + generation + async + retrieval concerns.
+- Data/runtime infra: `web/ogp_web/db/*`, `web/ogp_web/storage/*`, `web/ogp_web/workers/*`, `web/ogp_web/providers/*`.
+- Server-aware baseline: `web/ogp_web/server_config/*`.
 
 ---
 
-## Phase 2 — Platform core runtime model (server-aware, versioned)
-**Goal**  
-Create core runtime entities for server pack, procedures, forms, rules, templates, and capabilities as versioned data.
+## 1) Target architecture (controlled rebuild inside modular monolith)
 
-**Why now**  
-This is prerequisite to eliminate server-specific hardcoding and support multiple servers safely.
+### 1.1 Platform Core (shared runtime machine)
+Common, reusable engine layers:
+- workflow engine
+- form processing
+- validation framework
+- generation pipeline
+- document lifecycle
+- export pipeline
+- permissions/audit/publication pipeline
 
-**Dependencies**  
-Phase 1.
+### 1.2 Server configuration as data (not hardcoded code branches)
+Server-specific content moved to versioned configuration models:
+- process types
+- BB catalogs
+- forms
+- validation rules
+- templates
+- law sets
+- terminology/capabilities
 
-**Risks**  
-R1, R2.
+### 1.3 Visual Admin first-class surface
+Bounded modules (not mega-page):
+- Servers
+- Process Types
+- BB Codes
+- Forms
+- Validation Rules
+- Document Templates
+- Law Sets
+- Publications
+- Audit
+- Users & Permissions
 
-**Acceptance criteria**  
-- Runtime decisions read from versioned DB entities for reference scenario.
-- Clear rule for configuration vs plugin extension.
+### 1.4 Publication model for all critical entities
+Every configurable entity: draft -> validate -> publish -> rollback (+ full audit timeline).
 
-**Deliverables / artifacts**  
-- Schema design notes + migration scripts
-- Runtime registry services
-- Anti-hardcoding review checklist
-
-**Read-only first vs editable later**  
-- Read-only first: runtime fetch APIs.
-- Editable later: admin CRUD/publish tools.
-
-**Legacy compatibility notes**  
-Legacy constants/enums remain until adapter switchover is complete.
-
-**Proposed task(s)**
-
-### Task P2-T1 — Define canonical runtime data contract
-- **One-sentence execution goal:** Specify versioned DB contract for server packs and procedure runtime.
-- **Scope / boundaries:** Contract and migration design only for initial entities.
-- **Files or modules to inspect/change:** `web/ogp_web/db/migrations/versions/postgres/*`, `web/ogp_web/services/server_config_registry.py`, `web/ogp_web/services/runtime_*`.
-- **Deliverable:** Contract spec in `docs/DATA_MODEL_DRAFT.md` + migration plan.
-- **Validation / acceptance checks:** Contract covers server_id, versions, statuses (draft/published), effective dates.
-- **Rollback / containment note:** Keep old contract untouched; deploy new tables side-by-side.
-- **Blocking dependencies:** P1-T2.
-- **Priority (P0/P1/P2):** P0.
-
-### Task P2-T2 — Implement runtime resolution service behind feature flag
-- **One-sentence execution goal:** Build runtime resolver that picks effective versioned config by server and scenario.
-- **Scope / boundaries:** Resolver + read APIs; no full admin editing yet.
-- **Files or modules to inspect/change:** `web/ogp_web/services/server_config_registry.py`, `web/ogp_web/services/feature_flags.py`, `web/ogp_web/routes/validation.py`.
-- **Deliverable:** Resolver service + flag-guarded integration for reference path.
-- **Validation / acceptance checks:** Shadow compare reports parity with legacy outputs for baseline fixtures.
-- **Rollback / containment note:** Disable feature flag to return fully to legacy resolver.
-- **Blocking dependencies:** P2-T1.
-- **Priority (P0/P1/P2):** P0.
-
-### Task P2-T3 — Enforce anti-hardcoding governance
-- **One-sentence execution goal:** Add explicit review gates that reject new server-specific conditionals outside approved extension points.
-- **Scope / boundaries:** CI/static checks + contribution rule updates.
-- **Files or modules to inspect/change:** `tests/`, `docs/CODEX_RUN_GUIDE.md`, `docs/README.md`, lint/test helpers.
-- **Deliverable:** Anti-hardcoding check + documented extension policy.
-- **Validation / acceptance checks:** New `if server == ...` patterns fail checks unless in whitelisted plugin boundary.
-- **Rollback / containment note:** Policy can run warning-only for one sprint before hard fail.
-- **Blocking dependencies:** P2-T1.
-- **Priority (P0/P1/P2):** P1.
+### 1.5 Infrastructure direction (incremental)
+- PostgreSQL as source of truth.
+- Redis for queue/cache/quota/temp state.
+- S3-compatible storage for files/exports.
+- Worker queue for async jobs.
+- AI via adapter/gateway with provenance persistence.
 
 ---
 
-## Phase 3 — Visual admin architecture (modular, read-first)
-**Goal**  
-Restructure admin surface by domain, starting with read-only views and progressive editability.
+## 2) Execution phases (with dependencies, acceptance, rollback)
 
-**Why now**  
-Admin is core product surface for non-technical operators; wrong structure causes long-term lock-in.
+## Phase A — Baseline inventory + migration map (1 sprint)
 
-**Dependencies**  
-Phase 2.
+### A.1 Codebase inventory
+- Map route -> service -> storage dependencies for all critical flows (`/login`, `/complaint`, `/admin`, `/exam_import`, document build/export).
+- Mark hardcoded server-dependent paths.
+- Mark async operations and retry/error handling locations.
 
-**Risks**  
-R3, R2.
+### A.2 Define "reference pilot"
+- Choose 1 reference server and 1 reference procedure as first migration scenario.
+- Fix canonical old-vs-new behavior checklist for this scenario.
 
-**Acceptance criteria**  
-- Domain-separated admin sections exist (not mega-page).
-- Read-only discovery views available for each key domain.
+### Deliverables
+- `MIGRATION_MAP.md`
+- `ARCHITECTURE_NOTES.md`
+- "legacy adapters list" (where compatibility must stay)
 
-**Deliverables / artifacts**  
-- `docs/UI_ADMIN_STRUCTURE.md`
-- Admin navigation map + shared UI patterns
+### Acceptance
+- Full route/service map for critical user/admin journeys approved.
+- Pilot scenario and cutover KPIs fixed.
 
-**Read-only first vs editable later**  
-Read-only domain panels first; editing/publish tools later with audit.
+### Rollback/containment
+- No runtime switch yet; documentation-only phase.
 
-**Legacy compatibility notes**  
-Existing admin pages remain available until equivalent domain modules are stable.
-
-**Proposed task(s)**
-
-### Task P3-T1 — Define admin domain IA and module boundaries
-- **One-sentence execution goal:** Create explicit information architecture for admin domains and shared components.
-- **Scope / boundaries:** IA, routes, module boundaries; no bulk UI rewrite.
-- **Files or modules to inspect/change:** `web/ogp_web/static/pages/admin.js`, `web/ogp_web/static/shared/admin_*`, `web/ogp_web/templates/*admin*`, `docs/UI_ADMIN_STRUCTURE.md`.
-- **Deliverable:** Domain map for Servers, Procedures, BB Codes, Forms, Rules, Templates, Law Sets, Publications, Audit, Users & Permissions.
-- **Validation / acceptance checks:** Each domain has isolated data-fetch and state boundary.
-- **Rollback / containment note:** Keep current admin entrypoint as fallback shell.
-- **Blocking dependencies:** P2-T1.
-- **Priority (P0/P1/P2):** P0.
-
-### Task P3-T2 — Deliver read-only admin slices for runtime entities
-- **One-sentence execution goal:** Implement first read-only admin pages for runtime entities from new resolver.
-- **Scope / boundaries:** Read-only list/detail views for reference server/procedure.
-- **Files or modules to inspect/change:** `web/ogp_web/routes/admin.py`, `web/ogp_web/static/shared/admin_runtime_*`, `web/ogp_web/templates/admin*.html`.
-- **Deliverable:** Navigable read-only admin views backed by new runtime service.
-- **Validation / acceptance checks:** Admin can inspect active/pending versions without editing.
-- **Rollback / containment note:** Feature-flag route to legacy admin data provider.
-- **Blocking dependencies:** P3-T1, P2-T2.
-- **Priority (P0/P1/P2):** P1.
-
-### Task P3-T3 — Add editable tools with draft/publish constraints
-- **One-sentence execution goal:** Add scoped edit flows with draft/publish/rollback/audit workflow.
-- **Scope / boundaries:** One domain first (e.g., procedures/forms) before broader rollout.
-- **Files or modules to inspect/change:** `web/ogp_web/routes/admin.py`, `web/ogp_web/services/law_admin_service.py`, `web/ogp_web/services/content_workflow_service.py`.
-- **Deliverable:** First editable domain module with versioned workflow controls.
-- **Validation / acceptance checks:** No direct mutation of published version; rollback creates audit trail.
-- **Rollback / containment note:** Disable edit actions, keep read-only mode.
-- **Blocking dependencies:** P3-T2, P6-T1.
-- **Priority (P0/P1/P2):** P1.
+Dependencies: none.
 
 ---
 
-## Phase 4 — Procedure pipeline migration (forms, validation, templates, BB catalogs)
-**Goal**  
-Migrate one end-to-end procedure flow from legacy logic to configuration-driven runtime.
+## Phase B — Runtime model foundation + single source-of-truth contract (1-2 sprints)
 
-**Why now**  
-Delivers first tangible business scenario proving architecture without full rewrite.
+### B.1 Data model draft and persistence skeleton
+Introduce versioned DB model families (minimal first):
+- server_config_version
+- procedure_version
+- form_version
+- validation_rule_version
+- template_version
+- law_set_version
+- publication/audit events
 
-**Dependencies**  
-Phases 2–3.
+### B.2 Read-path adapters
+- Keep legacy endpoints.
+- Add adapter layer that can resolve config from new model behind feature flags.
+- Default remains legacy for all non-pilot scenarios.
 
-**Risks**  
-R1, R2, R5.
+### B.3 Drift detection
+- Add shadow compare for pilot scenario: legacy output vs new-runtime-derived output.
+- Persist mismatch logs with reason category.
 
-**Acceptance criteria**  
-- Reference procedure completes user flow using versioned data.
-- Legacy and new behavior parity validated by fixtures.
+### Deliverables
+- `DATA_MODEL_DRAFT.md`
+- feature flags matrix (`legacy_only`, `shadow_compare`, `new_runtime_active`)
+- drift-report script/check
 
-**Deliverables / artifacts**  
-- Reference server pack for one procedure
-- Mapping doc from legacy fields/rules to new model
+### Acceptance
+- Pilot scenario can run in `shadow_compare` mode with measurable drift report.
+- No regression in current production route contracts.
 
-**Read-only first vs editable later**  
-Use read-only runtime snapshots during migration; editing unlocked after parity.
+### Rollback/containment
+- One-flag instant revert to `legacy_only` per scenario.
 
-**Legacy compatibility notes**  
-Legacy handler remains available behind switch until cutover criteria met.
-
-**Proposed task(s)**
-
-### Task P4-T1 — Create legacy-to-runtime mapping for reference procedure
-- **One-sentence execution goal:** Map legacy inputs, rules, templates, BB codes to versioned runtime records.
-- **Scope / boundaries:** One procedure only.
-- **Files or modules to inspect/change:** `web/ogp_web/routes/complaint.py`, `web/ogp_web/services/complaint_service.py`, `web/ogp_web/services/validation_service.py`, `web/ogp_web/services/document_builder_service.py`.
-- **Deliverable:** Mapping matrix + data seed specification.
-- **Validation / acceptance checks:** Every legacy decision point mapped to runtime source.
-- **Rollback / containment note:** Keep legacy execution as primary until parity checks pass.
-- **Blocking dependencies:** P2-T2.
-- **Priority (P0/P1/P2):** P0.
-
-### Task P4-T2 — Implement dual-run shadow validation and drift alerts
-- **One-sentence execution goal:** Run legacy and new pipelines in shadow for the same inputs and report drift.
-- **Scope / boundaries:** Non-blocking shadow mode for selected traffic/fixtures.
-- **Files or modules to inspect/change:** `web/ogp_web/services/generation_orchestrator.py`, `web/ogp_web/services/legal_pipeline_service.py`, `web/ogp_web/services/input_audit_service.py`, logs/metrics hooks.
-- **Deliverable:** Drift report and alert thresholds.
-- **Validation / acceptance checks:** Drift rate below approved threshold for cutover window.
-- **Rollback / containment note:** Keep shadow-only mode if drift exceeds threshold.
-- **Blocking dependencies:** P4-T1.
-- **Priority (P0/P1/P2):** P0.
-
-### Task P4-T3 — Cut over reference procedure to new runtime source of truth
-- **One-sentence execution goal:** Switch reference procedure execution to runtime resolver while legacy becomes adapter-only.
-- **Scope / boundaries:** One procedure + one server; no global cutover.
-- **Files or modules to inspect/change:** `web/ogp_web/routes/complaint.py`, `web/ogp_web/routes/validation.py`, feature flag configs.
-- **Deliverable:** Controlled cutover with runbook and rollback toggle.
-- **Validation / acceptance checks:** Production checks pass; rollback tested within defined window.
-- **Rollback / containment note:** Immediate toggle back to legacy source for failed SLOs.
-- **Blocking dependencies:** P4-T2.
-- **Priority (P0/P1/P2):** P0.
+Dependencies: Phase A.
 
 ---
 
-## Phase 5 — Law registry and publication flow
-**Goal**  
-Establish versioned law sets and publication lifecycle aligned with runtime procedures.
+## Phase C — Visual Admin read-only modules (1 sprint)
 
-**Why now**  
-Legal context must be stable/versioned before broad AI generation or audit promises.
+### C.1 Read-only domain slices
+Build separate admin views (read-only first):
+- Servers
+- Procedures
+- Forms
+- Rules
+- Templates
+- Law sets
+- Publications/Audit
 
-**Dependencies**  
-Phases 2 and 4.
+### C.2 UX language baseline
+- Human-readable naming dictionary (user/admin-facing).
+- Ban raw internal identifiers in visible labels by default.
 
-**Risks**  
-R1, R5.
+### Deliverables
+- `UI_ADMIN_STRUCTURE.md`
+- read-only pages for pilot domain entities
+- initial glossary
 
-**Acceptance criteria**  
-- Law set versions are publishable/rollbackable with audit.
-- Procedure runtime references law_set versions explicitly.
+### Acceptance
+- Admin can navigate pilot scenario config end-to-end without code.
+- UI modules are separated by domain boundaries.
 
-**Deliverables / artifacts**  
-- Law registry model and publication workflow
-- Law set linkage rules to server/procedure versions
+### Rollback/containment
+- Read-only surface only; no mutation risk.
 
-**Read-only first vs editable later**  
-Read-only publication history first; editing/publish actions later.
-
-**Legacy compatibility notes**  
-Existing law bundles can be imported as initial versions, not hardcoded runtime assets.
-
-**Proposed task(s)**
-
-### Task P5-T1 — Normalize law set version model and links
-- **One-sentence execution goal:** Ensure law sets are first-class versioned entities linked to server/procedure runtime.
-- **Scope / boundaries:** Data model and service contract alignment.
-- **Files or modules to inspect/change:** `web/ogp_web/services/law_bundle_service.py`, `web/ogp_web/services/law_version_service.py`, related migrations.
-- **Deliverable:** Updated law version linkage spec + migration patch list.
-- **Validation / acceptance checks:** Runtime can resolve exact law_set version for generated document.
-- **Rollback / containment note:** Preserve previous linkage columns until migration stable.
-- **Blocking dependencies:** P2-T1.
-- **Priority (P0/P1/P2):** P0.
-
-### Task P5-T2 — Add publication workflow and rollback for law sets
-- **One-sentence execution goal:** Implement draft/publish/rollback lifecycle for law sets with audit events.
-- **Scope / boundaries:** Law registry domain only.
-- **Files or modules to inspect/change:** `web/ogp_web/services/content_workflow_service.py`, `web/ogp_web/routes/admin.py`, `web/ogp_web/services/law_admin_service.py`.
-- **Deliverable:** Publish API + rollback action + audit entries.
-- **Validation / acceptance checks:** Published version immutable; rollback selectable and logged.
-- **Rollback / containment note:** Disable publish endpoints if invariants fail.
-- **Blocking dependencies:** P5-T1, P6-T1.
-- **Priority (P0/P1/P2):** P1.
+Dependencies: Phase B.
 
 ---
 
-## Phase 6 — Draft/Publish/Rollback/Audit platform cross-cutting controls
-**Goal**  
-Unify version lifecycle and audit guarantees across server packs, procedures, templates, and laws.
+## Phase D — Editable admin + draft/publish/rollback/audit (2 sprints)
 
-**Why now**  
-Cross-domain workflow consistency is needed before scale and admin edit expansion.
+### D.1 Editable workflows
+For pilot entities, implement:
+- create draft
+- validate draft
+- publish version
+- rollback to previous version
+- audit event timeline
 
-**Dependencies**  
-Phases 2 and 3.
+### D.2 Publication gates
+- Publish blocked on validation errors.
+- Two-person review option for high-risk entities (laws/templates/rules).
 
-**Risks**  
-R1, R3, R5.
+### Deliverables
+- publication workflow endpoints + UI
+- audit ledger for config changes
+- release checklist per published bundle
 
-**Acceptance criteria**  
-- Shared lifecycle policy applies across all major admin-managed entities.
-- Audit logs capture actor, change set, and effective version references.
+### Acceptance
+- Admin can safely change pilot scenario without touching code.
+- rollback tested on pilot end-to-end.
 
-**Deliverables / artifacts**  
-- Workflow policy spec
-- Audit event schema
-- Cross-domain lifecycle conformance checks
+### Rollback/containment
+- Emergency republish of last known good version.
+- Hard lock option on publish for incident mode.
 
-**Read-only first vs editable later**  
-Audit/read visibility first; mutation endpoints gated until conformance checks pass.
-
-**Legacy compatibility notes**  
-Legacy write paths remain restricted; new lifecycle applies only to migrated domains.
-
-**Proposed task(s)**
-
-### Task P6-T1 — Standardize lifecycle state machine across domains
-- **One-sentence execution goal:** Define and enforce a single draft/publish/rollback state model used by all target entities.
-- **Scope / boundaries:** State model + service-level guards.
-- **Files or modules to inspect/change:** `web/ogp_web/services/content_workflow_service.py`, `web/ogp_web/schemas*.py`, migrations for status columns.
-- **Deliverable:** Lifecycle specification and guarded service APIs.
-- **Validation / acceptance checks:** Invalid transitions rejected uniformly across domains.
-- **Rollback / containment note:** Keep entity-specific transitions until global model fully adopted.
-- **Blocking dependencies:** P2-T1.
-- **Priority (P0/P1/P2):** P0.
-
-### Task P6-T2 — Implement audit event contract and admin visibility
-- **One-sentence execution goal:** Persist and surface immutable audit events for lifecycle actions.
-- **Scope / boundaries:** Audit storage + read APIs/UI.
-- **Files or modules to inspect/change:** `web/ogp_web/services/admin_dashboard_service.py`, `web/ogp_web/routes/admin.py`, `web/ogp_web/static/shared/admin_activity.js`.
-- **Deliverable:** Audit event timeline in admin for migrated domains.
-- **Validation / acceptance checks:** Every publish/rollback action has actor/timestamp/version reference.
-- **Rollback / containment note:** If UI fails, retain backend logging as source for audits.
-- **Blocking dependencies:** P6-T1.
-- **Priority (P0/P1/P2):** P1.
+Dependencies: Phase C.
 
 ---
 
-## Phase 7 — AI/retrieval/citation provenance hardening
-**Goal**  
-Guarantee traceability for generated outputs and legal citations across runtime versions.
+## Phase E — Async/jobs stabilization (1 sprint)
 
-**Why now**  
-Explainability and auditability are pre-launch blockers for legal outputs.
+### E.1 Job model hardening
+Standardize job states across import/export/law rebuild/generation:
+- queued, running, succeeded, failed, retry_scheduled, cancelled.
 
-**Dependencies**  
-Phases 4–6.
+### E.2 Idempotency + retries
+- Add dedup keys for import/export/generation operations.
+- Explicit retry policies by job type.
+- Non-retryable failure classes documented.
 
-**Risks**  
-R5 (primary), R1.
+### E.3 Ops visibility
+- Admin/Ops screen for failed jobs + retry controls + incident notes.
 
-**Acceptance criteria**  
-- Minimum provenance fields persisted per generation.
-- Citation trace resolvable from document/admin views.
+### Deliverables
+- async operations runbook updates
+- job observability views
+- retry/idempotency policy matrix
 
-**Deliverables / artifacts**  
-- Provenance storage contract
-- Citation trace service
-- Admin provenance view
+### Acceptance
+- duplicate prevention verified for pilot async flows.
+- failed jobs are visible and recoverable without DB manual edits.
 
-**Read-only first vs editable later**  
-Read-only provenance inspection first; no manual provenance edits.
+### Rollback/containment
+- Per-job kill switch + fallback to legacy execution path where available.
 
-**Legacy compatibility notes**  
-Legacy generation allowed only if provenance fallback is captured.
-
-**Proposed task(s)**
-
-### Task P7-T1 — Define and persist minimum provenance fields
-- **One-sentence execution goal:** Store mandatory provenance tuple for every generation run.
-- **Scope / boundaries:** Persistence model + generation write path.
-- **Files or modules to inspect/change:** `web/ogp_web/services/legal_pipeline_service.py`, `web/ogp_web/services/law_retrieval_service.py`, `web/ogp_web/db/migrations/versions/postgres/0007_citations_retrieval.sql`, `0017_generation_snapshot_effective_config_and_document_status.sql`.
-- **Deliverable:** Provenance schema + write integration.
-- **Validation / acceptance checks:** Fields present: server_id, server_config_version, procedure_version, template_version, law_set_version, citation_ids, model/provider, prompt_version, generation_timestamp.
-- **Rollback / containment note:** Block publish of generated docs missing required provenance.
-- **Blocking dependencies:** P5-T1, P6-T1.
-- **Priority (P0/P1/P2):** P0.
-
-### Task P7-T2 — Surface provenance and citation trace in admin/review flows
-- **One-sentence execution goal:** Provide admin/reviewer visibility into exact legal and model context of outputs.
-- **Scope / boundaries:** Read APIs and UI panels; no mutation.
-- **Files or modules to inspect/change:** `web/ogp_web/routes/admin.py`, `web/ogp_web/static/shared/admin_runtime_laws.js`, document review templates.
-- **Deliverable:** Provenance tab/panel on document review.
-- **Validation / acceptance checks:** Reviewer can trace each citation fragment to source/version.
-- **Rollback / containment note:** Hide panel only if backend stable storage remains intact.
-- **Blocking dependencies:** P7-T1.
-- **Priority (P0/P1/P2):** P1.
+Dependencies: Phase D.
 
 ---
 
-## Phase 8 — Async jobs/imports/exports and infra migration (Redis/Queue/S3)
-**Goal**  
-Stabilize asynchronous operations with explicit states, retries, idempotency, and operational visibility.
+## Phase F — AI/retrieval/citation provenance hardening (1 sprint)
 
-**Why now**  
-Async instability is often silent until business-critical failures appear.
+### F.1 Mandatory provenance persistence
+Persist for every generated legal output:
+- server_id
+- server config version
+- procedure version
+- template version
+- law_set version
+- citation/fragment ids
+- model/provider id
+- prompt version
+- generation timestamp
 
-**Dependencies**  
-Phases 4 and 6.
+### F.2 Audit and admin exposure
+- Add provenance panel in document review/admin audit views.
+- Allow export of provenance trace for incident/legal review.
 
-**Risks**  
-R4 (primary), R1.
+### Deliverables
+- provenance schema + persistence in generation pipeline
+- citation trace access in admin
 
-**Acceptance criteria**  
-- Job state machine and retry policy documented and enforced.
-- Admin/ops can inspect failed and stuck jobs.
+### Acceptance
+- Any pilot generated document is explainable from stored provenance.
 
-**Deliverables / artifacts**  
-- Async migration runbook
-- Job state dashboards
-- Retry/idempotency policy
+### Rollback/containment
+- If provenance capture fails, block publish-grade output or force fallback policy (configured per risk tolerance).
 
-**Read-only first vs editable later**  
-Read-only observability first; operational controls (retry/requeue) later.
-
-**Legacy compatibility notes**  
-Legacy async paths remain available until per-job cutover validation is complete.
-
-**Proposed task(s)**
-
-### Task P8-T1 — Standardize async job contract and idempotency keys
-- **One-sentence execution goal:** Define unified job schema with deterministic idempotency and retry semantics.
-- **Scope / boundaries:** Job model + worker contract.
-- **Files or modules to inspect/change:** `web/ogp_web/workers/job_worker.py`, `web/ogp_web/workers/worker_pool.py`, `web/ogp_web/routes/jobs.py`, `tests/test_async_jobs_layer.py`.
-- **Deliverable:** Async contract spec + base implementation.
-- **Validation / acceptance checks:** Duplicate submits do not execute side effects twice.
-- **Rollback / containment note:** Route selected job types back to legacy executor if error rates spike.
-- **Blocking dependencies:** P4-T2.
-- **Priority (P0/P1/P2):** P0.
-
-### Task P8-T2 — Add job visibility and failure containment surfaces
-- **One-sentence execution goal:** Expose job status, retries, and failure reasons in admin/ops interfaces.
-- **Scope / boundaries:** Monitoring endpoints + admin read views.
-- **Files or modules to inspect/change:** `web/ogp_web/routes/jobs.py`, `web/ogp_web/routes/admin.py`, `web/ogp_web/static/shared/admin_overview*.js`.
-- **Deliverable:** Job observability panel + failure playbook links.
-- **Validation / acceptance checks:** Operators can identify stuck/failed jobs and next action.
-- **Rollback / containment note:** If UI unavailable, CLI/runbook path remains documented.
-- **Blocking dependencies:** P8-T1.
-- **Priority (P0/P1/P2):** P1.
-
-### Task P8-T3 — Migrate imports/exports to phased queue workers
-- **One-sentence execution goal:** Move import/export heavy operations onto queue workers with staged cutover.
-- **Scope / boundaries:** One operation type at a time (exam import first, exports second).
-- **Files or modules to inspect/change:** `web/ogp_web/routes/exam_import.py`, `web/ogp_web/routes/exports.py`, `web/ogp_web/services/exam_import_service.py`, `web/ogp_web/services/export_service.py`.
-- **Deliverable:** Phased migration runbook and cutover toggles per operation.
-- **Validation / acceptance checks:** Throughput and failure SLOs meet baseline before next operation migrates.
-- **Rollback / containment note:** Per-operation rollback switch to synchronous/legacy handler.
-- **Blocking dependencies:** P8-T1, P8-T2.
-- **Priority (P0/P1/P2):** P1.
+Dependencies: Phase D (and parallel integration with E).
 
 ---
 
-## Phase 9 — Master manifest, docs layers, rollout, and legacy cleanup
-**Goal**  
-Finalize exportable manifest, operational docs, and safe decommissioning of duplicated legacy logic.
+## Phase G — Pilot cutover + staged expansion (ongoing)
 
-**Why now**  
-Only after core flows stabilize should cleanup and governance become enforceable.
+### G.1 Cutover for reference scenario
+- Move pilot scenario from `shadow_compare` to `new_runtime_active`.
+- Keep legacy adapter path for bounded rollback window.
 
-**Dependencies**  
-Phases 4–8.
+### G.2 Expansion waves
+Migrate by scenario batches (not file batches):
+- wave 1: nearest-neighbor scenarios
+- wave 2: medium complexity
+- wave 3: high-variance server-specific scenarios
 
-**Risks**  
-R1, R2, R4, R5.
+### Deliverables
+- per-wave migration checklists
+- deprecation list for legacy-only logic
 
-**Acceptance criteria**  
-- Master manifest export/import reflects published state.
-- Legacy duplicate decision paths removed per cutover checklist.
+### Acceptance
+- wave-level KPI stability + no critical drift.
 
-**Deliverables / artifacts**  
-- `docs/MANIFEST_SPEC.md`
-- Updated user/admin/ops/dev docs set
-- Legacy removal checklist with closure sign-off
+### Rollback/containment
+- scenario-level rollback to legacy flag.
 
-**Read-only first vs editable later**  
-Manifest export/read first, import controls later with validation gates.
+Dependencies: B-F.
 
-**Legacy compatibility notes**  
-Legacy code removed only after cutover metrics remain stable for agreed rollback window.
+---
 
-**Proposed task(s)**
+## 3) What to do first (next concrete actions)
 
-### Task P9-T1 — Define master manifest schema and export pipeline
-- **One-sentence execution goal:** Specify and generate one canonical manifest for published server/runtime/legal configuration.
-- **Scope / boundaries:** Export first; import validation separately.
-- **Files or modules to inspect/change:** `web/ogp_web/services/export_service.py`, `web/ogp_web/routes/exports.py`, `docs/MANIFEST_SPEC.md`.
-- **Deliverable:** Versioned manifest spec + export endpoint.
-- **Validation / acceptance checks:** Manifest reproduces published runtime snapshot for reference server.
-- **Rollback / containment note:** Keep manifest read-only until import validation is hardened.
-- **Blocking dependencies:** P5-T2, P6-T2.
-- **Priority (P0/P1/P2):** P1.
+1. Create `MIGRATION_MAP.md` from current route/service/storage graph for critical flows.
+2. Freeze pilot server + pilot procedure + acceptance KPIs.
+3. Define initial versioned configuration schema draft.
+4. Implement feature-flag skeleton for scenario-level switching.
+5. Enable `shadow_compare` for pilot with mismatch logging.
 
-### Task P9-T2 — Build three-layer documentation set (admin/ops/dev)
-- **One-sentence execution goal:** Publish coherent docs for non-technical admins, operations, and developers.
-- **Scope / boundaries:** Update docs; no runtime behavior changes.
-- **Files or modules to inspect/change:** `docs/README.md`, `docs/RUNBOOK.md`, `docs/OPERATIONS_INDEX.md`, new admin guides.
-- **Deliverable:** Linked doc set mapped to migrated domains.
-- **Validation / acceptance checks:** Each critical flow has one admin guide + one ops runbook reference.
-- **Rollback / containment note:** Preserve legacy docs until replacements validated.
-- **Blocking dependencies:** P3-T2, P8-T2.
-- **Priority (P0/P1/P2):** P2.
+## 4) What not to do
 
-### Task P9-T3 — Execute legacy cleanup by scenario closure checklist
-- **One-sentence execution goal:** Remove duplicated legacy logic only for scenarios that passed cutover and rollback windows.
-- **Scope / boundaries:** Scenario-by-scenario cleanup, not bulk deletion.
-- **Files or modules to inspect/change:** legacy routes/services mapped in `docs/MIGRATION_MAP.md`.
-- **Deliverable:** Closed scenario checklist + removed duplicate branches.
-- **Validation / acceptance checks:** No active scenario depends on removed legacy source-of-truth logic.
-- **Rollback / containment note:** Tag release before removal; restore from tag if latent regressions appear.
-- **Blocking dependencies:** P4-T3, P7-T2, P8-T3, P9-T1.
-- **Priority (P0/P1/P2):** P1.
+- Do not migrate all servers at once.
+- Do not merge admin into one giant module/page.
+- Do not encode new server variance via Python enums/branching in route handlers.
+- Do not replace legacy async ops silently without observability.
+- Do not ship AI-generated legal outputs without provenance fields.
+
+## 5) What can be postponed
+
+- Full editable admin for all domains (read-only first).
+- Non-critical scenario migration (after pilot stabilization).
+- Advanced plugin extension points (only after config model limits are proven).
 
 ---
 
 ## Risk Register and Closure Strategy
 
-### Risk 1 — Dual source of truth between legacy and DB runtime
-- **Priority:** Critical (P0), pre-launch blocker.
-- **Owner area:** backend + migration/rollout.
-- **Trigger / warning signs:** Divergent outputs between legacy and runtime; unclear ownership of decision logic.
-- **Mitigation:** P1-T2, P4-T2, P4-T3, P9-T3.
-- **Validation:** Shadow drift reports + explicit cutover checklist + legacy adapter-only confirmation.
-- **Closure milestone:** After P4-T3 for reference scenario; fully closed after P9-T3 across migrated scenarios.
+### Risk 1 — Dual source of truth (legacy vs new runtime)
+- Priority: Critical (pre-launch blocker for each cutover scenario)
+- Owner area: backend + migration/rollout
+- Trigger/warning signs: conflicting outputs between legacy and new path; unknown runtime authority in incidents.
+- Why it matters: inconsistent legal/document outcomes and unpredictable behavior.
+- Where now/likely: `web/ogp_web/routes/*` calling mixed legacy service logic while new config-driven runtime is introduced.
+- Target rule: each migrated scenario has exactly one runtime authority; legacy becomes adapter-only.
+- Mitigation:
+  - scenario-level feature flags;
+  - shadow compare before activation;
+  - explicit cutover criteria;
+  - post-cutover deprecation milestone.
+- Earliest phase: B.
+- Validation: drift rate below agreed threshold for pilot + incident playbook tested.
+- Fallback/rollback: instant flag revert to `legacy_only`; keep adapter during rollback window.
+- Closure milestone: completion of pilot + wave 1 cutovers with adapter demotion complete.
 
 ### Risk 2 — Hardcoded server-specific logic
-- **Priority:** Critical (P0), pre-scale blocker.
-- **Owner area:** backend + architecture governance.
-- **Trigger / warning signs:** New `if server == ...` branches, enum growth, per-server route forks.
-- **Mitigation:** P2-T1, P2-T3, P3-T1, P4-T1.
-- **Validation:** CI/review checks reject scattered conditionals; all server differences represented in versioned config.
-- **Closure milestone:** Governance enforced by P2-T3; operationally closed after second server onboarded with zero hardcoded branches.
+- Priority: Critical (pre-scale blocker)
+- Owner area: backend + admin model
+- Trigger/warning signs: new `if server == ...` branches in routes/services; enum-driven legal divergence.
+- Why it matters: exponential maintenance cost and brittle onboarding of new servers.
+- Where now/likely: route/service conditionals in complaint/validation/document generation flows.
+- Target rule: server differences live in versioned data/config models; code only interprets model.
+- Mitigation:
+  - code review gate forbidding new server hardcoding;
+  - config schema coverage for procedure/forms/rules/templates/law sets;
+  - bounded plugin extension policy when config is insufficient.
+- Earliest phase: A (policy), B (implementation).
+- Validation: PR checks/review checklist + no new hardcoded server branches in migrated flows.
+- Fallback/rollback: if unavoidable hardcoded patch is needed, enforce temporary exception with removal deadline.
+- Closure milestone: wave 2 complete with all migrated scenarios config-driven.
 
 ### Risk 3 — Monolithic admin UI complexity
-- **Priority:** High (P1), pre-scale blocker.
-- **Owner area:** admin UI.
-- **Trigger / warning signs:** Single mega-admin module/page owning all domains; tightly coupled state.
-- **Mitigation:** P3-T1, P3-T2, P3-T3, P6-T2.
-- **Validation:** Domain-level module boundaries + independent navigation/state/data loading.
-- **Closure milestone:** After P3-T3 for first editable domain and P6-T2 audit visibility.
+- Priority: High (pre-scale blocker)
+- Owner area: admin UI
+- Trigger/warning signs: one massive page/module owning all admin state/actions.
+- Why it matters: slows iteration, increases regression risk, hurts non-technical usability.
+- Where now/likely: expansion of existing admin routes/static modules without domain boundaries.
+- Target rule: domain-bounded modules + read-only-first + shared UI patterns.
+- Mitigation:
+  - split by domain sections;
+  - route/module boundaries;
+  - shared component library for tables/forms/audit timeline.
+- Earliest phase: C.
+- Validation: separate module ownership and independent deploy/testing paths for admin domains.
+- Fallback/rollback: keep risky editable flows disabled; retain read-only visibility until stabilized.
+- Closure milestone: D completion for pilot entities with modular UI structure proven.
 
-### Risk 4 — Async/jobs/import/export instability
-- **Priority:** Critical (P0), pre-launch blocker for async-heavy flows.
-- **Owner area:** infra + backend + ops.
-- **Trigger / warning signs:** Silent job failures, duplicate effects, missing retry visibility.
-- **Mitigation:** P8-T1, P8-T2, P8-T3.
-- **Validation:** Idempotency tests, retry policy conformance, observable failed/stuck jobs.
-- **Closure milestone:** After P8-T3 staged migration and SLO pass for migrated operations.
+### Risk 4 — Async/jobs transitional instability
+- Priority: Critical (pre-launch blocker for migrated async flows)
+- Owner area: infra + backend
+- Trigger/warning signs: duplicate imports/exports, silent retries, invisible failed jobs.
+- Why it matters: data integrity and operational instability during migration.
+- Where now/likely: import/export/job endpoints and task services (`jobs`, `exam_import`, export/build pipelines).
+- Target rule: explicit job state machine + idempotency + observable retry semantics.
+- Mitigation:
+  - standard job states;
+  - dedup keys;
+  - retry matrix;
+  - failure dashboards.
+- Earliest phase: E (design prework from B).
+- Validation: chaos/retry tests pass; duplicate rate below threshold; failed-job MTTR target achieved.
+- Fallback/rollback: kill-switch and legacy execution fallback.
+- Closure milestone: E completion + two stable sprints post-pilot cutover.
 
-### Risk 5 — Incomplete AI/citation provenance
-- **Priority:** Critical (P0), pre-launch blocker for legal generation.
-- **Owner area:** AI/retrieval + backend + admin review.
-- **Trigger / warning signs:** Documents cannot be traced to exact law/template/prompt/model context.
-- **Mitigation:** P7-T1, P7-T2, P5-T1, P6-T2.
-- **Validation:** Mandatory provenance fields present and reviewable for sampled generated documents.
-- **Closure milestone:** After P7-T2 with audit sampling sign-off.
-
-If any risk is not tied to concrete tasks, the plan is incomplete. Current status: **all 5 mandatory risks are tied to concrete tasks above**.
+### Risk 5 — Missing AI/citation provenance
+- Priority: Critical (pre-launch blocker for legal-grade generated outputs)
+- Owner area: AI/retrieval + audit
+- Trigger/warning signs: generated document without traceable law/template/procedure context.
+- Why it matters: no audit explainability; legal/compliance risk.
+- Where now/likely: generation/retrieval/citation services and document output pipeline.
+- Target rule: every generated output stores complete provenance envelope.
+- Mitigation:
+  - persist mandatory provenance fields;
+  - citation fragment tracking;
+  - admin/audit provenance views and exports.
+- Earliest phase: F (schema hooks can begin in B).
+- Validation: provenance completeness checks at generation time; audit export tests pass.
+- Fallback/rollback: block publish-grade output or downgrade mode until provenance restored.
+- Closure milestone: F completion + acceptance in pilot cutover gate.
 
 ---
 
-## Launchable Task Backlog
+## 6) Acceptance gates by milestone
 
-1. **P1-T1** | Build current-state module map | Phase 1 | **P0** | deps: none | acceptance: full route/service/storage ownership map.
-2. **P1-T2** | Define migration seams and adapter boundaries | Phase 1 | **P0** | deps: P1-T1 | acceptance: single source-of-truth boundaries + cutover criteria.
-3. **P2-T1** | Define canonical runtime data contract | Phase 2 | **P0** | deps: P1-T2 | acceptance: versioned entities + lifecycle fields fully specified.
-4. **P2-T2** | Implement runtime resolution service behind feature flag | Phase 2 | **P0** | deps: P2-T1 | acceptance: resolver parity in shadow checks.
-5. **P4-T1** | Create legacy-to-runtime mapping for reference procedure | Phase 4 | **P0** | deps: P2-T2 | acceptance: all legacy decision points mapped.
-6. **P4-T2** | Implement dual-run shadow validation and drift alerts | Phase 4 | **P0** | deps: P4-T1 | acceptance: drift rate within threshold window.
-7. **P4-T3** | Cut over reference procedure to new runtime source of truth | Phase 4 | **P0** | deps: P4-T2 | acceptance: production cutover + tested rollback.
-8. **P6-T1** | Standardize lifecycle state machine across domains | Phase 6 | **P0** | deps: P2-T1 | acceptance: uniform transition guards enforced.
-9. **P5-T1** | Normalize law set version model and links | Phase 5 | **P0** | deps: P2-T1 | acceptance: runtime resolves exact law_set version.
-10. **P7-T1** | Define and persist minimum provenance fields | Phase 7 | **P0** | deps: P5-T1, P6-T1 | acceptance: mandatory provenance tuple stored per generation.
-11. **P8-T1** | Standardize async job contract and idempotency keys | Phase 8 | **P0** | deps: P4-T2 | acceptance: duplicate submits are idempotent.
-12. **P2-T3** | Enforce anti-hardcoding governance | Phase 2 | **P1** | deps: P2-T1 | acceptance: review/CI rejects scattered server conditionals.
-13. **P3-T1** | Define admin domain IA and module boundaries | Phase 3 | **P0** | deps: P2-T1 | acceptance: domain-isolated admin boundaries documented.
-14. **P3-T2** | Deliver read-only admin slices for runtime entities | Phase 3 | **P1** | deps: P3-T1, P2-T2 | acceptance: read-only runtime version inspection available.
-15. **P6-T2** | Implement audit event contract and admin visibility | Phase 6 | **P1** | deps: P6-T1 | acceptance: publish/rollback actions visible with actor+version.
-16. **P5-T2** | Add publication workflow and rollback for law sets | Phase 5 | **P1** | deps: P5-T1, P6-T1 | acceptance: immutable publish + reversible rollback with audit.
-17. **P7-T2** | Surface provenance and citation trace in admin/review flows | Phase 7 | **P1** | deps: P7-T1 | acceptance: reviewer sees full citation trace.
-18. **P8-T2** | Add job visibility and failure containment surfaces | Phase 8 | **P1** | deps: P8-T1 | acceptance: failed/stuck jobs are observable and actionable.
-19. **P8-T3** | Migrate imports/exports to phased queue workers | Phase 8 | **P1** | deps: P8-T1, P8-T2 | acceptance: operation-by-operation SLO-safe cutover.
-20. **P3-T3** | Add editable tools with draft/publish constraints | Phase 3 | **P1** | deps: P3-T2, P6-T1 | acceptance: first editable domain with safe lifecycle controls.
-21. **P9-T1** | Define master manifest schema and export pipeline | Phase 9 | **P1** | deps: P5-T2, P6-T2 | acceptance: manifest reproduces published snapshot.
-22. **P9-T3** | Execute legacy cleanup by scenario closure checklist | Phase 9 | **P1** | deps: P4-T3, P7-T2, P8-T3, P9-T1 | acceptance: duplicate legacy source-of-truth branches removed safely.
-23. **P9-T2** | Build three-layer documentation set (admin/ops/dev) | Phase 9 | **P2** | deps: P3-T2, P8-T2 | acceptance: every critical flow documented for admin and ops.
+### Gate G0 (after A)
+- migration map complete
+- pilot scenario selected
+- risk controls aligned
 
+### Gate G1 (after B+C)
+- shadow compare active
+- read-only admin visibility complete for pilot
+
+### Gate G2 (after D+E+F)
+- editable publish workflow stable
+- async reliability controls active
+- provenance complete for pilot outputs
+
+### Gate G3 (after G wave 1)
+- pilot cutover stable
+- first migration wave complete
+- legacy deprecation backlog prioritized with deadlines
+
+---
+
+## 7) Documentation strategy
+
+Three layers maintained continuously:
+1. Admin/user docs (human terminology and UI flows).
+2. Ops docs (runbooks, incident/rollback, async operations).
+3. Developer docs (schema, adapters, feature flags, migration boundaries).
+
+Primary docs to keep updated during execution:
+- `PLANS.md` (this file)
+- `MIGRATION_MAP.md`
+- `DATA_MODEL_DRAFT.md`
+- `UI_ADMIN_STRUCTURE.md`
+- `docs/OPERATIONS_INDEX.md` and linked runbooks
+
+---
+
+## 8) Ownership bootstrap (fill before Sprint 1)
+
+- Backend migration lead: TBD
+- Admin UI lead: TBD
+- Infra/async lead: TBD
+- AI/provenance lead: TBD
+- Rollout/incident lead: TBD
