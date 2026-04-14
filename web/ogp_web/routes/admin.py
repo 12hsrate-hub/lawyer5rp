@@ -1336,7 +1336,6 @@ async def admin_law_sources_save(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     return result
 
-
 @router.post("/api/admin/law-sources/preview")
 async def admin_law_sources_preview(
     payload: AdminLawSourcesPayload,
@@ -1347,7 +1346,6 @@ async def admin_law_sources_preview(
     service = LawAdminService(workflow_service)
     return service.preview_sources(source_urls=payload.source_urls)
 
-
 @router.get("/api/admin/law-sources/history")
 async def admin_law_sources_history(
     user: AuthUser = Depends(require_admin_user),
@@ -1356,8 +1354,6 @@ async def admin_law_sources_history(
 ):
     service = LawAdminService(workflow_service)
     return service.list_recent_versions(server_code=user.server_code, limit=limit)
-
-
 @router.get("/api/admin/dashboard")
 async def admin_dashboard_data(
     user: AuthUser = Depends(requires_permission("view_analytics")),

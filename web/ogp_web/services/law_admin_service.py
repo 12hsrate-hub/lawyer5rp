@@ -97,6 +97,13 @@ def validate_source_urls(source_urls: list[str] | tuple[str, ...]) -> LawSources
     )
 
 
+def build_invalid_source_urls_error(validation: LawSourcesValidation) -> str:
+    preview = ", ".join(validation.invalid_urls[:3])
+    if len(validation.invalid_urls) > 3:
+        preview = f"{preview}, ..."
+    if preview:
+        return f"source_urls_invalid: {preview}"
+    return "source_urls_invalid"
 class LawAdminService:
     def __init__(self, workflow_service: ContentWorkflowService):
         self.workflow_service = workflow_service
@@ -184,7 +191,7 @@ class LawAdminService:
         if not normalized_urls:
             raise ValueError("source_urls_required")
         if validation.invalid_urls:
-            raise ValueError("source_urls_invalid")
+            raise ValueError(build_invalid_source_urls_error(validation))
 
         item = self.repository.get_content_item_by_identity(
             server_scope="server",
@@ -267,7 +274,7 @@ class LawAdminService:
         if not effective_urls:
             raise ValueError("source_urls_required")
         if validation.invalid_urls:
-            raise ValueError("source_urls_invalid")
+            raise ValueError(build_invalid_source_urls_error(validation))
 
         manifest_result = None
         if persist_sources:
@@ -313,7 +320,6 @@ class LawAdminService:
             "accepted_count": len(validation.accepted_urls),
             "invalid_count": len(validation.invalid_urls),
         }
-
     def list_recent_versions(self, *, server_code: str, limit: int = 10) -> dict[str, Any]:
         rows = list_recent_law_versions(server_code=server_code, limit=limit)
         return {

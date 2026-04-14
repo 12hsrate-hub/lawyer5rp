@@ -12,9 +12,6 @@ for candidate in (ROOT_DIR, WEB_DIR):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-if "httpx" not in sys.modules:
-    sys.modules["httpx"] = types.SimpleNamespace()
-
 from ogp_web.services.law_admin_service import LawAdminService, normalize_source_urls, validate_source_urls
 
 
