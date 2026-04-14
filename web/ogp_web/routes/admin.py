@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import uuid
 from copy import deepcopy
@@ -60,6 +61,22 @@ _ADMIN_TASKS: dict[str, dict[str, Any]] = {}
 _ADMIN_TASKS_LOCK = threading.Lock()
 _ADMIN_TASKS_PATH = Path(__file__).resolve().parents[3] / "web" / "data" / "admin_tasks.json"
 _MODEL_POLICY_PATH = Path(__file__).resolve().parents[3] / "config" / "model_policy.yaml"
+
+_BLUEPRINT_STAGE_LABELS: dict[str, str] = {
+    "phase_a_foundation": "Phase A — Stabilize foundation",
+    "phase_b_visual_workflows": "Phase B — Visual workflows",
+    "phase_c_quality_center": "Phase C — Quality command center",
+    "phase_d_scale_out": "Phase D — Multi-server scale-out",
+}
+
+
+def _resolve_admin_platform_stage() -> dict[str, str]:
+    raw_stage = str(os.getenv("OGP_ADMIN_PLATFORM_STAGE", "phase_a_foundation") or "").strip().lower()
+    stage_code = raw_stage if raw_stage in _BLUEPRINT_STAGE_LABELS else "phase_a_foundation"
+    return {
+        "stage_code": stage_code,
+        "stage_label": _BLUEPRINT_STAGE_LABELS[stage_code],
+    }
 
 
 def _point3_monitoring_threshold(level: str, metric: str, fallback: float) -> float:
@@ -1584,6 +1601,17 @@ async def admin_catalog_review_action(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
     return {"ok": True, "result": result}
 
+
+
+
+@router.get("/api/admin/platform-blueprint/status")
+async def admin_platform_blueprint_status(user: AuthUser = Depends(require_admin_user)):
+    stage = _resolve_admin_platform_stage()
+    return {
+        "ok": True,
+        "stage": stage,
+        "server_code": user.server_code,
+    }
 
 @router.get("/api/admin/catalog/audit")
 async def admin_catalog_audit(
