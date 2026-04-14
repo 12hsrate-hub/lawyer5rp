@@ -1532,6 +1532,7 @@ class WebApiTests(unittest.TestCase):
         original_save_answer_citations = complaint_route.save_answer_citations
         original_get_user_id = self.store.get_user_id
         original_create_law_qa_run = self.store.create_law_qa_run
+        original_evaluate = complaint_route.FeatureFlagService.evaluate
 
         from dataclasses import dataclass
 
