@@ -5,6 +5,7 @@ const resultField = document.getElementById("law-qa-result");
 const debugHost = document.getElementById("law-qa-debug");
 const debugMeta = document.getElementById("law-qa-debug-meta");
 const debugList = document.getElementById("law-qa-debug-list");
+const { parsePayload, redirectIfUnauthorized } = window.OGPWeb;
 
 function setMessage(message) {
   if (!messageBox) return;
@@ -104,9 +105,10 @@ form?.addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify(payload),
     });
-    const data = await response.json();
+    const data = await parsePayload(response);
     if (!response.ok) {
       setErrors(data.detail || ["Не удалось получить ответ."]);
+      redirectIfUnauthorized(response.status);
       return;
     }
     const sources = Array.isArray(data.used_sources) && data.used_sources.length

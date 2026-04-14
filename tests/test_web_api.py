@@ -1841,6 +1841,27 @@ class WebApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 403)
 
+    def test_law_qa_test_endpoint_returns_json_when_unexpected_error_happens(self):
+        self._register_verify_and_login("tester", "tester_law_failure@example.com")
+
+        original = complaint_route.ai_service.answer_law_question_details
+        complaint_route.ai_service.answer_law_question_details = lambda payload: (_ for _ in ()).throw(RuntimeError("boom"))
+        try:
+            response = self.client.post(
+                "/api/ai/law-qa-test",
+                json={
+                    "server_code": "blackberry",
+                    "question": "test question",
+                    "max_answer_chars": 2000,
+                },
+            )
+        finally:
+            complaint_route.ai_service.answer_law_question_details = original
+
+        self.assertEqual(response.status_code, 502)
+        self.assertTrue(str(response.headers.get("content-type", "")).startswith("application/json"))
+        self.assertIn("Law QA request failed: RuntimeError.", response.json()["detail"][0])
+
     def test_generate_rehab_flow_uses_saved_profile(self):
         self._register_verify_and_login("tester", "tester10@example.com")
 
