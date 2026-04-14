@@ -19,7 +19,7 @@ os.environ.setdefault("OGP_SKIP_DEFAULT_APP_INIT", "1")
 from fastapi.testclient import TestClient
 
 from ogp_web.app import create_app
-from ogp_web.dependencies import get_runtime_servers_store
+from ogp_web.dependencies import get_content_workflow_service, get_runtime_servers_store
 from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
@@ -75,6 +75,32 @@ class _FakeRuntimeServersStore:
             raise KeyError("server_not_found")
         self.rows[code]["is_active"] = bool(is_active)
         return self._Record(**self.rows[code])
+
+
+
+
+class _FakeContentWorkflowService:
+    def __init__(self):
+        self.calls: list[dict[str, object]] = []
+
+    def list_audit_trail(self, *, server_scope: str, server_id: str | None, entity_type: str = "", entity_id: str = "", limit: int = 100):
+        self.calls.append(
+            {
+                "server_scope": server_scope,
+                "server_id": server_id,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "limit": limit,
+            }
+        )
+        return [
+            {
+                "id": 1,
+                "entity_type": entity_type or "law",
+                "entity_id": entity_id or "42",
+                "action": "update",
+            }
+        ]
 
 
 class AdminRuntimeServersApiTests(unittest.TestCase):
@@ -143,3 +169,31 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         response = self.client.put("/api/admin/runtime-servers/city2", json={"code": "city3", "title": "Wrong"})
         self.assertEqual(response.status_code, 400)
         self.assertIn("server_code_mismatch", response.json().get("detail", []))
+
+    def test_catalog_audit_accepts_entity_filters(self):
+        fake_workflow = _FakeContentWorkflowService()
+        self.client.app.dependency_overrides[get_content_workflow_service] = lambda: fake_workflow
+
+        response = self.client.get("/api/admin/catalog/audit", params={"entity_type": " law ", "entity_id": " 42 ", "limit": 5})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["filters"], {"entity_type": "law", "entity_id": "42", "limit": 5})
+        self.assertEqual(len(payload["items"]), 1)
+        self.assertEqual(fake_workflow.calls[-1]["entity_type"], "law")
+        self.assertEqual(fake_workflow.calls[-1]["entity_id"], "42")
+        self.assertEqual(fake_workflow.calls[-1]["limit"], 5)
+
+    def test_catalog_audit_returns_default_filters_when_not_passed(self):
+        fake_workflow = _FakeContentWorkflowService()
+        self.client.app.dependency_overrides[get_content_workflow_service] = lambda: fake_workflow
+
+        response = self.client.get("/api/admin/catalog/audit")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["filters"], {"entity_type": "", "entity_id": "", "limit": 100})
+        self.assertEqual(fake_workflow.calls[-1]["entity_type"], "")
+        self.assertEqual(fake_workflow.calls[-1]["entity_id"], "")
+        self.assertEqual(fake_workflow.calls[-1]["limit"], 100)
+
