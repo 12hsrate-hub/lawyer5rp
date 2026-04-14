@@ -5,12 +5,16 @@ import json
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from ogp_web.db.factory import get_database_backend
 from ogp_web.dependencies import get_exam_answers_store, get_user_store, requires_permission
 from ogp_web.env import is_test_user
 from ogp_web.server_config import PermissionSet, ServerConfig, build_permission_set, get_server_config, list_server_configs
 from ogp_web.services.ai_service import get_default_law_qa_model
 from ogp_web.services.auth_service import AuthError, AuthUser, get_current_user
+from ogp_web.services.content_workflow_service import ContentWorkflowService
+from ogp_web.services.law_admin_service import LawAdminService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
+from ogp_web.storage.content_workflow_repository import ContentWorkflowRepository
 from ogp_web.storage.user_store import UserStore
 from ogp_web.web import page_context, templates
 
@@ -238,6 +242,8 @@ async def law_qa_test_page(
     store: UserStore = Depends(get_user_store),
 ):
     server_config, permissions = _server_context(store, user.username)
+    law_admin_service = LawAdminService(ContentWorkflowService(ContentWorkflowRepository(get_database_backend()), legacy_store=None))
+    law_sources_snapshot = law_admin_service.get_effective_sources(server_code=server_config.code)
     return templates.TemplateResponse(
         request,
         "law_qa_test.html",
@@ -251,7 +257,7 @@ async def law_qa_test_page(
                 for item in list_server_configs()
                 if item.law_qa_sources or item.law_qa_bundle_path
             ],
-            law_qa_sources=list(server_config.law_qa_sources),
+            law_qa_sources=list(law_sources_snapshot.source_urls),
             law_qa_default_model=get_default_law_qa_model(),
         ),
     )

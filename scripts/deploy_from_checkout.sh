@@ -96,7 +96,10 @@ chown -R "${RUN_AS_USER}:${RUN_AS_USER}" "${APP_ROOT}/config" "${APP_ROOT}/share
 
 "${PYTHON_BIN}" "${APP_ROOT}/scripts/run_db_migrations.py" --backend postgres
 
-if [[ -f "${APP_ROOT}/scripts/import_law_snapshot.py" ]]; then
+if [[ -f "${APP_ROOT}/scripts/sync_law_sources_manifest.py" ]]; then
+  echo "Syncing blackberry law sources manifest and rebuilding DB law index..."
+  "${PYTHON_BIN}" "${APP_ROOT}/scripts/sync_law_sources_manifest.py" --server blackberry --safe-rerun --rebuild
+elif [[ -f "${APP_ROOT}/scripts/import_law_snapshot.py" ]]; then
   echo "Ensuring active DB law snapshot for blackberry..."
   "${PYTHON_BIN}" "${APP_ROOT}/scripts/import_law_snapshot.py" --server blackberry --skip-if-current
 fi

@@ -25,9 +25,11 @@ from ogp_web.schemas import (
     AdminDeactivatePayload,
     AdminEmailUpdatePayload,
     AdminExamScoreResetPayload,
+    AdminLawSourcesPayload,
     AdminPasswordResetPayload,
     AdminQuotaPayload,
 )
+from ogp_web.services.law_admin_service import LawAdminService
 from ogp_web.services.auth_service import AuthError, AuthUser, require_admin_user
 from ogp_web.services.point3_policy_service import load_point3_eval_thresholds
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -1232,6 +1234,68 @@ async def admin_catalog_rollback(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
     metrics_store.log_event(event_type=f"admin_catalog_{entity_type}_rollback", username=user.username, server_code=user.server_code, path=f"/api/admin/catalog/{entity_type}/{item_id}/rollback", method="POST", status_code=200, meta={"entity_id": item_id, "author": user.username, "rollback_batch": payload.version})
     return {"ok": True, "result": result}
+
+
+@router.get("/api/admin/law-sources")
+async def admin_law_sources_status(
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+):
+    service = LawAdminService(workflow_service)
+    snapshot = service.get_effective_sources(server_code=user.server_code)
+    return {
+        "server_code": user.server_code,
+        "source_urls": list(snapshot.source_urls),
+        "source_origin": snapshot.source_origin,
+        "manifest_item": snapshot.manifest_item,
+        "manifest_version": snapshot.manifest_version,
+        "active_law_version": snapshot.active_law_version,
+        "bundle_meta": snapshot.bundle_meta,
+    }
+
+
+@router.post("/api/admin/law-sources/sync")
+async def admin_law_sources_sync(
+    request: Request,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    user_store: UserStore = Depends(get_user_store),
+):
+    actor_user_id = _resolve_actor_user_id(user_store, user.username)
+    service = LawAdminService(workflow_service)
+    try:
+        result = service.sync_sources_manifest_from_server_config(
+            server_code=user.server_code,
+            actor_user_id=actor_user_id,
+            request_id=getattr(request.state, "request_id", ""),
+            safe_rerun=True,
+        )
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    return result
+
+
+@router.post("/api/admin/law-sources/rebuild")
+async def admin_law_sources_rebuild(
+    payload: AdminLawSourcesPayload,
+    request: Request,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    user_store: UserStore = Depends(get_user_store),
+):
+    actor_user_id = _resolve_actor_user_id(user_store, user.username)
+    service = LawAdminService(workflow_service)
+    try:
+        result = service.rebuild_index(
+            server_code=user.server_code,
+            source_urls=payload.source_urls,
+            actor_user_id=actor_user_id,
+            request_id=getattr(request.state, "request_id", ""),
+            persist_sources=bool(payload.persist_sources),
+        )
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    return result
 
 @router.get("/api/admin/dashboard")
 async def admin_dashboard_data(

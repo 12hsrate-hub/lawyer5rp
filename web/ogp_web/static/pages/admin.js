@@ -111,6 +111,66 @@ function renderCatalogPreview(payload) {
   host.hidden = false;
 }
 
+async function loadLawSourcesManager() {
+  if (!catalogHost || activeCatalogEntity !== "laws") {
+    return;
+  }
+  const response = await apiFetch("/api/admin/law-sources");
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить источники законов."));
+    return;
+  }
+  const textarea = document.getElementById("law-sources-textarea");
+  const statusHost = document.getElementById("law-sources-status");
+  if (textarea) {
+    textarea.value = Array.isArray(payload?.source_urls) ? payload.source_urls.join("\n") : "";
+  }
+  if (statusHost) {
+    const activeVersionId = payload?.active_law_version?.id ?? "—";
+    const chunkCount = payload?.bundle_meta?.chunk_count ?? payload?.active_law_version?.chunk_count ?? "—";
+    const origin = String(payload?.source_origin || "unknown");
+    statusHost.textContent = `Источник ссылок: ${origin}. Активная версия закона: ${activeVersionId}. Статей в индексе: ${chunkCount}.`;
+  }
+}
+
+async function rebuildLawSources() {
+  const textarea = document.getElementById("law-sources-textarea");
+  const raw = String(textarea?.value || "");
+  const sourceUrls = raw
+    .split(/\r?\n/)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  const response = await apiFetch("/api/admin/law-sources/rebuild", {
+    method: "POST",
+    body: JSON.stringify({
+      source_urls: sourceUrls,
+      persist_sources: true,
+    }),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось пересобрать законы."));
+    return;
+  }
+  showMessage(`Законы обновлены: версия ${String(payload?.law_version_id || "—")}, статей ${String(payload?.article_count || 0)}.`);
+  await loadCatalog("laws");
+}
+
+async function syncLawSourcesFromServerConfig() {
+  const response = await apiFetch("/api/admin/law-sources/sync", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось синхронизировать ссылки законов."));
+    return;
+  }
+  showMessage(payload?.changed ? "Ссылки законов перенесены из server config в DB." : "DB-источники законов уже актуальны.");
+  await loadCatalog("laws");
+}
+
 function renderCatalog(payload) {
   if (!catalogHost) return;
   const entityType = payload?.entity_type || activeCatalogEntity;
@@ -151,6 +211,23 @@ function renderCatalog(payload) {
       <button type="button" id="catalog-create" class="primary-button">Создать</button>
     </div>
     <p class="legal-section__description">${escapeHtml(entityDescriptions[entityType] || "")}</p>
+    ${entityType === "laws" ? `
+    <div class="legal-subcard">
+      <div class="admin-section-toolbar">
+        <strong>Источники законов</strong>
+        <div>
+          <button type="button" id="law-sources-sync" class="ghost-button">Синхронизировать текущие</button>
+          <button type="button" id="law-sources-rebuild" class="primary-button">Пересобрать законы</button>
+        </div>
+      </div>
+      <p id="law-sources-status" class="legal-section__description">Загружаем источники и активную версию...</p>
+      <label class="legal-field">
+        <span class="legal-field__label">Ссылки на законы</span>
+        <textarea id="law-sources-textarea" rows="8" placeholder="По одной ссылке на строку"></textarea>
+        <span class="legal-field__hint">После сохранения система скачает страницы, нарежет материалы на статьи и импортирует новую DB-версию закона для текущего сервера.</span>
+      </label>
+    </div>
+    ` : ""}
     <div class="legal-table-wrap">
       <table class="legal-table">
         <thead><tr><th>Название</th><th>Статус</th><th>Версия</th><th>Автор</th><th>Действия</th></tr></thead>
@@ -204,6 +281,9 @@ async function loadCatalog(entityType = activeCatalogEntity) {
     return;
   }
   renderCatalog(payload);
+  if (entityType === "laws") {
+    await loadLawSourcesManager();
+  }
 }
 
 const userModal = createModalController({
@@ -2536,6 +2616,14 @@ catalogHost?.addEventListener("change", async (event) => {
 catalogHost?.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
+  if (target.id === "law-sources-sync") {
+    await syncLawSourcesFromServerConfig();
+    return;
+  }
+  if (target.id === "law-sources-rebuild") {
+    await rebuildLawSources();
+    return;
+  }
   if (target.id === "catalog-create") {
     const title = window.prompt("Title", "") || "";
     const raw = window.prompt("JSON config", "{}") || "{}";

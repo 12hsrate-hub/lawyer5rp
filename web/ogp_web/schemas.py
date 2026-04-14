@@ -502,3 +502,8 @@ class AdminCatalogWorkflowPayload(BaseModel):
 
 class AdminCatalogRollbackPayload(BaseModel):
     version: int = 0
+
+
+class AdminLawSourcesPayload(BaseModel):
+    source_urls: list[str] = Field(default_factory=list)
+    persist_sources: bool = True
