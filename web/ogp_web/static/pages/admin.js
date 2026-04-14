@@ -45,6 +45,16 @@ const actionQuotaField = document.getElementById("admin-action-quota-field");
 const actionQuotaInput = document.getElementById("admin-action-quota");
 const actionConfirmButton = document.getElementById("admin-action-confirm");
 const actionCancelButton = document.getElementById("admin-action-cancel");
+const catalogModalTitle = document.getElementById("admin-catalog-modal-title");
+const catalogModalErrors = document.getElementById("admin-catalog-modal-errors");
+const catalogForm = document.getElementById("admin-catalog-form");
+const catalogTitleInput = document.getElementById("admin-catalog-title");
+const catalogJsonInput = document.getElementById("admin-catalog-json");
+const catalogJsonError = document.getElementById("admin-catalog-json-error");
+const catalogPublishedHost = document.getElementById("admin-catalog-published");
+const catalogDraftHost = document.getElementById("admin-catalog-draft");
+const catalogSaveButton = document.getElementById("admin-catalog-save");
+const catalogCancelButton = document.getElementById("admin-catalog-cancel");
 const catalogHost = document.getElementById("admin-catalog");
 
 const {
@@ -69,6 +79,7 @@ let selectedBulkUsers = new Set();
 const userIndex = new Map();
 let activeCatalogEntity = String(catalogHost?.dataset.catalogEntity || "servers");
 let activeSyntheticSuite = "";
+let pendingCatalogContext = null;
 
 function catalogEndpoint(entityType, itemId = "") {
   const suffix = itemId ? `/${encodeURIComponent(itemId)}` : "";
@@ -373,6 +384,203 @@ const userModal = createModalController({
 const actionModal = createModalController({
   modal: document.getElementById("admin-action-modal"),
 });
+const catalogModal = createModalController({
+  modal: document.getElementById("admin-catalog-modal"),
+});
+
+function formatJsonForDisplay(value) {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+  if (typeof value === "string") {
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2);
+    } catch {
+      return value;
+    }
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value, null, 2);
+  }
+  return String(value);
+}
+
+function extractVersionPayload(version) {
+  if (!version || typeof version !== "object") return null;
+  if (version.payload_json !== undefined) return version.payload_json;
+  if (version.payload !== undefined) return version.payload;
+  if (version.config !== undefined) return version.config;
+  return null;
+}
+
+function pickCatalogVersion(versions, expectedStates = []) {
+  const normalizedStates = expectedStates.map((state) => String(state || "").toLowerCase());
+  return versions.find((version) => {
+    const markers = [
+      version?.status,
+      version?.state,
+      version?.workflow_state,
+      version?.kind,
+      version?.channel,
+    ]
+      .map((value) => String(value || "").toLowerCase())
+      .filter(Boolean);
+    return normalizedStates.some((state) => markers.includes(state));
+  }) || null;
+}
+
+function parseJsonConfig(rawText) {
+  try {
+    return { ok: true, value: JSON.parse(rawText) };
+  } catch (error) {
+    const source = String(rawText || "");
+    const match = /position\s+(\d+)/i.exec(String(error?.message || ""));
+    if (!match) {
+      return { ok: false, message: "Не удалось разобрать JSON. Проверьте синтаксис." };
+    }
+    const index = Number(match[1]);
+    const boundedIndex = Number.isFinite(index) ? Math.max(0, Math.min(index, source.length)) : 0;
+    const before = source.slice(0, boundedIndex);
+    const line = before.split("\n").length;
+    const column = boundedIndex - (before.lastIndexOf("\n") + 1) + 1;
+    return {
+      ok: false,
+      message: `Некорректный JSON: ошибка на строке ${line}, позиция ${column}.`,
+    };
+  }
+}
+
+function resetCatalogModalState() {
+  pendingCatalogContext = null;
+  if (catalogModalTitle) catalogModalTitle.textContent = "Редактирование каталога";
+  if (catalogTitleInput) {
+    catalogTitleInput.value = "";
+    catalogTitleInput.disabled = false;
+  }
+  if (catalogJsonInput) {
+    catalogJsonInput.value = "{}";
+    catalogJsonInput.disabled = false;
+  }
+  if (catalogJsonError) {
+    catalogJsonError.textContent = "";
+    catalogJsonError.hidden = true;
+  }
+  if (catalogPublishedHost) catalogPublishedHost.textContent = "—";
+  if (catalogDraftHost) catalogDraftHost.textContent = "—";
+  if (catalogSaveButton) {
+    catalogSaveButton.hidden = false;
+    catalogSaveButton.disabled = false;
+    catalogSaveButton.textContent = "Сохранить";
+  }
+  if (catalogCancelButton) catalogCancelButton.textContent = "Закрыть";
+  setStateIdle(catalogModalErrors);
+}
+
+function closeCatalogModal() {
+  catalogModal.close();
+  resetCatalogModalState();
+}
+
+function openCatalogModal(config) {
+  resetCatalogModalState();
+  pendingCatalogContext = config;
+  const mode = config?.mode === "view" ? "view" : "edit";
+  const item = config?.item || {};
+  const versions = Array.isArray(config?.versions) ? config.versions : [];
+  const publishedVersion = pickCatalogVersion(versions, ["published", "publish"]);
+  const draftVersion = pickCatalogVersion(versions, ["candidate", "draft", "review"]);
+  const activeVersion =
+    pickCatalogVersion(versions, ["candidate", "draft", "review", "published", "publish"]) ||
+    versions[0] ||
+    null;
+  const activePayload =
+    extractVersionPayload(activeVersion) ??
+    item.payload_json ??
+    item.config ??
+    {};
+
+  if (catalogModalTitle) {
+    const baseTitle = mode === "view" ? "Просмотр элемента" : (config?.isCreate ? "Создание элемента" : "Редактирование элемента");
+    catalogModalTitle.textContent = `${baseTitle}: ${String(item.title || "").trim() || "без названия"}`;
+  }
+  if (catalogTitleInput) {
+    catalogTitleInput.value = String(item.title || "");
+    catalogTitleInput.disabled = mode === "view";
+  }
+  if (catalogJsonInput) {
+    catalogJsonInput.value = formatJsonForDisplay(activePayload);
+    catalogJsonInput.disabled = mode === "view";
+  }
+  if (catalogPublishedHost) {
+    catalogPublishedHost.textContent = formatJsonForDisplay(
+      extractVersionPayload(publishedVersion) ?? "Опубликованная версия отсутствует."
+    );
+  }
+  if (catalogDraftHost) {
+    catalogDraftHost.textContent = formatJsonForDisplay(
+      extractVersionPayload(draftVersion) ?? "Черновик отсутствует."
+    );
+  }
+  if (catalogSaveButton) {
+    catalogSaveButton.hidden = mode === "view";
+    catalogSaveButton.disabled = false;
+  }
+  if (catalogCancelButton) {
+    catalogCancelButton.textContent = mode === "view" ? "Закрыть" : "Отмена";
+  }
+  catalogModal.open();
+}
+
+async function submitCatalogModal() {
+  if (!pendingCatalogContext || pendingCatalogContext.mode === "view") {
+    closeCatalogModal();
+    return;
+  }
+  const title = String(catalogTitleInput?.value || "").trim();
+  const rawJson = String(catalogJsonInput?.value || "").trim();
+  if (!title) {
+    setStateError(catalogModalErrors, "Укажите название элемента.");
+    return;
+  }
+  const parsed = parseJsonConfig(rawJson || "{}");
+  if (!parsed.ok) {
+    if (catalogJsonError) {
+      catalogJsonError.textContent = parsed.message;
+      catalogJsonError.hidden = false;
+    }
+    setStateError(catalogModalErrors, parsed.message);
+    return;
+  }
+  if (catalogJsonError) {
+    catalogJsonError.textContent = "";
+    catalogJsonError.hidden = true;
+  }
+  setStateIdle(catalogModalErrors);
+  if (catalogSaveButton) catalogSaveButton.disabled = true;
+  clearMessage();
+  setStateIdle(errorsHost);
+
+  const body = JSON.stringify({ title, config: parsed.value });
+  const isCreate = Boolean(pendingCatalogContext.isCreate);
+  const itemId = pendingCatalogContext.itemId;
+  const url = isCreate ? catalogEndpoint(activeCatalogEntity) : catalogEndpoint(activeCatalogEntity, itemId);
+  const method = isCreate ? "POST" : "PUT";
+  try {
+    const response = await apiFetch(url, { method, body });
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      setStateError(catalogModalErrors, formatHttpError(response, payload, "Не удалось сохранить элемент."));
+      if (catalogSaveButton) catalogSaveButton.disabled = false;
+      return;
+    }
+    showMessage(isCreate ? "Элемент создан." : "Элемент обновлен.");
+    closeCatalogModal();
+    await loadCatalog(activeCatalogEntity);
+  } catch (error) {
+    setStateError(catalogModalErrors, error?.message || "Не удалось сохранить элемент.");
+    if (catalogSaveButton) catalogSaveButton.disabled = false;
+  }
+}
 
 function loadCollapsibleState() {
   try {
@@ -2706,13 +2914,28 @@ catalogHost?.addEventListener("click", async (event) => {
     return;
   }
   if (target.id === "catalog-create") {
-    const title = window.prompt("Title", "") || "";
-    const raw = window.prompt("JSON config", "{}") || "{}";
-    await performAdminAction(catalogEndpoint(activeCatalogEntity), "Элемент создан.", {
-      title,
-      config: JSON.parse(raw),
+    openCatalogModal({
+      mode: "edit",
+      isCreate: true,
+      item: { title: "", config: {} },
+      versions: [],
     });
-    await loadCatalog(activeCatalogEntity);
+    return;
+  }
+  const viewId = target.getAttribute("data-catalog-view");
+  if (viewId) {
+    const response = await apiFetch(catalogEndpoint(activeCatalogEntity, viewId));
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить элемент catalog."));
+      return;
+    }
+    openCatalogModal({
+      mode: "view",
+      itemId: viewId,
+      item: payload?.item || {},
+      versions: Array.isArray(payload?.versions) ? payload.versions : [],
+    });
     return;
   }
   const viewId = target.getAttribute("data-catalog-view");
@@ -2728,14 +2951,18 @@ catalogHost?.addEventListener("click", async (event) => {
   }
   const editId = target.getAttribute("data-catalog-edit");
   if (editId) {
-    const title = window.prompt("New title", "") || "";
-    const raw = window.prompt("New JSON config", "{}") || "{}";
-    const response = await apiFetch(catalogEndpoint(activeCatalogEntity, editId), {
-      method: "PUT",
-      body: JSON.stringify({ title, config: JSON.parse(raw) }),
+    const response = await apiFetch(catalogEndpoint(activeCatalogEntity, editId));
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить элемент catalog."));
+      return;
+    }
+    openCatalogModal({
+      mode: "edit",
+      itemId: editId,
+      item: payload?.item || {},
+      versions: Array.isArray(payload?.versions) ? payload.versions : [],
     });
-    if (response.ok) showMessage("Элемент обновлен.");
-    await loadCatalog(activeCatalogEntity);
     return;
   }
   if (target.id === "catalog-preview-copy") {
@@ -2830,15 +3057,33 @@ actionModal.bind(
   document.getElementById("admin-action-modal-close"),
   document.getElementById("admin-action-cancel"),
 );
+catalogModal.bind(
+  document.getElementById("admin-catalog-modal-close"),
+  document.getElementById("admin-catalog-cancel"),
+);
 
 actionConfirmButton?.addEventListener("click", submitPendingAction);
 actionCancelButton?.addEventListener("click", closeActionModal);
 document.getElementById("admin-action-modal-close")?.addEventListener("click", resetActionModalFields);
+catalogSaveButton?.addEventListener("click", submitCatalogModal);
+catalogForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  submitCatalogModal();
+});
+catalogCancelButton?.addEventListener("click", closeCatalogModal);
+document.getElementById("admin-catalog-modal-close")?.addEventListener("click", closeCatalogModal);
+catalogJsonInput?.addEventListener("input", () => {
+  if (catalogJsonError) {
+    catalogJsonError.hidden = true;
+    catalogJsonError.textContent = "";
+  }
+});
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     userModal.close();
     closeActionModal();
+    closeCatalogModal();
   }
 });
 
@@ -2857,6 +3102,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 resetActionModalFields();
+resetCatalogModalState();
 initCollapsibles();
 Promise.all([
   loadAdminOverview(),
