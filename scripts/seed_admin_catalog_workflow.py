@@ -175,12 +175,43 @@ def _resolve_actor_user_id() -> int:
     raise RuntimeError("Cannot seed admin catalog workflow: no users found in database")
 
 
+def _resolve_reviewer_user_id(actor_user_id: int) -> int:
+    user_store = get_default_user_store()
+    conn = user_store.backend.connect()
+    try:
+        preferred_rows = conn.execute(
+            """
+            SELECT id, username
+            FROM users
+            WHERE id <> %s
+            ORDER BY
+                CASE
+                    WHEN username = 'admin' THEN 0
+                    WHEN username = 'system' THEN 1
+                    ELSE 2
+                END,
+                created_at ASC,
+                id ASC
+            LIMIT 1
+            """,
+            (int(actor_user_id),),
+        ).fetchall()
+    finally:
+        conn.close()
+    if preferred_rows:
+        return int(preferred_rows[0]["id"])
+    raise RuntimeError(
+        "Cannot seed admin catalog workflow: second reviewer user is required for high-risk entities"
+    )
+
+
 def seed(*, server_scope: str = "server", server_id: str = "blackberry", safe_rerun: bool = True) -> dict[str, object]:
     load_web_env()
     backend = get_database_backend()
     repository = ContentWorkflowRepository(backend)
     service = ContentWorkflowService(repository, legacy_store=None)
     actor_user_id = _resolve_actor_user_id()
+    reviewer_user_id = _resolve_reviewer_user_id(actor_user_id)
 
     created: list[dict[str, object]] = []
     skipped: list[dict[str, object]] = []
@@ -233,10 +264,10 @@ def seed(*, server_scope: str = "server", server_id: str = "blackberry", safe_re
             )
             service.review_change_request(
                 change_request_id=int(submitted["id"]),
-                reviewer_user_id=actor_user_id,
+                reviewer_user_id=reviewer_user_id,
                 decision="approve",
-                comment="initial seed auto-approve",
-                diff_json={"seed": True},
+                comment="initial seed peer-approve",
+                diff_json={"seed": True, "review_mode": "peer"},
                 request_id="seed-admin-catalog",
                 server_scope=server_scope,
                 server_id=server_id if server_scope == "server" else None,
