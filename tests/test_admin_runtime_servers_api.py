@@ -174,7 +174,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         fake_workflow = _FakeContentWorkflowService()
         self.client.app.dependency_overrides[get_content_workflow_service] = lambda: fake_workflow
 
-        response = self.client.get("/api/admin/catalog/audit", params={"entity_type": " law ", "entity_id": " 42 ", "limit": 5})
+        response = self.client.get("/api/admin/catalog/audit", params={"entity_type": " LaW ", "entity_id": " 42 ", "limit": 5})
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -197,3 +197,35 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(fake_workflow.calls[-1]["entity_id"], "")
         self.assertEqual(fake_workflow.calls[-1]["limit"], 100)
 
+    def test_platform_blueprint_status_returns_default_stage(self):
+        previous = os.environ.get("OGP_ADMIN_PLATFORM_STAGE")
+        os.environ.pop("OGP_ADMIN_PLATFORM_STAGE", None)
+        try:
+            response = self.client.get("/api/admin/platform-blueprint/status")
+        finally:
+            if previous is None:
+                os.environ.pop("OGP_ADMIN_PLATFORM_STAGE", None)
+            else:
+                os.environ["OGP_ADMIN_PLATFORM_STAGE"] = previous
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload["stage"]["stage_code"], "phase_a_foundation")
+        self.assertIn("Phase A", payload["stage"]["stage_label"])
+
+    def test_platform_blueprint_status_accepts_known_stage_from_env(self):
+        previous = os.environ.get("OGP_ADMIN_PLATFORM_STAGE")
+        os.environ["OGP_ADMIN_PLATFORM_STAGE"] = "phase_c_quality_center"
+        try:
+            response = self.client.get("/api/admin/platform-blueprint/status")
+        finally:
+            if previous is None:
+                os.environ.pop("OGP_ADMIN_PLATFORM_STAGE", None)
+            else:
+                os.environ["OGP_ADMIN_PLATFORM_STAGE"] = previous
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["stage"]["stage_code"], "phase_c_quality_center")
+        self.assertIn("Phase C", payload["stage"]["stage_label"])
