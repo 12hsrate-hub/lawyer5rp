@@ -1313,6 +1313,18 @@ async def admin_law_sources_rebuild(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     return result
 
+
+@router.post("/api/admin/law-sources/preview")
+async def admin_law_sources_preview(
+    payload: AdminLawSourcesPayload,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+):
+    _ = user
+    service = LawAdminService(workflow_service)
+    return service.preview_sources(source_urls=payload.source_urls)
+
+
 @router.get("/api/admin/dashboard")
 async def admin_dashboard_data(
     user: AuthUser = Depends(requires_permission("view_analytics")),
