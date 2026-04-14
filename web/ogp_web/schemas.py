@@ -11,16 +11,16 @@ from shared.ogp_models import Representative, Victim
 
 def _normalize_passport(value: str) -> str:
     raw = str(value or "").strip()
-    if len(raw) > 6:
-        raise ValueError("Паспорт не должен содержать более 6 символов.")
+    if len(raw) > 32:
+        raise ValueError("Паспорт не должен содержать более 32 символов.")
     return raw
 
 
 def _normalize_phone(value: str) -> str:
     raw = str(value or "").strip()
     digits = "".join(ch for ch in raw if ch.isdigit())
-    if raw and len(digits) != 7:
-        raise ValueError("Телефон должен содержать ровно 7 цифр.")
+    if raw and (len(digits) < 7 or len(digits) > 15):
+        raise ValueError("Телефон должен содержать от 7 до 15 цифр.")
     return digits
 
 

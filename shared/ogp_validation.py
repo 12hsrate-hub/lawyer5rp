@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List
 
-from shared.ogp_constants import DATE_PATTERN, DT_PATTERN, PHONE_DIGITS_PATTERN
+from shared.ogp_constants import DATE_PATTERN, DT_PATTERN
 from shared.ogp_formatting import is_valid_http_url, normalize_phone_digits
 from shared.ogp_types import ComplaintInput, RehabInput
 
@@ -39,15 +39,16 @@ def validate_appeal_no(value: str) -> str | None:
 
 def validate_passport_value(label: str, value: str) -> str | None:
     raw = (value or "").strip()
-    if raw and len(raw) > 6:
-        return f"{label} должен содержать не более 6 символов."
+    if raw and len(raw) > 32:
+        return f"{label} должен содержать не более 32 символов."
     return None
 
 
 def validate_phone_value(label: str, value: str) -> str | None:
     raw = (value or "").strip()
-    if raw and not PHONE_DIGITS_PATTERN.fullmatch(normalize_phone_digits(raw)):
-        return f"{label} должен содержать ровно 7 цифр."
+    digits = normalize_phone_digits(raw)
+    if raw and (len(digits) < 7 or len(digits) > 15):
+        return f"{label} должен содержать от 7 до 15 цифр."
     return None
 
 

@@ -249,6 +249,7 @@ async def get_complaint_draft(
     metadata = draft.get("_meta", {}) if isinstance(draft.get("_meta"), dict) else {}
     normalized = normalize_complaint_draft(_flatten_complaint_draft(draft.get("draft", {})), config=server_config)
     return ComplaintDraftResponse(
+        draft=normalized.draft,
         updated_at=str(draft.get("updated_at", "") or ""),
         bundle_version=str(metadata.get("bundle_version", "") or ""),
         schema_hash=str(metadata.get("schema_hash", "") or ""),
@@ -268,7 +269,7 @@ async def save_complaint_draft(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ComplaintDraftResponse:
     server_config = _server_config_for_user(store, user)
-    normalized = normalize_complaint_draft(payload.draft, config=server_config)
+    normalized = normalize_complaint_draft(_flatten_complaint_draft(payload.draft), config=server_config)
     if normalized.unknown_keys:
         unknown = ", ".join(normalized.unknown_keys)
         raise HTTPException(

@@ -841,6 +841,7 @@ class WebApiTests(unittest.TestCase):
         response = self.client.get("/api/complaint-draft")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["draft"]["context.subject_names"], "Pavel Clayton")
+        self.assertEqual(response.json()["draft"]["draft.result"], "BBCode result")
         self.assertTrue(response.json()["updated_at"])
 
         response = self.client.delete("/api/complaint-draft")
@@ -857,6 +858,41 @@ class WebApiTests(unittest.TestCase):
         response = self.client.put("/api/complaint-draft", json={"draft": {"unknown.field": "x"}})
         self.assertEqual(response.status_code, 400)
         self.assertIn("Unknown complaint draft keys", str(response.json().get("detail", "")))
+
+    def test_complaint_draft_accepts_envelope_payload_and_flattens_document(self):
+        self._register_verify_and_login("tester_envelope", "draft-envelope@example.com")
+
+        response = self.client.put(
+            "/api/complaint-draft",
+            json={
+                "draft": {
+                    "key": "draft:tester_envelope:blackberry:complaint",
+                    "user_id": "tester_envelope",
+                    "server_id": "blackberry",
+                    "document_type": "complaint",
+                    "profile": {},
+                    "document": {
+                        "draft": {
+                            "org": "GOV",
+                            "subject_names": "Pavel Clayton",
+                            "situation_description": "Draft body",
+                        },
+                        "result": "BBCode result",
+                    },
+                    "metadata": {
+                        "bundle_version": "complaint.v3",
+                        "schema_hash": "complaint-schema-v3",
+                        "status": "draft",
+                        "allowed_actions": ["edit", "generate", "clear"],
+                    },
+                }
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["draft"]["context.organization"], "GOV")
+        self.assertEqual(payload["draft"]["context.subject_names"], "Pavel Clayton")
+        self.assertEqual(payload["draft"]["draft.result"], "BBCode result")
 
     def test_admin_can_force_verify_email(self):
         response = self.client.post(
@@ -1858,6 +1894,47 @@ class WebApiTests(unittest.TestCase):
         payload = get_response.json()["representative"]
         self.assertEqual(payload["name"], "Rep")
         self.assertEqual(payload["phone"], "1234567")
+
+    def test_profile_and_generate_accept_realistic_passport_and_phone_values(self):
+        self._register_verify_and_login("tester_realistic", "tester-realistic@example.com")
+
+        profile_response = self.client.put(
+            "/api/profile",
+            json={
+                "name": "Rep",
+                "passport": "1111 222222",
+                "address": "Addr",
+                "phone": "+7 (999) 000-00-00",
+                "discord": "disc",
+                "passport_scan_url": "https://example.com/rep",
+            },
+        )
+        self.assertEqual(profile_response.status_code, 200)
+        self.assertEqual(profile_response.json()["representative"]["phone"], "79990000000")
+
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "appeal_no": "1234",
+                "org": "LSPD",
+                "subject_names": "Officer",
+                "situation_description": "Draft body",
+                "violation_short": "Short text",
+                "event_dt": "08.04.2026 14:30",
+                "today_date": "08.04.2026",
+                "victim": {
+                    "name": "Victim",
+                    "passport": "4444 555555",
+                    "address": "Addr",
+                    "phone": "+7 999 111-22-33",
+                    "discord": "victim",
+                    "passport_scan_url": "https://example.com/victim",
+                },
+                "contract_url": "https://example.com/contract",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["bbcode"])
 
     def test_exam_import_page_imports_new_rows_and_supports_row_scoring(self):
         response = self.client.post(

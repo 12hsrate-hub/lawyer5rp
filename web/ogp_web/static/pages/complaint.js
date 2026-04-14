@@ -446,7 +446,7 @@ async function saveRemoteDraft(showMessage = true) {
   const response = await apiFetch("/api/complaint-draft", {
     method: "PUT",
     body: JSON.stringify({
-      draft: envelope,
+      draft: state,
       document_type: currentDocumentType,
       bundle_version: envelope.metadata.bundle_version,
       schema_hash: envelope.metadata.schema_hash,
