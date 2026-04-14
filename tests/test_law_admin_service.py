@@ -84,6 +84,74 @@ class LawAdminServiceHelpersTests(unittest.TestCase):
         self.assertEqual(payload["items"][0]["id"], 12)
         self.assertEqual(payload["items"][0]["chunk_count"], 345)
 
+    def test_rebuild_index_dry_run_skips_snapshot_import(self):
+        service = LawAdminService(workflow_service=types.SimpleNamespace(repository=types.SimpleNamespace()))
+        with patch("ogp_web.services.law_admin_service.get_server_config") as fake_config, \
+            patch("ogp_web.services.law_admin_service.build_law_bundle") as fake_bundle, \
+            patch("ogp_web.services.law_admin_service.import_law_snapshot") as fake_import:
+            fake_config.return_value = types.SimpleNamespace(law_qa_bundle_path="")
+            fake_bundle.return_value = {
+                "sources": [{"url": "https://example.com/law/a"}],
+                "articles": [{"article_label": "1", "text": "t", "url": "https://example.com/law/a", "document_title": "Doc"}],
+            }
+            result = service.rebuild_index(
+                server_code="blackberry",
+                source_urls=["https://example.com/law/a"],
+                actor_user_id=1,
+                request_id="req-1",
+                persist_sources=False,
+                dry_run=True,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["dry_run"])
+        self.assertEqual(result["article_count"], 1)
+        fake_import.assert_not_called()
+
+    def test_rollback_active_version_switches_target(self):
+        class _FakeConn:
+            def __init__(self):
+                self.queries = []
+                self.committed = False
+
+            def execute(self, query, params=()):
+                self.queries.append((query, params))
+                return self
+
+            def commit(self):
+                self.committed = True
+
+            def rollback(self):
+                self.committed = False
+
+            def close(self):
+                return None
+
+        class _FakeBackend:
+            def __init__(self, conn):
+                self.conn = conn
+
+            def connect(self):
+                return self.conn
+
+        fake_conn = _FakeConn()
+        service = LawAdminService(
+            workflow_service=types.SimpleNamespace(repository=types.SimpleNamespace(backend=_FakeBackend(fake_conn)))
+        )
+        with patch("ogp_web.services.law_admin_service.list_recent_law_versions") as fake_list, \
+            patch("ogp_web.services.law_admin_service.resolve_active_law_version") as fake_active:
+            fake_list.return_value = (
+                types.SimpleNamespace(id=11),
+                types.SimpleNamespace(id=10),
+            )
+            fake_active.return_value = types.SimpleNamespace(id=10)
+            result = service.rollback_active_version(server_code="blackberry", law_version_id=None)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["rolled_back_to_version_id"], 10)
+        self.assertTrue(fake_conn.committed)
+        self.assertEqual(len(fake_conn.queries), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

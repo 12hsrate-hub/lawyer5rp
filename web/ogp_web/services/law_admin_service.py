@@ -203,6 +203,7 @@ class LawAdminService:
         actor_user_id: int,
         request_id: str,
         persist_sources: bool = True,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         validation = validate_source_urls(source_urls or list(self.get_effective_sources(server_code=server_code).source_urls))
         effective_urls = validation.accepted_urls
@@ -223,6 +224,16 @@ class LawAdminService:
 
         server_config = get_server_config(server_code)
         bundle = build_law_bundle(server_code, effective_urls)
+        if dry_run:
+            return {
+                "ok": True,
+                "dry_run": True,
+                "server_code": server_code,
+                "source_urls": list(effective_urls),
+                "source_count": len(bundle.get("sources", []) if isinstance(bundle, dict) else []),
+                "article_count": len(bundle.get("articles", []) if isinstance(bundle, dict) else []),
+                "manifest": manifest_result,
+            }
         bundle_path = resolve_law_bundle_path(server_code, getattr(server_config, "law_qa_bundle_path", ""))
         write_law_bundle(bundle, bundle_path)
         version_id = import_law_snapshot(
@@ -279,3 +290,49 @@ class LawAdminService:
                 }
             )
         return build_sources_dependency_payload(server_rows)
+
+    def rollback_active_version(self, *, server_code: str, law_version_id: int | None = None) -> dict[str, Any]:
+        rows = list_recent_law_versions(server_code=server_code, limit=20)
+        if not rows:
+            raise ValueError("law_versions_not_found")
+        target = None
+        if law_version_id is not None:
+            target = next((row for row in rows if int(row.id) == int(law_version_id)), None)
+            if target is None:
+                raise ValueError("law_version_not_found")
+        else:
+            if len(rows) < 2:
+                raise ValueError("rollback_target_not_found")
+            target = rows[1]
+        assert target is not None
+        conn = self.repository.backend.connect()
+        try:
+            conn.execute(
+                """
+                UPDATE law_versions
+                SET effective_to = NOW()
+                WHERE server_code = %s AND id <> %s AND effective_to IS NULL
+                """,
+                (server_code, int(target.id)),
+            )
+            conn.execute(
+                """
+                UPDATE law_versions
+                SET effective_from = NOW(), effective_to = NULL
+                WHERE id = %s AND server_code = %s
+                """,
+                (int(target.id), server_code),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        active = resolve_active_law_version(server_code=server_code)
+        return {
+            "ok": True,
+            "server_code": server_code,
+            "rolled_back_to_version_id": int(target.id),
+            "active_law_version_id": int(active.id) if active else None,
+        }
