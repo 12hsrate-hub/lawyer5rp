@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 
 from ogp_web.dependencies import get_content_workflow_service
 from ogp_web.dependencies import get_admin_dashboard_service, get_admin_metrics_store, get_exam_answers_store, get_user_store, requires_permission
+from ogp_web.dependencies import get_runtime_servers_store
 from ogp_web.server_config import build_permission_set, get_server_config
 from ogp_web.schemas import (
     AdminBlockPayload,
@@ -28,6 +29,7 @@ from ogp_web.schemas import (
     AdminLawSourcesPayload,
     AdminPasswordResetPayload,
     AdminQuotaPayload,
+    AdminRuntimeServerPayload,
 )
 from ogp_web.services.law_admin_service import LawAdminService
 from ogp_web.services.law_rebuild_tasks import find_active_law_rebuild_task
@@ -39,6 +41,7 @@ from ogp_web.services.admin_dashboard_service import AdminDashboardService
 from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
+from ogp_web.storage.runtime_servers_store import RuntimeServersStore
 from ogp_web.web import page_context, templates
 
 
@@ -903,6 +906,120 @@ async def admin_rules_page(request: Request, user: AuthUser = Depends(require_ad
     )
 
 
+
+
+@router.get("/api/admin/runtime-servers")
+async def admin_runtime_servers_list(
+    user: AuthUser = Depends(require_admin_user),
+    store: RuntimeServersStore = Depends(get_runtime_servers_store),
+):
+    _ = user
+    items = [store.to_payload(record) for record in store.list_servers()]
+    return {"items": items, "count": len(items)}
+
+
+@router.post("/api/admin/runtime-servers")
+async def admin_runtime_servers_create(
+    payload: AdminRuntimeServerPayload,
+    user: AuthUser = Depends(require_admin_user),
+    store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        row = store.create_server(code=payload.code, title=payload.title)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    metrics_store.log_event(
+        event_type="admin_runtime_server_create",
+        username=user.username,
+        server_code=user.server_code,
+        path="/api/admin/runtime-servers",
+        method="POST",
+        status_code=200,
+        meta={"code": row.code},
+    )
+    return {"ok": True, "item": store.to_payload(row)}
+
+
+@router.put("/api/admin/runtime-servers/{server_code}")
+async def admin_runtime_servers_update(
+    server_code: str,
+    payload: AdminRuntimeServerPayload,
+    user: AuthUser = Depends(require_admin_user),
+    store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    normalized_code = str(server_code or "").strip().lower()
+    if normalized_code != payload.code:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["server_code_mismatch"])
+    try:
+        row = store.update_server(code=normalized_code, title=payload.title)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+    metrics_store.log_event(
+        event_type="admin_runtime_server_update",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/runtime-servers/{normalized_code}",
+        method="PUT",
+        status_code=200,
+        meta={"code": row.code},
+    )
+    return {"ok": True, "item": store.to_payload(row)}
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/activate")
+async def admin_runtime_servers_activate(
+    server_code: str,
+    user: AuthUser = Depends(require_admin_user),
+    store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    normalized_code = str(server_code or "").strip().lower()
+    try:
+        row = store.set_active(code=normalized_code, is_active=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+    metrics_store.log_event(
+        event_type="admin_runtime_server_activate",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/runtime-servers/{normalized_code}/activate",
+        method="POST",
+        status_code=200,
+        meta={"code": row.code},
+    )
+    return {"ok": True, "item": store.to_payload(row)}
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/deactivate")
+async def admin_runtime_servers_deactivate(
+    server_code: str,
+    user: AuthUser = Depends(require_admin_user),
+    store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    normalized_code = str(server_code or "").strip().lower()
+    try:
+        row = store.set_active(code=normalized_code, is_active=False)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+    metrics_store.log_event(
+        event_type="admin_runtime_server_deactivate",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/runtime-servers/{normalized_code}/deactivate",
+        method="POST",
+        status_code=200,
+        meta={"code": row.code},
+    )
+    return {"ok": True, "item": store.to_payload(row)}
 
 
 def _resolve_actor_user_id(user_store: UserStore, username: str) -> int:

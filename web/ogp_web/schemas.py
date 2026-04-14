@@ -528,6 +528,28 @@ class AdminCatalogItemPayload(BaseModel):
         return value
 
 
+class AdminRuntimeServerPayload(BaseModel):
+    code: str = ""
+    title: str = ""
+
+    @field_validator("code")
+    @classmethod
+    def validate_server_code(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            raise ValueError("server_code_required")
+        if not all(ch.isalnum() or ch in {"_", "-", "."} for ch in normalized):
+            raise ValueError("server_code_invalid")
+        return normalized
+
+    @field_validator("title")
+    @classmethod
+    def validate_server_title(cls, value: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("server_title_required")
+        return normalized
+
 class AdminCatalogWorkflowPayload(BaseModel):
     action: str = ""
     change_request_id: int = 0
