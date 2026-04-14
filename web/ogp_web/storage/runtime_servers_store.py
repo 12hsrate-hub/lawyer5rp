@@ -48,6 +48,31 @@ class RuntimeServersStore:
         finally:
             conn.close()
 
+    def get_server(self, *, code: str) -> RuntimeServerRecord | None:
+        normalized_code = self._normalize_code(code)
+        if not normalized_code:
+            return None
+        conn = self.backend.connect()
+        try:
+            row = conn.execute(
+                """
+                SELECT code, title, is_active, created_at
+                FROM servers
+                WHERE code = %s
+                """,
+                (normalized_code,),
+            ).fetchone()
+            if row is None:
+                return None
+            return RuntimeServerRecord(
+                code=str(row.get("code") or ""),
+                title=str(row.get("title") or ""),
+                is_active=bool(row.get("is_active", True)),
+                created_at=str(row.get("created_at") or ""),
+            )
+        finally:
+            conn.close()
+
     def create_server(self, *, code: str, title: str) -> RuntimeServerRecord:
         normalized_code = self._normalize_code(code)
         normalized_title = self._normalize_title(title)

@@ -38,7 +38,9 @@ from ogp_web.schemas import (
     AdminRuntimeServerPayload,
 )
 from ogp_web.services.law_admin_service import LawAdminService
+from ogp_web.services.law_bundle_service import load_law_bundle_meta
 from ogp_web.services.law_rebuild_tasks import find_active_law_rebuild_task
+from ogp_web.services.law_version_service import resolve_active_law_version
 from ogp_web.services.auth_service import AuthError, AuthUser, require_admin_user
 from ogp_web.services.point3_policy_service import load_point3_eval_thresholds
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -47,7 +49,7 @@ from ogp_web.services.admin_dashboard_service import AdminDashboardService
 from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
-from ogp_web.storage.runtime_servers_store import RuntimeServersStore
+from ogp_web.storage.runtime_servers_store import RuntimeServerRecord, RuntimeServersStore
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
 from ogp_web.web import page_context, templates
 
@@ -118,6 +120,31 @@ def _normalize_api_error(exc: Exception, *, source: str) -> dict[str, str]:
         "source": source,
         "message": str(exc) or f"{source}_error",
     }
+
+
+def _normalize_code(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _detail_lines(*items: Any) -> list[str]:
+    lines = [str(item or "").strip() for item in items]
+    return [line for line in lines if line]
+
+
+def _raise_http_error(status_code: int, *detail: Any) -> None:
+    raise HTTPException(status_code=status_code, detail=_detail_lines(*detail))
+
+
+def _raise_bad_request(*detail: Any) -> None:
+    _raise_http_error(status.HTTP_400_BAD_REQUEST, *detail)
+
+
+def _raise_not_found(*detail: Any) -> None:
+    _raise_http_error(status.HTTP_404_NOT_FOUND, *detail)
+
+
+def _admin_ok(**payload: Any) -> dict[str, Any]:
+    return {"ok": True, **payload}
 
 
 def _load_model_policy() -> dict[str, Any]:
@@ -957,7 +984,7 @@ async def admin_runtime_servers_create(
     try:
         row = store.create_server(code=payload.code, title=payload.title)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+        _raise_bad_request(exc)
     metrics_store.log_event(
         event_type="admin_runtime_server_create",
         username=user.username,
@@ -967,7 +994,7 @@ async def admin_runtime_servers_create(
         status_code=200,
         meta={"code": row.code},
     )
-    return {"ok": True, "item": store.to_payload(row)}
+    return _admin_ok(item=store.to_payload(row))
 
 
 @router.put("/api/admin/runtime-servers/{server_code}")
@@ -978,15 +1005,15 @@ async def admin_runtime_servers_update(
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
-    normalized_code = str(server_code or "").strip().lower()
+    normalized_code = _normalize_code(server_code)
     if normalized_code != payload.code:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["server_code_mismatch"])
+        _raise_bad_request("server_code_mismatch")
     try:
         row = store.update_server(code=normalized_code, title=payload.title)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+        _raise_bad_request(exc)
     except KeyError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+        _raise_not_found(exc)
     metrics_store.log_event(
         event_type="admin_runtime_server_update",
         username=user.username,
@@ -996,7 +1023,7 @@ async def admin_runtime_servers_update(
         status_code=200,
         meta={"code": row.code},
     )
-    return {"ok": True, "item": store.to_payload(row)}
+    return _admin_ok(item=store.to_payload(row))
 
 
 @router.post("/api/admin/runtime-servers/{server_code}/activate")
@@ -1006,13 +1033,13 @@ async def admin_runtime_servers_activate(
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
-    normalized_code = str(server_code or "").strip().lower()
+    normalized_code = _normalize_code(server_code)
     try:
         row = store.set_active(code=normalized_code, is_active=True)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+        _raise_bad_request(exc)
     except KeyError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+        _raise_not_found(exc)
     metrics_store.log_event(
         event_type="admin_runtime_server_activate",
         username=user.username,
@@ -1022,7 +1049,37 @@ async def admin_runtime_servers_activate(
         status_code=200,
         meta={"code": row.code},
     )
-    return {"ok": True, "item": store.to_payload(row)}
+    return _admin_ok(item=store.to_payload(row))
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/health")
+async def admin_runtime_server_health(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
+    store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    _ = user
+    normalized_code = _normalize_code(server_code)
+    server = store.get_server(code=normalized_code)
+    if server is None:
+        _raise_not_found("server_not_found")
+    payload = _build_runtime_server_health_payload(
+        server_code=normalized_code,
+        server=server,
+        law_sets_store=law_sets_store,
+    )
+    metrics_store.log_event(
+        event_type="admin_runtime_server_health",
+        username=user.username,
+        server_code=normalized_code,
+        path=f"/api/admin/runtime-servers/{normalized_code}/health",
+        method="GET",
+        status_code=200,
+        meta=payload.get("summary") or {},
+    )
+    return payload
 
 
 @router.post("/api/admin/runtime-servers/{server_code}/deactivate")
@@ -1032,13 +1089,13 @@ async def admin_runtime_servers_deactivate(
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
-    normalized_code = str(server_code or "").strip().lower()
+    normalized_code = _normalize_code(server_code)
     try:
         row = store.set_active(code=normalized_code, is_active=False)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+        _raise_bad_request(exc)
     except KeyError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+        _raise_not_found(exc)
     metrics_store.log_event(
         event_type="admin_runtime_server_deactivate",
         username=user.username,
@@ -1048,7 +1105,7 @@ async def admin_runtime_servers_deactivate(
         status_code=200,
         meta={"code": row.code},
     )
-    return {"ok": True, "item": store.to_payload(row)}
+    return _admin_ok(item=store.to_payload(row))
 
 
 @router.get("/api/admin/runtime-servers/{server_code}/law-sets")
@@ -1058,7 +1115,7 @@ async def admin_runtime_server_law_sets(
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
 ):
     _ = user
-    normalized_code = str(server_code or "").strip().lower()
+    normalized_code = _normalize_code(server_code)
     items = store.list_law_sets(server_code=normalized_code)
     return {"server_code": normalized_code, "items": items, "count": len(items)}
 
@@ -1070,7 +1127,7 @@ async def admin_runtime_server_law_bindings(
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
 ):
     _ = user
-    normalized_code = str(server_code or "").strip().lower()
+    normalized_code = _normalize_code(server_code)
     items = store.list_server_law_bindings(server_code=normalized_code)
     return {"server_code": normalized_code, "items": items, "count": len(items)}
 
@@ -1083,7 +1140,7 @@ async def admin_runtime_server_law_bindings_add(
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
-    normalized_code = str(server_code or "").strip().lower()
+    normalized_code = _normalize_code(server_code)
     try:
         item = store.add_server_law_binding(
             server_code=normalized_code,
@@ -1094,7 +1151,7 @@ async def admin_runtime_server_law_bindings_add(
             law_set_id=payload.law_set_id,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+        _raise_bad_request(exc)
     metrics_store.log_event(
         event_type="admin_server_law_binding_add",
         username=user.username,
@@ -1104,7 +1161,7 @@ async def admin_runtime_server_law_bindings_add(
         status_code=200,
         meta={"law_set_id": item.get("law_set_id"), "law_code": item.get("law_code")},
     )
-    return {"ok": True, "item": item}
+    return _admin_ok(item=item)
 
 
 @router.post("/api/admin/runtime-servers/{server_code}/law-sets")
@@ -1115,7 +1172,7 @@ async def admin_runtime_server_law_sets_create(
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
-    normalized_code = str(server_code or "").strip().lower()
+    normalized_code = _normalize_code(server_code)
     try:
         law_set = store.create_law_set(server_code=normalized_code, name=payload.name)
         items = store.replace_law_set_items(
@@ -1123,7 +1180,7 @@ async def admin_runtime_server_law_sets_create(
             items=[item.model_dump() for item in payload.items],
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+        _raise_bad_request(exc)
     metrics_store.log_event(
         event_type="admin_law_set_create",
         username=user.username,
@@ -1133,7 +1190,7 @@ async def admin_runtime_server_law_sets_create(
         status_code=200,
         meta={"law_set_id": law_set.get("id"), "items_count": len(items)},
     )
-    return {"ok": True, "law_set": law_set, "items": items}
+    return _admin_ok(law_set=law_set, items=items)
 
 
 @router.put("/api/admin/law-sets/{law_set_id}")
@@ -1148,9 +1205,9 @@ async def admin_law_set_update(
         law_set = store.update_law_set(law_set_id=law_set_id, name=payload.name, is_active=payload.is_active)
         items = store.replace_law_set_items(law_set_id=law_set_id, items=[item.model_dump() for item in payload.items])
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+        _raise_bad_request(exc)
     except KeyError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+        _raise_not_found(exc)
     metrics_store.log_event(
         event_type="admin_law_set_update",
         username=user.username,
@@ -1160,7 +1217,7 @@ async def admin_law_set_update(
         status_code=200,
         meta={"law_set_id": law_set_id, "items_count": len(items)},
     )
-    return {"ok": True, "law_set": law_set, "items": items}
+    return _admin_ok(law_set=law_set, items=items)
 
 
 @router.post("/api/admin/law-sets/{law_set_id}/publish")
@@ -1173,7 +1230,7 @@ async def admin_law_set_publish(
     try:
         law_set = store.publish_law_set(law_set_id=law_set_id)
     except KeyError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+        _raise_not_found(exc)
     metrics_store.log_event(
         event_type="admin_law_set_publish",
         username=user.username,
@@ -1183,7 +1240,7 @@ async def admin_law_set_publish(
         status_code=200,
         meta={"law_set_id": law_set_id},
     )
-    return {"ok": True, "law_set": law_set}
+    return _admin_ok(law_set=law_set)
 
 
 @router.post("/api/admin/law-sets/{law_set_id}/rebuild")
@@ -1201,9 +1258,9 @@ async def admin_law_set_rebuild(
     try:
         server_code, source_urls = store.list_source_urls_for_law_set(law_set_id=law_set_id)
     except KeyError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+        _raise_not_found(exc)
     if not source_urls:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["law_set_sources_empty"])
+        _raise_bad_request("law_set_sources_empty")
     service = LawAdminService(workflow_service)
     result = service.rebuild_index(
         server_code=server_code,
@@ -1222,7 +1279,7 @@ async def admin_law_set_rebuild(
         status_code=200,
         meta={"law_set_id": law_set_id, "law_version_id": result.get("law_version_id")},
     )
-    return {"ok": True, "law_set_id": law_set_id, "server_code": server_code, "source_urls": source_urls, "result": result}
+    return _admin_ok(law_set_id=law_set_id, server_code=server_code, source_urls=source_urls, result=result)
 
 
 @router.post("/api/admin/law-sets/{law_set_id}/rollback")
@@ -1237,12 +1294,12 @@ async def admin_law_set_rollback(
     try:
         server_code, _ = store.list_source_urls_for_law_set(law_set_id=law_set_id)
     except KeyError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+        _raise_not_found(exc)
     service = LawAdminService(workflow_service)
     try:
         result = service.rollback_active_version(server_code=server_code, law_version_id=payload.law_version_id)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+        _raise_bad_request(exc)
     metrics_store.log_event(
         event_type="admin_law_set_rollback",
         username=user.username,
@@ -1252,7 +1309,7 @@ async def admin_law_set_rollback(
         status_code=200,
         meta={"law_set_id": law_set_id, "law_version_id": payload.law_version_id},
     )
-    return {"ok": True, "law_set_id": law_set_id, "result": result}
+    return _admin_ok(law_set_id=law_set_id, result=result)
 
 
 @router.get("/api/admin/law-source-registry")
@@ -1275,7 +1332,7 @@ async def admin_law_source_registry_create(
     try:
         row = store.create_source(name=payload.name, kind=payload.kind, url=payload.url)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+        _raise_bad_request(exc)
     metrics_store.log_event(
         event_type="admin_law_source_registry_create",
         username=user.username,
@@ -1285,7 +1342,7 @@ async def admin_law_source_registry_create(
         status_code=200,
         meta={"source_id": row.id},
     )
-    return {"ok": True, "item": row.__dict__}
+    return _admin_ok(item=row.__dict__)
 
 
 @router.get("/api/admin/law-jobs/overview")
@@ -1330,9 +1387,9 @@ async def admin_law_source_registry_update(
     try:
         row = store.update_source(source_id=source_id, name=payload.name, kind=payload.kind, url=payload.url, is_active=payload.is_active)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+        _raise_bad_request(exc)
     except KeyError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
+        _raise_not_found(exc)
     metrics_store.log_event(
         event_type="admin_law_source_registry_update",
         username=user.username,
@@ -1342,13 +1399,13 @@ async def admin_law_source_registry_update(
         status_code=200,
         meta={"source_id": row.id},
     )
-    return {"ok": True, "item": row.__dict__}
+    return _admin_ok(item=row.__dict__)
 
 
 def _resolve_actor_user_id(user_store: UserStore, username: str) -> int:
     actor_user_id = user_store.get_user_id(username)
     if actor_user_id is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["actor_not_found"])
+        _raise_bad_request("actor_not_found")
     return int(actor_user_id)
 
 
@@ -1406,6 +1463,68 @@ def _resolve_active_change_request(item: dict[str, Any], change_requests: list[d
         except (TypeError, ValueError):
             continue
     return None
+
+
+def _build_runtime_server_health_payload(
+    *,
+    server_code: str,
+    server: RuntimeServerRecord | None,
+    law_sets_store: RuntimeLawSetsStore,
+) -> dict[str, Any]:
+    normalized_code = _normalize_code(server_code)
+    law_sets = law_sets_store.list_law_sets(server_code=normalized_code)
+    active_law_set = next((item for item in law_sets if item.get("is_published")), None)
+    if active_law_set is None:
+        active_law_set = next((item for item in law_sets if item.get("is_active")), None)
+    bindings = law_sets_store.list_server_law_bindings(server_code=normalized_code)
+    active_law_version = resolve_active_law_version(server_code=normalized_code)
+    bundle_meta = load_law_bundle_meta(normalized_code)
+    chunk_count = int(
+        (bundle_meta.chunk_count if bundle_meta and bundle_meta.chunk_count is not None else None)
+        or (active_law_version.chunk_count if active_law_version and active_law_version.chunk_count is not None else 0)
+        or 0
+    )
+
+    checks = {
+        "server": {
+            "ok": bool(server),
+            "detail": f"server:{normalized_code}" if server else "server_missing",
+        },
+        "law_set": {
+            "ok": bool(active_law_set),
+            "detail": str(active_law_set.get("name") or "") if active_law_set else "law_set_missing",
+            "law_set_id": int(active_law_set.get("id")) if active_law_set and active_law_set.get("id") is not None else None,
+        },
+        "bindings": {
+            "ok": bool(bindings),
+            "detail": f"bindings:{len(bindings)}",
+            "count": len(bindings),
+        },
+        "activation": {
+            "ok": bool(server and server.is_active),
+            "detail": "active" if server and server.is_active else "inactive",
+        },
+        "health": {
+            "ok": bool(active_law_version and chunk_count > 0),
+            "detail": (
+                f"active_law_version:{active_law_version.id}, chunks:{chunk_count}"
+                if active_law_version and chunk_count > 0
+                else "active_law_version_missing"
+            ),
+            "active_law_version_id": int(active_law_version.id) if active_law_version else None,
+            "chunk_count": chunk_count,
+        },
+    }
+    ready_count = sum(1 for item in checks.values() if item.get("ok"))
+    return {
+        "server_code": normalized_code,
+        "checks": checks,
+        "summary": {
+            "ready_count": ready_count,
+            "total_count": len(checks),
+            "is_ready": ready_count == len(checks),
+        },
+    }
 
 def _build_catalog_payload_config(payload: AdminCatalogItemPayload) -> dict[str, Any]:
     typed_fields: dict[str, Any] = {

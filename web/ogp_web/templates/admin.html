@@ -4,6 +4,15 @@
 
 {% block page_scripts %}
   <script src="{{ url_for('static', path='shared/exam_import_view.js') }}?v={{ static_asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='shared/admin_common.js') }}?v={{ static_asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='shared/admin_activity.js') }}?v={{ static_asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='shared/admin_catalog.js') }}?v={{ static_asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='shared/admin_overview.js') }}?v={{ static_asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='shared/admin_overview_loader.js') }}?v={{ static_asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='shared/admin_actions.js') }}?v={{ static_asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='shared/admin_runtime_laws.js') }}?v={{ static_asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='shared/admin_law_runtime_controller.js') }}?v={{ static_asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='shared/admin_user_details.js') }}?v={{ static_asset_version }}" defer></script>
   <script src="{{ url_for('static', path='pages/admin.js') }}?v={{ static_asset_version }}" defer></script>
 {% endblock %}
 

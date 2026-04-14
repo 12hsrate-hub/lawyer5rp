@@ -1,44 +1,43 @@
 # Docs Index
 
-Этот каталог теперь разделен на 4 зоны:
+This directory now keeps only active operational and developer-facing docs.
 
-- `docs/` — только живые документы, которые используются в текущей разработке и эксплуатации.
-- `docs/adr/` — архитектурные решения (ADR), действующие инварианты и правила.
-- `docs/archive/YYYY-MM/` — исторические планы, аудиты и разовые runbook-файлы.
-- `examples/` и `artifacts/` — примеры кода и выгрузки данных, которые не являются operational docs.
+## Keep In `docs/`
 
-Для эксплуатационных и релизных действий используйте сначала [`OPERATIONS_INDEX.md`](./OPERATIONS_INDEX.md).
+- `brief.md` - active product/architecture brief for future planning
+- `agents.md` - active planning rules and architecture guidance
+- `OPERATIONS_INDEX.md` - primary entrypoint for deploy/run/rollback docs
+- `RUNBOOK.md` - incident handling for point3 legal mode
+- `ROLL_OUT.md` - rollout stages and go/no-go rules
+- `ROLLBACK_PLAYBOOK.md` - rollback procedure by feature flag
+- `github_deploy.md` - GitHub-to-server deploy flow
+- `postgresql_migrations.md` - PostgreSQL migration flow
+- `domain_rollout_su_online.md` - domain and nginx setup
+- `MODEL_POLICY_SLO.md` - policy, KPI, and SLO targets
+- `AI_QUALITY_COST_RUNBOOK_ADMIN.md` - admin quality/cost runbook
+- `FEATURE_FLAGS.md` - active feature-flag reference
+- `ACCEPTANCE_CHECKLIST.md` - release acceptance gates
+- `IMPLEMENTATION_PLAN.md` - still-active execution plan referenced by task tracking
+- `CODEX_RUN_GUIDE.md` - execution guide for Codex-driven task work
+- `exam_scoring_incident_runbook.md` - exam scoring incident response
+- `exam_scoring_rollout_gates_and_kpis.md` - exam scoring rollout gates
 
-## Active Docs (Keep Here)
+## Keep In `docs/adr/`
 
-- `github_deploy.md`
-- `postgresql_migrations.md`
-- `OPERATIONS_INDEX.md`
-- `RUNBOOK.md`
-- `ROLLBACK_PLAYBOOK.md`
-- `FEATURE_FLAGS.md`
-- `MODEL_POLICY_SLO.md`
-- `AI_QUALITY_COST_RUNBOOK_ADMIN.md`
-- `ACCEPTANCE_CHECKLIST.md`
-- `IMPLEMENTATION_PLAN.md`
-- `unified_legal_verification_pipeline_plan.md`
-- `code_quality_audit_2026-04-14.md`
-- `domain_rollout_su_online.md`
-- `exam_scoring_incident_runbook.md`
-- `exam_scoring_rollout_gates_and_kpis.md`
-- `utf8_hardening_plan.md`
-- `ROLL_OUT.md`
-- `CODEX_RUN_GUIDE.md`
-- `multi_server_visual_admin_platform_blueprint.md`
+- ADRs and active architectural invariants only
 
-## Archive Policy
+## Keep In `docs/archive/YYYY-MM/`
 
-- Любой документ с датой в имени, который больше не ведет текущую работу, переносится в `docs/archive/YYYY-MM/`.
-- Архивные файлы не удаляем сразу: сначала перенос, затем удаление в отдельной чистке при необходимости.
-- Ссылки из активных инструкций должны вести только на `docs/` или `docs/adr/`.
+- completed plans
+- one-off briefs that are no longer current
+- audits
+- historical blueprints
+- temporary hardening/backlog notes that are no longer current source-of-truth
 
-## Data and Examples Policy
+Files moved out of active docs in this cleanup live in `docs/archive/2026-04/`.
 
-- JSON/CSV выгрузки и прочие артефакты храним в `artifacts/`.
-- Технические шаблоны и стартовые заготовки храним в `examples/`.
-- В `docs/` не добавляем бинарники и сырьевые выгрузки.
+## Rules
+
+- If a document is not part of current operations or current execution, archive it.
+- Active docs should point to active docs or ADRs, not to archived planning material.
+- Do not keep duplicate briefs or scratch notes in the root `docs/` directory unless they are explicitly designated as active planning sources.

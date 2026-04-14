@@ -1243,6 +1243,39 @@
   user-select: text;
 }
 
+.admin-workflow-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.admin-workflow-step {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(214, 201, 189, 0.95);
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.admin-workflow-step--done {
+  border-color: rgba(83, 123, 98, 0.35);
+  background: rgba(244, 250, 246, 0.96);
+}
+
+.admin-workflow-step--warning {
+  border-color: rgba(184, 137, 66, 0.35);
+  background: rgba(255, 250, 241, 0.96);
+}
+
+.admin-workflow-step__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .admin-live-toggle {
   min-width: 190px;
 }
