@@ -66,16 +66,47 @@
       <a class="legal-section-jump__link" href="#admin-errors-explorer-content">Error Explorer</a>
       <a class="legal-section-jump__link" href="#admin-section-events">События</a>
       {% endif %}
+      {% if admin_focus in ["servers", "laws", "templates", "features", "rules"] %}
+      <a class="legal-section-jump__link" href="#admin-domain-summary">Domain Summary</a>
+      <a class="legal-section-jump__link" href="#admin-catalog-content">Configuration Catalog</a>
+      {% endif %}
+      {% if admin_focus == "servers" %}
+      <a class="legal-section-jump__link" href="#admin-server-domain-map">Server Domain Map</a>
+      <a class="legal-section-jump__link" href="#admin-catalog-content">Runtime Inventory</a>
+      {% endif %}
+      {% if admin_focus == "laws" %}
+      <a class="legal-section-jump__link" href="#admin-law-domain-map">Law Domain Map</a>
+      <a class="legal-section-jump__link" href="#law-sources-server-select">Law Sources</a>
+      <a class="legal-section-jump__link" href="#law-sets-host">Law Sets</a>
+      <a class="legal-section-jump__link" href="#server-law-bindings-host">Server Bindings</a>
+      {% endif %}
+      {% if admin_focus == "templates" %}
+      <a class="legal-section-jump__link" href="#admin-template-domain-map">Template Domain Map</a>
+      {% endif %}
+      {% if admin_focus == "features" %}
+      <a class="legal-section-jump__link" href="#admin-feature-domain-map">Capability Domain Map</a>
+      {% endif %}
+      {% if admin_focus == "rules" %}
+      <a class="legal-section-jump__link" href="#admin-rule-domain-map">Rule Domain Map</a>
+      {% endif %}
     </nav>
 
     <section class="panel legal-card">
       <div class="legal-section__header">
         <div>
+          {% if admin_focus in ["servers", "laws", "templates", "features", "rules"] %}
+          <p class="legal-section__eyebrow">Configuration Admin</p>
+          <h1 class="legal-section__title">Runtime and configuration workspace</h1>
+          <p class="legal-section__description">
+            Read-only domain view for runtime inventory, catalog-backed configuration, and publication context.
+          </p>
+          {% else %}
           <p class="legal-section__eyebrow">Администрирование</p>
           <h1 class="legal-section__title">Панель ресурсов и активности</h1>
           <p class="legal-section__description">
             Здесь собрана сводка по пользователям, запросам к API, AI-операциям, оцениванию экзамена и итоговым документам.
           </p>
+          {% endif %}
         </div>
       </div>
 
@@ -497,11 +528,245 @@
       {% endif %}
 
       {% if admin_focus in ["servers", "laws", "templates", "features", "rules"] %}
+      <section id="admin-domain-summary" class="legal-subcard admin-collapsible" data-collapsible-section="domain-summary">
+        <div class="legal-subcard__header admin-collapsible__header">
+          <div>
+            <span class="legal-field__label">Read-only domain slice</span>
+            <p class="legal-section__description">
+              {% if admin_focus == "servers" %}
+              Runtime inventory, active server state, and linked configuration bundles.
+              {% elif admin_focus == "laws" %}
+              Law sources, law sets, and server bindings for the pilot legal runtime.
+              {% elif admin_focus == "templates" %}
+              Document templates and their versioned configuration inventory.
+              {% elif admin_focus == "features" %}
+              Capability flags and catalog-backed feature configuration.
+              {% elif admin_focus == "rules" %}
+              Validation rules and publishability checks for managed entities.
+              {% endif %}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="ghost-button admin-collapsible__toggle"
+            data-collapsible-target="admin-domain-summary-content"
+            data-expanded-default="true"
+            aria-expanded="true"
+            aria-controls="admin-domain-summary-content"
+          >
+            Скрыть
+          </button>
+        </div>
+        <div id="admin-domain-summary-content" class="admin-collapsible__content">
+          <div class="legal-field-grid legal-field-grid--two">
+            <div class="legal-field">
+              <span class="legal-field__label">Primary domain</span>
+              <div class="admin-user-cell__secondary">
+                {% if admin_focus == "servers" %}Servers{% elif admin_focus == "laws" %}Law Sources and Law Sets{% elif admin_focus == "templates" %}Document Templates{% elif admin_focus == "features" %}Capabilities{% elif admin_focus == "rules" %}Validation Rules{% endif %}
+              </div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Phase C scope</span>
+              <div class="admin-user-cell__secondary">Read-only structure, navigation, and inventory boundaries.</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Runtime boundary</span>
+              <div class="admin-user-cell__secondary">Server status and live bindings stay distinct from versioned catalog inventory.</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Mutation status</span>
+              <div class="admin-user-cell__secondary">Existing workflow actions remain legacy-backed until Phase D.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {% if admin_focus == "servers" %}
+      <section id="admin-server-domain-map" class="legal-subcard admin-collapsible" data-collapsible-section="server-domain-map">
+        <div class="legal-subcard__header admin-collapsible__header">
+          <div>
+            <span class="legal-field__label">Server Domain Map</span>
+            <p class="legal-section__description">Read-only guide to runtime server inventory, activation state, health checks, and linked configuration bundles.</p>
+          </div>
+          <button
+            type="button"
+            class="ghost-button admin-collapsible__toggle"
+            data-collapsible-target="admin-server-domain-map-content"
+            data-expanded-default="true"
+            aria-expanded="true"
+            aria-controls="admin-server-domain-map-content"
+          >
+            Скрыть
+          </button>
+        </div>
+        <div id="admin-server-domain-map-content" class="admin-collapsible__content">
+          <div class="legal-field-grid legal-field-grid--two">
+            <div class="legal-field">
+              <span class="legal-field__label">Runtime Inventory</span>
+              <div class="admin-user-cell__secondary">Known servers, titles, and active or disabled runtime state.</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Activation State</span>
+              <div class="admin-user-cell__secondary">Whether a prepared server is currently allowed to participate in runtime flows.</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Health</span>
+              <div class="admin-user-cell__secondary">Indexed law version checks and readiness signals for the selected server.</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Linked Configuration</span>
+              <div class="admin-user-cell__secondary">Server state stays separate from the versioned catalog entities it consumes.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+      {% endif %}
+
+      {% if admin_focus == "laws" %}
+      <section id="admin-law-domain-map" class="legal-subcard admin-collapsible" data-collapsible-section="law-domain-map">
+        <div class="legal-subcard__header admin-collapsible__header">
+          <div>
+            <span class="legal-field__label">Law Domain Map</span>
+            <p class="legal-section__description">Read-only guide to the legal runtime slice: source inputs, server law sets, and published bindings.</p>
+          </div>
+          <button
+            type="button"
+            class="ghost-button admin-collapsible__toggle"
+            data-collapsible-target="admin-law-domain-map-content"
+            data-expanded-default="true"
+            aria-expanded="true"
+            aria-controls="admin-law-domain-map-content"
+          >
+            Скрыть
+          </button>
+        </div>
+        <div id="admin-law-domain-map-content" class="admin-collapsible__content">
+          <div class="legal-field-grid legal-field-grid--two">
+            <div class="legal-field">
+              <span class="legal-field__label">Law Sources</span>
+              <div class="admin-user-cell__secondary">Input URLs, validation checks, rebuild tasks, and active indexed law version.</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Law Sets</span>
+              <div class="admin-user-cell__secondary">Server-scoped groupings that define which laws are assembled for runtime use.</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Source Registry</span>
+              <div class="admin-user-cell__secondary">Canonical registry records for known law sources and their metadata.</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Server Bindings</span>
+              <div class="admin-user-cell__secondary">Final runtime mapping between a server, its law set, and active law records.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+      {% endif %}
+
+      {% if admin_focus == "templates" %}
+      <section id="admin-template-domain-map" class="legal-subcard admin-collapsible" data-collapsible-section="template-domain-map">
+        <div class="legal-subcard__header admin-collapsible__header">
+          <div>
+            <span class="legal-field__label">Template Domain Map</span>
+            <p class="legal-section__description">Read-only guide to versioned document templates, preview data, and publication context.</p>
+          </div>
+          <button
+            type="button"
+            class="ghost-button admin-collapsible__toggle"
+            data-collapsible-target="admin-template-domain-map-content"
+            data-expanded-default="true"
+            aria-expanded="true"
+            aria-controls="admin-template-domain-map-content"
+          >
+            Скрыть
+          </button>
+        </div>
+        <div id="admin-template-domain-map-content" class="admin-collapsible__content">
+          <div class="legal-field-grid legal-field-grid--two">
+            <div class="legal-field">
+              <span class="legal-field__label">Document Templates</span>
+              <div class="admin-user-cell__secondary">Versioned text and structure used by generated legal outputs.</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Preview and Versions</span>
+              <div class="admin-user-cell__secondary">Current page stays read-only but preserves access to published and draft snapshots.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+      {% endif %}
+
+      {% if admin_focus == "features" %}
+      <section id="admin-feature-domain-map" class="legal-subcard admin-collapsible" data-collapsible-section="feature-domain-map">
+        <div class="legal-subcard__header admin-collapsible__header">
+          <div>
+            <span class="legal-field__label">Capability Domain Map</span>
+            <p class="legal-section__description">Read-only guide to capability flags and catalog-backed configuration used by runtime scenarios.</p>
+          </div>
+          <button
+            type="button"
+            class="ghost-button admin-collapsible__toggle"
+            data-collapsible-target="admin-feature-domain-map-content"
+            data-expanded-default="true"
+            aria-expanded="true"
+            aria-controls="admin-feature-domain-map-content"
+          >
+            Скрыть
+          </button>
+        </div>
+        <div id="admin-feature-domain-map-content" class="admin-collapsible__content">
+          <div class="legal-field-grid legal-field-grid--two">
+            <div class="legal-field">
+              <span class="legal-field__label">Capabilities</span>
+              <div class="admin-user-cell__secondary">Runtime-visible switches and platform behaviors exposed to admins as managed configuration.</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Scenario Impact</span>
+              <div class="admin-user-cell__secondary">Feature meaning should be described in domain language before internal keys or flags.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+      {% endif %}
+
+      {% if admin_focus == "rules" %}
+      <section id="admin-rule-domain-map" class="legal-subcard admin-collapsible" data-collapsible-section="rule-domain-map">
+        <div class="legal-subcard__header admin-collapsible__header">
+          <div>
+            <span class="legal-field__label">Rule Domain Map</span>
+            <p class="legal-section__description">Read-only guide to validation rules, publishability checks, and runtime gating logic.</p>
+          </div>
+          <button
+            type="button"
+            class="ghost-button admin-collapsible__toggle"
+            data-collapsible-target="admin-rule-domain-map-content"
+            data-expanded-default="true"
+            aria-expanded="true"
+            aria-controls="admin-rule-domain-map-content"
+          >
+            Скрыть
+          </button>
+        </div>
+        <div id="admin-rule-domain-map-content" class="admin-collapsible__content">
+          <div class="legal-field-grid legal-field-grid--two">
+            <div class="legal-field">
+              <span class="legal-field__label">Validation Rules</span>
+              <div class="admin-user-cell__secondary">Checks that influence draft validity, publishability, and scenario safety.</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Publishing Gate</span>
+              <div class="admin-user-cell__secondary">Rule meaning should be visible to admins without exposing raw workflow or storage terminology as the main label.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+      {% endif %}
+
       <section class="legal-subcard admin-collapsible" data-collapsible-section="catalog-workflow">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
-            <span class="legal-field__label">Publication workflow (draft → review → publish → rollback)</span>
-            <p class="legal-section__description">CRUD для servers/laws/templates/features/rules с аудитом автора и diff.</p>
+            <span class="legal-field__label">Configuration Catalog</span>
+            <p class="legal-section__description">Versioned inventory and workflow surface for servers, laws, templates, capabilities, and validation rules.</p>
           </div>
           <button
             type="button"

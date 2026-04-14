@@ -7,8 +7,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase B — Runtime model foundation + single source-of-truth contract`
-- Current task: `Phase B complete`
-- Current micro-step: `Phase B deliverables completed; ready for Phase C read-only admin module split`
+- Current task: `Phase C complete`
+- Active execution phase override: `Phase C - Visual Admin read-only modules`
+- Current micro-step: `Read-only shells and glossary baseline completed for servers, laws, templates, features, and rules`
 - Overall status: `done`
 - Last updated: `2026-04-14`
 - Notes:
@@ -166,6 +167,7 @@ Dependencies: Phase A.
 ## Phase C — Visual Admin read-only modules (1 sprint)
 
 ### C.1 Read-only domain slices
+Status: `done`
 Build separate admin views (read-only first):
 - Servers
 - Procedures
@@ -176,6 +178,7 @@ Build separate admin views (read-only first):
 - Publications/Audit
 
 ### C.2 UX language baseline
+Status: `done`
 - Human-readable naming dictionary (user/admin-facing).
 - Ban raw internal identifiers in visible labels by default.
 
@@ -183,6 +186,13 @@ Build separate admin views (read-only first):
 - `UI_ADMIN_STRUCTURE.md`
 - read-only pages for pilot domain entities
 - initial glossary
+- `docs/ADMIN_GLOSSARY.md`
+
+Current Phase C progress:
+- catalog-domain read-only shell added for `/admin/servers|laws|templates|features|rules`
+- first explicit law-domain submodule shell added for `Law Sources`, `Law Sets`, `Source Registry`, and `Server Bindings`
+- page-shell domain maps added for `Servers`, `Templates`, `Capabilities`, and `Validation Rules`
+- `Phase C` acceptance reached via separated read-only page shells and initial glossary-backed labeling
 
 ### Acceptance
 - Admin can navigate pilot scenario config end-to-end without code.

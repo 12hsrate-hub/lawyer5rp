@@ -11,6 +11,11 @@ Date: 2026-04-14
 - Inventory slices completed: `5`
 - Next slice: `Phase B.1 data model draft and persistence skeleton`
 - Last updated: `2026-04-14`
+- Phase C progress:
+  - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
+  - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
+  - Initial glossary baseline added in `docs/ADMIN_GLOSSARY.md`.
+  - Explicit page-shell subdomains are in place for servers, laws, templates, features, and rules.
 
 ## Critical user/admin journeys
 
