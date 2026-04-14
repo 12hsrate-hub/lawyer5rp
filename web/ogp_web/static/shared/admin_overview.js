@@ -276,7 +276,7 @@ window.OGPAdminOverview = {
       .filter(Boolean);
 
     const failureNotesHtml = failureNotes.length
-      ? `<div class="admin-section-toolbar"><span class="admin-user-cell__secondary admin-ops-wrap">Recent failures: ${escapeHtml(failureNotes.join(" | "))}</span></div>`
+      ? `<div class="admin-section-toolbar"><div class="admin-user-cell__secondary admin-ops-wrap admin-ops-log">Recent failures: ${escapeHtml(failureNotes.join(" | "))}</div></div>`
       : "";
 
     return `
