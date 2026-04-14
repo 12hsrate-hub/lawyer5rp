@@ -101,6 +101,29 @@ function getLawServerSelect() {
   return document.getElementById("law-sources-server-select");
 }
 
+function getLawRebuildTaskStorageKey(serverCode = activeLawServerCode) {
+  const normalized = String(serverCode || "").trim().toLowerCase();
+  return normalized ? `${LAW_REBUILD_TASK_STORAGE_KEY}:${normalized}` : LAW_REBUILD_TASK_STORAGE_KEY;
+}
+
+function getStoredLawRebuildTaskId(serverCode = activeLawServerCode) {
+  return String(window.localStorage.getItem(getLawRebuildTaskStorageKey(serverCode)) || "").trim();
+}
+
+function setStoredLawRebuildTaskId(taskId, serverCode = activeLawServerCode) {
+  const normalizedTaskId = String(taskId || "").trim();
+  const storageKey = getLawRebuildTaskStorageKey(serverCode);
+  if (!normalizedTaskId) {
+    window.localStorage.removeItem(storageKey);
+    return;
+  }
+  window.localStorage.setItem(storageKey, normalizedTaskId);
+}
+
+function clearStoredLawRebuildTaskId(serverCode = activeLawServerCode) {
+  window.localStorage.removeItem(getLawRebuildTaskStorageKey(serverCode));
+}
+
 function formatCatalogPreviewValue(value) {
   if (value === null || value === undefined) {
     return "—";
@@ -185,6 +208,7 @@ async function loadLawSourcesManager() {
   if (!catalogHost || activeCatalogEntity !== "laws") {
     return;
   }
+  stopLawRebuildPolling();
   const select = getLawServerSelect();
   if (select instanceof HTMLSelectElement && select.value) {
     activeLawServerCode = String(select.value || "").trim().toLowerCase();
@@ -214,10 +238,9 @@ async function loadLawSourcesManager() {
   await loadLawSourcesHistory();
   await loadLawSourcesDependencies();
   setLawActionButtonsDisabled(false);
-  const storedTaskId = window.localStorage.getItem(LAW_REBUILD_TASK_STORAGE_KEY);
+  const storedTaskId = getStoredLawRebuildTaskId();
   if (storedTaskId) {
     setLawActionButtonsDisabled(true);
-    stopLawRebuildPolling();
     await pollLawRebuildTask(storedTaskId);
   }
 }
@@ -346,7 +369,7 @@ async function pollLawRebuildTask(taskId) {
   if (status === "finished") {
     stopLawRebuildPolling();
     setLawActionButtonsDisabled(false);
-    window.localStorage.removeItem(LAW_REBUILD_TASK_STORAGE_KEY);
+    clearStoredLawRebuildTaskId();
     showMessage(`Фоновая пересборка завершена. Версия ${String(payload?.result?.law_version_id || "—")}.`);
     await loadCatalog("laws");
     return;
@@ -354,7 +377,7 @@ async function pollLawRebuildTask(taskId) {
   if (status === "failed") {
     stopLawRebuildPolling();
     setLawActionButtonsDisabled(false);
-    window.localStorage.removeItem(LAW_REBUILD_TASK_STORAGE_KEY);
+    clearStoredLawRebuildTaskId();
     setStateError(errorsHost, String(payload?.error || "Фоновая пересборка завершилась ошибкой."));
     return;
   }
@@ -385,7 +408,7 @@ async function rebuildLawSourcesAsync() {
     if (response.status === 409 && conflictDetail) {
       const activeTaskId = String(conflictDetail).split(":")[1] || "";
       if (activeTaskId) {
-        window.localStorage.setItem(LAW_REBUILD_TASK_STORAGE_KEY, activeTaskId);
+        setStoredLawRebuildTaskId(activeTaskId);
         setLawActionButtonsDisabled(true);
         await pollLawRebuildTask(activeTaskId);
         return;
@@ -395,7 +418,7 @@ async function rebuildLawSourcesAsync() {
     return;
   }
   showMessage(`Пересборка поставлена в очередь (task: ${String(payload?.task_id || "—")}).`);
-  window.localStorage.setItem(LAW_REBUILD_TASK_STORAGE_KEY, String(payload?.task_id || ""));
+  setStoredLawRebuildTaskId(String(payload?.task_id || ""));
   setLawActionButtonsDisabled(true);
   stopLawRebuildPolling();
   await pollLawRebuildTask(String(payload?.task_id || ""));
