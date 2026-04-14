@@ -699,6 +699,16 @@ def _claim_law_rebuild_task(*, server_code: str) -> tuple[dict[str, Any] | None,
         return None, deepcopy(task)
 
 
+def _get_content_workflow_service_for_request(request: Request) -> ContentWorkflowService:
+    override = getattr(request.app, "dependency_overrides", {}).get(get_content_workflow_service)
+    if override is None:
+        return get_content_workflow_service(request)
+    try:
+        return override()
+    except TypeError:
+        return override(request)
+
+
 _load_admin_tasks_from_disk()
 
 
@@ -1378,7 +1388,6 @@ async def admin_law_sources_rebuild_async(
     payload: AdminLawSourcesPayload,
     request: Request,
     user: AuthUser = Depends(requires_permission("manage_laws")),
-    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
@@ -1404,8 +1413,9 @@ async def admin_law_sources_rebuild_async(
 
     def _runner() -> None:
         _patch_admin_task(task_id, status="running", started_at=datetime.now(timezone.utc).isoformat())
-        service = LawAdminService(workflow_service)
         try:
+            workflow_service = _get_content_workflow_service_for_request(request)
+            service = LawAdminService(workflow_service)
             result = service.rebuild_index(
                 server_code=user.server_code,
                 source_urls=payload.source_urls,
@@ -1534,6 +1544,27 @@ async def admin_law_sources_history(
         method="GET",
         status_code=200,
         meta={"count": result.get("count", 0), "limit": limit},
+    )
+    return result
+
+
+@router.get("/api/admin/law-sources/dependencies")
+async def admin_law_sources_dependencies(
+    user: AuthUser = Depends(requires_permission("manage_laws")),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    _ = user
+    service = LawAdminService(workflow_service)
+    result = service.describe_sources_dependencies()
+    metrics_store.log_event(
+        event_type="admin_law_sources_dependencies",
+        username=user.username,
+        server_code=user.server_code,
+        path="/api/admin/law-sources/dependencies",
+        method="GET",
+        status_code=200,
+        meta={"server_count": result.get("server_count"), "source_count": result.get("source_count")},
     )
     return result
 

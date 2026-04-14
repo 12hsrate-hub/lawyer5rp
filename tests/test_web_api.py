@@ -8,6 +8,7 @@ import unittest
 from datetime import datetime, UTC
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
+from unittest.mock import patch
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 WEB_DIR = ROOT_DIR / "web"
@@ -852,6 +853,59 @@ class WebApiTests(unittest.TestCase):
     def test_admin_overview_forbidden_for_non_admin(self):
         self._register_verify_and_login("tester", "tester@example.com")
         response = self.client.get("/api/admin/overview")
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_law_sources_rebuild_async_returns_conflict_when_task_already_active(self):
+        self._register_verify_and_login("12345", "admin-law-conflict@example.com")
+        with patch("ogp_web.routes.admin._load_admin_tasks_from_disk", lambda: None):
+            with admin_route._ADMIN_TASKS_LOCK:
+                backup = dict(admin_route._ADMIN_TASKS)
+                admin_route._ADMIN_TASKS.clear()
+                admin_route._ADMIN_TASKS["law-rebuild-active"] = {
+                    "task_id": "law-rebuild-active",
+                    "scope": "law_sources_rebuild",
+                    "server_code": "blackberry",
+                    "status": "running",
+                }
+            try:
+                response = self.client.post(
+                    "/api/admin/law-sources/rebuild-async",
+                    json={"source_urls": ["https://example.com/law/1"], "persist_sources": True},
+                )
+                self.assertEqual(response.status_code, 409)
+                detail = response.json().get("detail", [])
+                self.assertTrue(any("law_rebuild_already_in_progress:law-rebuild-active" in str(item) for item in detail))
+            finally:
+                with admin_route._ADMIN_TASKS_LOCK:
+                    admin_route._ADMIN_TASKS.clear()
+                    admin_route._ADMIN_TASKS.update(backup)
+
+    def test_admin_law_sources_task_status_forbidden_for_other_server_task(self):
+        self._register_verify_and_login("12345", "admin-law-task@example.com")
+        with patch("ogp_web.routes.admin._load_admin_tasks_from_disk", lambda: None):
+            with admin_route._ADMIN_TASKS_LOCK:
+                backup = dict(admin_route._ADMIN_TASKS)
+                admin_route._ADMIN_TASKS.clear()
+                admin_route._ADMIN_TASKS["law-rebuild-foreign"] = {
+                    "task_id": "law-rebuild-foreign",
+                    "scope": "law_sources_rebuild",
+                    "server_code": "orange",
+                    "status": "running",
+                }
+            try:
+                response = self.client.get("/api/admin/law-sources/tasks/law-rebuild-foreign")
+                self.assertEqual(response.status_code, 403)
+            finally:
+                with admin_route._ADMIN_TASKS_LOCK:
+                    admin_route._ADMIN_TASKS.clear()
+                    admin_route._ADMIN_TASKS.update(backup)
+
+    def test_law_sources_preview_forbidden_for_user_without_manage_laws_permission(self):
+        self._register_verify_and_login("plainuser_preview", "plainuser-preview@example.com")
+        response = self.client.post(
+            "/api/admin/law-sources/preview",
+            json={"source_urls": ["https://example.com/law/1"], "persist_sources": False},
+        )
         self.assertEqual(response.status_code, 403)
 
     def test_health_endpoint_reports_ok(self):

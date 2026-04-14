@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ogp_web.server_config import get_server_config
+from ogp_web.server_config import get_server_config, list_server_configs
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.law_bundle_service import (
     build_law_bundle,
@@ -16,6 +16,7 @@ from ogp_web.services.law_version_service import (
     list_recent_law_versions,
     resolve_active_law_version,
 )
+from ogp_web.services.law_sources_dependencies import build_sources_dependency_payload
 from ogp_web.services.law_sources_validation import (
     build_invalid_source_urls_error,
     normalize_source_urls,
@@ -263,3 +264,18 @@ class LawAdminService:
             "items": [row.__dict__ for row in rows],
             "count": len(rows),
         }
+
+    def describe_sources_dependencies(self) -> dict[str, Any]:
+        server_rows: list[dict[str, Any]] = []
+        for config in list_server_configs():
+            snapshot = self.get_effective_sources(server_code=config.code)
+            server_rows.append(
+                {
+                    "server_code": config.code,
+                    "server_name": getattr(config, "name", config.code),
+                    "source_origin": snapshot.source_origin,
+                    "source_urls": list(snapshot.source_urls),
+                    "active_law_version_id": (snapshot.active_law_version or {}).get("id") if isinstance(snapshot.active_law_version, dict) else None,
+                }
+            )
+        return build_sources_dependency_payload(server_rows)

@@ -146,6 +146,7 @@ async function loadLawSourcesManager() {
     statusHost.textContent = `Источник ссылок: ${origin}. Активная версия закона: ${activeVersionId}. Статей в индексе: ${chunkCount}.`;
   }
   await loadLawSourcesHistory();
+  await loadLawSourcesDependencies();
   setLawActionButtonsDisabled(false);
   const storedTaskId = window.localStorage.getItem(LAW_REBUILD_TASK_STORAGE_KEY);
   if (storedTaskId) {
@@ -181,6 +182,43 @@ async function loadLawSourcesHistory() {
     return;
   }
   renderLawSourcesHistory(payload);
+}
+
+function renderLawSourcesDependencies(payload) {
+  const host = document.getElementById("law-sources-dependencies");
+  if (!host) {
+    return;
+  }
+  const rows = Array.isArray(payload?.servers) ? payload.servers : [];
+  if (!rows.length) {
+    host.innerHTML = '<p class="legal-section__description">Нет данных по зависимостям источников.</p>';
+    return;
+  }
+  host.innerHTML = `
+    <div class="legal-section__description"><strong>Связь серверов и источников законов</strong></div>
+    <table class="legal-table">
+      <thead><tr><th>Сервер</th><th>Источников</th><th>Общих источников</th><th>Связан с серверами</th></tr></thead>
+      <tbody>
+        ${rows
+          .map((row) => `<tr>
+            <td>${escapeHtml(String(row?.server_name || row?.server_code || "—"))}</td>
+            <td>${escapeHtml(String(row?.source_count || 0))}</td>
+            <td>${escapeHtml(String(row?.shared_source_count || 0))}</td>
+            <td>${escapeHtml(String((row?.shared_with_servers || []).join(", ") || "—"))}</td>
+          </tr>`)
+          .join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadLawSourcesDependencies() {
+  const response = await apiFetch("/api/admin/law-sources/dependencies");
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    return;
+  }
+  renderLawSourcesDependencies(payload);
 }
 
 async function rebuildLawSources() {
@@ -450,6 +488,7 @@ function renderCatalog(payload) {
         <span class="legal-field__hint">После сохранения система скачает страницы, нарежет материалы на статьи и импортирует новую DB-версию закона для текущего сервера.</span>
       </label>
       <div id="law-sources-history"></div>
+      <div id="law-sources-dependencies"></div>
     </div>
     ` : ""}
     <div class="legal-table-wrap">
