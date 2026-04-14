@@ -17,6 +17,7 @@ from ogp_web.schemas import (
     AiFeedbackResponse,
     ComplaintDraftPayload,
     ComplaintDraftResponse,
+    ComplaintWorkflowStateResponse,
     ComplaintPayload,
     GenerateResponse,
     GeneratedDocumentHistoryResponse,
@@ -54,6 +55,15 @@ from ogp_web.storage.validation_repository import ValidationRepository
 
 
 router = APIRouter(tags=["complaint"])
+WORKFLOW_STATES = {"draft", "ready_to_generate", "generated", "published"}
+WORKFLOW_ACTIONS = {"save", "generate", "clear", "create_topic"}
+WORKFLOW_STATE_KEY = "__workflow_state"
+WORKFLOW_RULES = {
+    "draft": {"save", "clear"},
+    "ready_to_generate": {"save", "generate", "clear"},
+    "generated": {"save", "generate", "clear", "create_topic"},
+    "published": {"save", "generate", "clear"},
+}
 
 
 def _normalize_history_items(items: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -78,6 +88,119 @@ def _env_positive_int(name: str, default: int) -> int:
     except ValueError:
         return default
     return value if value > 0 else default
+
+
+def _strip_workflow_meta(draft: dict[str, object]) -> dict[str, object]:
+    cleaned = dict(draft or {})
+    cleaned.pop(WORKFLOW_STATE_KEY, None)
+    return cleaned
+
+
+def _is_meaningful_draft(draft: dict[str, object]) -> bool:
+    if not draft:
+        return False
+    for key, value in draft.items():
+        if key in {WORKFLOW_STATE_KEY, "today_date", "result"}:
+            continue
+        if isinstance(value, list):
+            if any(str(item or "").strip() for item in value):
+                return True
+            continue
+        if str(value or "").strip():
+            return True
+    return False
+
+
+def _is_ready_to_generate_draft(draft: dict[str, object]) -> bool:
+    if not _is_meaningful_draft(draft):
+        return False
+    victim_name = str(draft.get("victim_name", "") or "").strip()
+    victim = draft.get("victim")
+    if isinstance(victim, dict):
+        victim_name = victim_name or str(victim.get("name", "") or "").strip()
+    required_values = (
+        str(draft.get("org", "") or "").strip(),
+        str(draft.get("subject_names", "") or "").strip(),
+        str(draft.get("event_dt", "") or "").strip(),
+        str(draft.get("situation_description", "") or "").strip(),
+        victim_name,
+    )
+    return all(required_values)
+
+
+def _allowed_actions_for_state(state: str) -> list[str]:
+    return sorted(WORKFLOW_RULES.get(state, WORKFLOW_RULES["draft"]))
+
+
+def _build_workflow_state(*, draft: dict[str, object], generated_exists: bool) -> str:
+    explicit_state = str(draft.get(WORKFLOW_STATE_KEY, "") or "").strip().lower()
+    if explicit_state in WORKFLOW_STATES:
+        return explicit_state
+    if generated_exists:
+        return "generated"
+    if _is_ready_to_generate_draft(draft):
+        return "ready_to_generate"
+    return "draft"
+
+
+def _build_workflow_payload(*, state: str, message: str = "") -> ComplaintWorkflowStateResponse:
+    return ComplaintWorkflowStateResponse(
+        document_state=state,
+        allowed_actions=_allowed_actions_for_state(state),
+        message=message,
+    )
+
+
+def _log_action_rejected(
+    *,
+    metrics_store: AdminMetricsStore,
+    user: AuthUser,
+    action: str,
+    state: str,
+    status_code: int,
+    reason: str,
+) -> None:
+    metrics_store.log_event(
+        event_type="complaint_action_rejected",
+        username=user.username,
+        server_code=user.server_code,
+        path="/api/complaint-workflow",
+        method="POST",
+        status_code=status_code,
+        meta={"action": action, "state": state, "reason": reason, "server_code": user.server_code},
+    )
+
+
+def _validate_action_or_raise(
+    *,
+    action: str,
+    state: str,
+    metrics_store: AdminMetricsStore,
+    user: AuthUser,
+) -> None:
+    if action not in WORKFLOW_ACTIONS:
+        _log_action_rejected(
+            metrics_store=metrics_store,
+            user=user,
+            action=action,
+            state=state,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            reason="unknown_action",
+        )
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Неизвестное действие: {action}.")
+    if action not in WORKFLOW_RULES.get(state, set()):
+        _log_action_rejected(
+            metrics_store=metrics_store,
+            user=user,
+            action=action,
+            state=state,
+            status_code=status.HTTP_409_CONFLICT,
+            reason="invalid_transition",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Действие {action!r} недоступно для статуса {state!r}.",
+        )
 
 
 class SuggestConcurrencyLimiter:
@@ -209,6 +332,15 @@ def _validation_service(store: UserStore) -> ValidationService:
     return ValidationService(ValidationRepository(store.backend))
 
 
+def _current_workflow_state(store: UserStore, user: AuthUser) -> tuple[str, dict[str, object], str]:
+    raw = store.get_complaint_draft(user.username, server_code=user.server_code)
+    draft = raw.get("draft", {})
+    if not isinstance(draft, dict):
+        draft = {}
+    generated_exists = bool(GenerationOrchestrator(store).list_history(username=user.username, limit=1))
+    return _build_workflow_state(draft=draft, generated_exists=generated_exists), draft, str(raw.get("updated_at", "") or "")
+
+
 def _validate_server_payload(store: UserStore, user: AuthUser, *, org: str = "", complaint_basis: str = "") -> None:
     server_config = _server_config_for_user(store, user)
     normalized_org = str(org or "").strip()
@@ -231,12 +363,40 @@ async def get_complaint_draft(
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ) -> ComplaintDraftResponse:
-    draft = store.get_complaint_draft(user.username, server_code=user.server_code)
+    state, draft, updated_at = _current_workflow_state(store, user)
     return ComplaintDraftResponse(
-        draft=draft.get("draft", {}),
-        updated_at=str(draft.get("updated_at", "") or ""),
+        draft=_strip_workflow_meta(draft),
+        updated_at=updated_at,
         message="Черновик жалобы загружен.",
+        document_state=state,
+        allowed_actions=_allowed_actions_for_state(state),
     )
+
+
+@router.get("/api/complaint-workflow", response_model=ComplaintWorkflowStateResponse)
+async def get_complaint_workflow_state(
+    user: AuthUser = Depends(requires_permission()),
+    store: UserStore = Depends(get_user_store),
+) -> ComplaintWorkflowStateResponse:
+    state, _, _ = _current_workflow_state(store, user)
+    return _build_workflow_payload(state=state, message="Статус документа загружен.")
+
+
+@router.post("/api/complaint-workflow/actions/{action}", response_model=ComplaintWorkflowStateResponse)
+async def perform_complaint_workflow_action(
+    action: str,
+    user: AuthUser = Depends(requires_permission()),
+    store: UserStore = Depends(get_user_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+) -> ComplaintWorkflowStateResponse:
+    current_state, current_draft, _ = _current_workflow_state(store, user)
+    _validate_action_or_raise(action=action, state=current_state, metrics_store=metrics_store, user=user)
+    if action != "create_topic":
+        return _build_workflow_payload(state=current_state, message=f"Действие {action!r} подтверждено.")
+    next_draft = dict(current_draft or {})
+    next_draft[WORKFLOW_STATE_KEY] = "published"
+    store.save_complaint_draft(user.username, next_draft, server_code=user.server_code)
+    return _build_workflow_payload(state="published", message="Документ помечен как опубликованный.")
 
 
 @router.put("/api/complaint-draft", response_model=ComplaintDraftResponse)
@@ -246,7 +406,12 @@ async def save_complaint_draft(
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ComplaintDraftResponse:
-    draft = store.save_complaint_draft(user.username, payload.draft, server_code=user.server_code)
+    current_state, _, _ = _current_workflow_state(store, user)
+    _validate_action_or_raise(action="save", state=current_state, metrics_store=metrics_store, user=user)
+    next_state = "ready_to_generate" if _is_ready_to_generate_draft(payload.draft) else "draft"
+    to_store = dict(payload.draft or {})
+    to_store[WORKFLOW_STATE_KEY] = next_state
+    draft = store.save_complaint_draft(user.username, to_store, server_code=user.server_code)
     metrics_store.log_event(
         event_type="complaint_draft_saved",
         username=user.username,
@@ -257,9 +422,11 @@ async def save_complaint_draft(
         meta={"keys_count": len(payload.draft or {}), "server_code": user.server_code},
     )
     return ComplaintDraftResponse(
-        draft=draft.get("draft", {}),
+        draft=_strip_workflow_meta(draft.get("draft", {})),
         updated_at=str(draft.get("updated_at", "") or ""),
         message="Черновик жалобы сохранён.",
+        document_state=next_state,
+        allowed_actions=_allowed_actions_for_state(next_state),
     )
 
 
@@ -269,6 +436,8 @@ async def clear_complaint_draft(
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ComplaintDraftResponse:
+    current_state, _, _ = _current_workflow_state(store, user)
+    _validate_action_or_raise(action="clear", state=current_state, metrics_store=metrics_store, user=user)
     store.clear_complaint_draft(user.username, server_code=user.server_code)
     metrics_store.log_event(
         event_type="complaint_draft_cleared",
@@ -278,7 +447,13 @@ async def clear_complaint_draft(
         status_code=200,
         meta={"server_code": user.server_code},
     )
-    return ComplaintDraftResponse(draft={}, updated_at="", message="Черновик жалобы очищен.")
+    return ComplaintDraftResponse(
+        draft={},
+        updated_at="",
+        message="Черновик жалобы очищен.",
+        document_state="draft",
+        allowed_actions=_allowed_actions_for_state("draft"),
+    )
 
 
 @router.post("/api/generate", response_model=GenerateResponse)
@@ -289,6 +464,9 @@ async def generate(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     flag_service: FeatureFlagService = Depends(get_feature_flag_service),
 ) -> GenerateResponse:
+    current_state, _, _ = _current_workflow_state(store, user)
+    effective_state = "ready_to_generate" if _is_ready_to_generate_draft(payload.model_dump()) else current_state
+    _validate_action_or_raise(action="generate", state=effective_state, metrics_store=metrics_store, user=user)
     started_at = start_timer()
     cases_flag = flag_service.evaluate(flag="cases_v1", context=RolloutContext(username=user.username, server_id=user.server_code))
     docs_flag = flag_service.evaluate(flag="documents_v2", context=RolloutContext(username=user.username, server_id=user.server_code))
@@ -367,7 +545,12 @@ async def generate(
         ),
         started_at=started_at,
     )
-    return GenerateResponse(bbcode=bbcode, generated_document_id=document_id)
+    return GenerateResponse(
+        bbcode=bbcode,
+        generated_document_id=document_id,
+        document_state="generated",
+        allowed_actions=_allowed_actions_for_state("generated"),
+    )
 
 
 @router.post("/api/generate-rehab", response_model=GenerateResponse)

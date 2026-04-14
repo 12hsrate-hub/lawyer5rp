@@ -83,6 +83,8 @@ class ComplaintPayload(BaseModel):
 class GenerateResponse(BaseModel):
     bbcode: str
     generated_document_id: int | None = None
+    document_state: str = "draft"
+    allowed_actions: List[str] = Field(default_factory=list)
 
 
 class ComplaintDraftPayload(BaseModel):
@@ -92,6 +94,14 @@ class ComplaintDraftPayload(BaseModel):
 class ComplaintDraftResponse(BaseModel):
     draft: dict = Field(default_factory=dict)
     updated_at: str = ""
+    message: str = ""
+    document_state: str = "draft"
+    allowed_actions: List[str] = Field(default_factory=list)
+
+
+class ComplaintWorkflowStateResponse(BaseModel):
+    document_state: str = "draft"
+    allowed_actions: List[str] = Field(default_factory=list)
     message: str = ""
 
 

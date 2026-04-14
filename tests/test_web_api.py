@@ -814,11 +814,14 @@ class WebApiTests(unittest.TestCase):
         response = self.client.put("/api/complaint-draft", json={"draft": draft})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["draft"]["org"], "GOV")
+        self.assertEqual(response.json()["document_state"], "draft")
+        self.assertIn("save", response.json()["allowed_actions"])
 
         response = self.client.get("/api/complaint-draft")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["draft"]["subject_names"], "Pavel Clayton")
         self.assertTrue(response.json()["updated_at"])
+        self.assertIn("clear", response.json()["allowed_actions"])
 
         response = self.client.delete("/api/complaint-draft")
         self.assertEqual(response.status_code, 200)
@@ -826,6 +829,42 @@ class WebApiTests(unittest.TestCase):
         response = self.client.get("/api/complaint-draft")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["draft"], {})
+        self.assertEqual(response.json()["document_state"], "draft")
+
+    def test_complaint_workflow_rejects_generate_from_draft_state(self):
+        self._register_verify_and_login("tester", "workflow-draft@example.com")
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "org": "",
+                "subject_names": "",
+                "situation_description": "",
+                "event_dt": "",
+                "victim": {"name": "", "passport": "", "phone": "", "discord": "", "address": ""},
+            },
+        )
+        self.assertEqual(response.status_code, 409)
+
+    def test_complaint_workflow_allows_create_topic_only_after_generation(self):
+        self._register_verify_and_login("tester", "workflow-topic@example.com")
+        blocked = self.client.post("/api/complaint-workflow/actions/create_topic")
+        self.assertEqual(blocked.status_code, 409)
+
+        payload = {
+            "appeal_no": "1234",
+            "org": "LSPD",
+            "subject_names": "Pavel Clayton",
+            "situation_description": "Draft body",
+            "violation_short": "Short text",
+            "event_dt": "2026-04-10T10:00",
+            "today_date": "2026-04-10",
+            "victim": {"name": "A", "passport": "123456", "phone": "1234567", "discord": "", "address": "B"},
+            "representative": {"name": "R", "passport": "123456", "phone": "1234567", "discord": "", "address": "C"},
+        }
+        self.client.post("/api/generate", json=payload)
+        allowed = self.client.post("/api/complaint-workflow/actions/create_topic")
+        self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(allowed.json()["document_state"], "published")
 
     def test_admin_can_force_verify_email(self):
         response = self.client.post(

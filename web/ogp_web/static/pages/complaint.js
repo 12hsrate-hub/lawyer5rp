@@ -5,6 +5,7 @@ const copyBtn = document.getElementById("copy-btn");
 const generateBbcodeBtn = document.getElementById("generate-bbcode-btn");
 const saveDraftBtn = document.getElementById("save-draft-btn");
 const resetDraftBtn = document.getElementById("reset-draft-btn");
+const createTopicLink = document.getElementById("create-topic-link");
 const template = document.getElementById("url-field-template");
 const aiBtn = document.getElementById("ai-btn");
 const aiErrors = document.getElementById("ai-errors");
@@ -74,6 +75,7 @@ let lastSavedDraft = "";
 let remoteDraftSaveTimer = 0;
 let lastRemoteDraft = "";
 let isApplyingComplaintState = false;
+let workflowAllowedActions = new Set();
 
 const AI_FOCUS_HINTS = {
   wrongful_article:
@@ -154,7 +156,8 @@ function setAiBusy(isBusy, text = "") {
 
 function setBbcodeBusy(isBusy, text = "") {
   if (generateBbcodeBtn) {
-    generateBbcodeBtn.disabled = isBusy;
+    const canGenerate = workflowAllowedActions.has("generate");
+    generateBbcodeBtn.disabled = isBusy || !canGenerate;
   }
   if (bbcodeStatus) {
     bbcodeStatus.hidden = false;
@@ -166,6 +169,44 @@ function setBbcodeBusy(isBusy, text = "") {
   if (spinner) {
     spinner.hidden = !isBusy;
   }
+}
+
+function setActionVisibility(element, visible) {
+  if (!element) {
+    return;
+  }
+  element.hidden = !visible;
+}
+
+function applyAllowedActions(actions) {
+  const normalized = Array.isArray(actions) ? actions : [];
+  workflowAllowedActions = new Set(normalized.map((action) => String(action || "")));
+  setActionVisibility(generateBbcodeBtn, workflowAllowedActions.has("generate"));
+  setActionVisibility(saveDraftBtn, workflowAllowedActions.has("save"));
+  setActionVisibility(resetDraftBtn, workflowAllowedActions.has("clear"));
+  setActionVisibility(createTopicLink, workflowAllowedActions.has("create_topic"));
+}
+
+async function refreshWorkflowActions() {
+  const response = await apiFetch("/api/complaint-workflow", { method: "GET", headers: {} });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    redirectIfUnauthorized(response.status);
+    return;
+  }
+  applyAllowedActions(payload.allowed_actions || []);
+}
+
+async function confirmWorkflowAction(action) {
+  const response = await apiFetch(`/api/complaint-workflow/actions/${encodeURIComponent(action)}`, { method: "POST", headers: {} });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    showErrors(payload.detail || "Действие недоступно для текущего статуса.");
+    redirectIfUnauthorized(response.status);
+    return false;
+  }
+  applyAllowedActions(payload.allowed_actions || []);
+  return true;
 }
 
 function showAppMessage(text) {
@@ -368,6 +409,7 @@ async function saveRemoteDraft(showMessage = true) {
     return;
   }
   lastRemoteDraft = serialized;
+  applyAllowedActions(payload.allowed_actions || []);
   setBbcodeBusy(false, "Статус: черновик жалобы сохранён.");
   if (showMessage) {
     showAppMessage(payload.message || "Жалоба сохранена.");
@@ -391,11 +433,13 @@ async function loadRemoteDraft() {
     return;
   }
   if (!hasMeaningfulDraft(payload.draft)) {
+    applyAllowedActions(payload.allowed_actions || []);
     setBbcodeBusy(false, "Статус: сохранённый черновик не найден.");
     return;
   }
   applyComplaintState(payload.draft);
   lastRemoteDraft = JSON.stringify(payload.draft || {});
+  applyAllowedActions(payload.allowed_actions || []);
   setBbcodeBusy(false, "Статус: сохранённый черновик загружен.");
   showAppMessage(payload.message || "Черновик жалобы загружен.");
 }
@@ -413,6 +457,7 @@ async function clearRemoteDraft() {
     redirectIfUnauthorized(response.status);
     return;
   }
+  await refreshWorkflowActions();
   setBbcodeBusy(false, "Статус: сохранённый черновик очищен.");
 }
 
@@ -459,6 +504,10 @@ function scrollToResult() {
 
 async function generateBbcode(event) {
   event?.preventDefault?.();
+  if (!workflowAllowedActions.has("generate")) {
+    showErrors("Действие «Сгенерировать BBCode» сейчас недоступно.");
+    return;
+  }
   clearErrors();
   syncEventDateTimeField();
   setBbcodeBusy(true, "Статус: собираю данные жалобы и формирую BBCode...");
@@ -485,6 +534,7 @@ async function generateBbcode(event) {
 
     const payload = await parsePayload(response);
     result.value = payload.bbcode || "";
+    applyAllowedActions(payload.allowed_actions || []);
     persistDraft();
     setBbcodeBusy(true, "Статус: BBCode сформирован, сохраняю актуальный черновик...");
     await saveRemoteDraft(false);
@@ -603,6 +653,13 @@ if (resetDraftBtn) {
   resetDraftBtn.addEventListener("click", resetDraft);
 }
 
+createTopicLink?.addEventListener("click", async (event) => {
+  const ok = await confirmWorkflowAction("create_topic");
+  if (!ok) {
+    event.preventDefault();
+  }
+});
+
 document.getElementById("ai-modal-apply")?.addEventListener("click", applyAiText);
 
 aiModal.bind(
@@ -628,9 +685,11 @@ bindDigitsOnly(form, "victim_phone", 7);
 bindDigitsOnly(form, "appeal_no", 4);
 
 (async () => {
+  applyAllowedActions([]);
   applyComplaintState(createPresetState(presetPayload) || {});
   applyComplaintState(loadDraft() || {});
   await loadRemoteDraft();
+  await refreshWorkflowActions();
   setCurrentDate(form);
   resetComplaintOcrUi();
   syncComplaintOcrButtonState();
