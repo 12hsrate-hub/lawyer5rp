@@ -1,0 +1,75 @@
+{
+  "server_code": "blackberry",
+  "version": 1,
+  "status": "published",
+  "metadata": {
+    "organizations": [
+      "LSPD",
+      "GOV",
+      "FIB",
+      "LSSD",
+      "ARMY",
+      "SANG",
+      "EMS",
+      "WN"
+    ],
+    "procedure_types": [
+      "detention",
+      "search",
+      "inspection",
+      "arrest"
+    ],
+    "complaint_bases": [
+      {
+        "code": "wrongful_article",
+        "label": "Неверная квалификация",
+        "description": "Спор по применённой статье или правовой квалификации."
+      },
+      {
+        "code": "no_materials_by_request",
+        "label": "Не выдали материалы",
+        "description": "Материалы не предоставлены по запросу адвоката."
+      },
+      {
+        "code": "no_video_or_no_evidence",
+        "label": "Нет видео или доказательств",
+        "description": "Отсутствуют видеоматериалы или надлежащая доказательная база."
+      }
+    ],
+    "form_schema": {
+      "complaint": {
+        "version": "v1",
+        "sections": [
+          "incident",
+          "victim",
+          "representative",
+          "evidence"
+        ]
+      }
+    },
+    "validation_profiles": {
+      "complaint_default": {
+        "required_sections": [
+          "incident",
+          "victim",
+          "evidence"
+        ]
+      }
+    },
+    "template_bindings": {
+      "complaint": {
+        "template_key": "complaint_v1",
+        "document_type": "complaint"
+      },
+      "rehab": {
+        "template_key": "rehab_v1",
+        "document_type": "rehab"
+      }
+    },
+    "terminology": {
+      "complaint": "Жалоба",
+      "rehab": "Реабилитация",
+      "court_claim": "Исковое заявление"
+    }
+  }
+}

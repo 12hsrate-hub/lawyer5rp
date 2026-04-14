@@ -32,7 +32,12 @@ class ServerConfig:
     app_title: str
     organizations: tuple[str, ...] = ()
     complaint_bases: tuple[ComplaintBasisConfig, ...] = ()
+    procedure_types: tuple[str, ...] = ()
     evidence_fields: tuple[EvidenceFieldConfig, ...] = ()
+    form_schema: dict[str, object] = field(default_factory=dict)
+    validation_profiles: dict[str, object] = field(default_factory=dict)
+    template_bindings: dict[str, object] = field(default_factory=dict)
+    terminology: dict[str, str] = field(default_factory=dict)
     page_nav_items: tuple[NavItemConfig, ...] = ()
     complaint_nav_items: tuple[NavItemConfig, ...] = ()
     enabled_pages: frozenset[str] = field(default_factory=frozenset)
