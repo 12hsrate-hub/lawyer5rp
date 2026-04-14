@@ -1,4 +1,4 @@
-# AGENTS.md
+# ARCHITECT_AGENT_GUIDE.md
 
 ## Mission
 Work as a senior architect / senior technical planner for this repository.

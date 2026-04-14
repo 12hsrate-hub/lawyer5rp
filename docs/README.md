@@ -1,11 +1,16 @@
 # Docs Index
 
-This directory now keeps only active operational and developer-facing docs.
+This directory keeps active operational docs plus two active planning-source documents.
 
-## Keep In `docs/`
+## Canonical Planning Inputs
 
-- `brief.md` - active product/architecture brief for future planning
-- `agents.md` - active planning rules and architecture guidance
+- `../PLANS.md` - main execution plan and canonical phased backlog
+- `../MIGRATION_MAP.md` - migration seams, route/service/storage map, and cutover baseline
+- `PRODUCT_BRIEF.md` - active product and architecture brief for future planning
+- `ARCHITECT_AGENT_GUIDE.md` - active planning rules and architecture guidance for Codex
+
+## Operational Docs
+
 - `OPERATIONS_INDEX.md` - primary entrypoint for deploy/run/rollback docs
 - `RUNBOOK.md` - incident handling for point3 legal mode
 - `ROLL_OUT.md` - rollout stages and go/no-go rules
@@ -17,27 +22,20 @@ This directory now keeps only active operational and developer-facing docs.
 - `AI_QUALITY_COST_RUNBOOK_ADMIN.md` - admin quality/cost runbook
 - `FEATURE_FLAGS.md` - active feature-flag reference
 - `ACCEPTANCE_CHECKLIST.md` - release acceptance gates
-- `IMPLEMENTATION_PLAN.md` - still-active execution plan referenced by task tracking
 - `CODEX_RUN_GUIDE.md` - execution guide for Codex-driven task work
 - `exam_scoring_incident_runbook.md` - exam scoring incident response
 - `exam_scoring_rollout_gates_and_kpis.md` - exam scoring rollout gates
 
-## Keep In `docs/adr/`
+## ADR And Archive Rules
 
-- ADRs and active architectural invariants only
+- `docs/adr/` - ADRs and active architectural invariants only
+- `docs/archive/YYYY-MM/` - historical plans, superseded planning docs, audits, and one-off materials
 
-## Keep In `docs/archive/YYYY-MM/`
-
-- completed plans
-- one-off briefs that are no longer current
-- audits
-- historical blueprints
-- temporary hardening/backlog notes that are no longer current source-of-truth
-
-Files moved out of active docs in this cleanup live in `docs/archive/2026-04/`.
+Files moved out of active planning in this cleanup live in `docs/archive/2026-04/`.
 
 ## Rules
 
-- If a document is not part of current operations or current execution, archive it.
-- Active docs should point to active docs or ADRs, not to archived planning material.
-- Do not keep duplicate briefs or scratch notes in the root `docs/` directory unless they are explicitly designated as active planning sources.
+- There must be only one active root execution plan: `PLANS.md`.
+- There must be only one active root migration map: `MIGRATION_MAP.md`.
+- Product/architecture prompt docs live in `docs/PRODUCT_BRIEF.md` and `docs/ARCHITECT_AGENT_GUIDE.md`.
+- If a document is no longer part of current operations or the canonical planning set, archive it.
