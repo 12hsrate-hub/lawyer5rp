@@ -67,16 +67,67 @@ const {
   createModalController,
   redirectIfUnauthorized,
 } = window.OGPWeb;
+const {
+  buildScopedStorageKey,
+  catalogEndpoint,
+  formatHttpError,
+  withQuery,
+} = window.OGPAdmin;
+const {
+  formatExamAverage: formatExamAverageMarkup,
+  getExamEntryStatus: getExamEntryStatusMarkup,
+  renderAdminAuditMarkup,
+  renderAdminExamEntriesSectionMarkup,
+  renderErrorExplorerMarkup,
+  renderEventsMarkup,
+  renderExamImportMarkup,
+  renderUserActivityMarkup,
+  renderUserStatusesMarkup,
+  renderUsersMarkup,
+} = window.OGPAdminActivity;
+const {
+  buildCatalogPreviewMetaText,
+  formatCatalogPreviewValue,
+  renderCatalogAuditTrailMarkup,
+  renderCatalogMarkup,
+  renderCatalogPreviewSummaryMarkup,
+} = window.OGPAdminCatalog;
+const {
+  renderAiPipelineMarkup,
+  renderCostSummaryMarkup,
+  renderPerformanceMarkup,
+  renderRoleHistoryMarkup,
+  renderSyntheticMarkup,
+  renderTopEndpointsMarkup,
+  renderTotalsMarkup,
+} = window.OGPAdminOverview;
+const {
+  renderLawSetsTable,
+  renderRuntimeServersTable,
+  renderServerLawBindingsTable,
+  renderServerSetupWorkflow: renderServerSetupWorkflowMarkup,
+} = window.OGPAdminRuntimeLaws;
+const {
+  renderUserModalMarkup,
+} = window.OGPAdminUserDetails;
+const {
+  createAdminOverviewLoader,
+} = window.OGPAdminOverviewLoader;
+const {
+  createAdminActionsController,
+} = window.OGPAdminActions;
+const {
+  createAdminLawRuntimeController,
+} = window.OGPAdminLawRuntimeController;
 const ExamView = window.OGPExamImportView;
 const ADMIN_COLLAPSE_STORAGE_KEY = "ogp_admin_collapsible_sections";
 const LAW_REBUILD_TASK_STORAGE_KEY = "ogp_admin_law_rebuild_task_id";
-const DEFAULT_USER_MODAL_TITLE = userModalTitle?.textContent || "Карточка пользователя";
+const DEFAULT_USER_MODAL_TITLE = userModalTitle?.textContent || "Р В РЎв„ўР В Р’В°Р РЋР вЂљР РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В РЎвЂќР В Р’В° Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ";
 
 let adminSearchTimer = null;
 let adminLiveTimer = null;
 let lawRebuildPollTimer = null;
 let selectedUser = null;
-let pendingAction = null;
 let selectedBulkUsers = new Set();
 const userIndex = new Map();
 let activeCatalogEntity = String(catalogHost?.dataset.catalogEntity || "servers");
@@ -87,20 +138,14 @@ let lawServerOptions = [];
 let lawSetOptions = [];
 let lawSourceRegistryItems = [];
 let serverLawBindingItems = [];
+let runtimeServerItems = [];
+let runtimeServerHealth = null;
 let lawCatalogOptions = [];
 let activeCatalogAuditEntityType = "";
 let activeCatalogAuditEntityId = "";
 
-function catalogEndpoint(entityType, itemId = "") {
-  const suffix = itemId ? `/${encodeURIComponent(itemId)}` : "";
-  return `/api/admin/catalog/${encodeURIComponent(entityType)}${suffix}`;
-}
-
 function withLawServerQuery(path) {
-  const selected = String(activeLawServerCode || "").trim();
-  if (!selected) return path;
-  const separator = path.includes("?") ? "&" : "?";
-  return `${path}${separator}server_code=${encodeURIComponent(selected)}`;
+  return withQuery(path, "server_code", activeLawServerCode);
 }
 
 function getLawServerSelect() {
@@ -108,8 +153,7 @@ function getLawServerSelect() {
 }
 
 function getLawRebuildTaskStorageKey(serverCode = activeLawServerCode) {
-  const normalized = String(serverCode || "").trim().toLowerCase();
-  return normalized ? `${LAW_REBUILD_TASK_STORAGE_KEY}:${normalized}` : LAW_REBUILD_TASK_STORAGE_KEY;
+  return buildScopedStorageKey(LAW_REBUILD_TASK_STORAGE_KEY, serverCode);
 }
 
 function getStoredLawRebuildTaskId(serverCode = activeLawServerCode) {
@@ -129,42 +173,6 @@ function setStoredLawRebuildTaskId(taskId, serverCode = activeLawServerCode) {
 function clearStoredLawRebuildTaskId(serverCode = activeLawServerCode) {
   window.localStorage.removeItem(getLawRebuildTaskStorageKey(serverCode));
 }
-function formatCatalogPreviewValue(value) {
-  if (value === null || value === undefined) {
-    return "—";
-  }
-  if (typeof value === "string") {
-    try {
-      return JSON.stringify(JSON.parse(value), null, 2);
-    } catch {
-      return value;
-    }
-  }
-  if (typeof value === "object") {
-    return JSON.stringify(value, null, 2);
-  }
-  return String(value);
-}
-
-function renderCatalogPreview(payload) {
-  const host = document.getElementById("catalog-preview");
-  const summaryHost = document.getElementById("catalog-preview-summary");
-  const bodyHost = document.getElementById("catalog-preview-body");
-  if (!host || !summaryHost || !bodyHost) {
-    return;
-  }
-  const item = payload?.item || {};
-  const effectivePayload = payload?.effective_payload || {};
-  const effectiveVersion = payload?.effective_version || {};
-  summaryHost.innerHTML = `
-    <strong>${escapeHtml(String(item.title || "—"))}</strong>
-    <span class="admin-user-cell__secondary">status: ${escapeHtml(String(item.status || item.state || "draft"))}</span>
-    <span class="admin-user-cell__secondary">version: ${escapeHtml(String(effectiveVersion?.version_number ?? item.current_published_version_id ?? item.version_number ?? "—"))}</span>
-  `;
-  bodyHost.textContent = formatCatalogPreviewValue(effectivePayload);
-  host.hidden = false;
-}
-
 function renderLawServerSelector() {
   const select = getLawServerSelect();
   if (!(select instanceof HTMLSelectElement)) {
@@ -182,31 +190,16 @@ function renderLawServerSelector() {
     .join("");
 }
 
+async function fetchRuntimeServersPayload() {
+  return adminLawRuntimeController.fetchRuntimeServersPayload();
+}
+
+function syncLawServerOptionsFromRuntimeServers() {
+  adminLawRuntimeController.syncLawServerOptionsFromRuntimeServers();
+}
+
 async function loadLawServerOptions() {
-  if (!catalogHost || activeCatalogEntity !== "laws") return;
-  const response = await apiFetch("/api/admin/runtime-servers");
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    lawServerOptions = [];
-    return;
-  }
-  const rows = Array.isArray(payload?.items) ? payload.items : [];
-  lawServerOptions = rows
-    .filter((item) => item && String(item.code || "").trim())
-    .map((item) => ({
-      code: String(item.code || "").trim().toLowerCase(),
-      title: String(item.title || "").trim(),
-      is_active: Boolean(item.is_active),
-    }));
-  if (!activeLawServerCode) {
-    const firstActive = lawServerOptions.find((item) => item.is_active);
-    if (firstActive?.code) {
-      activeLawServerCode = firstActive.code;
-    } else if (lawServerOptions[0]?.code) {
-      activeLawServerCode = lawServerOptions[0].code;
-    }
-  }
-  renderLawServerSelector();
+  return adminLawRuntimeController.loadLawServerOptions();
 }
 
 async function loadLawSourcesManager() {
@@ -221,7 +214,7 @@ async function loadLawSourcesManager() {
   const response = await apiFetch(withLawServerQuery("/api/admin/law-sources"));
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить источники законов."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ ."));
     return;
   }
   const payloadServerCode = String(payload?.server_code || "").trim().toLowerCase();
@@ -229,17 +222,17 @@ async function loadLawSourcesManager() {
     activeLawServerCode = payloadServerCode;
   }
   renderLawServerSelector();
-  await loadPlatformBlueprintStage();
+  renderServerSetupWorkflow();
   const textarea = document.getElementById("law-sources-textarea");
   const statusHost = document.getElementById("law-sources-status");
   if (textarea) {
     textarea.value = Array.isArray(payload?.source_urls) ? payload.source_urls.join("\n") : "";
   }
   if (statusHost) {
-    const activeVersionId = payload?.active_law_version?.id ?? "—";
-    const chunkCount = payload?.bundle_meta?.chunk_count ?? payload?.active_law_version?.chunk_count ?? "—";
+    const activeVersionId = payload?.active_law_version?.id ?? "Р Р†Р вЂљРІР‚Сњ";
+    const chunkCount = payload?.bundle_meta?.chunk_count ?? payload?.active_law_version?.chunk_count ?? "Р Р†Р вЂљРІР‚Сњ";
     const origin = String(payload?.source_origin || "unknown");
-    statusHost.textContent = `Источник ссылок: ${origin}. Активная версия закона: ${activeVersionId}. Статей в индексе: ${chunkCount}.`;
+    statusHost.textContent = `Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ Р РЋР С“Р РЋР С“Р РЋРІР‚в„–Р В Р’В»Р В РЎвЂўР В РЎвЂќ: ${origin}. Р В РЎвЂ™Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р вЂ¦Р В Р’В°Р РЋР РЏ Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋР С“Р В РЎвЂР РЋР РЏ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В Р’В°: ${activeVersionId}. Р В Р Р‹Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В РІвЂћвЂ“ Р В Р вЂ  Р В РЎвЂР В Р вЂ¦Р В РўвЂР В Р’ВµР В РЎвЂќР РЋР С“Р В Р’Вµ: ${chunkCount}.`;
   }
   await loadLawSourcesHistory();
   await loadLawSourcesDependencies();
@@ -249,6 +242,7 @@ async function loadLawSourcesManager() {
     setLawActionButtonsDisabled(true);
     await pollLawRebuildTask(storedTaskId);
   }
+  renderServerSetupWorkflow();
 }
 
 function renderLawSourcesHistory(payload) {
@@ -258,13 +252,13 @@ function renderLawSourcesHistory(payload) {
   }
   const items = Array.isArray(payload?.items) ? payload.items : [];
   if (!items.length) {
-    host.innerHTML = '<p class="legal-section__description">История пересборок пока пуста.</p>';
+    host.innerHTML = '<p class="legal-section__description">Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР В РЎвЂР РЋР РЏ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В РЎвЂўР В РЎвЂќ Р В РЎвЂ”Р В РЎвЂўР В РЎвЂќР В Р’В° Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р РЋРІР‚С™Р В Р’В°.</p>';
     return;
   }
   host.innerHTML = `
     <ul class="legal-section__description">
       ${items
-        .map((item) => `<li>Версия #${escapeHtml(String(item.id || "—"))} • articles: ${escapeHtml(String(item.chunk_count || 0))} • generated: ${escapeHtml(String(item.generated_at_utc || "—"))}</li>`)
+        .map((item) => `<li>Р В РІР‚в„ўР В Р’ВµР РЋР вЂљР РЋР С“Р В РЎвЂР РЋР РЏ #${escapeHtml(String(item.id || "Р Р†Р вЂљРІР‚Сњ"))} Р Р†Р вЂљРЎС› articles: ${escapeHtml(String(item.chunk_count || 0))} Р Р†Р вЂљРЎС› generated: ${escapeHtml(String(item.generated_at_utc || "Р Р†Р вЂљРІР‚Сњ"))}</li>`)
         .join("")}
     </ul>
   `;
@@ -286,20 +280,20 @@ function renderLawSourcesDependencies(payload) {
   }
   const rows = Array.isArray(payload?.servers) ? payload.servers : [];
   if (!rows.length) {
-    host.innerHTML = '<p class="legal-section__description">Нет данных по зависимостям источников.</p>';
+    host.innerHTML = '<p class="legal-section__description">Р В РЎСљР В Р’ВµР РЋРІР‚С™ Р В РўвЂР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р РЋРІР‚В¦ Р В РЎвЂ”Р В РЎвЂў Р В Р’В·Р В Р’В°Р В Р вЂ Р В РЎвЂР РЋР С“Р В РЎвЂР В РЎВР В РЎвЂўР РЋР С“Р РЋРІР‚С™Р РЋР РЏР В РЎВ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ .</p>';
     return;
   }
   host.innerHTML = `
-    <div class="legal-section__description"><strong>Связь серверов и источников законов</strong></div>
+    <div class="legal-section__description"><strong>Р В Р Р‹Р В Р вЂ Р РЋР РЏР В Р’В·Р РЋР Р‰ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂўР В Р вЂ  Р В РЎвЂ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ  Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ </strong></div>
     <table class="legal-table">
-      <thead><tr><th>Сервер</th><th>Источников</th><th>Общих источников</th><th>Связан с серверами</th></tr></thead>
+      <thead><tr><th>Р В Р Р‹Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљ</th><th>Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ </th><th>Р В РЎвЂєР В Р’В±Р РЋРІР‚В°Р В РЎвЂР РЋРІР‚В¦ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ </th><th>Р В Р Р‹Р В Р вЂ Р РЋР РЏР В Р’В·Р В Р’В°Р В Р вЂ¦ Р РЋР С“ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР В Р’В°Р В РЎВР В РЎвЂ</th></tr></thead>
       <tbody>
         ${rows
           .map((row) => `<tr>
-            <td>${escapeHtml(String(row?.server_name || row?.server_code || "—"))}</td>
+            <td>${escapeHtml(String(row?.server_name || row?.server_code || "Р Р†Р вЂљРІР‚Сњ"))}</td>
             <td>${escapeHtml(String(row?.source_count || 0))}</td>
             <td>${escapeHtml(String(row?.shared_source_count || 0))}</td>
-            <td>${escapeHtml(String((row?.shared_with_servers || []).join(", ") || "—"))}</td>
+            <td>${escapeHtml(String((row?.shared_with_servers || []).join(", ") || "Р Р†Р вЂљРІР‚Сњ"))}</td>
           </tr>`)
           .join("")}
       </tbody>
@@ -345,177 +339,47 @@ async function loadPlatformBlueprintStage() {
 }
 
 function parseLawSetItemsInput(raw) {
-  const rows = String(raw || "")
-    .split(/\r?\n/)
-    .map((line) => String(line || "").trim())
-    .filter(Boolean);
-  return rows.map((line, index) => {
-    const [lawCode, sourceIdRaw, priorityRaw, effectiveFromRaw] = line.split("|").map((part) => String(part || "").trim());
-    if (!lawCode) {
-      throw new Error(`Строка ${index + 1}: law_code обязателен.`);
-    }
-    const sourceId = Number(sourceIdRaw || 0);
-    const priority = Number(priorityRaw || 100);
-    return {
-      law_code: lawCode,
-      source_id: Number.isFinite(sourceId) && sourceId > 0 ? sourceId : null,
-      priority: Number.isFinite(priority) ? priority : 100,
-      effective_from: effectiveFromRaw || "",
-    };
-  });
+  return adminLawRuntimeController.parseLawSetItemsInput(raw);
+}
+
+function getActiveRuntimeServer() {
+  return adminLawRuntimeController.getActiveRuntimeServer();
+}
+
+function renderServerSetupWorkflow() {
+  adminLawRuntimeController.renderServerSetupWorkflow();
+}
+
+async function loadRuntimeServerHealth({ silent = true } = {}) {
+  return adminLawRuntimeController.loadRuntimeServerHealth({ silent });
 }
 
 function renderLawSets(payload) {
-  const host = document.getElementById("law-sets-host");
-  if (!host) return;
-  const items = Array.isArray(payload?.items) ? payload.items : [];
-  lawSetOptions = items;
-  host.innerHTML = `
-    <table class="legal-table admin-table admin-table--compact">
-      <thead><tr><th>ID</th><th>Название</th><th>Статус</th><th>Публикация</th><th>Элементов</th><th>Действия</th></tr></thead>
-      <tbody>
-        ${items.length ? items.map((item) => `
-          <tr>
-            <td>${escapeHtml(String(item.id || "—"))}</td>
-            <td>${escapeHtml(String(item.name || "—"))}</td>
-            <td>${item.is_active ? "active" : "disabled"}</td>
-            <td>${item.is_published ? "published" : "draft"}</td>
-            <td>${escapeHtml(String(item.item_count || 0))}</td>
-            <td>
-              <button type="button" class="ghost-button" data-law-set-edit="${escapeHtml(String(item.id || ""))}" data-law-set-name="${escapeHtml(String(item.name || ""))}" data-law-set-active="${item.is_active ? "1" : "0"}">Изменить</button>
-              <button type="button" class="ghost-button" data-law-set-publish="${escapeHtml(String(item.id || ""))}">Опубликовать</button>
-              <button type="button" class="ghost-button" data-law-set-rebuild="${escapeHtml(String(item.id || ""))}">Rebuild</button>
-              <button type="button" class="ghost-button" data-law-set-rollback="${escapeHtml(String(item.id || ""))}">Rollback</button>
-            </td>
-          </tr>
-        `).join("") : '<tr><td colspan="6" class="legal-section__description">Наборы законов пока не созданы.</td></tr>'}
-      </tbody>
-    </table>
-  `;
+  adminLawRuntimeController.renderLawSets(payload);
 }
 
 async function loadLawSets() {
-  const host = document.getElementById("law-sets-host");
-  if (!host || !activeLawServerCode) return;
-  const response = await apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(activeLawServerCode)}/law-sets`);
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить наборы законов."))}</p>`;
-    return;
-  }
-  renderLawSets(payload);
+  return adminLawRuntimeController.loadLawSets();
 }
 
 async function createLawSetFlow() {
-  if (!activeLawServerCode) {
-    setStateError(errorsHost, "Сначала выберите сервер.");
-    return;
-  }
-  const name = String(window.prompt("Название набора законов", `${activeLawServerCode}-default`) || "").trim();
-  if (!name) return;
-  const rawItems = String(
-    window.prompt(
-      "Элементы набора (строки формата law_code|source_id|priority|effective_from)",
-      "",
-    ) || ""
-  );
-  let items = [];
-  try {
-    items = rawItems ? parseLawSetItemsInput(rawItems) : [];
-  } catch (error) {
-    setStateError(errorsHost, String(error?.message || error));
-    return;
-  }
-  const response = await apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(activeLawServerCode)}/law-sets`, {
-    method: "POST",
-    body: JSON.stringify({ name, is_active: true, items }),
-  });
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось создать набор законов."));
-    return;
-  }
-  showMessage(`Набор законов создан: ${name}.`);
-  await loadLawSets();
+  return adminLawRuntimeController.createLawSetFlow();
 }
 
 async function editLawSetFlow(lawSetId, currentName, currentIsActive) {
-  const name = String(window.prompt("Новое название набора", currentName || "") || "").trim();
-  if (!name) return;
-  const rawItems = String(
-    window.prompt(
-      "Элементы набора (строки формата law_code|source_id|priority|effective_from)",
-      "",
-    ) || ""
-  );
-  let items = [];
-  try {
-    items = rawItems ? parseLawSetItemsInput(rawItems) : [];
-  } catch (error) {
-    setStateError(errorsHost, String(error?.message || error));
-    return;
-  }
-  const response = await apiFetch(`/api/admin/law-sets/${encodeURIComponent(String(lawSetId))}`, {
-    method: "PUT",
-    body: JSON.stringify({ name, is_active: currentIsActive, items }),
-  });
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось обновить набор законов."));
-    return;
-  }
-  showMessage(`Набор #${lawSetId} обновлен.`);
-  await loadLawSets();
+  return adminLawRuntimeController.editLawSetFlow(lawSetId, currentName, currentIsActive);
 }
 
 async function publishLawSetFlow(lawSetId) {
-  const response = await apiFetch(`/api/admin/law-sets/${encodeURIComponent(String(lawSetId))}/publish`, { method: "POST" });
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось опубликовать набор."));
-    return;
-  }
-  showMessage(`Набор #${lawSetId} опубликован.`);
-  await loadLawSets();
+  return adminLawRuntimeController.publishLawSetFlow(lawSetId);
 }
 
 async function rebuildLawSetFlow(lawSetId) {
-  const dryRun = window.confirm("Dry-run? ОК = только проверка без записи версии.");
-  const response = await apiFetch(`/api/admin/law-sets/${encodeURIComponent(String(lawSetId))}/rebuild`, {
-    method: "POST",
-    body: JSON.stringify({ dry_run: dryRun }),
-  });
-  const payload = await parsePayload(response);
-  if (payload?.result?.dry_run) {
-    showMessage(`Dry-run выполнен. Ожидаемо статей: ${String(payload?.result?.article_count || 0)}.`);
-    await loadLawSourcesManager();
-    await loadLawJobsOverview();
-    return;
-  }
-  if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось пересобрать набор."));
-    return;
-  }
-  showMessage(`Набор #${lawSetId} пересобран. Версия: ${String(payload?.result?.law_version_id || "—")}.`);
-  await loadLawSourcesManager();
-  await loadLawJobsOverview();
+  return adminLawRuntimeController.rebuildLawSetFlow(lawSetId);
 }
 
 async function rollbackLawSetFlow(lawSetId) {
-  const versionRaw = String(window.prompt("ID версии для отката (пусто = предыдущая)", "") || "").trim();
-  const lawVersionId = versionRaw ? Number(versionRaw) : null;
-  const response = await apiFetch(`/api/admin/law-sets/${encodeURIComponent(String(lawSetId))}/rollback`, {
-    method: "POST",
-    body: JSON.stringify({ law_version_id: Number.isFinite(lawVersionId) ? lawVersionId : null }),
-  });
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось выполнить rollback."));
-    return;
-  }
-  showMessage(`Rollback выполнен. Активная версия: ${String(payload?.result?.active_law_version_id || "вЂ”")}.`);
-  await loadLawSourcesManager();
-  await loadLawJobsOverview();
+  return adminLawRuntimeController.rollbackLawSetFlow(lawSetId);
 }
 
 function renderLawSourceRegistry(payload) {
@@ -525,20 +389,20 @@ function renderLawSourceRegistry(payload) {
   lawSourceRegistryItems = items;
   host.innerHTML = `
     <table class="legal-table admin-table admin-table--compact">
-      <thead><tr><th>ID</th><th>Название</th><th>Kind</th><th>URL</th><th>Статус</th><th>Действия</th></tr></thead>
+      <thead><tr><th>ID</th><th>Р В РЎСљР В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ</th><th>Kind</th><th>URL</th><th>Р В Р Р‹Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“</th><th>Р В РІР‚СњР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В РЎвЂР РЋР РЏ</th></tr></thead>
       <tbody>
         ${items.length ? items.map((item) => `
           <tr>
-            <td>${escapeHtml(String(item.id || "—"))}</td>
-            <td>${escapeHtml(String(item.name || "—"))}</td>
+            <td>${escapeHtml(String(item.id || "Р Р†Р вЂљРІР‚Сњ"))}</td>
+            <td>${escapeHtml(String(item.name || "Р Р†Р вЂљРІР‚Сњ"))}</td>
             <td>${escapeHtml(String(item.kind || "url"))}</td>
-            <td class="admin-user-cell__secondary">${escapeHtml(String(item.url || "—"))}</td>
+            <td class="admin-user-cell__secondary">${escapeHtml(String(item.url || "Р Р†Р вЂљРІР‚Сњ"))}</td>
             <td>${item.is_active ? "active" : "disabled"}</td>
             <td>
-              <button type="button" class="ghost-button" data-law-source-edit="${escapeHtml(String(item.id || ""))}" data-law-source-name="${escapeHtml(String(item.name || ""))}" data-law-source-kind="${escapeHtml(String(item.kind || "url"))}" data-law-source-url="${escapeHtml(String(item.url || ""))}" data-law-source-active="${item.is_active ? "1" : "0"}">Изменить</button>
+              <button type="button" class="ghost-button" data-law-source-edit="${escapeHtml(String(item.id || ""))}" data-law-source-name="${escapeHtml(String(item.name || ""))}" data-law-source-kind="${escapeHtml(String(item.kind || "url"))}" data-law-source-url="${escapeHtml(String(item.url || ""))}" data-law-source-active="${item.is_active ? "1" : "0"}">Р В Р’ВР В Р’В·Р В РЎВР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰</button>
             </td>
           </tr>
-        `).join("") : '<tr><td colspan="6" class="legal-section__description">Реестр источников пуст.</td></tr>'}
+        `).join("") : '<tr><td colspan="6" class="legal-section__description">Р В Р’В Р В Р’ВµР В Р’ВµР РЋР С“Р РЋРІР‚С™Р РЋР вЂљ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ  Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р РЋРІР‚С™.</td></tr>'}
       </tbody>
     </table>
   `;
@@ -550,17 +414,17 @@ async function loadLawSourceRegistry() {
   const response = await apiFetch("/api/admin/law-source-registry");
   const payload = await parsePayload(response);
   if (!response.ok) {
-    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить реестр источников."))}</p>`;
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР вЂљР В Р’ВµР В Р’ВµР РЋР С“Р РЋРІР‚С™Р РЋР вЂљ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ ."))}</p>`;
     return;
   }
   renderLawSourceRegistry(payload);
 }
 
 async function createLawSourceRegistryFlow() {
-  const name = String(window.prompt("Название источника", "") || "").trim();
+  const name = String(window.prompt("Р В РЎСљР В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°", "") || "").trim();
   if (!name) return;
   const kind = String(window.prompt("Kind (url|registry|api)", "url") || "url").trim().toLowerCase();
-  const url = String(window.prompt("URL источника", "") || "").trim();
+  const url = String(window.prompt("URL Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°", "") || "").trim();
   if (!url) return;
   const response = await apiFetch("/api/admin/law-source-registry", {
     method: "POST",
@@ -568,18 +432,18 @@ async function createLawSourceRegistryFlow() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось создать источник."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂўР В Р’В·Р В РўвЂР В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ."));
     return;
   }
-  showMessage("Источник добавлен в реестр.");
+  showMessage("Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ Р В РўвЂР В РЎвЂўР В Р’В±Р В Р’В°Р В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦ Р В Р вЂ  Р РЋР вЂљР В Р’ВµР В Р’ВµР РЋР С“Р РЋРІР‚С™Р РЋР вЂљ.");
   await loadLawSourceRegistry();
 }
 
 async function editLawSourceRegistryFlow(sourceId, currentName, currentKind, currentUrl, currentActive) {
-  const name = String(window.prompt("Название источника", currentName || "") || "").trim();
+  const name = String(window.prompt("Р В РЎСљР В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°", currentName || "") || "").trim();
   if (!name) return;
   const kind = String(window.prompt("Kind (url|registry|api)", currentKind || "url") || "url").trim().toLowerCase();
-  const url = String(window.prompt("URL источника", currentUrl || "") || "").trim();
+  const url = String(window.prompt("URL Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°", currentUrl || "") || "").trim();
   if (!url) return;
   const response = await apiFetch(`/api/admin/law-source-registry/${encodeURIComponent(String(sourceId))}`, {
     method: "PUT",
@@ -587,46 +451,19 @@ async function editLawSourceRegistryFlow(sourceId, currentName, currentKind, cur
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось обновить источник."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂўР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ."));
     return;
   }
-  showMessage("Источник обновлен.");
+  showMessage("Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ Р В РЎвЂўР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦.");
   await loadLawSourceRegistry();
 }
 
 function renderServerLawBindings(payload) {
-  const host = document.getElementById("server-law-bindings-host");
-  if (!host) return;
-  const items = Array.isArray(payload?.items) ? payload.items.filter((row) => row?.item_id) : [];
-  serverLawBindingItems = items;
-  host.innerHTML = `
-    <table class="legal-table admin-table admin-table--compact">
-      <thead><tr><th>Law set</th><th>Law code</th><th>Source</th><th>Priority</th><th>Effective from</th></tr></thead>
-      <tbody>
-        ${items.length ? items.map((item) => `
-          <tr>
-            <td>${escapeHtml(String(item.law_set_name || item.law_set_id || "—"))}</td>
-            <td>${escapeHtml(String(item.law_code || "—"))}</td>
-            <td>${escapeHtml(String(item.source_name || item.source_url || "—"))}</td>
-            <td>${escapeHtml(String(item.priority || 0))}</td>
-            <td>${escapeHtml(String(item.effective_from || "—"))}</td>
-          </tr>
-        `).join("") : '<tr><td colspan="5" class="legal-section__description">Для выбранного сервера пока нет привязанных законов.</td></tr>'}
-      </tbody>
-    </table>
-  `;
+  adminLawRuntimeController.renderServerLawBindings(payload);
 }
 
 async function loadServerLawBindings() {
-  const host = document.getElementById("server-law-bindings-host");
-  if (!host || !activeLawServerCode) return;
-  const response = await apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(activeLawServerCode)}/law-bindings`);
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить привязки законов."))}</p>`;
-    return;
-  }
-  renderServerLawBindings(payload);
+  return adminLawRuntimeController.loadServerLawBindings();
 }
 
 async function loadLawCatalogOptions() {
@@ -668,37 +505,37 @@ async function openServerLawBindingDialog() {
   const lawCodeOptions = normalizeLawCodeOptions([...catalogItems, ...serverLawBindingItems, ...lawSetOptions]);
   const sourceOptions = lawSourceRegistryItems.filter((item) => Number(item?.id) > 0);
   if (!sourceOptions.length) {
-    throw new Error("Сначала добавьте источник в «Реестр источников».");
+    throw new Error("Р В Р Р‹Р В Р вЂ¦Р В Р’В°Р РЋРІР‚РЋР В Р’В°Р В Р’В»Р В Р’В° Р В РўвЂР В РЎвЂўР В Р’В±Р В Р’В°Р В Р вЂ Р РЋР Р‰Р РЋРІР‚С™Р В Р’Вµ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ Р В Р вЂ  Р вЂ™Р’В«Р В Р’В Р В Р’ВµР В Р’ВµР РЋР С“Р РЋРІР‚С™Р РЋР вЂљ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ Р вЂ™Р’В».");
   }
   if (!lawCodeOptions.length) {
-    throw new Error("Не удалось собрать список кодов законов для выбора.");
+    throw new Error("Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂўР В Р’В±Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р РЋР С“Р В РЎвЂ”Р В РЎвЂР РЋР С“Р В РЎвЂўР В РЎвЂќ Р В РЎвЂќР В РЎвЂўР В РўвЂР В РЎвЂўР В Р вЂ  Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ  Р В РўвЂР В Р’В»Р РЋР РЏ Р В Р вЂ Р РЋРІР‚в„–Р В Р’В±Р В РЎвЂўР РЋР вЂљР В Р’В°.");
   }
   const dialog = document.createElement("dialog");
   dialog.innerHTML = `
     <form method="dialog" class="legal-section">
-      <h3>Привязать закон к серверу</h3>
-      <p class="legal-field__hint">Сервер: <strong>${escapeHtml(activeLawServerCode)}</strong></p>
-      <label class="legal-field"><span class="legal-field__label">Код закона</span>
+      <h3>Р В РЎСџР РЋР вЂљР В РЎвЂР В Р вЂ Р РЋР РЏР В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦ Р В РЎвЂќ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРЎвЂњ</h3>
+      <p class="legal-field__hint">Р В Р Р‹Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљ: <strong>${escapeHtml(activeLawServerCode)}</strong></p>
+      <label class="legal-field"><span class="legal-field__label">Р В РЎв„ўР В РЎвЂўР В РўвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В Р’В°</span>
         <select name="law_code" required>
-          ${lawCodeOptions.map((item) => `<option value="${escapeHtml(item.code)}">${escapeHtml(item.code)} — ${escapeHtml(item.label)}</option>`).join("")}
+          ${lawCodeOptions.map((item) => `<option value="${escapeHtml(item.code)}">${escapeHtml(item.code)} Р Р†Р вЂљРІР‚Сњ ${escapeHtml(item.label)}</option>`).join("")}
         </select>
       </label>
-      <label class="legal-field"><span class="legal-field__label">Источник</span>
+      <label class="legal-field"><span class="legal-field__label">Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ</span>
         <select name="source_id" required>
-          ${sourceOptions.map((item) => `<option value="${escapeHtml(String(item.id))}">${escapeHtml(String(item.name || "Источник"))} — ${escapeHtml(String(item.url || ""))}</option>`).join("")}
+          ${sourceOptions.map((item) => `<option value="${escapeHtml(String(item.id))}">${escapeHtml(String(item.name || "Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ"))} Р Р†Р вЂљРІР‚Сњ ${escapeHtml(String(item.url || ""))}</option>`).join("")}
         </select>
       </label>
-      <label class="legal-field"><span class="legal-field__label">Набор законов</span>
+      <label class="legal-field"><span class="legal-field__label">Р В РЎСљР В Р’В°Р В Р’В±Р В РЎвЂўР РЋР вЂљ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ </span>
         <select name="law_set_id">
-          <option value="">Автовыбор (публикуемый/последний)</option>
+          <option value="">Р В РЎвЂ™Р В Р вЂ Р РЋРІР‚С™Р В РЎвЂўР В Р вЂ Р РЋРІР‚в„–Р В Р’В±Р В РЎвЂўР РЋР вЂљ (Р В РЎвЂ”Р РЋРЎвЂњР В Р’В±Р В Р’В»Р В РЎвЂР В РЎвЂќР РЋРЎвЂњР В Р’ВµР В РЎВР РЋРІР‚в„–Р В РІвЂћвЂ“/Р В РЎвЂ”Р В РЎвЂўР РЋР С“Р В Р’В»Р В Р’ВµР В РўвЂР В Р вЂ¦Р В РЎвЂР В РІвЂћвЂ“)</option>
           ${lawSetOptions.map((item) => `<option value="${escapeHtml(String(item.id || ""))}">${escapeHtml(String(item.name || item.id || ""))}</option>`).join("")}
         </select>
       </label>
       <label class="legal-field"><span class="legal-field__label">Priority</span><input type="number" name="priority" value="100" min="1" max="10000"></label>
       <label class="legal-field"><span class="legal-field__label">Effective from</span><input type="date" name="effective_from" value=""></label>
       <menu style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
-        <button type="button" class="ghost-button" data-action="cancel">Отмена</button>
-        <button type="submit" class="primary-button" data-action="submit">Привязать</button>
+        <button type="button" class="ghost-button" data-action="cancel">Р В РЎвЂєР РЋРІР‚С™Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В°</button>
+        <button type="submit" class="primary-button" data-action="submit">Р В РЎСџР РЋР вЂљР В РЎвЂР В Р вЂ Р РЋР РЏР В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰</button>
       </menu>
     </form>
   `;
@@ -728,11 +565,11 @@ async function openServerLawBindingDialog() {
       const effectiveFrom = String(formData.get("effective_from") || "").trim();
       const lawSetIdRaw = String(formData.get("law_set_id") || "").trim();
       if (!lawCode) {
-        setStateError(errorsHost, "Выберите код закона.");
+        setStateError(errorsHost, "Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р В РЎвЂќР В РЎвЂўР В РўвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В Р’В°.");
         return;
       }
       if (!Number.isFinite(sourceId) || sourceId <= 0) {
-        setStateError(errorsHost, "Выберите источник.");
+        setStateError(errorsHost, "Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ.");
         return;
       }
       finish({
@@ -748,10 +585,9 @@ async function openServerLawBindingDialog() {
 }
 
 async function addServerLawBindingFlow() {
-  // Prefer modal-driven selection flow; legacy prompt flow below is bypassed.
   let formPayload = null;
   if (!activeLawServerCode) {
-    setStateError(errorsHost, "Сначала выберите сервер.");
+    setStateError(errorsHost, "Р В Р Р‹Р В Р вЂ¦Р В Р’В°Р РЋРІР‚РЋР В Р’В°Р В Р’В»Р В Р’В° Р В Р вЂ Р РЋРІР‚в„–Р В Р’В±Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљ.");
     return;
   }
   try {
@@ -767,44 +603,11 @@ async function addServerLawBindingFlow() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось привязать закон к серверу."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В Р вЂ Р РЋР РЏР В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦ Р В РЎвЂќ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРЎвЂњ."));
     return;
   }
-  showMessage(`Закон ${String(formPayload.law_code || "")} привязан к серверу ${activeLawServerCode}.`);
+  showMessage(`Р В РІР‚вЂќР В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦ ${String(formPayload.law_code || "")} Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В Р вЂ Р РЋР РЏР В Р’В·Р В Р’В°Р В Р вЂ¦ Р В РЎвЂќ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРЎвЂњ ${activeLawServerCode}.`);
   await loadServerLawBindings();
-  return;
-  /* legacy prompt flow
-  let formPayload = null;
-  if (!activeLawServerCode) {
-    setStateError(errorsHost, "Сначала выберите сервер.");
-    return;
-  }
-  const lawCode = String(window.prompt("Код закона (law_code)", "") || "").trim();
-  if (!lawCode) return;
-  const sourceId = Number(window.prompt("ID источника (source_id из реестра)", "1") || "0");
-  if (!Number.isFinite(sourceId) || sourceId <= 0) {
-    setStateError(errorsHost, "Укажите корректный source_id.");
-    return;
-  }
-  const priority = Number(window.prompt("Priority", "100") || "100");
-  const effectiveFrom = String(window.prompt("effective_from (YYYY-MM-DD, опционально)", "") || "").trim();
-  const response = await apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(activeLawServerCode)}/law-bindings`, {
-    method: "POST",
-    body: JSON.stringify({
-      law_code: lawCode,
-      source_id: sourceId,
-      priority: Number.isFinite(priority) ? priority : 100,
-      effective_from: effectiveFrom,
-    }),
-  });
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось привязать закон к серверу."));
-    return;
-  }
-  showMessage(`Закон ${lawCode} привязан к серверу ${activeLawServerCode}.`);
-  await loadServerLawBindings();
-  */
 }
 
 async function loadLawJobsOverview() {
@@ -813,7 +616,7 @@ async function loadLawJobsOverview() {
   const response = await apiFetch("/api/admin/law-jobs/overview");
   const payload = await parsePayload(response);
   if (!response.ok) {
-    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить jobs/alerts."))}</p>`;
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ jobs/alerts."))}</p>`;
     return;
   }
   const summary = payload?.summary || {};
@@ -824,7 +627,7 @@ async function loadLawJobsOverview() {
       jobs: total=${escapeHtml(String(summary.total_tasks || 0))}, running=${escapeHtml(String(summary.running_tasks || 0))}, failed=${escapeHtml(String(summary.failed_tasks || 0))}, alerts=${escapeHtml(String(summary.alerts_count || 0))}
     </div>
     <details ${alerts.length ? "open" : ""}>
-      <summary>Алерты</summary>
+      <summary>Р В РЎвЂ™Р В Р’В»Р В Р’ВµР РЋР вЂљР РЋРІР‚С™Р РЋРІР‚в„–</summary>
       <pre class="legal-field__hint">${escapeHtml(JSON.stringify(alerts, null, 2) || "[]")}</pre>
     </details>
     <details>
@@ -851,10 +654,10 @@ async function rebuildLawSources() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось пересобрать законы."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В РЎвЂўР В Р’В±Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р РЋРІР‚в„–."));
     return;
   }
-  showMessage(`Законы обновлены: версия ${String(payload?.law_version_id || "—")}, статей ${String(payload?.article_count || 0)}.`);
+  showMessage(`Р В РІР‚вЂќР В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р РЋРІР‚в„– Р В РЎвЂўР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р РЋРІР‚в„–: Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋР С“Р В РЎвЂР РЋР РЏ ${String(payload?.law_version_id || "Р Р†Р вЂљРІР‚Сњ")}, Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В РІвЂћвЂ“ ${String(payload?.article_count || 0)}.`);
   await loadCatalog("laws");
 }
 
@@ -882,19 +685,19 @@ async function pollLawRebuildTask(taskId) {
     stopLawRebuildPolling();
     setLawActionButtonsDisabled(false);
     if (statusHost) {
-      statusHost.textContent = "Не удалось получить статус фоновой пересборки.";
+      statusHost.textContent = "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋРЎвЂњР РЋРІР‚РЋР В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“ Р РЋРІР‚С›Р В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂўР В РІвЂћвЂ“ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В РЎвЂќР В РЎвЂ.";
     }
     return;
   }
   const status = String(payload?.status || "queued");
   if (statusHost) {
-    statusHost.textContent = `Фоновая пересборка: ${status} (task: ${taskId})`;
+    statusHost.textContent = `Р В Р’В¤Р В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋР РЏ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В РЎвЂќР В Р’В°: ${status} (task: ${taskId})`;
   }
   if (status === "finished") {
     stopLawRebuildPolling();
     setLawActionButtonsDisabled(false);
     clearStoredLawRebuildTaskId();
-    showMessage(`Фоновая пересборка завершена. Версия ${String(payload?.result?.law_version_id || "—")}.`);
+    showMessage(`Р В Р’В¤Р В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋР РЏ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В РЎвЂќР В Р’В° Р В Р’В·Р В Р’В°Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРІвЂљВ¬Р В Р’ВµР В Р вЂ¦Р В Р’В°. Р В РІР‚в„ўР В Р’ВµР РЋР вЂљР РЋР С“Р В РЎвЂР РЋР РЏ ${String(payload?.result?.law_version_id || "Р Р†Р вЂљРІР‚Сњ")}.`);
     await loadCatalog("laws");
     return;
   }
@@ -902,7 +705,7 @@ async function pollLawRebuildTask(taskId) {
     stopLawRebuildPolling();
     setLawActionButtonsDisabled(false);
     clearStoredLawRebuildTaskId();
-    setStateError(errorsHost, String(payload?.error || "Фоновая пересборка завершилась ошибкой."));
+    setStateError(errorsHost, String(payload?.error || "Р В Р’В¤Р В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋР РЏ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В РЎвЂќР В Р’В° Р В Р’В·Р В Р’В°Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРІвЂљВ¬Р В РЎвЂР В Р’В»Р В Р’В°Р РЋР С“Р РЋР Р‰ Р В РЎвЂўР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В РЎвЂўР В РІвЂћвЂ“."));
     return;
   }
   lawRebuildPollTimer = window.setTimeout(() => {
@@ -938,10 +741,10 @@ async function rebuildLawSourcesAsync() {
         return;
       }
     }
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось поставить пересборку в очередь."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂ”Р В РЎвЂўР РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В РЎвЂќР РЋРЎвЂњ Р В Р вЂ  Р В РЎвЂўР РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В Р’ВµР В РўвЂР РЋР Р‰."));
     return;
   }
-  showMessage(`Пересборка поставлена в очередь (task: ${String(payload?.task_id || "—")}).`);
+  showMessage(`Р В РЎСџР В Р’ВµР РЋР вЂљР В Р’ВµР РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В РЎвЂќР В Р’В° Р В РЎвЂ”Р В РЎвЂўР РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В Р’В° Р В Р вЂ  Р В РЎвЂўР РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В Р’ВµР В РўвЂР РЋР Р‰ (task: ${String(payload?.task_id || "Р Р†Р вЂљРІР‚Сњ")}).`);
   setStoredLawRebuildTaskId(String(payload?.task_id || ""));
   setLawActionButtonsDisabled(true);
   stopLawRebuildPolling();
@@ -965,10 +768,10 @@ async function saveLawSourcesManifest() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось сохранить источники законов."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ ."));
     return;
   }
-  showMessage("Источники законов сохранены в workflow.");
+  showMessage("Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ  Р РЋР С“Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р РЋРІР‚в„– Р В Р вЂ  workflow.");
   await loadCatalog("laws");
 }
 
@@ -989,7 +792,7 @@ async function previewLawSources() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось проверить ссылки законов."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР С“Р РЋР С“Р РЋРІР‚в„–Р В Р’В»Р В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ ."));
     return;
   }
   const detailsHost = document.getElementById("law-sources-validation");
@@ -998,18 +801,18 @@ async function previewLawSources() {
     const invalidDetails = Array.isArray(payload?.invalid_details) ? payload.invalid_details : [];
     const duplicateUrls = Array.isArray(payload?.duplicate_urls) ? payload.duplicate_urls : [];
     const invalidBlock = invalidDetails.length
-      ? `<br><strong>Невалидные ссылки:</strong><br>${invalidDetails
+      ? `<br><strong>Р В РЎСљР В Р’ВµР В Р вЂ Р В Р’В°Р В Р’В»Р В РЎвЂР В РўвЂР В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р РЋР С“Р РЋР С“Р РЋРІР‚в„–Р В Р’В»Р В РЎвЂќР В РЎвЂ:</strong><br>${invalidDetails
         .map((item) => `${escapeHtml(String(item?.url || ""))} (${escapeHtml(String(item?.reason || "invalid"))})`)
         .join("<br>")}`
       : (invalidUrls.length
-        ? `<br><strong>Невалидные ссылки:</strong><br>${invalidUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
+        ? `<br><strong>Р В РЎСљР В Р’ВµР В Р вЂ Р В Р’В°Р В Р’В»Р В РЎвЂР В РўвЂР В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р РЋР С“Р РЋР С“Р РЋРІР‚в„–Р В Р’В»Р В РЎвЂќР В РЎвЂ:</strong><br>${invalidUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
         : "");
     const duplicateBlock = duplicateUrls.length
-      ? `<br><strong>Дубликаты (после нормализации):</strong><br>${duplicateUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
+      ? `<br><strong>Р В РІР‚СњР РЋРЎвЂњР В Р’В±Р В Р’В»Р В РЎвЂР В РЎвЂќР В Р’В°Р РЋРІР‚С™Р РЋРІР‚в„– (Р В РЎвЂ”Р В РЎвЂўР РЋР С“Р В Р’В»Р В Р’Вµ Р В Р вЂ¦Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р В Р’В»Р В РЎвЂР В Р’В·Р В Р’В°Р РЋРІР‚В Р В РЎвЂР В РЎвЂ):</strong><br>${duplicateUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
       : "";
-    detailsHost.innerHTML = `Принято: ${escapeHtml(String(payload?.accepted_count ?? 0))}. Дубликатов: ${escapeHtml(String(payload?.duplicate_count ?? 0))}. Невалидных: ${escapeHtml(String(payload?.invalid_count ?? 0))}.${invalidBlock}${duplicateBlock}`;
+    detailsHost.innerHTML = `Р В РЎСџР РЋР вЂљР В РЎвЂР В Р вЂ¦Р РЋР РЏР РЋРІР‚С™Р В РЎвЂў: ${escapeHtml(String(payload?.accepted_count ?? 0))}. Р В РІР‚СњР РЋРЎвЂњР В Р’В±Р В Р’В»Р В РЎвЂР В РЎвЂќР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР В Р вЂ : ${escapeHtml(String(payload?.duplicate_count ?? 0))}. Р В РЎСљР В Р’ВµР В Р вЂ Р В Р’В°Р В Р’В»Р В РЎвЂР В РўвЂР В Р вЂ¦Р РЋРІР‚в„–Р РЋРІР‚В¦: ${escapeHtml(String(payload?.invalid_count ?? 0))}.${invalidBlock}${duplicateBlock}`;
   }
-  showMessage("Проверка ссылок выполнена.");
+  showMessage("Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В° Р РЋР С“Р РЋР С“Р РЋРІР‚в„–Р В Р’В»Р В РЎвЂўР В РЎвЂќ Р В Р вЂ Р РЋРІР‚в„–Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В Р’В°.");
 }
 
 async function syncLawSourcesFromServerConfig() {
@@ -1019,10 +822,10 @@ async function syncLawSourcesFromServerConfig() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось синхронизировать ссылки законов."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂР В Р вЂ¦Р РЋРІР‚В¦Р РЋР вЂљР В РЎвЂўР В Р вЂ¦Р В РЎвЂР В Р’В·Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р РЋР С“Р РЋР С“Р РЋРІР‚в„–Р В Р’В»Р В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ ."));
     return;
   }
-  showMessage(payload?.changed ? "Ссылки законов перенесены из server config в DB." : "DB-источники законов уже актуальны.");
+  showMessage(payload?.changed ? "Р В Р Р‹Р РЋР С“Р РЋРІР‚в„–Р В Р’В»Р В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ  Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР В Р вЂ¦Р В Р’ВµР РЋР С“Р В Р’ВµР В Р вЂ¦Р РЋРІР‚в„– Р В РЎвЂР В Р’В· server config Р В Р вЂ  DB." : "DB-Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ  Р РЋРЎвЂњР В Р’В¶Р В Р’Вµ Р В Р’В°Р В РЎвЂќР РЋРІР‚С™Р РЋРЎвЂњР В Р’В°Р В Р’В»Р РЋР Р‰Р В Р вЂ¦Р РЋРІР‚в„–.");
   await loadCatalog("laws");
 }
 
@@ -1032,204 +835,13 @@ function renderCatalog(payload) {
   activeCatalogEntity = entityType;
   const items = Array.isArray(payload?.items) ? payload.items : [];
   const audit = Array.isArray(payload?.audit) ? payload.audit : [];
-  const entityLabels = {
-    servers: "Серверы",
-    laws: "Законы",
-    templates: "Шаблоны",
-    features: "Функции",
-    rules: "Правила",
-  };
-  const entityDescriptions = {
-    servers: "Серверные профили и базовые настройки окружения.",
-    laws: "Правовые источники и наборы норм, на которые опирается система.",
-    templates: "Шаблоны документов и заготовки для генерации.",
-    features: "Переключатели функций и rollout-настройки.",
-    rules: "Правила публикации, редактирования и governance-политики.",
-  };
-  const statusLabels = {
-    draft: "черновик",
-    in_review: "на ревью",
-    approved: "одобрено",
-    published: "опубликовано",
-    rolled_back: "откат",
-  };
-  const workflowActionLabels = {
-    submit_for_review: "Отправить на ревью",
-    approve: "Одобрить",
-    publish: "Опубликовать",
-    request_changes: "Запросить доработки",
-  };
-  const allowedActionsByState = {
-    draft: ["submit_for_review"],
-    in_review: ["approve", "request_changes"],
-    approved: ["publish"],
-  };
-  const auditByEntityId = new Map();
-  audit.forEach((row) => {
-    const entityId = String(row?.entity_id || "").trim();
-    if (!entityId || auditByEntityId.has(entityId)) {
-      return;
-    }
-    auditByEntityId.set(entityId, row);
+  catalogHost.innerHTML = renderCatalogMarkup({
+    entityType,
+    items,
+    audit,
+    activeCatalogAuditEntityType,
+    activeCatalogAuditEntityId,
   });
-  catalogHost.innerHTML = `
-    <div class="admin-section-toolbar">
-      <label class="legal-field"><span class="legal-field__label">Раздел</span>
-        <select id="catalog-entity">
-          ${["servers", "laws", "templates", "features", "rules"]
-            .map((name) => `<option value="${name}" ${name === entityType ? "selected" : ""}>${entityLabels[name]}</option>`)
-            .join("")}
-        </select>
-      </label>
-      <button type="button" id="catalog-create" class="primary-button">Создать</button>
-    </div>
-    <p class="legal-section__description">${escapeHtml(entityDescriptions[entityType] || "")}</p>
-    ${entityType === "servers" ? `
-    <div class="legal-subcard">
-      <div class="admin-section-toolbar">
-        <strong>Runtime серверы</strong>
-        <div>
-          <button type="button" id="runtime-servers-refresh" class="ghost-button">Обновить</button>
-          <button type="button" id="runtime-servers-create" class="primary-button">Добавить сервер</button>
-        </div>
-      </div>
-      <p class="legal-section__description">Управление реальными серверами из таблицы <code>servers</code>.</p>
-      <div id="runtime-servers-host"></div>
-    </div>
-    ` : ""}
-    ${entityType === "laws" ? `
-    <div class="legal-subcard">
-      <div class="admin-section-toolbar">
-        <strong>Источники законов</strong>
-        <label class="legal-field" style="min-width:260px">
-          <span class="legal-field__label">Сервер (обязательно)</span>
-          <select id="law-sources-server-select"></select>
-        </label>
-        <div>
-          <button type="button" id="law-sources-sync" class="ghost-button">Синхронизировать текущие</button>
-          <button type="button" id="law-sources-save" class="ghost-button">Сохранить без пересборки</button>
-          <button type="button" id="law-sources-preview" class="ghost-button">Проверить ссылки</button>
-          <button type="button" id="law-sources-rebuild-async" class="ghost-button">Пересобрать в фоне</button>
-          <button type="button" id="law-sources-rebuild" class="primary-button">Пересобрать законы</button>
-        </div>
-      </div>
-      <p id="law-sources-status" class="legal-section__description">Загружаем источники и активную версию...</p>
-      <div id="platform-blueprint-stage" class="legal-subcard"></div>
-      <p id="law-sources-validation" class="legal-section__description">Перед пересборкой можно проверить ссылки на валидность и дубликаты.</p>
-      <p id="law-sources-task-status" class="legal-section__description"></p>
-      <label class="legal-field">
-        <span class="legal-field__label">Ссылки на законы</span>
-        <textarea id="law-sources-textarea" rows="8" placeholder="По одной ссылке на строку"></textarea>
-        <span class="legal-field__hint">После сохранения система скачает страницы, нарежет материалы на статьи и импортирует новую DB-версию закона для текущего сервера.</span>
-      </label>
-      <div id="law-sources-history"></div>
-      <div id="law-sources-dependencies"></div>
-      <hr>
-      <div class="admin-section-toolbar">
-        <strong>Наборы законов сервера</strong>
-        <div>
-          <button type="button" id="law-sets-refresh" class="ghost-button">Обновить наборы</button>
-          <button type="button" id="law-sets-create" class="primary-button">Добавить набор</button>
-        </div>
-      </div>
-      <div id="law-sets-host"></div>
-      <hr>
-      <div class="admin-section-toolbar">
-        <strong>Реестр источников</strong>
-        <div>
-          <button type="button" id="law-source-registry-refresh" class="ghost-button">Обновить реестр</button>
-          <button type="button" id="law-source-registry-create" class="primary-button">Добавить источник</button>
-        </div>
-      </div>
-      <div id="law-source-registry-host"></div>
-      <hr>
-      <div class="admin-section-toolbar">
-        <strong>Привязка закона к серверу</strong>
-        <div>
-          <button type="button" id="server-law-bindings-refresh" class="ghost-button">Обновить привязки</button>
-          <button type="button" id="server-law-bindings-add" class="primary-button">Привязать закон к серверу</button>
-        </div>
-      </div>
-      <div id="server-law-bindings-host"></div>
-      <hr>
-      <div class="admin-section-toolbar">
-        <strong>Jobs / Alerts</strong>
-        <div>
-          <button type="button" id="law-jobs-refresh" class="ghost-button">Обновить jobs</button>
-        </div>
-      </div>
-      <div id="law-jobs-host"></div>
-    </div>
-    ` : ""}
-    <div class="legal-table-wrap">
-      <table class="legal-table">
-        <thead><tr><th>Название</th><th>Статус</th><th>Версия</th><th>Автор</th><th>Действия</th></tr></thead>
-        <tbody>
-          ${items.length
-            ? items
-            .map((item) => {
-              const entityId = String(item.id || "");
-              const auditRow = auditByEntityId.get(entityId) || {};
-              const state = String(item.active_change_request_status || item.status || item.state || "draft").trim().toLowerCase();
-              const stateLabel = statusLabels[state] || state;
-              const changeRequestId = Number(item.active_change_request_id || item.change_request_id || 0);
-              const workflowActions = changeRequestId ? (allowedActionsByState[state] || []) : [];
-              const version = item.current_published_version_id ?? item.version_number ?? "—";
-              const author = String(
-                auditRow.author || item.updated_by || item.created_by || "system"
-              );
-              return `
-              <tr data-machine-state="${escapeHtml(state)}" data-change-request-id="${escapeHtml(String(changeRequestId || 0))}">
-                <td>${escapeHtml(String(item.title || ""))}</td>
-                <td>${escapeHtml(stateLabel)}</td>
-                <td>${escapeHtml(String(version))}</td>
-                <td>${escapeHtml(author)}</td>
-                <td>
-                  <button type="button" class="ghost-button" data-catalog-view="${escapeHtml(String(item.id || ""))}">Поля</button>
-                  <button type="button" class="ghost-button" data-catalog-edit="${escapeHtml(String(item.id || ""))}">Изменить</button>
-                  <button type="button" class="ghost-button" data-catalog-preview="${escapeHtml(String(item.id || ""))}">Предпросмотр</button>
-                  ${workflowActions
-                    .map(
-                      (action) => `<button type="button" class="ghost-button" data-catalog-workflow-item="${escapeHtml(String(item.id || ""))}" data-catalog-workflow-action="${escapeHtml(action)}" data-catalog-workflow-cr-id="${escapeHtml(String(changeRequestId || 0))}">${escapeHtml(workflowActionLabels[action] || action)}</button>`,
-                    )
-                    .join("")}
-                  <button type="button" class="ghost-button" data-catalog-rollback="${escapeHtml(String(item.id || ""))}">Откат</button>
-                  <button type="button" class="ghost-button" data-catalog-delete="${escapeHtml(String(item.id || ""))}">Удалить</button>
-                </td>
-              </tr>
-            `;
-            })
-            .join("")
-            : '<tr><td colspan="5" class="legal-section__description">Для этого раздела пока нет записей.</td></tr>'}
-        </tbody>
-      </table>
-      <div id="catalog-preview" class="legal-subcard" hidden>
-        <div id="catalog-preview-summary" class="legal-section__description"></div>
-        <pre id="catalog-preview-body" class="legal-field__hint">—</pre>
-      </div>
-    </div>
-    <section id="catalog-preview-panel" class="admin-catalog-preview" hidden>
-      <div class="admin-catalog-preview__header">
-        <h4 class="admin-catalog-preview__title">Предпросмотр</h4>
-        <button type="button" id="catalog-preview-copy" class="ghost-button">Копировать JSON</button>
-      </div>
-      <div id="catalog-preview-summary" class="admin-catalog-preview__summary"></div>
-      <p class="legal-section__description">Связанные версии и последний change request:</p>
-      <pre id="catalog-preview-meta" class="admin-catalog-preview__meta"></pre>
-      <p class="legal-section__description">Effective/current payload:</p>
-      <pre id="catalog-preview-json" class="admin-catalog-preview__json"></pre>
-    </section>
-    <p class="legal-section__description">Журнал изменений (автор и diff):</p>
-    <div class="admin-section-toolbar">
-      <label class="legal-field"><span class="legal-field__label">entity_type</span><input id="catalog-audit-entity-type" value="${escapeHtml(activeCatalogAuditEntityType)}" placeholder="content_item"></label>
-      <label class="legal-field"><span class="legal-field__label">entity_id</span><input id="catalog-audit-entity-id" value="${escapeHtml(activeCatalogAuditEntityId)}" placeholder="42"></label>
-      <label class="legal-field"><span class="legal-field__label">limit</span><input id="catalog-audit-limit" type="number" min="1" max="500" value="12"></label>
-      <button type="button" id="catalog-audit-refresh" class="ghost-button">Обновить журнал</button>
-    </div>
-    <div id="catalog-audit-results">
-      <pre class="legal-field__hint">${escapeHtml(audit.slice(0, 8).map((row) => `${row.created_at} ${row.author} ${row.action} ${row.workflow_from || ""}->${row.workflow_to || ""}\n${row.diff || ""}`).join("\n\n"))}</pre>
-    </div>
-  `;
 }
 
 function renderCatalogAuditTrail(payload) {
@@ -1238,13 +850,7 @@ function renderCatalogAuditTrail(payload) {
     return;
   }
   const items = Array.isArray(payload?.items) ? payload.items : [];
-  if (!items.length) {
-    host.innerHTML = '<p class="legal-section__description">По заданным фильтрам аудита записей нет.</p>';
-    return;
-  }
-  host.innerHTML = `
-    <pre class="legal-field__hint">${escapeHtml(items.slice(0, 12).map((row) => `${row.created_at || "—"} ${row.author || "system"} ${row.action || "—"} ${row.entity_type || ""}#${row.entity_id || ""}\n${row.diff || ""}`).join("\n\n"))}</pre>
-  `;
+  host.innerHTML = renderCatalogAuditTrailMarkup(items);
 }
 
 async function loadCatalogAuditTrail() {
@@ -1263,7 +869,7 @@ async function loadCatalogAuditTrail() {
   const host = document.getElementById("catalog-audit-results");
   if (!response.ok) {
     if (host) {
-      host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить журнал изменений."))}</p>`;
+      host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В Р’В¶Р РЋРЎвЂњР РЋР вЂљР В Р вЂ¦Р В Р’В°Р В Р’В» Р В РЎвЂР В Р’В·Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В РІвЂћвЂ“."))}</p>`;
     }
     return;
   }
@@ -1271,112 +877,23 @@ async function loadCatalogAuditTrail() {
 }
 
 function renderRuntimeServersPanel(payload) {
-  const host = document.getElementById("runtime-servers-host");
-  if (!host) return;
-  const items = Array.isArray(payload?.items) ? payload.items : [];
-  host.innerHTML = `
-    <table class="legal-table admin-table admin-table--compact">
-      <thead>
-        <tr><th>Код</th><th>Название</th><th>Статус</th><th>Действия</th></tr>
-      </thead>
-      <tbody>
-        ${items.length
-          ? items.map((item) => `
-            <tr>
-              <td>${escapeHtml(String(item.code || "—"))}</td>
-              <td>${escapeHtml(String(item.title || "—"))}</td>
-              <td>${item.is_active ? "active" : "disabled"}</td>
-              <td>
-                <button type="button" class="ghost-button" data-runtime-server-edit="${escapeHtml(String(item.code || ""))}" data-runtime-server-title="${escapeHtml(String(item.title || ""))}">Изменить</button>
-                <button type="button" class="ghost-button" data-runtime-server-toggle="${escapeHtml(String(item.code || ""))}" data-runtime-server-active="${item.is_active ? "1" : "0"}">${item.is_active ? "Деактивировать" : "Активировать"}</button>
-              </td>
-            </tr>
-          `).join("")
-          : '<tr><td colspan="4" class="legal-section__description">Серверы не найдены.</td></tr>'}
-      </tbody>
-    </table>
-  `;
+  adminLawRuntimeController.renderRuntimeServersPanel(payload);
 }
 
 async function loadRuntimeServersPanel() {
-  const host = document.getElementById("runtime-servers-host");
-  if (!host) return;
-  const response = await apiFetch("/api/admin/runtime-servers");
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить runtime серверы."))}</p>`;
-    return;
-  }
-  renderRuntimeServersPanel(payload);
+  return adminLawRuntimeController.loadRuntimeServersPanel();
 }
 
 async function createRuntimeServerFlow() {
-  const code = String(window.prompt("Код сервера (латиница/цифры/_-.)", "") || "").trim().toLowerCase();
-  if (!code) return;
-  const title = String(window.prompt("Название сервера", code) || "").trim();
-  if (!title) return;
-  const response = await apiFetch("/api/admin/runtime-servers", {
-    method: "POST",
-    body: JSON.stringify({ code, title }),
-  });
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось создать сервер."));
-    return;
-  }
-  showMessage(`Сервер ${code} создан.`);
-  await loadRuntimeServersPanel();
+  return adminLawRuntimeController.createRuntimeServerFlow();
 }
 
 async function editRuntimeServerFlow(code, currentTitle) {
-  const title = String(window.prompt(`Новое название для ${code}`, currentTitle || code) || "").trim();
-  if (!title) return;
-  const response = await apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(code)}`, {
-    method: "PUT",
-    body: JSON.stringify({ code, title }),
-  });
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось обновить сервер."));
-    return;
-  }
-  showMessage(`Сервер ${code} обновлен.`);
-  await loadRuntimeServersPanel();
+  return adminLawRuntimeController.editRuntimeServerFlow(code, currentTitle);
 }
 
 async function toggleRuntimeServerFlow(code, isActive) {
-  const action = isActive ? "deactivate" : "activate";
-  const response = await apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(code)}/${action}`, {
-    method: "POST",
-  });
-  const payload = await parsePayload(response);
-  if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось обновить статус сервера."));
-    return;
-  }
-  showMessage(`Статус сервера ${code} обновлен.`);
-  await loadRuntimeServersPanel();
-}
-
-function renderCatalogPreviewSummary(entityType, item, effectivePayload) {
-  const keyOrder = ["key", "name", "title", "status", "enabled", "code", "version", "updated_at"];
-  const rows = [];
-  keyOrder.forEach((field) => {
-    const value = field in effectivePayload ? effectivePayload[field] : item?.[field];
-    if (value !== undefined && value !== null && value !== "") {
-      rows.push({ field, value });
-    }
-  });
-  if (!rows.length) {
-    rows.push({ field: "entity_type", value: entityType });
-    rows.push({ field: "item_id", value: item?.id ?? "—" });
-  }
-  return rows
-    .slice(0, 10)
-    .map(
-      (entry) => `<div class="admin-catalog-preview__summary-row"><span>${escapeHtml(entry.field)}</span><strong>${escapeHtml(String(entry.value))}</strong></div>`
-    )
-    .join("");
+  return adminLawRuntimeController.toggleRuntimeServerFlow(code, isActive);
 }
 
 function renderCatalogPreview(payload, itemId) {
@@ -1387,33 +904,9 @@ function renderCatalogPreview(payload, itemId) {
   if (!previewPanel || !summaryHost || !metaHost || !jsonHost) return;
   const item = payload?.item || {};
   const effectivePayload = payload?.effective_payload && typeof payload.effective_payload === "object" ? payload.effective_payload : {};
-  const versions = Array.isArray(payload?.versions) ? payload.versions : [];
-  const latestChangeRequest = payload?.latest_change_request || (Array.isArray(payload?.change_requests) ? payload.change_requests[0] : null);
-  const effectiveVersion = payload?.effective_version || null;
-  summaryHost.innerHTML = renderCatalogPreviewSummary(activeCatalogEntity, item, effectivePayload);
-  const metaPayload = {
-    item_id: item?.id ?? itemId,
-    content_key: item?.content_key || "",
-    status: item?.status || "",
-    effective_version: effectiveVersion
-      ? {
-        id: effectiveVersion.id,
-        version_number: effectiveVersion.version_number,
-        created_by: effectiveVersion.created_by,
-        created_at: effectiveVersion.created_at,
-      }
-      : null,
-    versions: versions.map((version) => ({
-      id: version.id,
-      version_number: version.version_number,
-      schema_version: version.schema_version,
-      created_by: version.created_by,
-      created_at: version.created_at,
-    })),
-    latest_change_request: latestChangeRequest,
-  };
-  metaHost.textContent = JSON.stringify(metaPayload, null, 2);
-  jsonHost.textContent = JSON.stringify(effectivePayload, null, 2);
+  summaryHost.innerHTML = renderCatalogPreviewSummaryMarkup(activeCatalogEntity, item, effectivePayload);
+  metaHost.textContent = buildCatalogPreviewMetaText(payload, itemId);
+  jsonHost.textContent = formatCatalogPreviewValue(effectivePayload);
   previewPanel.hidden = false;
 }
 
@@ -1421,7 +914,7 @@ async function loadCatalogPreview(itemId) {
   const response = await apiFetch(catalogEndpoint(activeCatalogEntity, itemId));
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить предпросмотр catalog."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂ”Р РЋР вЂљР В Р’ВµР В РўвЂР В РЎвЂ”Р РЋР вЂљР В РЎвЂўР РЋР С“Р В РЎВР В РЎвЂўР РЋРІР‚С™Р РЋР вЂљ catalog."));
     return;
   }
   renderCatalogPreview(payload, itemId);
@@ -1431,51 +924,51 @@ function slugifyCatalogKey(value) {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_\-.а-яё]/gi, "")
+    .replace(/[^a-z0-9_\-.Р В Р’В°-Р РЋР РЏР РЋРІР‚В]/gi, "")
     .replace(/_+/g, "_");
 }
 
 function getCatalogEntityFieldMeta(entityType) {
-  const sharedHelp = "Заполните поля формы. JSON нужен только для редких/нестандартных атрибутов.";
+  const sharedHelp = "Р В РІР‚вЂќР В Р’В°Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР РЏ Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР РЋРІР‚в„–. JSON Р В Р вЂ¦Р РЋРЎвЂњР В Р’В¶Р В Р’ВµР В Р вЂ¦ Р РЋРІР‚С™Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р В РўвЂР В Р’В»Р РЋР РЏ Р РЋР вЂљР В Р’ВµР В РўвЂР В РЎвЂќР В РЎвЂР РЋРІР‚В¦/Р В Р вЂ¦Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ¦Р В РўвЂР В Р’В°Р РЋР вЂљР РЋРІР‚С™Р В Р вЂ¦Р РЋРІР‚в„–Р РЋРІР‚В¦ Р В Р’В°Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂР В Р’В±Р РЋРЎвЂњР РЋРІР‚С™Р В РЎвЂўР В Р вЂ .";
   const byEntity = {
     servers: {
-      description: "Профиль сервера: модель, URL и технические ограничения.",
+      description: "Р В РЎСџР РЋР вЂљР В РЎвЂўР РЋРІР‚С›Р В РЎвЂР В Р’В»Р РЋР Р‰ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР В Р’В°: Р В РЎВР В РЎвЂўР В РўвЂР В Р’ВµР В Р’В»Р РЋР Р‰, URL Р В РЎвЂ Р РЋРІР‚С™Р В Р’ВµР РЋРІР‚В¦Р В Р вЂ¦Р В РЎвЂР РЋРІР‚РЋР В Р’ВµР РЋР С“Р В РЎвЂќР В РЎвЂР В Р’Вµ Р В РЎвЂўР В РЎвЂ“Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ.",
       fields: [
-        { name: "server_code", label: "Код сервера", placeholder: "prod-1", help: "Уникальный код окружения." },
-        { name: "base_url", label: "Base URL", placeholder: "https://api.example.com", help: "Базовый URL сервера/интеграции." },
-        { name: "timeout_sec", label: "Timeout (сек)", type: "number", min: 1, placeholder: "30", help: "Таймаут запросов в секундах." },
+        { name: "server_code", label: "Р В РЎв„ўР В РЎвЂўР В РўвЂ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР В Р’В°", placeholder: "prod-1", help: "Р В Р в‚¬Р В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°Р В Р’В»Р РЋР Р‰Р В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В РЎвЂќР В РЎвЂўР В РўвЂ Р В РЎвЂўР В РЎвЂќР РЋР вЂљР РЋРЎвЂњР В Р’В¶Р В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ." },
+        { name: "base_url", label: "Base URL", placeholder: "https://api.example.com", help: "Р В РІР‚ВР В Р’В°Р В Р’В·Р В РЎвЂўР В Р вЂ Р РЋРІР‚в„–Р В РІвЂћвЂ“ URL Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’ВµР РЋР вЂљР В Р’В°/Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С™Р В Р’ВµР В РЎвЂ“Р РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР В РЎвЂ." },
+        { name: "timeout_sec", label: "Timeout (Р РЋР С“Р В Р’ВµР В РЎвЂќ)", type: "number", min: 1, placeholder: "30", help: "Р В РЎС›Р В Р’В°Р В РІвЂћвЂ“Р В РЎВР В Р’В°Р РЋРЎвЂњР РЋРІР‚С™ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР РЋР С“Р В РЎвЂўР В Р вЂ  Р В Р вЂ  Р РЋР С“Р В Р’ВµР В РЎвЂќР РЋРЎвЂњР В Р вЂ¦Р В РўвЂР В Р’В°Р РЋРІР‚В¦." },
       ],
     },
     laws: {
-      description: "Нормативный источник и его реквизиты.",
+      description: "Р В РЎСљР В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ Р В РЎвЂ Р В Р’ВµР В РЎвЂ“Р В РЎвЂў Р РЋР вЂљР В Р’ВµР В РЎвЂќР В Р вЂ Р В РЎвЂР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋРІР‚в„–.",
       fields: [
-        { name: "law_code", label: "Код закона", placeholder: "uk_rf_2026", help: "Внутренний код закона/сборника." },
-        { name: "source", label: "Источник", placeholder: "consultant", help: "Откуда взят текст (сервис/реестр)." },
-        { name: "effective_from", label: "Действует с", placeholder: "2026-01-01", help: "Дата в формате YYYY-MM-DD." },
+        { name: "law_code", label: "Р В РЎв„ўР В РЎвЂўР В РўвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В Р’В°", placeholder: "uk_rf_2026", help: "Р В РІР‚в„ўР В Р вЂ¦Р РЋРЎвЂњР РЋРІР‚С™Р РЋР вЂљР В Р’ВµР В Р вЂ¦Р В Р вЂ¦Р В РЎвЂР В РІвЂћвЂ“ Р В РЎвЂќР В РЎвЂўР В РўвЂ Р В Р’В·Р В Р’В°Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В Р’В°/Р РЋР С“Р В Р’В±Р В РЎвЂўР РЋР вЂљР В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°." },
+        { name: "source", label: "Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ", placeholder: "consultant", help: "Р В РЎвЂєР РЋРІР‚С™Р В РЎвЂќР РЋРЎвЂњР В РўвЂР В Р’В° Р В Р вЂ Р В Р’В·Р РЋР РЏР РЋРІР‚С™ Р РЋРІР‚С™Р В Р’ВµР В РЎвЂќР РЋР С“Р РЋРІР‚С™ (Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В РЎвЂР РЋР С“/Р РЋР вЂљР В Р’ВµР В Р’ВµР РЋР С“Р РЋРІР‚С™Р РЋР вЂљ)." },
+        { name: "effective_from", label: "Р В РІР‚СњР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р РЋРЎвЂњР В Р’ВµР РЋРІР‚С™ Р РЋР С“", placeholder: "2026-01-01", help: "Р В РІР‚СњР В Р’В°Р РЋРІР‚С™Р В Р’В° Р В Р вЂ  Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚С™Р В Р’Вµ YYYY-MM-DD." },
       ],
     },
     templates: {
-      description: "Шаблон документа: формат, цель и обязательные блоки.",
+      description: "Р В Р РѓР В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂўР В Р вЂ¦ Р В РўвЂР В РЎвЂўР В РЎвЂќР РЋРЎвЂњР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°: Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚С™, Р РЋРІР‚В Р В Р’ВµР В Р’В»Р РЋР Р‰ Р В РЎвЂ Р В РЎвЂўР В Р’В±Р РЋР РЏР В Р’В·Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂ.",
       fields: [
-        { name: "template_type", label: "Тип шаблона", placeholder: "complaint", help: "Например: complaint, appeal, rehab." },
-        { name: "document_kind", label: "Вид документа", placeholder: "Жалоба", help: "Человекочитаемый вид документа." },
-        { name: "output_format", label: "Формат вывода", placeholder: "bbcode", help: "Например: bbcode, markdown, html." },
+        { name: "template_type", label: "Р В РЎС›Р В РЎвЂР В РЎвЂ” Р РЋРІвЂљВ¬Р В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂўР В Р вЂ¦Р В Р’В°", placeholder: "complaint", help: "Р В РЎСљР В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР РЋР вЂљ: complaint, appeal, rehab." },
+        { name: "document_kind", label: "Р В РІР‚в„ўР В РЎвЂР В РўвЂ Р В РўвЂР В РЎвЂўР В РЎвЂќР РЋРЎвЂњР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°", placeholder: "Р В РІР‚вЂњР В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р В Р’В°", help: "Р В Р’В§Р В Р’ВµР В Р’В»Р В РЎвЂўР В Р вЂ Р В Р’ВµР В РЎвЂќР В РЎвЂўР РЋРІР‚РЋР В РЎвЂР РЋРІР‚С™Р В Р’В°Р В Р’ВµР В РЎВР РЋРІР‚в„–Р В РІвЂћвЂ“ Р В Р вЂ Р В РЎвЂР В РўвЂ Р В РўвЂР В РЎвЂўР В РЎвЂќР РЋРЎвЂњР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°." },
+        { name: "output_format", label: "Р В Р’В¤Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚С™ Р В Р вЂ Р РЋРІР‚в„–Р В Р вЂ Р В РЎвЂўР В РўвЂР В Р’В°", placeholder: "bbcode", help: "Р В РЎСљР В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР РЋР вЂљ: bbcode, markdown, html." },
       ],
     },
     features: {
-      description: "Фича-флаг: rollout и условия включения.",
+      description: "Р В Р’В¤Р В РЎвЂР РЋРІР‚РЋР В Р’В°-Р РЋРІР‚С›Р В Р’В»Р В Р’В°Р В РЎвЂ“: rollout Р В РЎвЂ Р РЋРЎвЂњР РЋР С“Р В Р’В»Р В РЎвЂўР В Р вЂ Р В РЎвЂР РЋР РЏ Р В Р вЂ Р В РЎвЂќР В Р’В»Р РЋР вЂ№Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ.",
       fields: [
-        { name: "feature_flag", label: "Feature flag", placeholder: "new_law_qa", help: "Уникальный код флага." },
-        { name: "rollout_percent", label: "Rollout (%)", type: "number", min: 0, max: 100, placeholder: "25", help: "Доля пользователей в процентах." },
-        { name: "audience", label: "Аудитория", placeholder: "testers", help: "Кому включено: all/testers/staff/..." },
+        { name: "feature_flag", label: "Feature flag", placeholder: "new_law_qa", help: "Р В Р в‚¬Р В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°Р В Р’В»Р РЋР Р‰Р В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В РЎвЂќР В РЎвЂўР В РўвЂ Р РЋРІР‚С›Р В Р’В»Р В Р’В°Р В РЎвЂ“Р В Р’В°." },
+        { name: "rollout_percent", label: "Rollout (%)", type: "number", min: 0, max: 100, placeholder: "25", help: "Р В РІР‚СњР В РЎвЂўР В Р’В»Р РЋР РЏ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р В Р’ВµР В РІвЂћвЂ“ Р В Р вЂ  Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР РЋРІР‚В Р В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚В¦." },
+        { name: "audience", label: "Р В РЎвЂ™Р РЋРЎвЂњР В РўвЂР В РЎвЂР РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР В РЎвЂР РЋР РЏ", placeholder: "testers", help: "Р В РЎв„ўР В РЎвЂўР В РЎВР РЋРЎвЂњ Р В Р вЂ Р В РЎвЂќР В Р’В»Р РЋР вЂ№Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂў: all/testers/staff/..." },
       ],
     },
     rules: {
-      description: "Правило применения: приоритет, область и действие.",
+      description: "Р В РЎСџР РЋР вЂљР В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В»Р В РЎвЂў Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ: Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎвЂўР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’ВµР РЋРІР‚С™, Р В РЎвЂўР В Р’В±Р В Р’В»Р В Р’В°Р РЋР С“Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂ Р В РўвЂР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В РЎвЂР В Р’Вµ.",
       fields: [
-        { name: "rule_type", label: "Тип правила", placeholder: "moderation", help: "Категория правила." },
-        { name: "priority", label: "Приоритет", type: "number", min: 0, placeholder: "100", help: "Чем больше число, тем выше приоритет." },
-        { name: "applies_to", label: "Область", placeholder: "complaint_generation", help: "Где применяется правило." },
+        { name: "rule_type", label: "Р В РЎС›Р В РЎвЂР В РЎвЂ” Р В РЎвЂ”Р РЋР вЂљР В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В»Р В Р’В°", placeholder: "moderation", help: "Р В РЎв„ўР В Р’В°Р РЋРІР‚С™Р В Р’ВµР В РЎвЂ“Р В РЎвЂўР РЋР вЂљР В РЎвЂР РЋР РЏ Р В РЎвЂ”Р РЋР вЂљР В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В»Р В Р’В°." },
+        { name: "priority", label: "Р В РЎСџР РЋР вЂљР В РЎвЂР В РЎвЂўР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’ВµР РЋРІР‚С™", type: "number", min: 0, placeholder: "100", help: "Р В Р’В§Р В Р’ВµР В РЎВ Р В Р’В±Р В РЎвЂўР В Р’В»Р РЋР Р‰Р РЋРІвЂљВ¬Р В Р’Вµ Р РЋРІР‚РЋР В РЎвЂР РЋР С“Р В Р’В»Р В РЎвЂў, Р РЋРІР‚С™Р В Р’ВµР В РЎВ Р В Р вЂ Р РЋРІР‚в„–Р РЋРІвЂљВ¬Р В Р’Вµ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎвЂўР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’ВµР РЋРІР‚С™." },
+        { name: "applies_to", label: "Р В РЎвЂєР В Р’В±Р В Р’В»Р В Р’В°Р РЋР С“Р РЋРІР‚С™Р РЋР Р‰", placeholder: "complaint_generation", help: "Р В РІР‚СљР В РўвЂР В Р’Вµ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР В Р вЂ¦Р РЋР РЏР В Р’ВµР РЋРІР‚С™Р РЋР С“Р РЋР РЏ Р В РЎвЂ”Р РЋР вЂљР В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В»Р В РЎвЂў." },
       ],
     },
   };
@@ -1508,7 +1001,7 @@ function parseCatalogAdvancedJson(rawJson) {
   }
   const parsed = JSON.parse(raw);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Advanced JSON должен быть объектом.");
+    throw new Error("Advanced JSON Р В РўвЂР В РЎвЂўР В Р’В»Р В Р’В¶Р В Р’ВµР В Р вЂ¦ Р В Р’В±Р РЋРІР‚в„–Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂўР В Р’В±Р РЋР вЂ°Р В Р’ВµР В РЎвЂќР РЋРІР‚С™Р В РЎвЂўР В РЎВ.");
   }
   return parsed;
 }
@@ -1534,41 +1027,41 @@ async function openCatalogFormDialog(entityType, seed = {}) {
     .join("");
   dialog.innerHTML = `
     <form method="dialog" class="legal-section">
-      <h3>${seed.id ? "Редактирование" : "Создание"}: ${escapeHtml(entityType)}</h3>
+      <h3>${seed.id ? "Р В Р’В Р В Р’ВµР В РўвЂР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ" : "Р В Р Р‹Р В РЎвЂўР В Р’В·Р В РўвЂР В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ"}: ${escapeHtml(entityType)}</h3>
       <p class="legal-field__hint">${escapeHtml(meta.description || "")}</p>
       <label class="legal-field">
-        <span class="legal-field__label">Название</span>
-        <input type="text" name="title" value="${escapeHtml(values.title)}" placeholder="Понятное имя записи" required>
+        <span class="legal-field__label">Р В РЎСљР В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ</span>
+        <input type="text" name="title" value="${escapeHtml(values.title)}" placeholder="Р В РЎСџР В РЎвЂўР В Р вЂ¦Р РЋР РЏР РЋРІР‚С™Р В Р вЂ¦Р В РЎвЂўР В Р’Вµ Р В РЎвЂР В РЎВР РЋР РЏ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р В РЎвЂР РЋР С“Р В РЎвЂ" required>
       </label>
       <label class="legal-field">
-        <span class="legal-field__label">Ключ</span>
+        <span class="legal-field__label">Р В РЎв„ўР В Р’В»Р РЋР вЂ№Р РЋРІР‚РЋ</span>
         <input type="text" name="key" value="${escapeHtml(values.key)}" placeholder="server_main" required>
-        <span class="legal-field__hint">Уникальный ключ (латиница/цифры/подчеркивание). Пример: <code>main_ruleset</code></span>
+        <span class="legal-field__hint">Р В Р в‚¬Р В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°Р В Р’В»Р РЋР Р‰Р В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В РЎвЂќР В Р’В»Р РЋР вЂ№Р РЋРІР‚РЋ (Р В Р’В»Р В Р’В°Р РЋРІР‚С™Р В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋРІР‚В Р В Р’В°/Р РЋРІР‚В Р В РЎвЂР РЋРІР‚С›Р РЋР вЂљР РЋРІР‚в„–/Р В РЎвЂ”Р В РЎвЂўР В РўвЂР РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В РЎвЂќР В РЎвЂР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ). Р В РЎСџР РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР РЋР вЂљ: <code>main_ruleset</code></span>
       </label>
       <label class="legal-field">
-        <span class="legal-field__label">Описание</span>
-        <textarea name="description" rows="2" placeholder="Кратко: зачем нужна запись">${escapeHtml(values.description)}</textarea>
+        <span class="legal-field__label">Р В РЎвЂєР В РЎвЂ”Р В РЎвЂР РЋР С“Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ</span>
+        <textarea name="description" rows="2" placeholder="Р В РЎв„ўР РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂќР В РЎвЂў: Р В Р’В·Р В Р’В°Р РЋРІР‚РЋР В Р’ВµР В РЎВ Р В Р вЂ¦Р РЋРЎвЂњР В Р’В¶Р В Р вЂ¦Р В Р’В° Р В Р’В·Р В Р’В°Р В РЎвЂ”Р В РЎвЂР РЋР С“Р РЋР Р‰">${escapeHtml(values.description)}</textarea>
       </label>
       <label class="legal-field">
-        <span class="legal-field__label">Статус</span>
+        <span class="legal-field__label">Р В Р Р‹Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“</span>
         <select name="status">
           ${["draft", "review", "published", "active", "disabled", "archived"]
             .map((statusName) => `<option value="${statusName}" ${values.status === statusName ? "selected" : ""}>${statusName}</option>`)
             .join("")}
         </select>
-        <span class="legal-field__hint">Обычно для новых записей используется <code>draft</code>.</span>
+        <span class="legal-field__hint">Р В РЎвЂєР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂў Р В РўвЂР В Р’В»Р РЋР РЏ Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р РЋРІР‚в„–Р РЋРІР‚В¦ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р В РЎвЂР РЋР С“Р В Р’ВµР В РІвЂћвЂ“ Р В РЎвЂР РЋР С“Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р РЋРЎвЂњР В Р’ВµР РЋРІР‚С™Р РЋР С“Р РЋР РЏ <code>draft</code>.</span>
       </label>
       ${dynamicFields}
       <details>
-        <summary>Дополнительно (JSON)</summary>
-        <p class="legal-field__hint">Опционально. Добавьте редкие поля в JSON-объекте, например: {\"tags\":[\"beta\"],\"owner\":\"team-legal\"}</p>
+        <summary>Р В РІР‚СњР В РЎвЂўР В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰Р В Р вЂ¦Р В РЎвЂў (JSON)</summary>
+        <p class="legal-field__hint">Р В РЎвЂєР В РЎвЂ”Р РЋРІР‚В Р В РЎвЂР В РЎвЂўР В Р вЂ¦Р В Р’В°Р В Р’В»Р РЋР Р‰Р В Р вЂ¦Р В РЎвЂў. Р В РІР‚СњР В РЎвЂўР В Р’В±Р В Р’В°Р В Р вЂ Р РЋР Р‰Р РЋРІР‚С™Р В Р’Вµ Р РЋР вЂљР В Р’ВµР В РўвЂР В РЎвЂќР В РЎвЂР В Р’Вµ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР РЏ Р В Р вЂ  JSON-Р В РЎвЂўР В Р’В±Р РЋР вЂ°Р В Р’ВµР В РЎвЂќР РЋРІР‚С™Р В Р’Вµ, Р В Р вЂ¦Р В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР РЋР вЂљ: {\"tags\":[\"beta\"],\"owner\":\"team-legal\"}</p>
         <label class="legal-field">
           <textarea name="advanced_config" rows="7" placeholder='{\"tags\":[\"beta\"],\"owner\":\"team-legal\"}'>${escapeHtml(JSON.stringify(values.config || {}, null, 2))}</textarea>
         </label>
       </details>
       <menu style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
-        <button type="button" class="ghost-button" data-action="cancel">Отмена</button>
-        <button type="submit" class="primary-button" data-action="submit">Сохранить</button>
+        <button type="button" class="ghost-button" data-action="cancel">Р В РЎвЂєР РЋРІР‚С™Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В°</button>
+        <button type="submit" class="primary-button" data-action="submit">Р В Р Р‹Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰</button>
       </menu>
     </form>
   `;
@@ -1601,10 +1094,10 @@ async function openCatalogFormDialog(entityType, seed = {}) {
         const description = String(formData.get("description") || "").trim();
         const status = String(formData.get("status") || "draft").trim().toLowerCase();
         if (!title) {
-          throw new Error("Поле «Название» обязательно.");
+          throw new Error("Р В РЎСџР В РЎвЂўР В Р’В»Р В Р’Вµ Р вЂ™Р’В«Р В РЎСљР В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’ВµР вЂ™Р’В» Р В РЎвЂўР В Р’В±Р РЋР РЏР В Р’В·Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰Р В Р вЂ¦Р В РЎвЂў.");
         }
         if (!key) {
-          throw new Error("Поле «Ключ» обязательно.");
+          throw new Error("Р В РЎСџР В РЎвЂўР В Р’В»Р В Р’Вµ Р вЂ™Р’В«Р В РЎв„ўР В Р’В»Р РЋР вЂ№Р РЋРІР‚РЋР вЂ™Р’В» Р В РЎвЂўР В Р’В±Р РЋР РЏР В Р’В·Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰Р В Р вЂ¦Р В РЎвЂў.");
         }
         const advanced = parseCatalogAdvancedJson(formData.get("advanced_config"));
         const payload = { title, key, description, status, config: advanced };
@@ -1647,7 +1140,7 @@ async function loadCatalog(entityType = activeCatalogEntity) {
   const response = await apiFetch(catalogEndpoint(entityType));
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить catalog."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ catalog."));
     return;
   }
   activeCatalogAuditEntityType = "";
@@ -1658,12 +1151,7 @@ async function loadCatalog(entityType = activeCatalogEntity) {
     await loadRuntimeServersPanel();
   }
   if (entityType === "laws") {
-    await loadLawServerOptions();
-    await loadLawSourcesManager();
-    await loadLawSets();
-    await loadLawSourceRegistry();
-    await loadServerLawBindings();
-    await loadLawJobsOverview();
+    await adminLawRuntimeController.loadCatalogContext();
   }
 }
 
@@ -1679,7 +1167,7 @@ const catalogModal = createModalController({
 
 function formatJsonForDisplay(value) {
   if (value === null || value === undefined) {
-    return "—";
+    return "Р Р†Р вЂљРІР‚Сњ";
   }
   if (typeof value === "string") {
     try {
@@ -1725,7 +1213,7 @@ function parseJsonConfig(rawText) {
     const source = String(rawText || "");
     const match = /position\s+(\d+)/i.exec(String(error?.message || ""));
     if (!match) {
-      return { ok: false, message: "Не удалось разобрать JSON. Проверьте синтаксис." };
+      return { ok: false, message: "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР вЂљР В Р’В°Р В Р’В·Р В РЎвЂўР В Р’В±Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р РЋР Р‰ JSON. Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР РЋР Р‰Р РЋРІР‚С™Р В Р’Вµ Р РЋР С“Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°Р В РЎвЂќР РЋР С“Р В РЎвЂР РЋР С“." };
     }
     const index = Number(match[1]);
     const boundedIndex = Number.isFinite(index) ? Math.max(0, Math.min(index, source.length)) : 0;
@@ -1734,14 +1222,14 @@ function parseJsonConfig(rawText) {
     const column = boundedIndex - (before.lastIndexOf("\n") + 1) + 1;
     return {
       ok: false,
-      message: `Некорректный JSON: ошибка на строке ${line}, позиция ${column}.`,
+      message: `Р В РЎСљР В Р’ВµР В РЎвЂќР В РЎвЂўР РЋР вЂљР РЋР вЂљР В Р’ВµР В РЎвЂќР РЋРІР‚С™Р В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ JSON: Р В РЎвЂўР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В Р’В° Р В Р вЂ¦Р В Р’В° Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В Р’Вµ ${line}, Р В РЎвЂ”Р В РЎвЂўР В Р’В·Р В РЎвЂР РЋРІР‚В Р В РЎвЂР РЋР РЏ ${column}.`,
     };
   }
 }
 
 function resetCatalogModalState() {
   pendingCatalogContext = null;
-  if (catalogModalTitle) catalogModalTitle.textContent = "Редактирование каталога";
+  if (catalogModalTitle) catalogModalTitle.textContent = "Р В Р’В Р В Р’ВµР В РўвЂР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ Р В РЎвЂќР В Р’В°Р РЋРІР‚С™Р В Р’В°Р В Р’В»Р В РЎвЂўР В РЎвЂ“Р В Р’В°";
   if (catalogTitleInput) {
     catalogTitleInput.value = "";
     catalogTitleInput.disabled = false;
@@ -1754,14 +1242,14 @@ function resetCatalogModalState() {
     catalogJsonError.textContent = "";
     catalogJsonError.hidden = true;
   }
-  if (catalogPublishedHost) catalogPublishedHost.textContent = "—";
-  if (catalogDraftHost) catalogDraftHost.textContent = "—";
+  if (catalogPublishedHost) catalogPublishedHost.textContent = "Р Р†Р вЂљРІР‚Сњ";
+  if (catalogDraftHost) catalogDraftHost.textContent = "Р Р†Р вЂљРІР‚Сњ";
   if (catalogSaveButton) {
     catalogSaveButton.hidden = false;
     catalogSaveButton.disabled = false;
-    catalogSaveButton.textContent = "Сохранить";
+    catalogSaveButton.textContent = "Р В Р Р‹Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰";
   }
-  if (catalogCancelButton) catalogCancelButton.textContent = "Закрыть";
+  if (catalogCancelButton) catalogCancelButton.textContent = "Р В РІР‚вЂќР В Р’В°Р В РЎвЂќР РЋР вЂљР РЋРІР‚в„–Р РЋРІР‚С™Р РЋР Р‰";
   setStateIdle(catalogModalErrors);
 }
 
@@ -1789,8 +1277,8 @@ function openCatalogModal(config) {
     {};
 
   if (catalogModalTitle) {
-    const baseTitle = mode === "view" ? "Просмотр элемента" : (config?.isCreate ? "Создание элемента" : "Редактирование элемента");
-    catalogModalTitle.textContent = `${baseTitle}: ${String(item.title || "").trim() || "без названия"}`;
+    const baseTitle = mode === "view" ? "Р В РЎСџР РЋР вЂљР В РЎвЂўР РЋР С“Р В РЎВР В РЎвЂўР РЋРІР‚С™Р РЋР вЂљ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°" : (config?.isCreate ? "Р В Р Р‹Р В РЎвЂўР В Р’В·Р В РўвЂР В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°" : "Р В Р’В Р В Р’ВµР В РўвЂР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°");
+    catalogModalTitle.textContent = `${baseTitle}: ${String(item.title || "").trim() || "Р В Р’В±Р В Р’ВµР В Р’В· Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ"}`;
   }
   if (catalogTitleInput) {
     catalogTitleInput.value = String(item.title || "");
@@ -1802,12 +1290,12 @@ function openCatalogModal(config) {
   }
   if (catalogPublishedHost) {
     catalogPublishedHost.textContent = formatJsonForDisplay(
-      extractVersionPayload(publishedVersion) ?? "Опубликованная версия отсутствует."
+      extractVersionPayload(publishedVersion) ?? "Р В РЎвЂєР В РЎвЂ”Р РЋРЎвЂњР В Р’В±Р В Р’В»Р В РЎвЂР В РЎвЂќР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р В Р’В°Р РЋР РЏ Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋР С“Р В РЎвЂР РЋР РЏ Р В РЎвЂўР РЋРІР‚С™Р РЋР С“Р РЋРЎвЂњР РЋРІР‚С™Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р РЋРЎвЂњР В Р’ВµР РЋРІР‚С™."
     );
   }
   if (catalogDraftHost) {
     catalogDraftHost.textContent = formatJsonForDisplay(
-      extractVersionPayload(draftVersion) ?? "Черновик отсутствует."
+      extractVersionPayload(draftVersion) ?? "Р В Р’В§Р В Р’ВµР РЋР вЂљР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂР В РЎвЂќ Р В РЎвЂўР РЋРІР‚С™Р РЋР С“Р РЋРЎвЂњР РЋРІР‚С™Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р РЋРЎвЂњР В Р’ВµР РЋРІР‚С™."
     );
   }
   if (catalogSaveButton) {
@@ -1815,7 +1303,7 @@ function openCatalogModal(config) {
     catalogSaveButton.disabled = false;
   }
   if (catalogCancelButton) {
-    catalogCancelButton.textContent = mode === "view" ? "Закрыть" : "Отмена";
+    catalogCancelButton.textContent = mode === "view" ? "Р В РІР‚вЂќР В Р’В°Р В РЎвЂќР РЋР вЂљР РЋРІР‚в„–Р РЋРІР‚С™Р РЋР Р‰" : "Р В РЎвЂєР РЋРІР‚С™Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В°";
   }
   catalogModal.open();
 }
@@ -1828,7 +1316,7 @@ async function submitCatalogModal() {
   const title = String(catalogTitleInput?.value || "").trim();
   const rawJson = String(catalogJsonInput?.value || "").trim();
   if (!title) {
-    setStateError(catalogModalErrors, "Укажите название элемента.");
+    setStateError(catalogModalErrors, "Р В Р в‚¬Р В РЎвЂќР В Р’В°Р В Р’В¶Р В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°.");
     return;
   }
   const parsed = parseJsonConfig(rawJson || "{}");
@@ -1858,15 +1346,15 @@ async function submitCatalogModal() {
     const response = await apiFetch(url, { method, body });
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(catalogModalErrors, formatHttpError(response, payload, "Не удалось сохранить элемент."));
+      setStateError(catalogModalErrors, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™."));
       if (catalogSaveButton) catalogSaveButton.disabled = false;
       return;
     }
-    showMessage(isCreate ? "Элемент создан." : "Элемент обновлен.");
+    showMessage(isCreate ? "Р В Р’В­Р В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™ Р РЋР С“Р В РЎвЂўР В Р’В·Р В РўвЂР В Р’В°Р В Р вЂ¦." : "Р В Р’В­Р В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™ Р В РЎвЂўР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦.");
     closeCatalogModal();
     await loadCatalog(activeCatalogEntity);
   } catch (error) {
-    setStateError(catalogModalErrors, error?.message || "Не удалось сохранить элемент.");
+    setStateError(catalogModalErrors, error?.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™.");
     if (catalogSaveButton) catalogSaveButton.disabled = false;
   }
 }
@@ -1898,7 +1386,7 @@ function setCollapsibleExpanded(button, expanded, state = null) {
   }
 
   button.setAttribute("aria-expanded", expanded ? "true" : "false");
-  button.textContent = expanded ? "Скрыть" : "Показать";
+  button.textContent = expanded ? "Р В Р Р‹Р В РЎвЂќР РЋР вЂљР РЋРІР‚в„–Р РЋРІР‚С™Р РЋР Р‰" : "Р В РЎСџР В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰";
   content.hidden = !expanded;
   section.dataset.collapsibleOpen = expanded ? "true" : "false";
 
@@ -1937,42 +1425,42 @@ function initCollapsibles() {
 function describeApiPath(path) {
   const normalized = String(path || "").trim();
   if (!normalized) {
-    return "Системный запрос без указанного пути.";
+    return "Р В Р Р‹Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В Р’ВµР В РЎВР В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР РЋР С“ Р В Р’В±Р В Р’ВµР В Р’В· Р РЋРЎвЂњР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р В РЎвЂўР В РЎвЂ“Р В РЎвЂў Р В РЎвЂ”Р РЋРЎвЂњР РЋРІР‚С™Р В РЎвЂ.";
   }
 
   const patterns = [
-    [/^\/api\/admin\/overview$/, "Загрузка всей админ-панели: сводка, пользователи, события и статистика."],
-    [/^\/api\/admin\/users\.csv$/, "Выгрузка CSV со списком пользователей по текущим фильтрам."],
-    [/^\/api\/admin\/events\.csv$/, "Выгрузка CSV со списком событий по текущим фильтрам."],
-    [/^\/api\/admin\/users\/[^/]+\/verify-email$/, "Администратор вручную подтверждает email выбранного пользователя."],
-    [/^\/api\/admin\/users\/[^/]+\/block$/, "Администратор блокирует доступ пользователя к аккаунту."],
-    [/^\/api\/admin\/users\/[^/]+\/unblock$/, "Администратор снимает блокировку и возвращает доступ к аккаунту."],
-    [/^\/api\/admin\/users\/[^/]+\/grant-tester$/, "Администратор выдает пользователю статус тестера."],
-    [/^\/api\/admin\/users\/[^/]+\/revoke-tester$/, "Администратор снимает у пользователя статус тестера."],
-    [/^\/api\/admin\/users\/[^/]+\/grant-gka$/, "Администратор присваивает пользователю тип ГКА-ЗГКА."],
-    [/^\/api\/admin\/users\/[^/]+\/revoke-gka$/, "Администратор снимает у пользователя тип ГКА-ЗГКА."],
-    [/^\/api\/admin\/users\/[^/]+\/email$/, "Администратор вручную меняет email пользователя."],
-    [/^\/api\/admin\/users\/[^/]+\/reset-password$/, "Администратор вручную задает новый пароль пользователю."],
-    [/^\/api\/admin\/users\/[^/]+\/deactivate$/, "Администратор мягко деактивирует аккаунт пользователя."],
-    [/^\/api\/admin\/users\/[^/]+\/reactivate$/, "Администратор снимает деактивацию аккаунта."],
-    [/^\/api\/admin\/users\/[^/]+\/daily-quota$/, "Администратор задает суточный лимит API для пользователя."],
-    [/^\/api\/admin\/users\/bulk-actions$/, "Администратор запускает массовую операцию по выбранным пользователям."],
-    [/^\/api\/admin\/tasks\/[^/]+$/, "Проверка статуса фоновой задачи админ-операций."],
-    [/^\/api\/complaint-draft$/, "Сохранение, загрузка или очистка черновика жалобы пользователя."],
-    [/^\/api\/generate$/, "Генерация итоговой жалобы по заполненной форме."],
-    [/^\/api\/generate-rehab$/, "Генерация заявления на реабилитацию."],
-    [/^\/api\/ai\/suggest$/, "AI улучшает и переписывает описание жалобы."],
-    [/^\/api\/ai\/extract-principal$/, "AI распознает данные доверителя с изображения документа."],
-    [/^\/api\/auth\/login$/, "Вход пользователя в аккаунт."],
-    [/^\/api\/auth\/register$/, "Регистрация нового аккаунта."],
-    [/^\/api\/auth\/logout$/, "Выход пользователя из аккаунта."],
-    [/^\/api\/auth\/forgot-password$/, "Запуск восстановления пароля."],
-    [/^\/api\/auth\/reset-password$/, "Сброс пароля по токену восстановления."],
-    [/^\/api\/profile$/, "Загрузка или сохранение данных профиля пользователя."],
-    [/^\/api\/exam-import\/sync$/, "Импорт новых ответов на экзамены из Google Sheets."],
-    [/^\/api\/exam-import\/score$/, "Массовая проверка импортированных экзаменационных ответов."],
-    [/^\/api\/exam-import\/rows\/\d+$/, "Просмотр деталей по одной импортированной строке экзамена."],
-    [/^\/api\/exam-import\/rows\/\d+\/score$/, "Проверка и оценка одной конкретной строки экзамена."],
+    [/^\/api\/admin\/overview$/, "Р В РІР‚вЂќР В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂќР В Р’В° Р В Р вЂ Р РЋР С“Р В Р’ВµР В РІвЂћвЂ“ Р В Р’В°Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦-Р В РЎвЂ”Р В Р’В°Р В Р вЂ¦Р В Р’ВµР В Р’В»Р В РЎвЂ: Р РЋР С“Р В Р вЂ Р В РЎвЂўР В РўвЂР В РЎвЂќР В Р’В°, Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р В РЎвЂ, Р РЋР С“Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚С™Р В РЎвЂР РЋР РЏ Р В РЎвЂ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂР В РЎвЂќР В Р’В°."],
+    [/^\/api\/admin\/users\.csv$/, "Р В РІР‚в„ўР РЋРІР‚в„–Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂќР В Р’В° CSV Р РЋР С“Р В РЎвЂў Р РЋР С“Р В РЎвЂ”Р В РЎвЂР РЋР С“Р В РЎвЂќР В РЎвЂўР В РЎВ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р В Р’ВµР В РІвЂћвЂ“ Р В РЎвЂ”Р В РЎвЂў Р РЋРІР‚С™Р В Р’ВµР В РЎвЂќР РЋРЎвЂњР РЋРІР‚В°Р В РЎвЂР В РЎВ Р РЋРІР‚С›Р В РЎвЂР В Р’В»Р РЋР Р‰Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р В РЎВ."],
+    [/^\/api\/admin\/events\.csv$/, "Р В РІР‚в„ўР РЋРІР‚в„–Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂќР В Р’В° CSV Р РЋР С“Р В РЎвЂў Р РЋР С“Р В РЎвЂ”Р В РЎвЂР РЋР С“Р В РЎвЂќР В РЎвЂўР В РЎВ Р РЋР С“Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚С™Р В РЎвЂР В РІвЂћвЂ“ Р В РЎвЂ”Р В РЎвЂў Р РЋРІР‚С™Р В Р’ВµР В РЎвЂќР РЋРЎвЂњР РЋРІР‚В°Р В РЎвЂР В РЎВ Р РЋРІР‚С›Р В РЎвЂР В Р’В»Р РЋР Р‰Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р В РЎВ."],
+    [/^\/api\/admin\/users\/[^/]+\/verify-email$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р вЂ Р РЋР вЂљР РЋРЎвЂњР РЋРІР‚РЋР В Р вЂ¦Р РЋРЎвЂњР РЋР вЂ№ Р В РЎвЂ”Р В РЎвЂўР В РўвЂР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋР вЂљР В Р’В¶Р В РўвЂР В Р’В°Р В Р’ВµР РЋРІР‚С™ email Р В Р вЂ Р РЋРІР‚в„–Р В Р’В±Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р В РЎвЂўР В РЎвЂ“Р В РЎвЂў Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ."],
+    [/^\/api\/admin\/users\/[^/]+\/block$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂР РЋР вЂљР РЋРЎвЂњР В Р’ВµР РЋРІР‚С™ Р В РўвЂР В РЎвЂўР РЋР С“Р РЋРІР‚С™Р РЋРЎвЂњР В РЎвЂ” Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ Р В РЎвЂќ Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™Р РЋРЎвЂњ."],
+    [/^\/api\/admin\/users\/[^/]+\/unblock$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР С“Р В Р вЂ¦Р В РЎвЂР В РЎВР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В РЎвЂќР РЋРЎвЂњ Р В РЎвЂ Р В Р вЂ Р В РЎвЂўР В Р’В·Р В Р вЂ Р РЋР вЂљР В Р’В°Р РЋРІР‚В°Р В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РўвЂР В РЎвЂўР РЋР С“Р РЋРІР‚С™Р РЋРЎвЂњР В РЎвЂ” Р В РЎвЂќ Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™Р РЋРЎвЂњ."],
+    [/^\/api\/admin\/users\/[^/]+\/grant-tester$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р вЂ Р РЋРІР‚в„–Р В РўвЂР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР вЂ№ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“ Р РЋРІР‚С™Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљР В Р’В°."],
+    [/^\/api\/admin\/users\/[^/]+\/revoke-tester$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР С“Р В Р вЂ¦Р В РЎвЂР В РЎВР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р РЋРЎвЂњ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“ Р РЋРІР‚С™Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљР В Р’В°."],
+    [/^\/api\/admin\/users\/[^/]+\/grant-gka$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР РЋР С“Р В Р вЂ Р В Р’В°Р В РЎвЂР В Р вЂ Р В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР вЂ№ Р РЋРІР‚С™Р В РЎвЂР В РЎвЂ” Р В РІР‚СљР В РЎв„ўР В РЎвЂ™-Р В РІР‚вЂќР В РІР‚СљР В РЎв„ўР В РЎвЂ™."],
+    [/^\/api\/admin\/users\/[^/]+\/revoke-gka$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР С“Р В Р вЂ¦Р В РЎвЂР В РЎВР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р РЋРЎвЂњ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ Р РЋРІР‚С™Р В РЎвЂР В РЎвЂ” Р В РІР‚СљР В РЎв„ўР В РЎвЂ™-Р В РІР‚вЂќР В РІР‚СљР В РЎв„ўР В РЎвЂ™."],
+    [/^\/api\/admin\/users\/[^/]+\/email$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р вЂ Р РЋР вЂљР РЋРЎвЂњР РЋРІР‚РЋР В Р вЂ¦Р РЋРЎвЂњР РЋР вЂ№ Р В РЎВР В Р’ВµР В Р вЂ¦Р РЋР РЏР В Р’ВµР РЋРІР‚С™ email Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ."],
+    [/^\/api\/admin\/users\/[^/]+\/reset-password$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р вЂ Р РЋР вЂљР РЋРЎвЂњР РЋРІР‚РЋР В Р вЂ¦Р РЋРЎвЂњР РЋР вЂ№ Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В РЎвЂ”Р В Р’В°Р РЋР вЂљР В РЎвЂўР В Р’В»Р РЋР Р‰ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР вЂ№."],
+    [/^\/api\/admin\/users\/[^/]+\/deactivate$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В РЎВР РЋР РЏР В РЎвЂ“Р В РЎвЂќР В РЎвЂў Р В РўвЂР В Р’ВµР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В РЎвЂР РЋР вЂљР РЋРЎвЂњР В Р’ВµР РЋРІР‚С™ Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ."],
+    [/^\/api\/admin\/users\/[^/]+\/reactivate$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР С“Р В Р вЂ¦Р В РЎвЂР В РЎВР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РўвЂР В Р’ВµР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№ Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°."],
+    [/^\/api\/admin\/users\/[^/]+\/daily-quota$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р РЋР С“Р РЋРЎвЂњР РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В Р’В»Р В РЎвЂР В РЎВР В РЎвЂР РЋРІР‚С™ API Р В РўвЂР В Р’В»Р РЋР РЏ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ."],
+    [/^\/api\/admin\/users\/bulk-actions$/, "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р В РЎвЂќР В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РЎВР В Р’В°Р РЋР С“Р РЋР С“Р В РЎвЂўР В Р вЂ Р РЋРЎвЂњР РЋР вЂ№ Р В РЎвЂўР В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№ Р В РЎвЂ”Р В РЎвЂў Р В Р вЂ Р РЋРІР‚в„–Р В Р’В±Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В РЎВ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏР В РЎВ."],
+    [/^\/api\/admin\/tasks\/[^/]+$/, "Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В° Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“Р В Р’В° Р РЋРІР‚С›Р В РЎвЂўР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂўР В РІвЂћвЂ“ Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р РЋРІР‚РЋР В РЎвЂ Р В Р’В°Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦-Р В РЎвЂўР В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР В РІвЂћвЂ“."],
+    [/^\/api\/complaint-draft$/, "Р В Р Р‹Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р’Вµ, Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂќР В Р’В° Р В РЎвЂР В Р’В»Р В РЎвЂ Р В РЎвЂўР РЋРІР‚РЋР В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂќР В Р’В° Р РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂР В РЎвЂќР В Р’В° Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р РЋРІР‚в„– Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ."],
+    [/^\/api\/generate$/, "Р В РІР‚СљР В Р’ВµР В Р вЂ¦Р В Р’ВµР РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР РЏ Р В РЎвЂР РЋРІР‚С™Р В РЎвЂўР В РЎвЂ“Р В РЎвЂўР В Р вЂ Р В РЎвЂўР В РІвЂћвЂ“ Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р РЋРІР‚в„– Р В РЎвЂ”Р В РЎвЂў Р В Р’В·Р В Р’В°Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“ Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’Вµ."],
+    [/^\/api\/generate-rehab$/, "Р В РІР‚СљР В Р’ВµР В Р вЂ¦Р В Р’ВµР РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР РЏ Р В Р’В·Р В Р’В°Р РЋР РЏР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ Р В Р вЂ¦Р В Р’В° Р РЋР вЂљР В Р’ВµР В Р’В°Р В Р’В±Р В РЎвЂР В Р’В»Р В РЎвЂР РЋРІР‚С™Р В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№."],
+    [/^\/api\/ai\/suggest$/, "AI Р РЋРЎвЂњР В Р’В»Р РЋРЎвЂњР РЋРІР‚РЋР РЋРІвЂљВ¬Р В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РЎвЂ Р В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’ВµР В РЎвЂ”Р В РЎвЂР РЋР С“Р РЋРІР‚в„–Р В Р вЂ Р В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РЎвЂўР В РЎвЂ”Р В РЎвЂР РЋР С“Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–."],
+    [/^\/api\/ai\/extract-principal$/, "AI Р РЋР вЂљР В Р’В°Р РЋР С“Р В РЎвЂ”Р В РЎвЂўР В Р’В·Р В Р вЂ¦Р В Р’В°Р В Р’ВµР РЋРІР‚С™ Р В РўвЂР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р В РўвЂР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ Р РЋР С“ Р В РЎвЂР В Р’В·Р В РЎвЂўР В Р’В±Р РЋР вЂљР В Р’В°Р В Р’В¶Р В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ Р В РўвЂР В РЎвЂўР В РЎвЂќР РЋРЎвЂњР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°."],
+    [/^\/api\/auth\/login$/, "Р В РІР‚в„ўР РЋРІР‚В¦Р В РЎвЂўР В РўвЂ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ Р В Р вЂ  Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™."],
+    [/^\/api\/auth\/register$/, "Р В Р’В Р В Р’ВµР В РЎвЂ“Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР РЏ Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂўР В РЎвЂ“Р В РЎвЂў Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°."],
+    [/^\/api\/auth\/logout$/, "Р В РІР‚в„ўР РЋРІР‚в„–Р РЋРІР‚В¦Р В РЎвЂўР В РўвЂ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ Р В РЎвЂР В Р’В· Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°."],
+    [/^\/api\/auth\/forgot-password$/, "Р В РІР‚вЂќР В Р’В°Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р В РЎвЂќ Р В Р вЂ Р В РЎвЂўР РЋР С“Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ Р В РЎвЂ”Р В Р’В°Р РЋР вЂљР В РЎвЂўР В Р’В»Р РЋР РЏ."],
+    [/^\/api\/auth\/reset-password$/, "Р В Р Р‹Р В Р’В±Р РЋР вЂљР В РЎвЂўР РЋР С“ Р В РЎвЂ”Р В Р’В°Р РЋР вЂљР В РЎвЂўР В Р’В»Р РЋР РЏ Р В РЎвЂ”Р В РЎвЂў Р РЋРІР‚С™Р В РЎвЂўР В РЎвЂќР В Р’ВµР В Р вЂ¦Р РЋРЎвЂњ Р В Р вЂ Р В РЎвЂўР РЋР С“Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ."],
+    [/^\/api\/profile$/, "Р В РІР‚вЂќР В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂќР В Р’В° Р В РЎвЂР В Р’В»Р В РЎвЂ Р РЋР С“Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р’Вµ Р В РўвЂР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р РЋРІР‚В¦ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР РЋРІР‚С›Р В РЎвЂР В Р’В»Р РЋР РЏ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ."],
+    [/^\/api\/exam-import\/sync$/, "Р В Р’ВР В РЎВР В РЎвЂ”Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™ Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р РЋРІР‚в„–Р РЋРІР‚В¦ Р В РЎвЂўР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р В РЎвЂўР В Р вЂ  Р В Р вЂ¦Р В Р’В° Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚в„– Р В РЎвЂР В Р’В· Google Sheets."],
+    [/^\/api\/exam-import\/score$/, "Р В РЎС™Р В Р’В°Р РЋР С“Р РЋР С“Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋР РЏ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В° Р В РЎвЂР В РЎВР В РЎвЂ”Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р РЋРІР‚В¦ Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В°Р РЋРІР‚В Р В РЎвЂР В РЎвЂўР В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р РЋРІР‚В¦ Р В РЎвЂўР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р В РЎвЂўР В Р вЂ ."],
+    [/^\/api\/exam-import\/rows\/\d+$/, "Р В РЎСџР РЋР вЂљР В РЎвЂўР РЋР С“Р В РЎВР В РЎвЂўР РЋРІР‚С™Р РЋР вЂљ Р В РўвЂР В Р’ВµР РЋРІР‚С™Р В Р’В°Р В Р’В»Р В Р’ВµР В РІвЂћвЂ“ Р В РЎвЂ”Р В РЎвЂў Р В РЎвЂўР В РўвЂР В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“ Р В РЎвЂР В РЎВР В РЎвЂ”Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“ Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В Р’Вµ Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В°."],
+    [/^\/api\/exam-import\/rows\/\d+\/score$/, "Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В° Р В РЎвЂ Р В РЎвЂўР РЋРІР‚В Р В Р’ВµР В Р вЂ¦Р В РЎвЂќР В Р’В° Р В РЎвЂўР В РўвЂР В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“ Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р В РЎвЂќР РЋР вЂљР В Р’ВµР РЋРІР‚С™Р В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“ Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В РЎвЂ Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В°."],
   ];
 
   for (const [pattern, description] of patterns) {
@@ -1981,37 +1469,37 @@ function describeApiPath(path) {
     }
   }
 
-  return "Технический API-запрос. Для этого пути еще не добавлено человекочитаемое описание.";
+  return "Р В РЎС›Р В Р’ВµР РЋРІР‚В¦Р В Р вЂ¦Р В РЎвЂР РЋРІР‚РЋР В Р’ВµР РЋР С“Р В РЎвЂќР В РЎвЂР В РІвЂћвЂ“ API-Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР РЋР С“. Р В РІР‚СњР В Р’В»Р РЋР РЏ Р РЋР РЉР РЋРІР‚С™Р В РЎвЂўР В РЎвЂ“Р В РЎвЂў Р В РЎвЂ”Р РЋРЎвЂњР РЋРІР‚С™Р В РЎвЂ Р В Р’ВµР РЋРІР‚В°Р В Р’Вµ Р В Р вЂ¦Р В Р’Вµ Р В РўвЂР В РЎвЂўР В Р’В±Р В Р’В°Р В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В РЎвЂў Р РЋРІР‚РЋР В Р’ВµР В Р’В»Р В РЎвЂўР В Р вЂ Р В Р’ВµР В РЎвЂќР В РЎвЂўР РЋРІР‚РЋР В РЎвЂР РЋРІР‚С™Р В Р’В°Р В Р’ВµР В РЎВР В РЎвЂўР В Р’Вµ Р В РЎвЂўР В РЎвЂ”Р В РЎвЂР РЋР С“Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ.";
 }
 
 function describeEventType(eventType) {
   const normalized = String(eventType || "").trim().toLowerCase();
   const descriptions = {
-    api_request: "Обычный запрос к API приложения.",
-    complaint_generated: "Пользователь сгенерировал жалобу.",
-    rehab_generated: "Пользователь сгенерировал заявление на реабилитацию.",
-    complaint_draft_saved: "Пользователь сохранил черновик жалобы.",
-    complaint_draft_cleared: "Пользователь очистил черновик жалобы.",
-    ai_suggest: "AI обработал и улучшил текст жалобы.",
-    ai_extract_principal: "AI распознал данные с документа.",
-    ai_exam_scoring: "AI проверил экзаменационные ответы и вернул статистику по cache, эвристикам и LLM.",
-    exam_import_sync_error: "Импорт из Google Sheets завершился ошибкой.",
-    exam_import_score_failures: "Во время массовой проверки экзаменов часть строк не обработалась.",
-    exam_import_row_score_error: "Проверка одной строки экзамена завершилась ошибкой.",
-    admin_verify_email: "Администратор подтвердил email пользователя.",
-    admin_block_user: "Администратор заблокировал пользователя.",
-    admin_unblock_user: "Администратор разблокировал пользователя.",
-    admin_grant_tester: "Администратор выдал статус тестера.",
-    admin_revoke_tester: "Администратор снял статус тестера.",
-    admin_grant_gka: "Администратор присвоил тип ГКА-ЗГКА.",
-    admin_revoke_gka: "Администратор снял тип ГКА-ЗГКА.",
-    admin_update_email: "Администратор изменил email пользователя.",
-    admin_reset_password: "Администратор задал новый пароль пользователю.",
-    admin_deactivate_user: "Администратор деактивировал аккаунт пользователя.",
-    admin_reactivate_user: "Администратор снял деактивацию аккаунта.",
-    admin_set_daily_quota: "Администратор обновил суточную квоту API пользователя.",
+    api_request: "Р В РЎвЂєР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚РЋР В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР РЋР С“ Р В РЎвЂќ API Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В Р’В»Р В РЎвЂўР В Р’В¶Р В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ.",
+    complaint_generated: "Р В РЎСџР В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰ Р РЋР С“Р В РЎвЂ“Р В Р’ВµР В Р вЂ¦Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р’В» Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р РЋРЎвЂњ.",
+    rehab_generated: "Р В РЎСџР В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰ Р РЋР С“Р В РЎвЂ“Р В Р’ВµР В Р вЂ¦Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р’В» Р В Р’В·Р В Р’В°Р РЋР РЏР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р’Вµ Р В Р вЂ¦Р В Р’В° Р РЋР вЂљР В Р’ВµР В Р’В°Р В Р’В±Р В РЎвЂР В Р’В»Р В РЎвЂР РЋРІР‚С™Р В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№.",
+    complaint_draft_saved: "Р В РЎСџР В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰ Р РЋР С“Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’В» Р РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂР В РЎвЂќ Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–.",
+    complaint_draft_cleared: "Р В РЎСџР В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰ Р В РЎвЂўР РЋРІР‚РЋР В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂР В Р’В» Р РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂР В РЎвЂќ Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–.",
+    ai_suggest: "AI Р В РЎвЂўР В Р’В±Р РЋР вЂљР В Р’В°Р В Р’В±Р В РЎвЂўР РЋРІР‚С™Р В Р’В°Р В Р’В» Р В РЎвЂ Р РЋРЎвЂњР В Р’В»Р РЋРЎвЂњР РЋРІР‚РЋР РЋРІвЂљВ¬Р В РЎвЂР В Р’В» Р РЋРІР‚С™Р В Р’ВµР В РЎвЂќР РЋР С“Р РЋРІР‚С™ Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–.",
+    ai_extract_principal: "AI Р РЋР вЂљР В Р’В°Р РЋР С“Р В РЎвЂ”Р В РЎвЂўР В Р’В·Р В Р вЂ¦Р В Р’В°Р В Р’В» Р В РўвЂР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р РЋР С“ Р В РўвЂР В РЎвЂўР В РЎвЂќР РЋРЎвЂњР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°.",
+    ai_exam_scoring: "AI Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂР В Р’В» Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В°Р РЋРІР‚В Р В РЎвЂР В РЎвЂўР В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р В РЎвЂўР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р РЋРІР‚в„– Р В РЎвЂ Р В Р вЂ Р В Р’ВµР РЋР вЂљР В Р вЂ¦Р РЋРЎвЂњР В Р’В» Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂР В РЎвЂќР РЋРЎвЂњ Р В РЎвЂ”Р В РЎвЂў cache, Р РЋР РЉР В Р вЂ Р РЋР вЂљР В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂР В РЎвЂќР В Р’В°Р В РЎВ Р В РЎвЂ LLM.",
+    exam_import_sync_error: "Р В Р’ВР В РЎВР В РЎвЂ”Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™ Р В РЎвЂР В Р’В· Google Sheets Р В Р’В·Р В Р’В°Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРІвЂљВ¬Р В РЎвЂР В Р’В»Р РЋР С“Р РЋР РЏ Р В РЎвЂўР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В РЎвЂўР В РІвЂћвЂ“.",
+    exam_import_score_failures: "Р В РІР‚в„ўР В РЎвЂў Р В Р вЂ Р РЋР вЂљР В Р’ВµР В РЎВР РЋР РЏ Р В РЎВР В Р’В°Р РЋР С“Р РЋР С“Р В РЎвЂўР В Р вЂ Р В РЎвЂўР В РІвЂћвЂ“ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В РЎвЂ Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р В РЎвЂўР В Р вЂ  Р РЋРІР‚РЋР В Р’В°Р РЋР С“Р РЋРІР‚С™Р РЋР Р‰ Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќ Р В Р вЂ¦Р В Р’Вµ Р В РЎвЂўР В Р’В±Р РЋР вЂљР В Р’В°Р В Р’В±Р В РЎвЂўР РЋРІР‚С™Р В Р’В°Р В Р’В»Р В Р’В°Р РЋР С“Р РЋР Р‰.",
+    exam_import_row_score_error: "Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В° Р В РЎвЂўР В РўвЂР В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“ Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В РЎвЂ Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В° Р В Р’В·Р В Р’В°Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРІвЂљВ¬Р В РЎвЂР В Р’В»Р В Р’В°Р РЋР С“Р РЋР Р‰ Р В РЎвЂўР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В РЎвЂўР В РІвЂћвЂ“.",
+    admin_verify_email: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В РЎвЂ”Р В РЎвЂўР В РўвЂР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋР вЂљР В РўвЂР В РЎвЂР В Р’В» email Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ.",
+    admin_block_user: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р’В·Р В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р’В» Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ.",
+    admin_unblock_user: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР вЂљР В Р’В°Р В Р’В·Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р’В» Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ.",
+    admin_grant_tester: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р вЂ Р РЋРІР‚в„–Р В РўвЂР В Р’В°Р В Р’В» Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“ Р РЋРІР‚С™Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљР В Р’В°.",
+    admin_revoke_tester: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР С“Р В Р вЂ¦Р РЋР РЏР В Р’В» Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“ Р РЋРІР‚С™Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљР В Р’В°.",
+    admin_grant_gka: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР РЋР С“Р В Р вЂ Р В РЎвЂўР В РЎвЂР В Р’В» Р РЋРІР‚С™Р В РЎвЂР В РЎвЂ” Р В РІР‚СљР В РЎв„ўР В РЎвЂ™-Р В РІР‚вЂќР В РІР‚СљР В РЎв„ўР В РЎвЂ™.",
+    admin_revoke_gka: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР С“Р В Р вЂ¦Р РЋР РЏР В Р’В» Р РЋРІР‚С™Р В РЎвЂР В РЎвЂ” Р В РІР‚СљР В РЎв„ўР В РЎвЂ™-Р В РІР‚вЂќР В РІР‚СљР В РЎв„ўР В РЎвЂ™.",
+    admin_update_email: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В РЎвЂР В Р’В·Р В РЎВР В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р’В» email Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ.",
+    admin_reset_password: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р В Р’В» Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р РЋРІР‚в„–Р В РІвЂћвЂ“ Р В РЎвЂ”Р В Р’В°Р РЋР вЂљР В РЎвЂўР В Р’В»Р РЋР Р‰ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР вЂ№.",
+    admin_deactivate_user: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В РўвЂР В Р’ВµР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р’В» Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ.",
+    admin_reactivate_user: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р РЋР С“Р В Р вЂ¦Р РЋР РЏР В Р’В» Р В РўвЂР В Р’ВµР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№ Р В Р’В°Р В РЎвЂќР В РЎвЂќР В Р’В°Р РЋРЎвЂњР В Р вЂ¦Р РЋРІР‚С™Р В Р’В°.",
+    admin_set_daily_quota: "Р В РЎвЂ™Р В РўвЂР В РЎВР В РЎвЂР В Р вЂ¦Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљ Р В РЎвЂўР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В РЎвЂР В Р’В» Р РЋР С“Р РЋРЎвЂњР РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р РЋРЎвЂњР РЋР вЂ№ Р В РЎвЂќР В Р вЂ Р В РЎвЂўР РЋРІР‚С™Р РЋРЎвЂњ API Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ.",
   };
-  return descriptions[normalized] || "Системное событие без дополнительного описания.";
+  return descriptions[normalized] || "Р В Р Р‹Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В Р’ВµР В РЎВР В Р вЂ¦Р В РЎвЂўР В Р’Вµ Р РЋР С“Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚С™Р В РЎвЂР В Р’Вµ Р В Р’В±Р В Р’ВµР В Р’В· Р В РўвЂР В РЎвЂўР В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰Р В Р вЂ¦Р В РЎвЂўР В РЎвЂ“Р В РЎвЂў Р В РЎвЂўР В РЎвЂ”Р В РЎвЂР РЋР С“Р В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ.";
 }
 
 function showMessage(text) {
@@ -2022,59 +1510,41 @@ function clearMessage() {
   setStateIdle(messageHost);
 }
 
+const adminActions = createAdminActionsController({
+  actionConfirmButton,
+  actionEmailField,
+  actionEmailInput,
+  actionModal,
+  actionModalDescription,
+  actionModalErrors,
+  actionModalTitle,
+  actionPasswordField,
+  actionPasswordInput,
+  actionQuotaField,
+  actionQuotaInput,
+  actionReasonField,
+  actionReasonInput,
+  apiFetch,
+  clearMessage,
+  errorsHost,
+  formatHttpError,
+  loadAdminOverview: (...args) => loadAdminOverview(...args),
+  parsePayload,
+  setStateError,
+  setStateIdle,
+  showMessage,
+});
+
 function resetActionModalFields() {
-  pendingAction = null;
-  if (actionReasonInput) actionReasonInput.value = "";
-  if (actionEmailInput) actionEmailInput.value = "";
-  if (actionPasswordInput) actionPasswordInput.value = "";
-  if (actionQuotaInput) actionQuotaInput.value = "";
-  if (actionReasonField) actionReasonField.hidden = true;
-  if (actionEmailField) actionEmailField.hidden = true;
-  if (actionPasswordField) actionPasswordField.hidden = true;
-  if (actionQuotaField) actionQuotaField.hidden = true;
-  if (actionConfirmButton) actionConfirmButton.textContent = "Подтвердить";
-  setStateIdle(actionModalErrors);
+  adminActions.reset();
 }
 
 function openActionModal(config) {
-  pendingAction = config;
-  if (actionModalTitle) {
-    actionModalTitle.textContent = config.title || "Подтверждение действия";
-  }
-  if (actionModalDescription) {
-    actionModalDescription.textContent = config.description || "";
-  }
-  if (actionConfirmButton) {
-    actionConfirmButton.textContent = config.confirmLabel || "Подтвердить";
-  }
-  if (actionReasonField) {
-    actionReasonField.hidden = !config.askReason;
-  }
-  if (actionEmailField) {
-    actionEmailField.hidden = !config.askEmail;
-  }
-  if (actionPasswordField) {
-    actionPasswordField.hidden = !config.askPassword;
-  }
-  if (actionQuotaField) {
-    actionQuotaField.hidden = !config.askQuota;
-  }
-  if (actionEmailInput && config.defaultEmail) {
-    actionEmailInput.value = String(config.defaultEmail);
-  }
-  if (actionReasonInput && config.defaultReason) {
-    actionReasonInput.value = String(config.defaultReason);
-  }
-  if (actionQuotaInput && config.defaultQuota !== undefined) {
-    actionQuotaInput.value = String(config.defaultQuota);
-  }
-  setStateIdle(actionModalErrors);
-  actionModal.open();
+  adminActions.open(config);
 }
 
 function closeActionModal() {
-  actionModal.close();
-  resetActionModalFields();
+  adminActions.close();
 }
 
 function formatNumber(value) {
@@ -2109,16 +1579,16 @@ function renderBandBadge(band) {
 
 function riskLabel(user) {
   const riskScore = Number(user.risk_score || 0);
-  if (riskScore >= 4) return renderBadge("Риск: высокий", "danger");
-  if (riskScore >= 2) return renderBadge("Риск: средний", "info");
-  return renderBadge("Риск: низкий", "success-soft");
+  if (riskScore >= 4) return renderBadge("Р В Р’В Р В РЎвЂР РЋР С“Р В РЎвЂќ: Р В Р вЂ Р РЋРІР‚в„–Р РЋР С“Р В РЎвЂўР В РЎвЂќР В РЎвЂР В РІвЂћвЂ“", "danger");
+  if (riskScore >= 2) return renderBadge("Р В Р’В Р В РЎвЂР РЋР С“Р В РЎвЂќ: Р РЋР С“Р РЋР вЂљР В Р’ВµР В РўвЂР В Р вЂ¦Р В РЎвЂР В РІвЂћвЂ“", "info");
+  return renderBadge("Р В Р’В Р В РЎвЂР РЋР С“Р В РЎвЂќ: Р В Р вЂ¦Р В РЎвЂР В Р’В·Р В РЎвЂќР В РЎвЂР В РІвЂћвЂ“", "success-soft");
 }
 
 function renderFilterChip(label, key) {
   return `
     <button type="button" class="admin-filter-chip" data-clear-filter="${escapeHtml(key)}">
       <span>${escapeHtml(label)}</span>
-      <span class="admin-filter-chip__close" aria-hidden="true">×</span>
+      <span class="admin-filter-chip__close" aria-hidden="true">Р вЂњРІР‚вЂќ</span>
     </button>
   `;
 }
@@ -2142,7 +1612,7 @@ function renderLoadingState(host, options = {}) {
 
   host.innerHTML = `
     <div class="admin-loading" aria-live="polite" aria-busy="true">
-      <p class="legal-section__description">Загружаем данные...</p>
+      <p class="legal-section__description">Р В РІР‚вЂќР В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В¶Р В Р’В°Р В Р’ВµР В РЎВ Р В РўвЂР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ...</p>
       ${lines}
     </div>
   `;
@@ -2175,136 +1645,32 @@ function renderTotals(totals) {
   if (!totalsHost) {
     return;
   }
-  const items = [
-    ["Пользователи", totals.users_total, "Всего аккаунтов в системе"],
-    ["API-запросы", totals.api_requests_total, "Накопленная активность API"],
-    ["Жалобы", totals.complaints_total, "Сгенерированные жалобы"],
-    ["Реабилитации", totals.rehabs_total, "Сгенерированные реабилитации"],
-    ["AI suggest", totals.ai_suggest_total, "Текстовые AI-операции"],
-    ["AI OCR", totals.ai_ocr_total, "Распознавание документов"],
-    ["AI-проверки экзаменов", totals.ai_exam_scoring_total || 0, "Сколько раз запускалась AI-проверка экзаменов"],
-    ["Строки экзамена", totals.ai_exam_scoring_rows || 0, "Сколько строк экзамена реально проверено"],
-    ["Ответы экзамена", totals.ai_exam_scoring_answers || 0, "Сколько ответов прошло через оценивание"],
-    ["Без LLM", totals.ai_exam_heuristic_total || 0, "Ответы, закрытые без обращения к модели"],
-    ["Попадания в кэш", totals.ai_exam_cache_total || 0, "Ответы, взятые из кэша"],
-    ["Ответы через LLM", totals.ai_exam_llm_total || 0, "Ответы, реально ушедшие в модель"],
-    ["Вызовы LLM", totals.ai_exam_llm_calls_total || 0, "Сколько batch-вызовов сделали к модели"],
-    ["Ошибки экзамена", totals.ai_exam_failure_total || 0, "Ошибки оценивания экзаменов и импорта"],
-    ["Входящий трафик", `${formatNumber(totals.request_bytes_total)} B`, "Суммарный размер запросов"],
-    ["Исходящий трафик", `${formatNumber(totals.response_bytes_total)} B`, "Суммарный размер ответов"],
-    ["Ресурсные единицы", formatNumber(totals.resource_units_total), "Условная нагрузка"],
-    ["AI cost (USD)", `$${formatUsd(totals.ai_estimated_cost_total_usd || 0)}`, `Оценка по ${formatNumber(totals.ai_estimated_cost_samples || 0)} вызовам`],
-    ["AI токены (in/out/total)", `${formatNumber(totals.ai_input_tokens_total || 0)} / ${formatNumber(totals.ai_output_tokens_total || 0)} / ${formatNumber(totals.ai_total_tokens_total || 0)}`, `Сумма по ${formatNumber(totals.ai_generation_total || 0)} генерациям`],
-    ["Средний API ответ", `${formatNumber(totals.avg_api_duration_ms)} ms`, "Средняя длительность API"],
-    ["События за 24 часа", totals.events_last_24h, "Последняя суточная активность"],
-  ];
-
-  totalsHost.innerHTML = items
-    .map(
-      ([label, value, hint]) => `
-        <article class="legal-subcard admin-total-card">
-          <div class="legal-field__label">${escapeHtml(label)}</div>
-          <div class="legal-section__title">${escapeHtml(String(value))}</div>
-          <p class="legal-section__description">${escapeHtml(hint)}</p>
-        </article>
-      `,
-    )
-    .join("");
+  totalsHost.innerHTML = renderTotalsMarkup(totals, {
+    escapeHtml,
+    formatNumber,
+    formatUsd,
+  });
 }
 
 function renderPerformance(payload) {
   if (!performanceHost) {
     return;
   }
-  const isCached = Boolean(payload?.cached);
-  const totals = {
-    ...(payload?.totals || {}),
-    total_requests: (payload?.totals || {}).total_requests ?? payload?.total_api_requests ?? 0,
-    failed_requests: (payload?.totals || {}).failed_requests ?? payload?.error_count ?? 0,
-  };
-  const latency = {
-    ...(payload?.latency || {}),
-    p95_ms: (payload?.latency || {}).p95_ms ?? payload?.p95_ms ?? "-",
-    p50_ms: (payload?.latency || {}).p50_ms ?? payload?.p50_ms ?? "-",
-  };
-  const rates = {
-    ...(payload?.rates || {}),
-    requests_per_second: (payload?.rates || {}).requests_per_second ?? payload?.throughput_rps ?? "-",
-  };
-  const top = Array.isArray(payload?.top_endpoints)
-    ? payload.top_endpoints
-    : Array.isArray(payload?.endpoint_overview)
-      ? payload.endpoint_overview
-      : [];
-  const snapshotAt = String(payload?.snapshot_at || payload?.generated_at || "-");
-
-  performanceHost.innerHTML = `
-    <article class="legal-status-card">
-      <span class="legal-status-card__label">Снимок</span>
-      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(snapshotAt)}</strong>
-      <span class="admin-user-cell__secondary">${renderBadge(isCached ? "cache" : "live", isCached ? "muted" : "success-soft")}</span>
-    </article>
-    <article class="legal-status-card">
-      <span class="legal-status-card__label">p95 / p50 (ms)</span>
-      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(latency.p95_ms ?? "—"))} / ${escapeHtml(String(latency.p50_ms ?? "—"))}</strong>
-      <span class="admin-user-cell__secondary">Ошибок: ${escapeHtml(String(totals.failed_requests ?? 0))} из ${escapeHtml(String(totals.total_requests ?? 0))}</span>
-    </article>
-    <article class="legal-status-card">
-      <span class="legal-status-card__label">RPS</span>
-      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(rates.requests_per_second ?? "—"))}</strong>
-      <span class="admin-user-cell__secondary">Окно: ${escapeHtml(String(payload?.window_minutes ?? "—"))} мин</span>
-    </article>
-    <article class="legal-status-card">
-      <span class="legal-status-card__label">Топ endpoint</span>
-      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(top[0]?.path || "—"))}</strong>
-      <span class="admin-user-cell__secondary">Запросов: ${escapeHtml(String(top[0]?.count || 0))}</span>
-    </article>
-  `;
+  performanceHost.innerHTML = renderPerformanceMarkup(payload, {
+    escapeHtml,
+    renderBadge,
+  });
 }
 
 function renderSynthetic(summary) {
   if (!syntheticHost) {
     return;
   }
-  const bySuite = summary?.by_suite || {};
-  const suites = ["smoke", "nightly", "load", "fault"];
-  const suiteDescriptions = {
-    smoke: "Быстрая проверка основных сценариев генерации, снапшотов, цитат и публикации.",
-    nightly: "Расширенный регрессионный прогон полного workflow, вложений, артефактов и rollback.",
-    load: "Нагрузочная проверка burst/sustained сценариев генерации, экспорта и content workflow.",
-    fault: "Проверка отказоустойчивости: retry, DLQ, idempotency, isolation и policy gates.",
-  };
-  const cards = suites.map((suite) => {
-    const row = bySuite[suite] || {};
-    const latest = String(row.latest_status || "unknown");
-    const tone = latest === "pass" ? "success-soft" : latest === "fail" ? "danger-soft" : "muted";
-    const isRunning = activeSyntheticSuite === suite;
-    return `
-      <article class="legal-status-card admin-synthetic-card">
-        <span class="legal-status-card__label">${escapeHtml(suite)}</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${renderBadge(latest, tone)}</strong>
-        <span class="admin-user-cell__secondary">runs: ${escapeHtml(String(row.runs_total || 0))}, failed: ${escapeHtml(String(row.failed_total || 0))}</span>
-        <span class="admin-user-cell__secondary admin-synthetic-card__description">${escapeHtml(suiteDescriptions[suite] || "")}</span>
-        <button type="button" class="ghost-button" data-synthetic-run="${suite}" ${isRunning ? "disabled" : ""}>${isRunning ? "Запуск..." : "Запустить"}</button>
-      </article>
-    `;
+  syntheticHost.innerHTML = renderSyntheticMarkup(summary, {
+    activeSyntheticSuite,
+    escapeHtml,
+    renderBadge,
   });
-  const failedRuns = Array.isArray(summary?.runs)
-    ? summary.runs.filter((item) => String(item?.status || "") !== "pass").slice(0, 5)
-    : [];
-  const failedHtml = failedRuns.length
-    ? `<div class="legal-table-wrap"><table class="legal-table"><thead><tr><th>Suite</th><th>Run</th><th>Status</th><th>When</th></tr></thead><tbody>
-      ${failedRuns
-        .map(
-          (item) => `<tr><td>${escapeHtml(String(item.suite || "-"))}</td><td>${escapeHtml(String(item.run_id || "-"))}</td><td>${escapeHtml(String(item.status || "-"))}</td><td>${escapeHtml(String(item.created_at || "-"))}</td></tr>`,
-        )
-        .join("")}
-    </tbody></table></div>`
-    : '<p class="legal-section__description">Падений synthetic suite не обнаружено.</p>';
-  syntheticHost.innerHTML = `
-    <div class="admin-performance-grid admin-synthetic-grid">${cards.join("")}</div>
-    ${failedHtml}
-  `;
 }
 
 async function runSyntheticSuite(suite) {
@@ -2326,13 +1692,13 @@ async function runSyntheticSuite(suite) {
     });
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, `Не удалось запустить synthetic suite ${normalizedSuite}.`));
+      setStateError(errorsHost, formatHttpError(response, payload, `Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р РЋРІР‚С™Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ synthetic suite ${normalizedSuite}.`));
       return;
     }
-    showMessage(`Synthetic suite ${normalizedSuite} завершен: ${String(payload?.status || "unknown")}.`);
+    showMessage(`Synthetic suite ${normalizedSuite} Р В Р’В·Р В Р’В°Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРІвЂљВ¬Р В Р’ВµР В Р вЂ¦: ${String(payload?.status || "unknown")}.`);
     await loadAdminOverview({ silent: true });
   } catch (error) {
-    setStateError(errorsHost, error?.message || `Не удалось запустить synthetic suite ${normalizedSuite}.`);
+    setStateError(errorsHost, error?.message || `Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р РЋРІР‚С™Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ synthetic suite ${normalizedSuite}.`);
   } finally {
     activeSyntheticSuite = "";
     await loadAdminOverview({ silent: true });
@@ -2343,19 +1709,11 @@ function renderCostSummary(totals) {
   if (!costSummaryHost) {
     return;
   }
-  const samples = Number(totals?.ai_estimated_cost_samples || 0);
-  costSummaryHost.innerHTML = `
-    <article class="legal-status-card">
-      <span class="legal-status-card__label">AI cost (USD)</span>
-      <strong class="legal-status-card__value legal-status-card__value--small">$${escapeHtml(formatUsd(totals?.ai_estimated_cost_total_usd || 0))}</strong>
-      <span class="admin-user-cell__secondary">Сэмплов: ${escapeHtml(String(samples))}</span>
-    </article>
-    <article class="legal-status-card">
-      <span class="legal-status-card__label">AI токены (in/out/total)</span>
-      <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatNumber(totals?.ai_input_tokens_total || 0))} / ${escapeHtml(formatNumber(totals?.ai_output_tokens_total || 0))} / ${escapeHtml(formatNumber(totals?.ai_total_tokens_total || 0))}</strong>
-      <span class="admin-user-cell__secondary">Генераций: ${escapeHtml(String(totals?.ai_generation_total || 0))}</span>
-    </article>
-  `;
+  costSummaryHost.innerHTML = renderCostSummaryMarkup(totals, {
+    escapeHtml,
+    formatNumber,
+    formatUsd,
+  });
 }
 
 function renderModelPolicy(policy) {
@@ -2466,616 +1824,87 @@ function renderAiPipeline(payload) {
   if (!aiPipelineHost) {
     return;
   }
-  const summary = payload?.summary || {};
-  const models = Object.entries(summary?.models || {});
-  const feedback = Array.isArray(payload?.feedback) ? payload.feedback.slice(0, 8) : [];
-  aiPipelineHost.innerHTML = `
-    <div class="admin-performance-grid">
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">Генерации</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary?.total_generations || 0))}</strong>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">Оценка стоимости</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">$${escapeHtml(formatUsd(summary?.estimated_cost_total_usd || 0))}</strong>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">p95 latency</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary?.latency_ms_p95 ?? "—"))} ms</strong>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">Budget warnings</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary?.budget_warning_count || 0))}</strong>
-      </article>
-    </div>
-    <div class="admin-section-toolbar">
-      <span class="admin-user-cell__secondary">Модели: ${escapeHtml(models.map(([name, count]) => `${name} (${count})`).join(", ") || "нет данных")}</span>
-    </div>
-    ${
-      feedback.length
-        ? `
-      <div class="legal-table-shell">
-        <table class="legal-table admin-table admin-table--compact">
-          <thead><tr><th>Когда</th><th>Flow</th><th>Issue</th><th>Комментарий</th></tr></thead>
-          <tbody>
-            ${feedback
-              .map(
-                (row) => `
-                <tr>
-                  <td>${escapeHtml(String(row.created_at || "—"))}</td>
-                  <td>${escapeHtml(String((row.meta || {}).flow || "—"))}</td>
-                  <td>${escapeHtml(String((row.meta || {}).issue_type || "—"))}</td>
-                  <td>${escapeHtml(String((row.meta || {}).comment || "—"))}</td>
-                </tr>
-              `,
-              )
-              .join("")}
-          </tbody>
-        </table>
-      </div>`
-        : '<p class="legal-section__description">Нет обратной связи по AI-пайплайну.</p>'
-    }
-  `;
+  aiPipelineHost.innerHTML = renderAiPipelineMarkup(payload, {
+    escapeHtml,
+    formatNumber,
+    formatUsd,
+    renderBandBadge,
+  });
 }
-
-function renderAiPipeline(payload) {
-  if (!aiPipelineHost) {
-    return;
-  }
-  const summary = payload?.summary || {};
-  const models = Object.entries(summary?.models || {});
-  const feedback = Array.isArray(payload?.feedback) ? payload.feedback.slice(0, 8) : [];
-  const quality = payload?.quality_summary || {};
-  const flowSummaries = payload?.flow_summaries || {};
-  const costTables = payload?.cost_tables || {};
-  const topInaccurate = Array.isArray(payload?.top_inaccurate_generations) ? payload.top_inaccurate_generations : [];
-  const policyActions = Array.isArray(payload?.policy_actions) ? payload.policy_actions : [];
-  const modelCostRows = Array.isArray(costTables?.by_model) ? costTables.by_model : [];
-  const flowCostRows = Array.isArray(costTables?.by_flow) ? costTables.by_flow : [];
-  const issueCounts = quality?.issue_counts || {};
-  const lawQaP95 = flowSummaries?.law_qa?.latency_ms_p95;
-  const suggestP95 = flowSummaries?.suggest?.latency_ms_p95;
-  const partialErrors = Array.isArray(payload?.partial_errors) ? payload.partial_errors : [];
-  const partialErrorsSummary = partialErrors
-    .slice(0, 3)
-    .map((item) => {
-      const source = String(item?.source || "unknown").trim();
-      const message = String(item?.message || "Неизвестная ошибка").trim();
-      return `${source}: ${message}`;
-    })
-    .join("; ");
-  const formatQualityRate = (value, sampleLabel) => {
-    if (value === null || value === undefined) {
-      return `n/a (no ${sampleLabel} samples)%`;
-    }
-    return `${String(value)}%`;
-  };
-
-  aiPipelineHost.innerHTML = `
-    ${
-      partialErrors.length
-        ? `<div class="legal-alert legal-alert--warning">AI Pipeline загружен частично (${escapeHtml(String(partialErrors.length))}). ${escapeHtml(partialErrorsSummary || "Подробности доступны в server logs.")}</div>`
-        : ""
-    }
-    <div class="admin-performance-grid">
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">Recent generations</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary?.total_generations || 0))}</strong>
-        <span class="admin-user-cell__secondary">24h sample: ${escapeHtml(String(quality?.generation_samples || 0))}</span>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">Estimated cost</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">$${escapeHtml(formatUsd(summary?.estimated_cost_total_usd || 0))}</strong>
-        <span class="admin-user-cell__secondary">Samples: ${escapeHtml(String(summary?.estimated_cost_samples || 0))}</span>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">p95 latency</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary?.latency_ms_p95 ?? "-"))} ms</strong>
-        <span class="admin-user-cell__secondary">law_qa: ${escapeHtml(String(lawQaP95 ?? "-"))} / suggest: ${escapeHtml(String(suggestP95 ?? "-"))}</span>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">Fallback rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.fallback_rate, "generation"))}</strong>
-        <span class="admin-user-cell__secondary">Budget warnings: ${escapeHtml(String(summary?.budget_warning_count || 0))}</span>
-      </article>
-    </div>
-    <div class="admin-performance-grid">
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">guard_fail_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.guard_fail_rate, "generation"))}</strong>
-        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.guard_fail_rate)}</span>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">guard_warn_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.guard_warn_rate, "generation"))}</strong>
-        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.guard_warn_rate)}</span>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">wrong_law_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.wrong_law_rate, "feedback"))}</strong>
-        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.wrong_law_rate)}</span>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">hallucination_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.hallucination_rate, "feedback"))}</strong>
-        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.hallucination_rate)}</span>
-      </article>
-    </div>
-    <div class="admin-performance-grid">
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">wrong_fact_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.wrong_fact_rate, "feedback"))}</strong>
-        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.wrong_fact_rate)}</span>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">unclear_answer_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.unclear_answer_rate, "feedback"))}</strong>
-        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.unclear_answer_rate)}</span>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">validation_retry_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.validation_retry_rate, "generation"))}</strong>
-        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.validation_retry_rate)}</span>
-      </article>
-    </div>
-    <div class="admin-performance-grid">
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">new_fact_validation_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.new_fact_validation_rate, "generation"))}</strong>
-        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.new_fact_validation_rate)}</span>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">unsupported_article_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.unsupported_article_rate, "generation"))}</strong>
-        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.unsupported_article_rate)}</span>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">format_violation_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.format_violation_rate, "generation"))}</strong>
-        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.format_violation_rate)}</span>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">safe_fallback_rate</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatQualityRate(quality?.safe_fallback_rate, "generation"))}</strong>
-        <span class="admin-user-cell__secondary">${renderBandBadge(quality?.bands?.safe_fallback_rate)}</span>
-      </article>
-    </div>
-    <div class="admin-section-toolbar">
-      <span class="admin-user-cell__secondary">Models: ${escapeHtml(models.map(([name, count]) => `${name} (${count})`).join(", ") || "no data")}</span>
-    </div>
-    <div class="legal-field-grid legal-field-grid--two">
-      <article class="legal-subcard">
-        <div class="legal-field__label">Accuracy taxonomy</div>
-        <ul class="legal-list">
-          <li>wrong_law: ${escapeHtml(String(issueCounts.wrong_law || 0))}</li>
-          <li>wrong_fact: ${escapeHtml(String(issueCounts.wrong_fact || 0))}</li>
-          <li>hallucination: ${escapeHtml(String(issueCounts.hallucination || 0))}</li>
-          <li>unclear_answer: ${escapeHtml(String(issueCounts.unclear_answer || 0))}</li>
-          <li>new_fact_detected: ${escapeHtml(String(issueCounts.new_fact_detected || 0))}</li>
-          <li>unsupported_article_reference: ${escapeHtml(String(issueCounts.unsupported_article_reference || 0))}</li>
-          <li>format_violation: ${escapeHtml(String(issueCounts.format_violation || 0))}</li>
-        </ul>
-      </article>
-      <article class="legal-subcard">
-        <div class="legal-field__label">Policy actions</div>
-        <ul class="legal-list">
-          ${policyActions.map((item) => `<li>${renderBandBadge(item.severity)} <strong>${escapeHtml(String(item.title || "-"))}</strong>: ${escapeHtml(String(item.reason || "-"))}</li>`).join("")}
-        </ul>
-      </article>
-    </div>
-    ${
-      modelCostRows.length
-        ? `
-      <div class="legal-table-shell">
-        <table class="legal-table admin-table admin-table--compact">
-          <thead><tr><th>Model</th><th>Requests</th><th>Total cost</th><th>Avg cost</th><th>Total tokens</th></tr></thead>
-          <tbody>
-            ${modelCostRows.map((row) => `
-                <tr>
-                  <td>${escapeHtml(String(row.model || "-"))}</td>
-                  <td>${escapeHtml(String(row.requests || 0))}</td>
-                  <td>$${escapeHtml(formatUsd(row.estimated_cost_total_usd || 0))}</td>
-                  <td>$${escapeHtml(formatUsd(row.avg_cost_per_request_usd || 0))}</td>
-                  <td>${escapeHtml(formatNumber(row.total_tokens || 0))}</td>
-                </tr>
-              `).join("")}
-          </tbody>
-        </table>
-      </div>`
-        : ""
-    }
-    ${
-      flowCostRows.length
-        ? `
-      <div class="legal-table-shell">
-        <table class="legal-table admin-table admin-table--compact">
-          <thead><tr><th>Flow</th><th>Requests</th><th>Total cost</th><th>Avg cost</th><th>Total tokens</th></tr></thead>
-          <tbody>
-            ${flowCostRows.map((row) => `
-                <tr>
-                  <td>${escapeHtml(String(row.flow || "-"))}</td>
-                  <td>${escapeHtml(String(row.requests || 0))}</td>
-                  <td>$${escapeHtml(formatUsd(row.estimated_cost_total_usd || 0))}</td>
-                  <td>$${escapeHtml(formatUsd(row.avg_cost_per_request_usd || 0))}</td>
-                  <td>${escapeHtml(formatNumber(row.total_tokens || 0))}</td>
-                </tr>
-              `).join("")}
-          </tbody>
-        </table>
-      </div>`
-        : ""
-    }
-    ${
-      topInaccurate.length
-        ? `
-      <div class="legal-table-shell">
-        <table class="legal-table admin-table admin-table--compact">
-          <thead><tr><th>generation_id</th><th>Flow</th><th>Issues</th><th>Preview</th><th>Guard</th><th>Note</th></tr></thead>
-          <tbody>
-            ${topInaccurate.map((row) => `
-                <tr>
-                  <td>${escapeHtml(String(row.generation_id || "-"))}</td>
-                  <td>${escapeHtml(String(row.flow || "-"))}</td>
-                  <td>${escapeHtml(String((row.issues || []).join(", ") || "-"))}</td>
-                  <td>${escapeHtml(String(row.output_preview || "-"))}</td>
-                  <td>${escapeHtml(String(row.guard_status || "-"))}</td>
-                  <td>${escapeHtml(String(row.note || "-"))}</td>
-                </tr>
-              `).join("")}
-          </tbody>
-        </table>
-      </div>`
-        : '<p class="legal-section__description">No inaccurate generations in the recent sample.</p>'
-    }
-    ${
-      feedback.length
-        ? `
-      <div class="legal-table-shell">
-        <table class="legal-table admin-table admin-table--compact">
-          <thead><tr><th>When</th><th>Flow</th><th>Issues</th><th>Comment</th></tr></thead>
-          <tbody>
-            ${feedback.map((row) => `
-                <tr>
-                  <td>${escapeHtml(String(row.created_at || "-"))}</td>
-                  <td>${escapeHtml(String((row.meta || {}).flow || "-"))}</td>
-                  <td>${escapeHtml(String(((row.meta || {}).issues || []).join(", ") || "-"))}</td>
-                  <td>${escapeHtml(String((row.meta || {}).note || "-"))}</td>
-                </tr>
-              `).join("")}
-          </tbody>
-        </table>
-      </div>`
-        : '<p class="legal-section__description">No feedback items in the recent sample.</p>'
-    }
-  `;
-}
-
 function renderRoleHistory(payload) {
   if (!roleHistoryHost) {
     return;
   }
-  const items = Array.isArray(payload?.items) ? payload.items : [];
-  if (!items.length) {
-    roleHistoryHost.innerHTML = '<p class="legal-section__description">Изменений ролей пока нет.</p>';
-    return;
-  }
-  roleHistoryHost.innerHTML = `
-    <div class="legal-table-shell">
-      <table class="legal-table admin-table admin-table--compact">
-        <thead><tr><th>Когда</th><th>Админ</th><th>Действие</th><th>Пользователь</th></tr></thead>
-        <tbody>
-          ${items
-            .slice(0, 20)
-            .map(
-              (item) => `
-              <tr>
-                <td>${escapeHtml(String(item.created_at || "—"))}</td>
-                <td>${escapeHtml(String(item.username || "—"))}</td>
-                <td>${escapeHtml(String(item.event_type || "—"))}</td>
-                <td>${escapeHtml(String((item.meta || {}).target_username || "—"))}</td>
-              </tr>
-            `,
-            )
-            .join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
-function extractErrorMessage(payload, fallback) {
-  const detail = payload?.detail;
-  if (Array.isArray(detail) && detail.length) {
-    return detail.map((item) => String(item || "").trim()).filter(Boolean).join(" ");
-  }
-  if (typeof detail === "string" && detail.trim()) {
-    return detail.trim();
-  }
-  if (typeof payload?.message === "string" && payload.message.trim()) {
-    return payload.message.trim();
-  }
-  return fallback;
-}
-
-function formatHttpError(response, payload, fallback) {
-  const status = Number(response?.status || 0);
-  if (redirectIfUnauthorized?.(status)) {
-    return "Требуется повторный вход в систему.";
-  }
-
-  const details = extractErrorMessage(payload, fallback);
-  const requestId = String(response?.headers?.get?.("x-request-id") || "").trim();
-
-  let prefix = "";
-  if (status === 403) {
-    prefix = "Доступ запрещен.";
-  } else if (status === 429) {
-    prefix = "Превышен лимит запросов.";
-  } else if (status >= 500) {
-    prefix = "Ошибка сервера.";
-  } else if (status >= 400) {
-    prefix = "Ошибка запроса.";
-  }
-
-  const parts = [];
-  if (prefix) {
-    parts.push(prefix);
-  }
-  parts.push(details);
-  if (status > 0) {
-    parts.push(`(HTTP ${status})`);
-  }
-  if (requestId) {
-    parts.push(`[request_id: ${requestId}]`);
-  }
-  return parts.join(" ").trim();
+  roleHistoryHost.innerHTML = renderRoleHistoryMarkup(payload, { escapeHtml });
 }
 
 function renderTopEndpoints(items) {
   if (!endpointsHost) {
     return;
   }
-  if (!items.length) {
-    endpointsHost.innerHTML = '<p class="legal-section__description">Пока нет данных по API-запросам.</p>';
-    return;
-  }
-
-  endpointsHost.innerHTML = `
-    <div class="legal-table-shell">
-      <table class="legal-table admin-table admin-table--compact">
-        <thead><tr><th>Эндпоинт</th><th>Что делает</th><th>Запросов</th></tr></thead>
-        <tbody>
-          ${items
-            .map(
-              (item) => `
-                <tr>
-                  <td class="admin-table__path" title="${escapeHtml(item.path || "-")}">${escapeHtml(item.path || "-")}</td>
-                  <td>${escapeHtml(describeApiPath(item.path || ""))}</td>
-                  <td>${escapeHtml(String(item.count || 0))}</td>
-                </tr>
-              `,
-            )
-            .join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
+  endpointsHost.innerHTML = renderTopEndpointsMarkup(items, {
+    describeApiPath,
+    escapeHtml,
+  });
 }
 
 function renderExamImport(summary) {
   if (!examImportHost) {
     return;
   }
-
-  if (!summary) {
-    examImportHost.innerHTML = '<p class="legal-section__description">Пока нет данных по импорту экзаменов.</p>';
-    return;
-  }
-
-  const lastSync = summary.last_sync || {};
-  const lastScore = summary.last_score || {};
-  const recentFailures = [...(summary.recent_failures || []), ...(summary.recent_row_failures || [])];
-  const recentEntries = Array.isArray(summary.recent_entries) ? summary.recent_entries : [];
-  const failedEntries = Array.isArray(summary.failed_entries) ? summary.failed_entries : [];
-
-  examImportHost.innerHTML = `
-    <div class="admin-exam-grid">
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">Ожидают оценивания</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(summary.pending_scores || 0))}</strong>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">Последняя синхронизация</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(lastSync.created_at || "—")}</strong>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">Последнее оценивание</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(lastScore.created_at || "—")}</strong>
-      </article>
-    </div>
-    <div class="admin-exam-meta">
-      <div class="admin-user-cell">
-        <strong>${escapeHtml(lastSync.path || "/api/exam-import/sync")}</strong>
-        <span class="admin-user-cell__secondary">${escapeHtml(lastSync.status_code ? `Статус ${lastSync.status_code}` : "Запусков пока не было")}</span>
-      </div>
-      <div class="admin-user-cell">
-        <strong>${escapeHtml(lastScore.path || "/api/exam-import/score")}</strong>
-        <span class="admin-user-cell__secondary">${escapeHtml(lastScore.status_code ? `Статус ${lastScore.status_code}` : "Проверок пока не было")}</span>
-      </div>
-    </div>
-    ${renderAdminExamEntriesSection({
-      title: "Последние ответы и оценки",
-      description: "Последние импортированные строки с текущим баллом, статусом и быстрым переходом к детальному разбору.",
-      entries: recentEntries,
-      emptyText: "Пока нет строк, которые можно показать в админке.",
-    })}
-    ${renderAdminExamEntriesSection({
-      title: "Нуждаются в перепроверке",
-      description: "Строки, где у ответов остались некорректные или неполные результаты проверки.",
-      entries: failedEntries,
-      emptyText: "Строк, требующих перепроверки, сейчас нет.",
-      emphasizeFailed: true,
-    })}
-    ${
-      recentFailures.length
-        ? `
-          <div class="legal-table-shell">
-            <table class="legal-table admin-table admin-table--compact">
-              <thead>
-                <tr><th>Время</th><th>Тип</th><th>Путь</th><th>Что случилось</th></tr>
-              </thead>
-              <tbody>
-                ${recentFailures
-                  .map(
-                    (event) => `
-                      <tr>
-                        <td>${escapeHtml(event.created_at || "-")}</td>
-                        <td>${renderBadge(event.event_type || "-", "danger")}</td>
-                        <td class="admin-table__path" title="${escapeHtml(event.path || "-")}">${escapeHtml(event.path || "-")}</td>
-                        <td>${escapeHtml((event.meta && (event.meta.error || event.meta.error_type)) || describeEventType(event.event_type || ""))}</td>
-                      </tr>
-                    `,
-                  )
-                  .join("")}
-              </tbody>
-            </table>
-          </div>
-        `
-        : '<p class="legal-section__description">Последних ошибок импорта экзаменов и AI-оценивания не найдено.</p>'
-    }
-  `;
+  examImportHost.innerHTML = renderExamImportMarkup(summary, {
+    describeEventType,
+    escapeHtml,
+    renderBadge,
+    renderAdminExamEntriesSectionMarkup: (config) =>
+      renderAdminExamEntriesSectionMarkup(config, {
+        ExamView,
+        escapeHtml,
+        renderBadge,
+      }),
+  });
 }
-
 function getExamEntryStatus(entry) {
-  if (ExamView?.getEntryStatus) {
-    return ExamView.getEntryStatus(entry);
-  }
-  const average = Number(entry?.average_score);
-  if (entry?.average_score == null || Number.isNaN(average)) {
-    return { key: "pending", label: "Ожидает оценки", tone: "pending" };
-  }
-  if (average >= 73) {
-    return { key: "good", label: "Сдан хорошо", tone: "ok" };
-  }
-  if (average > 55) {
-    return { key: "medium", label: "Сдан на среднем уровне", tone: "warn" };
-  }
-  return { key: "poor", label: "Сдан слабо", tone: "problem" };
+  return getExamEntryStatusMarkup(entry, { ExamView });
 }
-
 function formatExamAverage(entry) {
-  if (ExamView?.formatAverage) {
-    return ExamView.formatAverage(entry);
-  }
-  return entry?.average_score != null ? `${entry.average_score} / 100` : "—";
+  return formatExamAverageMarkup(entry, { ExamView });
 }
-
 function renderAdminExamEntriesSection({ title, description, entries, emptyText, emphasizeFailed = false }) {
-  if (!Array.isArray(entries) || !entries.length) {
-    return `
-      <div class="legal-subcard admin-user-detail-card">
-        <div class="legal-subcard__header">
-          <div>
-            <span class="legal-field__label">${escapeHtml(title)}</span>
-            <p class="legal-section__description">${escapeHtml(description)}</p>
-          </div>
-        </div>
-        <p class="legal-section__description">${escapeHtml(emptyText)}</p>
-      </div>
-    `;
-  }
-
-  return `
-    <section class="legal-subcard admin-user-detail-card">
-      <div class="legal-subcard__header">
-        <div>
-          <span class="legal-field__label">${escapeHtml(title)}</span>
-          <p class="legal-section__description">${escapeHtml(description)}</p>
-        </div>
-      </div>
-      <div class="legal-table-shell">
-        <table class="legal-table admin-table admin-table--compact">
-          <thead>
-            <tr>
-              <th>Строка</th>
-              <th>Кандидат</th>
-              <th>Формат</th>
-              <th>Балл</th>
-              <th>Статус</th>
-              <th>Ответов</th>
-              <th>Импорт</th>
-              <th>Действие</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${entries
-              .map((entry) => {
-                const status = getExamEntryStatus(entry);
-                const reviewBadge = emphasizeFailed || entry?.needs_rescore
-                  ? renderBadge("Нужна перепроверка", "danger")
-                  : "";
-                return `
-                  <tr>
-                    <td>${escapeHtml(entry.source_row ?? "—")}</td>
-                    <td>
-                      <div class="admin-user-cell">
-                        <strong class="admin-user-cell__name">${escapeHtml(entry.full_name || "—")}</strong>
-                        <span class="admin-user-cell__secondary">${escapeHtml(entry.discord_tag || "—")}</span>
-                      </div>
-                    </td>
-                    <td>${escapeHtml(entry.exam_format || "—")}</td>
-                    <td>${escapeHtml(formatExamAverage(entry))}</td>
-                    <td>
-                      <div class="admin-badge-row">
-                        <span class="exam-status-badge exam-status-badge--${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span>
-                        ${reviewBadge}
-                      </div>
-                    </td>
-                    <td>${escapeHtml(String(entry.answer_count ?? 0))}</td>
-                    <td>${escapeHtml(entry.imported_at || "—")}</td>
-                    <td>
-                      <button
-                        type="button"
-                        class="ghost-button admin-exam-detail-btn"
-                        data-exam-source-row="${escapeHtml(entry.source_row ?? "")}"
-                      >
-                        Разбор
-                      </button>
-                    </td>
-                  </tr>
-                `;
-              })
-              .join("")}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  `;
+  return renderAdminExamEntriesSectionMarkup(
+    { title, description, entries, emptyText, emphasizeFailed },
+    {
+      ExamView,
+      escapeHtml,
+      renderBadge,
+      getExamEntryStatus: (entry) => getExamEntryStatus(entry),
+      formatExamAverage: (entry) => formatExamAverage(entry),
+    },
+  );
 }
-
 function renderActiveFilters(filters) {
   if (!activeFiltersHost) {
     return;
   }
 
   const chips = [];
-  if (filters.search) chips.push(renderFilterChip(`Пользователь: ${filters.search}`, "search"));
+  if (filters.search) chips.push(renderFilterChip(`Р В РЎСџР В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰: ${filters.search}`, "search"));
   if (filters.user_sort && filters.user_sort !== "complaints") {
     const sortLabels = {
-      api_requests: "Сортировка: API-активность",
-      last_seen: "Сортировка: последняя активность",
-      created_at: "Сортировка: дата регистрации",
-      username: "Сортировка: username",
+      api_requests: "Р В Р Р‹Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В РЎвЂќР В Р’В°: API-Р В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р вЂ¦Р В РЎвЂўР РЋР С“Р РЋРІР‚С™Р РЋР Р‰",
+      last_seen: "Р В Р Р‹Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В РЎвЂќР В Р’В°: Р В РЎвЂ”Р В РЎвЂўР РЋР С“Р В Р’В»Р В Р’ВµР В РўвЂР В Р вЂ¦Р РЋР РЏР РЋР РЏ Р В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р вЂ¦Р В РЎвЂўР РЋР С“Р РЋРІР‚С™Р РЋР Р‰",
+      created_at: "Р В Р Р‹Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В РЎвЂќР В Р’В°: Р В РўвЂР В Р’В°Р РЋРІР‚С™Р В Р’В° Р РЋР вЂљР В Р’ВµР В РЎвЂ“Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР В РЎвЂ",
+      username: "Р В Р Р‹Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В РЎвЂќР В Р’В°: username",
     };
-    chips.push(renderFilterChip(sortLabels[filters.user_sort] || `Сортировка: ${filters.user_sort}`, "user_sort"));
+    chips.push(renderFilterChip(sortLabels[filters.user_sort] || `Р В Р Р‹Р В РЎвЂўР РЋР вЂљР РЋРІР‚С™Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В РЎвЂќР В Р’В°: ${filters.user_sort}`, "user_sort"));
   }
-  if (filters.blocked_only) chips.push(renderFilterChip("Только заблокированные", "blocked_only"));
-  if (filters.tester_only) chips.push(renderFilterChip("Только тестеры", "tester_only"));
-  if (filters.gka_only) chips.push(renderFilterChip("Только ГКА-ЗГКА", "gka_only"));
-  if (filters.unverified_only) chips.push(renderFilterChip("Только без подтверждения email", "unverified_only"));
-  if (filters.event_search) chips.push(renderFilterChip(`События: ${filters.event_search}`, "event_search"));
-  if (filters.event_type) chips.push(renderFilterChip(`Тип: ${filters.event_type}`, "event_type"));
-  if (filters.failed_events_only) chips.push(renderFilterChip("Только ошибки", "failed_events_only"));
+  if (filters.blocked_only) chips.push(renderFilterChip("Р В РЎС›Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р В Р’В·Р В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ", "blocked_only"));
+  if (filters.tester_only) chips.push(renderFilterChip("Р В РЎС›Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р РЋРІР‚С™Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљР РЋРІР‚в„–", "tester_only"));
+  if (filters.gka_only) chips.push(renderFilterChip("Р В РЎС›Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р В РІР‚СљР В РЎв„ўР В РЎвЂ™-Р В РІР‚вЂќР В РІР‚СљР В РЎв„ўР В РЎвЂ™", "gka_only"));
+  if (filters.unverified_only) chips.push(renderFilterChip("Р В РЎС›Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р В Р’В±Р В Р’ВµР В Р’В· Р В РЎвЂ”Р В РЎвЂўР В РўвЂР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋР вЂљР В Р’В¶Р В РўвЂР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ email", "unverified_only"));
+  if (filters.event_search) chips.push(renderFilterChip(`Р В Р Р‹Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚С™Р В РЎвЂР РЋР РЏ: ${filters.event_search}`, "event_search"));
+  if (filters.event_type) chips.push(renderFilterChip(`Р В РЎС›Р В РЎвЂР В РЎвЂ”: ${filters.event_type}`, "event_type"));
+  if (filters.failed_events_only) chips.push(renderFilterChip("Р В РЎС›Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р В РЎвЂўР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В РЎвЂ", "failed_events_only"));
 
   if (!chips.length) {
     activeFiltersHost.innerHTML = "";
@@ -3089,12 +1918,12 @@ function renderActiveFilters(filters) {
 
 function renderUserStatuses(user) {
   const badges = [
-    user.email_verified ? renderBadge("Email OK", "success") : renderBadge("Email не подтвержден", "muted"),
-    user.access_blocked ? renderBadge("Заблокирован", "danger") : renderBadge("Активен", "success-soft"),
-    user.deactivated_at ? renderBadge("Деактивирован", "danger") : null,
-    user.is_tester ? renderBadge("Тестер", "info") : renderBadge("Обычный", "neutral"),
-    user.is_gka ? renderBadge("ГКА-ЗГКА", "info") : null,
-    Number(user.api_quota_daily || 0) > 0 ? renderBadge(`Квота/день: ${Number(user.api_quota_daily || 0)}`, "info") : renderBadge("Квота: без лимита", "muted"),
+    user.email_verified ? renderBadge("Email OK", "success") : renderBadge("Email Р В Р вЂ¦Р В Р’Вµ Р В РЎвЂ”Р В РЎвЂўР В РўвЂР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋР вЂљР В Р’В¶Р В РўвЂР В Р’ВµР В Р вЂ¦", "muted"),
+    user.access_blocked ? renderBadge("Р В РІР‚вЂќР В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦", "danger") : renderBadge("Р В РЎвЂ™Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р’ВµР В Р вЂ¦", "success-soft"),
+    user.deactivated_at ? renderBadge("Р В РІР‚СњР В Р’ВµР В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦", "danger") : null,
+    user.is_tester ? renderBadge("Р В РЎС›Р В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљ", "info") : renderBadge("Р В РЎвЂєР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚РЋР В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“", "neutral"),
+    user.is_gka ? renderBadge("Р В РІР‚СљР В РЎв„ўР В РЎвЂ™-Р В РІР‚вЂќР В РІР‚СљР В РЎв„ўР В РЎвЂ™", "info") : null,
+    Number(user.api_quota_daily || 0) > 0 ? renderBadge(`Р В РЎв„ўР В Р вЂ Р В РЎвЂўР РЋРІР‚С™Р В Р’В°/Р В РўвЂР В Р’ВµР В Р вЂ¦Р РЋР Р‰: ${Number(user.api_quota_daily || 0)}`, "info") : renderBadge("Р В РЎв„ўР В Р вЂ Р В РЎвЂўР РЋРІР‚С™Р В Р’В°: Р В Р’В±Р В Р’ВµР В Р’В· Р В Р’В»Р В РЎвЂР В РЎВР В РЎвЂР РЋРІР‚С™Р В Р’В°", "muted"),
     riskLabel(user),
   ];
   return `<div class="admin-badge-row">${badges.filter(Boolean).join("")}</div>`;
@@ -3104,7 +1933,7 @@ function renderUserActivity(user) {
   return `
     <div class="admin-activity">
       <div class="admin-activity__main">
-        <strong>${escapeHtml(String(user.complaints || 0))}</strong><span>жалоб</span>
+        <strong>${escapeHtml(String(user.complaints || 0))}</strong><span>Р В Р’В¶Р В Р’В°Р В Р’В»Р В РЎвЂўР В Р’В±</span>
         <strong>${escapeHtml(String(user.rehabs || 0))}</strong><span>rehab</span>
       </div>
       <div class="admin-activity__meta">
@@ -3124,265 +1953,50 @@ function renderUsers(users, userSort = "complaints") {
   users.forEach((user) => {
     userIndex.set(String(user.username || "").toLowerCase(), user);
   });
-
-  if (!users.length) {
-    usersHost.innerHTML = '<p class="legal-section__description">По текущему фильтру пользователи не найдены.</p>';
-    return;
-  }
-
-  usersHost.innerHTML = `
-    <div class="admin-section-toolbar">
-      <p class="legal-section__description">Показано пользователей: ${escapeHtml(String(users.length))}. Сортировка: ${escapeHtml(String(userSort))}</p>
-    </div>
-    <div class="admin-section-toolbar">
-      <label class="legal-field">
-        <span class="legal-field__label">Массовое действие</span>
-        <select id="admin-bulk-action">
-          <option value="">Выберите действие</option>
-          <option value="verify_email">Подтвердить email</option>
-          <option value="block">Заблокировать</option>
-          <option value="unblock">Разблокировать</option>
-          <option value="grant_tester">Выдать тестера</option>
-          <option value="revoke_tester">Снять тестера</option>
-          <option value="grant_gka">Выдать ГКА-ЗГКА</option>
-          <option value="revoke_gka">Снять ГКА-ЗГКА</option>
-          <option value="deactivate">Деактивировать</option>
-          <option value="reactivate">Реактивировать</option>
-          <option value="set_daily_quota">Установить квоту/день</option>
-        </select>
-      </label>
-      <input id="admin-bulk-reason" type="text" placeholder="Причина (для block/deactivate)">
-      <input id="admin-bulk-quota" type="number" min="0" step="1" placeholder="Квота/день (для quota)">
-      <button type="button" id="admin-bulk-run" class="ghost-button">Запустить в очереди</button>
-      <span id="admin-bulk-status" class="admin-badge admin-badge--muted">Выбрано: ${selectedBulkUsers.size}</span>
-    </div>
-    <div class="legal-table-shell">
-      <table class="legal-table admin-table">
-        <thead>
-          <tr>
-            <th><input type="checkbox" id="admin-users-select-all"></th>
-            <th>Пользователь</th>
-            <th>Статусы</th>
-            <th>Активность</th>
-            <th>Последняя активность</th>
-            <th>Управление</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${users
-            .map(
-              (user) => `
-                <tr class="admin-user-row">
-                  <td><input type="checkbox" data-bulk-user="${escapeHtml(user.username || "")}" ${selectedBulkUsers.has(String(user.username || "").toLowerCase()) ? "checked" : ""}></td>
-                  <td>
-                    <div class="admin-user-cell">
-                      <strong class="admin-user-cell__name">${escapeHtml(user.username || "-")}</strong>
-                      <span class="admin-user-cell__secondary" title="${escapeHtml(user.email || "-")}">${escapeHtml(user.email || "-")}</span>
-                    </div>
-                  </td>
-                  <td>${renderUserStatuses(user)}</td>
-                  <td>${renderUserActivity(user)}</td>
-                  <td>
-                    <div class="admin-user-cell">
-                      <strong>${escapeHtml(user.last_seen_at || "—")}</strong>
-                      <span class="admin-user-cell__secondary">${escapeHtml(user.access_blocked_reason || "Без причины блокировки")}</span>
-                    </div>
-                  </td>
-                  <td>
-                    <button type="button" class="secondary-button admin-user-open-btn" data-open-user="${escapeHtml(user.username || "")}">Управление</button>
-                  </td>
-                </tr>
-              `,
-            )
-            .join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
+  usersHost.innerHTML = renderUsersMarkup(
+    users,
+    {
+      selectedBulkUsers,
+      userSort,
+    },
+    {
+      escapeHtml,
+      renderUserActivityMarkup: (user) => renderUserActivityMarkup(user, { escapeHtml }),
+      renderUserStatusesMarkup: (user) => renderUserStatusesMarkup(user, { renderBadge, riskLabel }),
+    },
+  );
 }
-
 function renderEvents(events) {
   if (!eventsHost) {
     return;
   }
-  if (!events.length) {
-    eventsHost.innerHTML = '<p class="legal-section__description">Событий по текущему фильтру нет.</p>';
-    return;
-  }
-
-  eventsHost.innerHTML = `
-    <div class="admin-section-toolbar">
-      <p class="legal-section__description">Показано событий: ${escapeHtml(String(events.length))}</p>
-    </div>
-    <div class="legal-table-shell">
-      <table class="legal-table admin-table admin-table--compact">
-        <thead>
-          <tr>
-            <th>Время</th>
-            <th>Пользователь</th>
-            <th>Тип</th>
-            <th>Путь</th>
-            <th>Статус</th>
-            <th>ms</th>
-            <th>Ресурсы</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${events
-            .map((event) => {
-              const statusValue = event.status_code ?? "—";
-              const statusTone = Number(event.status_code || 0) >= 400 ? "danger" : "neutral";
-              return `
-                <tr>
-                  <td>${escapeHtml(event.created_at || "-")}</td>
-                  <td>${escapeHtml(event.username || "-")}</td>
-                  <td>
-                    <div class="admin-user-cell">
-                      ${renderBadge(event.event_type || "-", "neutral")}
-                      <span class="admin-user-cell__secondary">${escapeHtml(describeEventType(event.event_type || ""))}</span>
-                    </div>
-                  </td>
-                  <td>
-                    <div class="admin-user-cell">
-                      <strong class="admin-table__path" title="${escapeHtml(event.path || "-")}">${escapeHtml(event.path || "-")}</strong>
-                      <span class="admin-user-cell__secondary">${escapeHtml(describeApiPath(event.path || ""))}</span>
-                    </div>
-                  </td>
-                  <td>${renderBadge(String(statusValue), statusTone)}</td>
-                  <td>${escapeHtml(String(event.duration_ms ?? "-"))}</td>
-                  <td>${escapeHtml(String(event.resource_units ?? 0))}</td>
-                </tr>
-              `;
-            })
-            .join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
+  eventsHost.innerHTML = renderEventsMarkup(events, {
+    describeApiPath,
+    describeEventType,
+    escapeHtml,
+    renderBadge,
+  });
 }
-
 function renderErrorExplorer(payload) {
   if (!errorExplorerHost) {
     return;
   }
-  const items = Array.isArray(payload?.items) ? payload.items : [];
-  const byType = Array.isArray(payload?.by_event_type) ? payload.by_event_type : [];
-  const byPath = Array.isArray(payload?.by_path) ? payload.by_path : [];
-
-  if (!items.length) {
-    errorExplorerHost.innerHTML = '<p class="legal-section__description">Ошибок по текущему фильтру не найдено.</p>';
-    return;
-  }
-
-  const topTypeText = byType.slice(0, 3).map((item) => `${item.event_type}: ${item.count}`).join(" · ");
-  const topPathText = byPath.slice(0, 3).map((item) => `${item.path}: ${item.count}`).join(" · ");
-
-  errorExplorerHost.innerHTML = `
-    <div class="admin-section-toolbar">
-      <p class="legal-section__description">
-        Ошибок: ${escapeHtml(String(payload?.total || items.length))}
-      </p>
-      <p class="legal-section__description">
-        Топ типов: ${escapeHtml(topTypeText || "—")}
-      </p>
-      <p class="legal-section__description">
-        Топ endpoint: ${escapeHtml(topPathText || "—")}
-      </p>
-    </div>
-    <div class="legal-table-shell">
-      <table class="legal-table admin-table admin-table--compact">
-        <thead>
-          <tr>
-            <th>Время</th>
-            <th>Тип</th>
-            <th>Endpoint</th>
-            <th>HTTP</th>
-            <th>Ошибка</th>
-            <th>request_id</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${items
-            .map((event) => {
-              const meta = event.meta || {};
-              const errorText = String(meta.error_message || meta.error_type || "-");
-              const requestId = String(meta.request_id || "-");
-              return `
-                <tr>
-                  <td>${escapeHtml(event.created_at || "-")}</td>
-                  <td>${renderBadge(event.event_type || "-", "danger")}</td>
-                  <td class="admin-table__path" title="${escapeHtml(event.path || "-")}">${escapeHtml(event.path || "-")}</td>
-                  <td>${renderBadge(String(event.status_code ?? "-"), "danger")}</td>
-                  <td title="${escapeHtml(errorText)}">${escapeHtml(errorText)}</td>
-                  <td title="${escapeHtml(requestId)}">${escapeHtml(requestId)}</td>
-                </tr>
-              `;
-            })
-            .join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
+  errorExplorerHost.innerHTML = renderErrorExplorerMarkup(payload, {
+    escapeHtml,
+    renderBadge,
+  });
 }
-
 function renderAdminAudit(events) {
   if (!adminEventsHost) {
     return;
   }
-
-  const adminEvents = events.filter((event) => String(event.event_type || "").startsWith("admin_"));
-  if (!adminEvents.length) {
-    adminEventsHost.innerHTML = '<p class="legal-section__description">Админ-действий по текущему фильтру пока не видно.</p>';
-    return;
-  }
-
-  adminEventsHost.innerHTML = `
-    <div class="admin-section-toolbar">
-      <p class="legal-section__description">Показано админ-действий: ${escapeHtml(String(adminEvents.length))}</p>
-    </div>
-    <div class="legal-table-shell">
-      <table class="legal-table admin-table admin-table--compact">
-        <thead>
-          <tr>
-            <th>Время</th>
-            <th>Администратор</th>
-            <th>Действие</th>
-            <th>Запрос</th>
-            <th>Статус</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${adminEvents
-            .map((event) => {
-              const statusValue = event.status_code ?? "—";
-              const statusTone = Number(event.status_code || 0) >= 400 ? "danger" : "success-soft";
-              return `
-                <tr>
-                  <td>${escapeHtml(event.created_at || "-")}</td>
-                  <td>${escapeHtml(event.username || "-")}</td>
-                  <td>
-                    <div class="admin-user-cell">
-                      ${renderBadge(event.event_type || "-", "info")}
-                      <span class="admin-user-cell__secondary">${escapeHtml(describeEventType(event.event_type || ""))}</span>
-                    </div>
-                  </td>
-                  <td>
-                    <div class="admin-user-cell">
-                      <strong class="admin-table__path" title="${escapeHtml(event.path || "-")}">${escapeHtml(event.path || "-")}</strong>
-                      <span class="admin-user-cell__secondary">${escapeHtml(describeApiPath(event.path || ""))}</span>
-                    </div>
-                  </td>
-                  <td>${renderBadge(String(statusValue), statusTone)}</td>
-                </tr>
-              `;
-            })
-            .join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
+  adminEventsHost.innerHTML = renderAdminAuditMarkup(events, {
+    describeApiPath,
+    describeEventType,
+    escapeHtml,
+    renderBadge,
+  });
 }
-
 function currentFilters() {
   return {
     search: userSearchField?.value?.trim() || "",
@@ -3448,126 +2062,47 @@ function renderUserModal(user) {
   if (userModalTitle) {
     userModalTitle.textContent = DEFAULT_USER_MODAL_TITLE;
   }
-
-  userModalBody.innerHTML = `
-    <div class="legal-status-row legal-status-row--three">
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">Пользователь</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(user.username || "-")}</strong>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">Email</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(user.email || "-")}</strong>
-      </article>
-      <article class="legal-status-card">
-        <span class="legal-status-card__label">Последняя активность</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(user.last_seen_at || "—")}</strong>
-      </article>
-    </div>
-
-    <div class="legal-subcard admin-user-detail-card">
-      <div class="legal-subcard__header">
-        <div>
-          <span class="legal-field__label">Статусы</span>
-          <p class="legal-section__description">Ключевые флаги и причина блокировки.</p>
-        </div>
-      </div>
-      ${renderUserStatuses(user)}
-      <div class="admin-user-detail-grid">
-        <div><span class="legal-field__label">Причина блокировки</span><div class="admin-user-detail-text">${escapeHtml(user.access_blocked_reason || "Не указана")}</div></div>
-        <div><span class="legal-field__label">Создан</span><div class="admin-user-detail-text">${escapeHtml(user.created_at || "—")}</div></div>
-      </div>
-    </div>
-
-    <div class="legal-subcard admin-user-detail-card">
-      <div class="legal-subcard__header">
-        <div>
-          <span class="legal-field__label">Активность</span>
-          <p class="legal-section__description">Краткая сводка по действиям пользователя.</p>
-        </div>
-      </div>
-      <div class="admin-user-summary-grid">
-        <article class="legal-status-card"><span class="legal-status-card__label">Жалобы</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.complaints || 0))}</strong></article>
-        <article class="legal-status-card"><span class="legal-status-card__label">Rehab</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.rehabs || 0))}</strong></article>
-        <article class="legal-status-card"><span class="legal-status-card__label">AI</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String((user.ai_suggestions || 0) + (user.ai_ocr_requests || 0)))}</strong></article>
-        <article class="legal-status-card"><span class="legal-status-card__label">API</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.api_requests || 0))}</strong></article>
-        <article class="legal-status-card"><span class="legal-status-card__label">Ресурсы</span><strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(user.resource_units || 0))}</strong></article>
-      </div>
-    </div>
-
-    <div class="legal-subcard admin-user-detail-card">
-      <div class="legal-subcard__header">
-        <div>
-          <span class="legal-field__label">Быстрые действия</span>
-          <p class="legal-section__description">Управление доступом и учетной записью пользователя.</p>
-        </div>
-      </div>
-      <div class="admin-user-actions">
-        <button type="button" class="ghost-button" data-verify-email="${escapeHtml(user.username || "")}">Подтвердить email</button>
-        <button type="button" class="ghost-button" data-change-email="${escapeHtml(user.username || "")}" data-current-email="${escapeHtml(user.email || "")}">Сменить email</button>
-        <button type="button" class="ghost-button" data-reset-password="${escapeHtml(user.username || "")}">Сбросить пароль</button>
-        <button type="button" class="ghost-button" data-set-quota="${escapeHtml(user.username || "")}" data-current-quota="${escapeHtml(String(user.api_quota_daily || 0))}">Квота API/день</button>
-        ${
-          user.is_tester
-            ? `<button type="button" class="ghost-button" data-revoke-tester="${escapeHtml(user.username || "")}">Снять тестера</button>`
-            : `<button type="button" class="ghost-button" data-grant-tester="${escapeHtml(user.username || "")}">Выдать тестера</button>`
-        }
-        ${
-          user.is_gka
-            ? `<button type="button" class="ghost-button" data-revoke-gka="${escapeHtml(user.username || "")}">Снять ГКА-ЗГКА</button>`
-            : `<button type="button" class="ghost-button" data-grant-gka="${escapeHtml(user.username || "")}">Выдать ГКА-ЗГКА</button>`
-        }
-        ${
-          user.deactivated_at
-            ? `<button type="button" class="ghost-button" data-reactivate-user="${escapeHtml(user.username || "")}">Реактивировать</button>`
-            : `<button type="button" class="ghost-button" data-deactivate-user="${escapeHtml(user.username || "")}">Деактивировать</button>`
-        }
-        ${
-          user.access_blocked
-            ? `<button type="button" class="ghost-button" data-unblock-user="${escapeHtml(user.username || "")}">Разблокировать</button>`
-            : `<button type="button" class="ghost-button" data-block-user="${escapeHtml(user.username || "")}">Заблокировать</button>`
-        }
-      </div>
-    </div>
-  `;
+  userModalBody.innerHTML = renderUserModalMarkup(user, {
+    escapeHtml,
+    renderUserStatuses: (targetUser) => renderUserStatuses(targetUser),
+  });
 }
-
 function renderExamEntryDetailModal(entry) {
   if (!userModalBody || !entry) {
     return;
   }
   if (userModalTitle) {
-    userModalTitle.textContent = `Разбор ответа · строка ${entry.source_row || "—"}`;
+    userModalTitle.textContent = `Р В Р’В Р В Р’В°Р В Р’В·Р В Р’В±Р В РЎвЂўР РЋР вЂљ Р В РЎвЂўР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р В Р’В° Р вЂ™Р’В· Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В Р’В° ${entry.source_row || "Р Р†Р вЂљРІР‚Сњ"}`;
   }
 
   userModalBody.innerHTML = `
     <div class="legal-status-row legal-status-row--three">
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Строка</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(entry.source_row || "—"))}</strong>
+        <span class="legal-status-card__label">Р В Р Р‹Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В Р’В°</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(entry.source_row || "Р Р†Р вЂљРІР‚Сњ"))}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Кандидат</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.full_name || "—")}</strong>
+        <span class="legal-status-card__label">Р В РЎв„ўР В Р’В°Р В Р вЂ¦Р В РўвЂР В РЎвЂР В РўвЂР В Р’В°Р РЋРІР‚С™</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.full_name || "Р Р†Р вЂљРІР‚Сњ")}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Средний балл</span>
+        <span class="legal-status-card__label">Р В Р Р‹Р РЋР вЂљР В Р’ВµР В РўвЂР В Р вЂ¦Р В РЎвЂР В РІвЂћвЂ“ Р В Р’В±Р В Р’В°Р В Р’В»Р В Р’В»</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatExamAverage(entry))}</strong>
       </article>
     </div>
 
     <div class="legal-status-row legal-status-row--three">
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Формат</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.exam_format || "—")}</strong>
+        <span class="legal-status-card__label">Р В Р’В¤Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚С™</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.exam_format || "Р Р†Р вЂљРІР‚Сњ")}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Ответов</span>
+        <span class="legal-status-card__label">Р В РЎвЂєР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р В РЎвЂўР В Р вЂ </span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(entry.answer_count || 0))}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Обновлено</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.updated_at || entry.imported_at || "—")}</strong>
+        <span class="legal-status-card__label">Р В РЎвЂєР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В РЎвЂў</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.updated_at || entry.imported_at || "Р Р†Р вЂљРІР‚Сњ")}</strong>
       </article>
     </div>
 
@@ -3576,21 +2111,21 @@ function renderExamEntryDetailModal(entry) {
     <section class="legal-subcard admin-user-detail-card">
       <div class="legal-subcard__header">
         <div>
-          <span class="legal-field__label">Исходные поля строки</span>
-          <p class="legal-section__description">Ниже видно, какие данные пришли из таблицы и с чем сравнивалась проверка.</p>
+          <span class="legal-field__label">Р В Р’ВР РЋР С“Р РЋРІР‚В¦Р В РЎвЂўР В РўвЂР В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР РЏ Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В РЎвЂ</span>
+          <p class="legal-section__description">Р В РЎСљР В РЎвЂР В Р’В¶Р В Р’Вµ Р В Р вЂ Р В РЎвЂР В РўвЂР В Р вЂ¦Р В РЎвЂў, Р В РЎвЂќР В Р’В°Р В РЎвЂќР В РЎвЂР В Р’Вµ Р В РўвЂР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР РЋРІвЂљВ¬Р В Р’В»Р В РЎвЂ Р В РЎвЂР В Р’В· Р РЋРІР‚С™Р В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂР РЋРІР‚В Р РЋРІР‚в„– Р В РЎвЂ Р РЋР С“ Р РЋРІР‚РЋР В Р’ВµР В РЎВ Р РЋР С“Р РЋР вЂљР В Р’В°Р В Р вЂ Р В Р вЂ¦Р В РЎвЂР В Р вЂ Р В Р’В°Р В Р’В»Р В Р’В°Р РЋР С“Р РЋР Р‰ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В°.</p>
         </div>
       </div>
       <div class="legal-table-shell exam-detail-shell exam-detail-shell--payload">
         <table class="legal-table admin-table admin-table--compact exam-detail-table exam-detail-table--payload">
           <thead>
             <tr>
-              <th>Столбец / Поле</th>
-              <th>Значение</th>
+              <th>Р В Р Р‹Р РЋРІР‚С™Р В РЎвЂўР В Р’В»Р В Р’В±Р В Р’ВµР РЋРІР‚В  / Р В РЎСџР В РЎвЂўР В Р’В»Р В Р’Вµ</th>
+              <th>Р В РІР‚вЂќР В Р вЂ¦Р В Р’В°Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р’Вµ</th>
             </tr>
           </thead>
           <tbody id="admin-exam-detail-body">
             <tr>
-              <td colspan="2" class="legal-table__empty">Данные строки загружены.</td>
+              <td colspan="2" class="legal-table__empty">Р В РІР‚СњР В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В РЎвЂ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В¶Р В Р’ВµР В Р вЂ¦Р РЋРІР‚в„–.</td>
             </tr>
           </tbody>
         </table>
@@ -3611,7 +2146,7 @@ function renderExamEntryDetailModal(entry) {
 async function openExamEntryDetail(sourceRow) {
   const normalizedSourceRow = Number(sourceRow);
   if (!Number.isFinite(normalizedSourceRow) || normalizedSourceRow <= 0) {
-    setStateError(errorsHost, "Не удалось определить строку экзамена для разбора.");
+    setStateError(errorsHost, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂўР В РЎвЂ”Р РЋР вЂљР В Р’ВµР В РўвЂР В Р’ВµР В Р’В»Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР РЋРЎвЂњ Р РЋР РЉР В РЎвЂќР В Р’В·Р В Р’В°Р В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В° Р В РўвЂР В Р’В»Р РЋР РЏ Р РЋР вЂљР В Р’В°Р В Р’В·Р В Р’В±Р В РЎвЂўР РЋР вЂљР В Р’В°.");
     return;
   }
 
@@ -3619,14 +2154,14 @@ async function openExamEntryDetail(sourceRow) {
     const response = await apiFetch(`/api/exam-import/rows/${encodeURIComponent(normalizedSourceRow)}`);
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить разбор ответа."));
+      setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР вЂљР В Р’В°Р В Р’В·Р В Р’В±Р В РЎвЂўР РЋР вЂљ Р В РЎвЂўР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р В Р’В°."));
       return;
     }
     selectedUser = null;
     renderExamEntryDetailModal(payload);
     userModal.open();
   } catch (error) {
-    setStateError(errorsHost, error?.message || "Не удалось загрузить разбор ответа.");
+    setStateError(errorsHost, error?.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР вЂљР В Р’В°Р В Р’В·Р В Р’В±Р В РЎвЂўР РЋР вЂљ Р В РЎвЂўР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р В Р’В°.");
   }
 }
 
@@ -3652,7 +2187,7 @@ async function loadAiPipeline({ silent = false } = {}) {
     const payload = await parsePayload(response);
     if (!response.ok) {
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить AI Pipeline."));
+        setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ AI Pipeline."));
       }
       return;
     }
@@ -3662,11 +2197,11 @@ async function loadAiPipeline({ silent = false } = {}) {
       const first = partialErrors[0] || {};
       const source = first.source ? `[${String(first.source)}] ` : "";
       const message = String(first.message || "").trim();
-      setStateError(errorsHost, `AI Pipeline загружен частично (${partialErrors.length}). ${source}${message}`.trim());
+      setStateError(errorsHost, `AI Pipeline Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В¶Р В Р’ВµР В Р вЂ¦ Р РЋРІР‚РЋР В Р’В°Р РЋР С“Р РЋРІР‚С™Р В РЎвЂР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂў (${partialErrors.length}). ${source}${message}`.trim());
     }
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "Не удалось загрузить AI Pipeline.");
+      setStateError(errorsHost, error?.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ AI Pipeline.");
     }
   }
 }
@@ -3683,14 +2218,14 @@ async function loadRoleHistory({ silent = false } = {}) {
     const payload = await parsePayload(response);
     if (!response.ok) {
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить историю ролей."));
+        setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР В РЎвЂР РЋР вЂ№ Р РЋР вЂљР В РЎвЂўР В Р’В»Р В Р’ВµР В РІвЂћвЂ“."));
       }
       return;
     }
     renderRoleHistory(payload);
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "Не удалось загрузить историю ролей.");
+      setStateError(errorsHost, error?.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР В РЎвЂР РЋР вЂ№ Р РЋР вЂљР В РЎвЂўР В Р’В»Р В Р’ВµР В РІвЂћвЂ“.");
     }
   }
 }
@@ -3704,7 +2239,7 @@ async function loadAdminPerformance({ silent = false } = {}) {
     if (!response.ok) {
       const payload = await parsePayload(response);
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить метрики производительности."));
+        setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР вЂљР В РЎвЂР В РЎвЂќР В РЎвЂ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В РЎвЂР В Р’В·Р В Р вЂ Р В РЎвЂўР В РўвЂР В РЎвЂР РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰Р В Р вЂ¦Р В РЎвЂўР РЋР С“Р РЋРІР‚С™Р В РЎвЂ."));
       }
       return;
     }
@@ -3712,66 +2247,109 @@ async function loadAdminPerformance({ silent = false } = {}) {
     renderPerformance(payload);
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "Не удалось загрузить метрики производительности.");
+      setStateError(errorsHost, error?.message || "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР вЂљР В РЎвЂР В РЎвЂќР В РЎвЂ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В РЎвЂР В Р’В·Р В Р вЂ Р В РЎвЂўР В РўвЂР В РЎвЂР РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰Р В Р вЂ¦Р В РЎвЂўР РЋР С“Р РЋРІР‚С™Р В РЎвЂ.");
     }
   }
 }
+
+const adminOverviewLoader = createAdminOverviewLoader({
+  apiFetch,
+  buildOverviewUrl,
+  clearMessage,
+  currentFilters,
+  errorsHost,
+  formatHttpError,
+  getSelectedUser: () => selectedUser,
+  parsePayload,
+  renderActiveFilters,
+  renderAdminAudit,
+  renderCostSummary,
+  renderErrorExplorer,
+  renderEvents,
+  renderExamImport,
+  renderModelPolicy,
+  renderSynthetic,
+  renderTopEndpoints,
+  renderTotals,
+  renderUserModal,
+  renderUsers,
+  setLiveStatus,
+  setStateError,
+  setStateIdle,
+  showOverviewLoading,
+  userIndex,
+});
+
+const adminLawRuntimeController = createAdminLawRuntimeController({
+  apiFetch,
+  addServerLawBindingFlow,
+  errorsHost,
+  escapeHtml,
+  formatHttpError,
+  getActiveCatalogEntity() {
+    return activeCatalogEntity;
+  },
+  getActiveLawServerCode() {
+    return activeLawServerCode;
+  },
+  getCatalogHost() {
+    return catalogHost;
+  },
+  getLawSetOptions() {
+    return lawSetOptions;
+  },
+  getRuntimeServerHealth() {
+    return runtimeServerHealth;
+  },
+  getRuntimeServerItems() {
+    return runtimeServerItems;
+  },
+  getServerLawBindingItems() {
+    return serverLawBindingItems;
+  },
+  createLawSourceRegistryFlow,
+  editLawSourceRegistryFlow,
+  loadCatalog,
+  loadLawJobsOverview,
+  loadLawSourceRegistry,
+  loadLawSourcesManager,
+  parsePayload,
+  previewLawSources,
+  rebuildLawSources,
+  rebuildLawSourcesAsync,
+  renderRuntimeServersTable,
+  renderLawSetsTable,
+  renderServerLawBindingsTable,
+  renderLawServerSelector,
+  renderServerSetupWorkflowMarkup,
+  saveLawSourcesManifest,
+  setActiveLawServerCode(value) {
+    activeLawServerCode = value;
+  },
+  setLawServerOptions(value) {
+    lawServerOptions = Array.isArray(value) ? value : [];
+  },
+  setLawSetOptions(value) {
+    lawSetOptions = Array.isArray(value) ? value : [];
+  },
+  setServerLawBindingItems(value) {
+    serverLawBindingItems = Array.isArray(value) ? value : [];
+  },
+  setRuntimeServerHealth(value) {
+    runtimeServerHealth = value;
+  },
+  setRuntimeServerItems(value) {
+    runtimeServerItems = Array.isArray(value) ? value : [];
+  },
+  setStateError,
+  showMessage,
+  syncLawSourcesFromServerConfig,
+});
 
 async function loadAdminOverview({ silent = false } = {}) {
-  if (!silent) {
-    setStateIdle(errorsHost);
-    clearMessage();
-    showOverviewLoading();
-  } else {
-    setLiveStatus("Live: обновление...", "info");
-  }
-
-  try {
-    const response = await apiFetch(buildOverviewUrl());
-    if (!response.ok) {
-      const payload = await parsePayload(response);
-      if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить данные админ-панели."));
-      } else {
-        setLiveStatus("Live: ошибка обновления", "danger");
-      }
-      return;
-    }
-
-    const payload = await parsePayload(response);
-    renderActiveFilters(currentFilters());
-    renderTotals(payload.totals || {});
-    renderModelPolicy(payload.model_policy || {});
-    renderCostSummary(payload.totals || {});
-    renderExamImport(payload.exam_import || null);
-    renderTopEndpoints(payload.top_endpoints || []);
-    renderSynthetic(payload.synthetic || {});
-    renderUsers(payload.users || [], payload.filters?.user_sort || "complaints");
-    renderErrorExplorer(payload.error_explorer || null);
-    renderAdminAudit(payload.recent_events || []);
-    renderEvents(payload.recent_events || []);
-    const partialErrors = Array.isArray(payload.partial_errors) ? payload.partial_errors : [];
-    if (partialErrors.length && !silent) {
-      const first = partialErrors[0] || {};
-      const source = first.source ? `[${String(first.source)}] ` : "";
-      const message = String(first.message || "").trim();
-      setStateError(errorsHost, `Панель загружена частично (${partialErrors.length}). ${source}${message}`.trim());
-    }
-
-    if (selectedUser && userIndex.has(String(selectedUser).toLowerCase())) {
-      renderUserModal(userIndex.get(String(selectedUser).toLowerCase()));
-    }
-    if (silent) {
-      setLiveStatus(`Live: синхронно ${new Date().toLocaleTimeString("ru-RU")}`, "success-soft");
-    }
-  } catch (error) {
-    if (!silent) {
-      setStateError(errorsHost, error?.message || "Не удалось загрузить данные админ-панели.");
-    } else {
-      setLiveStatus("Live: ошибка обновления", "danger");
-    }
-  }
+  return adminOverviewLoader.load({ silent });
 }
+
 function scheduleOverviewReload() {
   if (adminSearchTimer) {
     clearTimeout(adminSearchTimer);
@@ -3792,13 +2370,13 @@ function clearLiveTimer() {
 function scheduleLiveRefresh() {
   clearLiveTimer();
   if (!liveRefreshField?.checked) {
-    setLiveStatus("Live: выключено", "muted");
+    setLiveStatus("Live: Р В Р вЂ Р РЋРІР‚в„–Р В РЎвЂќР В Р’В»Р РЋР вЂ№Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂў", "muted");
     return;
   }
 
   const intervalSeconds = Number(liveIntervalField?.value || 30);
   const safeIntervalMs = Math.max(10, intervalSeconds) * 1000;
-  setLiveStatus(`Live: интервал ${Math.max(10, intervalSeconds)}с`, "info");
+  setLiveStatus(`Live: Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљР В Р вЂ Р В Р’В°Р В Р’В» ${Math.max(10, intervalSeconds)}Р РЋР С“`, "info");
 
   adminLiveTimer = window.setInterval(async () => {
     if (document.hidden) {
@@ -3849,23 +2427,7 @@ function downloadCsv(url) {
 }
 
 async function performAdminAction(url, successText, body = null) {
-  setStateIdle(errorsHost);
-  clearMessage();
-  try {
-    const response = await apiFetch(url, {
-      method: "POST",
-      body: body ? JSON.stringify(body) : null,
-    });
-    if (!response.ok) {
-      const payload = await parsePayload(response);
-      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось выполнить действие администратора."));
-      return;
-    }
-    showMessage(successText);
-    await loadAdminOverview();
-  } catch (error) {
-    setStateError(errorsHost, error?.message || "Не удалось выполнить действие администратора.");
-  }
+  return adminActions.performAction(url, successText, body);
 }
 
 async function pollBulkTask(taskId) {
@@ -3874,7 +2436,7 @@ async function pollBulkTask(taskId) {
     const response = await apiFetch(`/api/admin/tasks/${encodeURIComponent(taskId)}`);
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось получить статус bulk-задачи."));
+      setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋРЎвЂњР РЋРІР‚РЋР В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“ bulk-Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р РЋРІР‚РЋР В РЎвЂ."));
       return;
     }
     const progress = payload.progress || {};
@@ -3882,30 +2444,30 @@ async function pollBulkTask(taskId) {
       statusHost.textContent = `Bulk: ${payload.status} (${progress.done || 0}/${progress.total || 0})`;
     }
     if (payload.status === "finished") {
-      showMessage(`Bulk завершен: ok ${payload.result?.success_count || 0}, ошибок ${payload.result?.failed_count || 0}.`);
+      showMessage(`Bulk Р В Р’В·Р В Р’В°Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРІвЂљВ¬Р В Р’ВµР В Р вЂ¦: ok ${payload.result?.success_count || 0}, Р В РЎвЂўР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂўР В РЎвЂќ ${payload.result?.failed_count || 0}.`);
       selectedBulkUsers = new Set();
       await loadAdminOverview();
       return;
     }
     if (payload.status === "failed") {
-      setStateError(errorsHost, payload.error || "Bulk-задача завершилась ошибкой.");
+      setStateError(errorsHost, payload.error || "Bulk-Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р РЋРІР‚РЋР В Р’В° Р В Р’В·Р В Р’В°Р В Р вЂ Р В Р’ВµР РЋР вЂљР РЋРІвЂљВ¬Р В РЎвЂР В Р’В»Р В Р’В°Р РЋР С“Р РЋР Р‰ Р В РЎвЂўР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В РЎвЂўР В РІвЂћвЂ“.");
       return;
     }
     // eslint-disable-next-line no-await-in-loop
     await new Promise((resolve) => window.setTimeout(resolve, 1000));
   }
-  setStateError(errorsHost, "Таймаут ожидания bulk-задачи.");
+  setStateError(errorsHost, "Р В РЎС›Р В Р’В°Р В РІвЂћвЂ“Р В РЎВР В Р’В°Р РЋРЎвЂњР РЋРІР‚С™ Р В РЎвЂўР В Р’В¶Р В РЎвЂР В РўвЂР В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ bulk-Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р РЋРІР‚РЋР В РЎвЂ.");
 }
 
 async function runBulkAction() {
   const usernames = Array.from(selectedBulkUsers);
   if (!usernames.length) {
-    setStateError(errorsHost, "Выберите хотя бы одного пользователя для массовой операции.");
+    setStateError(errorsHost, "Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р РЋРІР‚В¦Р В РЎвЂўР РЋРІР‚С™Р РЋР РЏ Р В Р’В±Р РЋРІР‚в„– Р В РЎвЂўР В РўвЂР В Р вЂ¦Р В РЎвЂўР В РЎвЂ“Р В РЎвЂў Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В Р’В·Р В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР РЏ Р В РўвЂР В Р’В»Р РЋР РЏ Р В РЎВР В Р’В°Р РЋР С“Р РЋР С“Р В РЎвЂўР В Р вЂ Р В РЎвЂўР В РІвЂћвЂ“ Р В РЎвЂўР В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР В РЎвЂ.");
     return;
   }
   const action = String(document.getElementById("admin-bulk-action")?.value || "").trim();
   if (!action) {
-    setStateError(errorsHost, "Выберите массовое действие.");
+    setStateError(errorsHost, "Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р В Р’Вµ Р В РЎВР В Р’В°Р РЋР С“Р РЋР С“Р В РЎвЂўР В Р вЂ Р В РЎвЂўР В Р’Вµ Р В РўвЂР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В РЎвЂР В Р’Вµ.");
     return;
   }
   const reason = String(document.getElementById("admin-bulk-reason")?.value || "").trim();
@@ -3918,195 +2480,19 @@ async function runBulkAction() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось запустить bulk-операцию."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р РЋРІР‚С™Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ bulk-Р В РЎвЂўР В РЎвЂ”Р В Р’ВµР РЋР вЂљР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№."));
     return;
   }
-  showMessage("Bulk-задача добавлена в очередь.");
+  showMessage("Bulk-Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р РЋРІР‚РЋР В Р’В° Р В РўвЂР В РЎвЂўР В Р’В±Р В Р’В°Р В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦Р В Р’В° Р В Р вЂ  Р В РЎвЂўР РЋРІР‚РЋР В Р’ВµР РЋР вЂљР В Р’ВµР В РўвЂР РЋР Р‰.");
   await pollBulkTask(payload.task_id);
 }
 
 async function handleAdminAction(target) {
-  const verifyUsername = target.getAttribute("data-verify-email");
-  if (verifyUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(verifyUsername)}/verify-email`, "Email пользователя подтвержден администратором.");
-    return true;
-  }
-
-  const unblockUsername = target.getAttribute("data-unblock-user");
-  if (unblockUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(unblockUsername)}/unblock`, "Доступ пользователя восстановлен.");
-    return true;
-  }
-
-  const blockUsername = target.getAttribute("data-block-user");
-  if (blockUsername) {
-    openActionModal({
-      action: "block-user",
-      username: blockUsername,
-      askReason: true,
-      title: "Блокировка пользователя",
-      description: `Вы блокируете пользователя ${blockUsername}. При необходимости укажите причину.`,
-      confirmLabel: "Заблокировать",
-    });
-    return true;
-  }
-
-  const grantTesterUsername = target.getAttribute("data-grant-tester");
-  if (grantTesterUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(grantTesterUsername)}/grant-tester`, "Статус тестера выдан.");
-    return true;
-  }
-
-  const revokeTesterUsername = target.getAttribute("data-revoke-tester");
-  if (revokeTesterUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(revokeTesterUsername)}/revoke-tester`, "Статус тестера снят.");
-    return true;
-  }
-
-  const grantGkaUsername = target.getAttribute("data-grant-gka");
-  if (grantGkaUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(grantGkaUsername)}/grant-gka`, "Тип ГКА-ЗГКА присвоен.");
-    return true;
-  }
-
-  const revokeGkaUsername = target.getAttribute("data-revoke-gka");
-  if (revokeGkaUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(revokeGkaUsername)}/revoke-gka`, "Тип ГКА-ЗГКА снят.");
-    return true;
-  }
-
-  const changeEmailUsername = target.getAttribute("data-change-email");
-  if (changeEmailUsername) {
-    openActionModal({
-      action: "change-email",
-      username: changeEmailUsername,
-      askEmail: true,
-      defaultEmail: target.getAttribute("data-current-email") || "",
-      title: "Смена email",
-      description: `Укажите новый email для пользователя ${changeEmailUsername}.`,
-      confirmLabel: "Сохранить email",
-    });
-    return true;
-  }
-
-  const resetPasswordUsername = target.getAttribute("data-reset-password");
-  if (resetPasswordUsername) {
-    openActionModal({
-      action: "reset-password",
-      username: resetPasswordUsername,
-      askPassword: true,
-      title: "Сброс пароля",
-      description: `Введите новый пароль для пользователя ${resetPasswordUsername}.`,
-      confirmLabel: "Сменить пароль",
-    });
-    return true;
-  }
-
-  const deactivateUsername = target.getAttribute("data-deactivate-user");
-  if (deactivateUsername) {
-    openActionModal({
-      action: "deactivate-user",
-      username: deactivateUsername,
-      askReason: true,
-      title: "Деактивация аккаунта",
-      description: `Пользователь ${deactivateUsername} будет деактивирован (soft-delete).`,
-      confirmLabel: "Деактивировать",
-    });
-    return true;
-  }
-
-  const reactivateUsername = target.getAttribute("data-reactivate-user");
-  if (reactivateUsername) {
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(reactivateUsername)}/reactivate`, "Аккаунт реактивирован.");
-    return true;
-  }
-
-  const setQuotaUsername = target.getAttribute("data-set-quota");
-  if (setQuotaUsername) {
-    openActionModal({
-      action: "set-daily-quota",
-      username: setQuotaUsername,
-      askQuota: true,
-      defaultQuota: target.getAttribute("data-current-quota") || "0",
-      title: "Суточная квота API",
-      description: `Установите лимит API запросов в сутки для ${setQuotaUsername} (0 = без лимита).`,
-      confirmLabel: "Сохранить квоту",
-    });
-    return true;
-  }
-
-  return false;
+  return adminActions.handleTarget(target);
 }
 
 async function submitPendingAction() {
-  if (!pendingAction) {
-    return;
-  }
-  setStateIdle(actionModalErrors);
-  const action = pendingAction.action;
-  const username = String(pendingAction.username || "");
-
-  if (action === "block-user") {
-    const reason = String(actionReasonInput?.value || "").trim();
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/block`, "Доступ пользователя заблокирован.", {
-      reason,
-    });
-    closeActionModal();
-    return;
-  }
-
-  if (action === "change-email") {
-    const email = String(actionEmailInput?.value || "").trim();
-    if (!email) {
-      setStateError(actionModalErrors, "Укажите новый email.");
-      return;
-    }
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/email`, "Email пользователя обновлен.", {
-      email,
-    });
-    closeActionModal();
-    return;
-  }
-
-  if (action === "reset-password") {
-    const password = String(actionPasswordInput?.value || "").trim();
-    if (!password) {
-      setStateError(actionModalErrors, "Введите новый пароль.");
-      return;
-    }
-    if (password.length < 10) {
-      setStateError(actionModalErrors, "Пароль должен быть не короче 10 символов.");
-      return;
-    }
-    await performAdminAction(
-      `/api/admin/users/${encodeURIComponent(username)}/reset-password`,
-      "Пароль пользователя обновлен.",
-      { password },
-    );
-    closeActionModal();
-    return;
-  }
-
-  if (action === "deactivate-user") {
-    const reason = String(actionReasonInput?.value || "").trim();
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/deactivate`, "Аккаунт пользователя деактивирован.", {
-      reason,
-    });
-    closeActionModal();
-    return;
-  }
-
-  if (action === "set-daily-quota") {
-    const quota = Number(actionQuotaInput?.value || 0);
-    if (!Number.isFinite(quota) || quota < 0) {
-      setStateError(actionModalErrors, "Квота должна быть неотрицательным числом.");
-      return;
-    }
-    await performAdminAction(`/api/admin/users/${encodeURIComponent(username)}/daily-quota`, "Квота обновлена.", {
-      daily_limit: quota,
-    });
-    closeActionModal();
-  }
+  return adminActions.submitPendingAction();
 }
 
 usersHost?.addEventListener("click", async (event) => {
@@ -4138,7 +2524,7 @@ usersHost?.addEventListener("click", async (event) => {
       }
     });
     const statusHost = document.getElementById("admin-bulk-status");
-    if (statusHost) statusHost.textContent = `Выбрано: ${selectedBulkUsers.size}`;
+    if (statusHost) statusHost.textContent = `Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂў: ${selectedBulkUsers.size}`;
   }
 });
 
@@ -4179,131 +2565,28 @@ usersHost?.addEventListener("change", (event) => {
       selectedBulkUsers.delete(String(username).toLowerCase());
     }
     const statusHost = document.getElementById("admin-bulk-status");
-    if (statusHost) statusHost.textContent = `Выбрано: ${selectedBulkUsers.size}`;
+    if (statusHost) statusHost.textContent = `Р В РІР‚в„ўР РЋРІР‚в„–Р В Р’В±Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂў: ${selectedBulkUsers.size}`;
   }
 });
 
 catalogHost?.addEventListener("change", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
-  if (target.id === "catalog-entity") {
-    await loadCatalog(String(target.value || "servers"));
+  if (await adminLawRuntimeController.handleCatalogChange(target)) {
     return;
-  }
-  if (target.id === "law-sources-server-select") {
-    activeLawServerCode = String(target.value || "").trim().toLowerCase();
-    await loadLawSourcesManager();
-    await loadLawSets();
-    await loadServerLawBindings();
   }
 });
 
 catalogHost?.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
-  if (target.id === "runtime-servers-refresh") {
-    await loadRuntimeServersPanel();
-    return;
-  }
-  if (target.id === "runtime-servers-create") {
-    await createRuntimeServerFlow();
-    return;
-  }
-  const runtimeEditCode = target.getAttribute("data-runtime-server-edit");
-  if (runtimeEditCode) {
-    const currentTitle = String(target.getAttribute("data-runtime-server-title") || runtimeEditCode);
-    await editRuntimeServerFlow(runtimeEditCode, currentTitle);
-    return;
-  }
-  const runtimeToggleCode = target.getAttribute("data-runtime-server-toggle");
-  if (runtimeToggleCode) {
-    const activeRaw = String(target.getAttribute("data-runtime-server-active") || "0");
-    await toggleRuntimeServerFlow(runtimeToggleCode, activeRaw === "1");
-    return;
-  }
-  if (target.id === "law-sources-sync") {
-    await syncLawSourcesFromServerConfig();
-    return;
-  }
-  if (target.id === "law-sources-rebuild") {
-    await rebuildLawSources();
-    return;
-  }
-  if (target.id === "law-sources-rebuild-async") {
-    await rebuildLawSourcesAsync();
-    return;
-  }
-  if (target.id === "law-sources-save") {
-    await saveLawSourcesManifest();
-    return;
-  }
-  if (target.id === "law-sources-preview") {
-    await previewLawSources();
-    return;
-  }
-  if (target.id === "law-sets-refresh") {
-    await loadLawSets();
-    return;
-  }
-  if (target.id === "law-sets-create") {
-    await createLawSetFlow();
-    return;
-  }
-  if (target.id === "law-source-registry-refresh") {
-    await loadLawSourceRegistry();
-    return;
-  }
-  if (target.id === "law-source-registry-create") {
-    await createLawSourceRegistryFlow();
-    return;
-  }
-  if (target.id === "server-law-bindings-refresh") {
-    await loadServerLawBindings();
-    return;
-  }
-  if (target.id === "server-law-bindings-add") {
-    await addServerLawBindingFlow();
-    return;
-  }
-  if (target.id === "law-jobs-refresh") {
-    await loadLawJobsOverview();
-    return;
-  }
-  const lawSetEditId = target.getAttribute("data-law-set-edit");
-  if (lawSetEditId) {
-    const currentName = String(target.getAttribute("data-law-set-name") || "");
-    const currentIsActive = String(target.getAttribute("data-law-set-active") || "1") === "1";
-    await editLawSetFlow(lawSetEditId, currentName, currentIsActive);
-    return;
-  }
-  const lawSetPublishId = target.getAttribute("data-law-set-publish");
-  if (lawSetPublishId) {
-    await publishLawSetFlow(lawSetPublishId);
-    return;
-  }
-  const lawSetRebuildId = target.getAttribute("data-law-set-rebuild");
-  if (lawSetRebuildId) {
-    await rebuildLawSetFlow(lawSetRebuildId);
-    return;
-  }
-  const lawSetRollbackId = target.getAttribute("data-law-set-rollback");
-  if (lawSetRollbackId) {
-    await rollbackLawSetFlow(lawSetRollbackId);
-    return;
-  }
-  const lawSourceEditId = target.getAttribute("data-law-source-edit");
-  if (lawSourceEditId) {
-    const currentName = String(target.getAttribute("data-law-source-name") || "");
-    const currentKind = String(target.getAttribute("data-law-source-kind") || "url");
-    const currentUrl = String(target.getAttribute("data-law-source-url") || "");
-    const currentActive = String(target.getAttribute("data-law-source-active") || "1") === "1";
-    await editLawSourceRegistryFlow(lawSourceEditId, currentName, currentKind, currentUrl, currentActive);
+  if (await adminLawRuntimeController.handleCatalogClick(target)) {
     return;
   }
   if (target.id === "catalog-create") {
     const payload = await openCatalogFormDialog(activeCatalogEntity);
     if (!payload) return;
-    await performAdminAction(catalogEndpoint(activeCatalogEntity), "Элемент создан.", payload);
+    await performAdminAction(catalogEndpoint(activeCatalogEntity), "Р В Р’В­Р В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™ Р РЋР С“Р В РЎвЂўР В Р’В·Р В РўвЂР В Р’В°Р В Р вЂ¦.", payload);
     await loadCatalog(activeCatalogEntity);
     return;
   }
@@ -4316,7 +2599,7 @@ catalogHost?.addEventListener("click", async (event) => {
     const response = await apiFetch(catalogEndpoint(activeCatalogEntity, viewId));
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить элемент catalog."));
+      setStateError(errorsHost, formatHttpError(response, payload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™ catalog."));
       return;
     }
     openCatalogModal({
@@ -4332,7 +2615,7 @@ catalogHost?.addEventListener("click", async (event) => {
     const itemResponse = await apiFetch(catalogEndpoint(activeCatalogEntity, editId));
     const itemPayload = await parsePayload(itemResponse);
     if (!itemResponse.ok) {
-      setStateError(errorsHost, formatHttpError(itemResponse, itemPayload, "Не удалось загрузить элемент catalog."));
+      setStateError(errorsHost, formatHttpError(itemResponse, itemPayload, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В Р’В·Р В Р’В°Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р РЋР РЉР В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™ catalog."));
       return;
     }
     const payload = await openCatalogFormDialog(activeCatalogEntity, extractCatalogEditableData(itemPayload));
@@ -4341,7 +2624,7 @@ catalogHost?.addEventListener("click", async (event) => {
       method: "PUT",
       body: JSON.stringify(payload),
     });
-    if (response.ok) showMessage("Элемент обновлен.");
+    if (response.ok) showMessage("Р В Р’В­Р В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™ Р В РЎвЂўР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦.");
     await loadCatalog(activeCatalogEntity);
     return;
   }
@@ -4350,10 +2633,10 @@ catalogHost?.addEventListener("click", async (event) => {
     const action = String(target.getAttribute("data-catalog-workflow-action") || "").trim().toLowerCase();
     const changeRequestId = Number(target.getAttribute("data-catalog-workflow-cr-id") || "0");
     if (!action || !changeRequestId) {
-      setStateError(errorsHost, "Не удалось определить действие workflow: отсутствует change request.");
+      setStateError(errorsHost, "Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р В РЎвЂўР В РЎвЂ”Р РЋР вЂљР В Р’ВµР В РўвЂР В Р’ВµР В Р’В»Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В РўвЂР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В РЎвЂР В Р’Вµ workflow: Р В РЎвЂўР РЋРІР‚С™Р РЋР С“Р РЋРЎвЂњР РЋРІР‚С™Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р РЋРЎвЂњР В Р’ВµР РЋРІР‚С™ change request.");
       return;
     }
-    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, workflowItemId)}/workflow`, "Workflow обновлен.", {
+    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, workflowItemId)}/workflow`, "Workflow Р В РЎвЂўР В Р’В±Р В Р вЂ¦Р В РЎвЂўР В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦.", {
       action,
       change_request_id: changeRequestId,
     });
@@ -4371,23 +2654,23 @@ catalogHost?.addEventListener("click", async (event) => {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-      showMessage("JSON скопирован.");
+      showMessage("JSON Р РЋР С“Р В РЎвЂќР В РЎвЂўР В РЎвЂ”Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦.");
     } catch {
-      showMessage("Не удалось скопировать JSON.");
+      showMessage("Р В РЎСљР В Р’Вµ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В РЎвЂўР РЋР С“Р РЋР Р‰ Р РЋР С“Р В РЎвЂќР В РЎвЂўР В РЎвЂ”Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰ JSON.");
     }
     return;
   }
   const rollbackId = target.getAttribute("data-catalog-rollback");
   if (rollbackId) {
     const version = Number(window.prompt("Rollback to version", "1") || "1");
-    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, rollbackId)}/rollback`, "Rollback выполнен.", { version });
+    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, rollbackId)}/rollback`, "Rollback Р В Р вЂ Р РЋРІР‚в„–Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦.", { version });
     await loadCatalog(activeCatalogEntity);
     return;
   }
   const deleteId = target.getAttribute("data-catalog-delete");
   if (deleteId) {
     const response = await apiFetch(catalogEndpoint(activeCatalogEntity, deleteId), { method: "DELETE" });
-    if (response.ok) showMessage("Элемент удален.");
+    if (response.ok) showMessage("Р В Р’В­Р В Р’В»Р В Р’ВµР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™ Р РЋРЎвЂњР В РўвЂР В Р’В°Р В Р’В»Р В Р’ВµР В Р вЂ¦.");
     await loadCatalog(activeCatalogEntity);
   }
 });

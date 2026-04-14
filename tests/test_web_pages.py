@@ -138,6 +138,26 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn('class="segmented-tabs__item is-active"', response.text)
         self.assertIn('href="/admin/users"', response.text)
 
+    def test_admin_laws_page_contains_guided_server_setup_block(self):
+        self.client.post("/api/auth/logout")
+        response = self.client.post(
+            "/api/auth/register",
+            json={"username": "12345", "email": "admin@example.com", "password": "Password123!"},
+        )
+        verify_url = response.json()["verification_url"]
+        split = urlsplit(verify_url)
+        self.client.get(f"{split.path}?{split.query}")
+        self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
+
+        response = self.client.get("/admin/laws")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('data-catalog-entity="laws"', response.text)
+        self.assertIn('/static/shared/admin_common.js', response.text)
+        self.assertIn('/static/shared/admin_overview_loader.js', response.text)
+        self.assertIn('/static/shared/admin_actions.js', response.text)
+        self.assertIn('/static/shared/admin_law_runtime_controller.js', response.text)
+        self.assertIn('/static/pages/admin.js', response.text)
+
     def test_granted_tester_redirected_from_test_pages(self):
         response = self.client.post(
             "/api/auth/register",
