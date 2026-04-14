@@ -341,3 +341,80 @@ class RuntimeLawSetsStore:
             return str(row.get("server_code") or ""), [str(item.get("url") or "") for item in urls if str(item.get("url") or "").strip()]
         finally:
             conn.close()
+
+    def list_server_law_bindings(self, *, server_code: str) -> list[dict[str, Any]]:
+        normalized_server = self._normalize_server_code(server_code)
+        conn = self.backend.connect()
+        try:
+            rows = conn.execute(
+                """
+                SELECT ls.id AS law_set_id, ls.name AS law_set_name, ls.is_published,
+                       lsi.id AS item_id, lsi.law_code, lsi.effective_from, lsi.priority, lsi.source_id,
+                       lsr.name AS source_name, lsr.url AS source_url
+                FROM law_sets ls
+                LEFT JOIN law_set_items lsi ON lsi.law_set_id = ls.id
+                LEFT JOIN law_source_registry lsr ON lsr.id = lsi.source_id
+                WHERE ls.server_code = %s
+                ORDER BY ls.is_published DESC, ls.id DESC, lsi.priority ASC, lsi.id ASC
+                """,
+                (normalized_server,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    def add_server_law_binding(
+        self,
+        *,
+        server_code: str,
+        law_code: str,
+        source_id: int,
+        effective_from: str = "",
+        priority: int = 100,
+        law_set_id: int | None = None,
+    ) -> dict[str, Any]:
+        normalized_server = self._normalize_server_code(server_code)
+        normalized_law_code = self._normalize_text(law_code)
+        if not normalized_server:
+            raise ValueError("server_code_required")
+        if not normalized_law_code:
+            raise ValueError("law_code_required")
+        conn = self.backend.connect()
+        try:
+            target_set_id = int(law_set_id or 0)
+            if target_set_id <= 0:
+                row = conn.execute(
+                    """
+                    SELECT id
+                    FROM law_sets
+                    WHERE server_code = %s
+                    ORDER BY is_published DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (normalized_server,),
+                ).fetchone()
+                if row is None:
+                    row = conn.execute(
+                        """
+                        INSERT INTO law_sets (server_code, name, is_active, is_published)
+                        VALUES (%s, %s, TRUE, TRUE)
+                        RETURNING id
+                        """,
+                        (normalized_server, "Default runtime set"),
+                    ).fetchone()
+                target_set_id = int(row.get("id") or 0)
+            item = conn.execute(
+                """
+                INSERT INTO law_set_items (law_set_id, law_code, effective_from, priority, source_id)
+                VALUES (%s, %s, NULLIF(%s, '')::date, %s, %s)
+                RETURNING id, law_set_id, law_code, effective_from, priority, source_id
+                """,
+                (target_set_id, normalized_law_code, self._normalize_text(effective_from), int(priority or 100), int(source_id)),
+            ).fetchone()
+            conn.commit()
+            return dict(item)
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
