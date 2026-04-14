@@ -433,8 +433,13 @@ def score_pending_rows_with_progress(
     return scored_count, aggregate_stats, failures, total_count
 
 
-def build_entries_response(store: ExamAnswersStore) -> list[ExamImportEntry]:
-    latest_entries_raw = store.list_entries()
+def build_entries_response(
+    store: ExamAnswersStore,
+    *,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[ExamImportEntry]:
+    latest_entries_raw = store.list_entries(limit=limit, offset=offset)
     return [ExamImportEntry(**normalize_entry(entry)) for entry in latest_entries_raw]
 
 

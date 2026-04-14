@@ -4,7 +4,7 @@ import logging
 from functools import partial
 from threading import Lock
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.concurrency import run_in_threadpool
 
 from ogp_web.dependencies import get_admin_metrics_store, get_exam_answers_store, get_exam_import_task_registry, requires_permission
@@ -80,8 +80,8 @@ def _score_pending_rows(store: ExamAnswersStore) -> tuple[int, dict[str, int], l
     return exam_import_service.score_pending_rows(store, build_exam_score_items=build_exam_score_items)
 
 
-def _build_entries_response(store: ExamAnswersStore):
-    return exam_import_service.build_entries_response(store)
+def _build_entries_response(store: ExamAnswersStore, *, limit: int = 20, offset: int = 0):
+    return exam_import_service.build_entries_response(store, limit=limit, offset=offset)
 
 
 def _build_failed_fields(scores: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -215,6 +215,25 @@ async def sync_exam_import(
         scored_count=0,
         latest_entries=await _run_sync_io(_build_entries_response, store),
     )
+
+
+@router.get("/api/exam-import/entries")
+async def list_exam_import_entries(
+    user: AuthUser = Depends(requires_permission("exam_import")),
+    store: ExamAnswersStore = Depends(get_exam_answers_store),
+    limit: int = Query(default=20, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    _ = user
+    items = await _run_sync_io(_build_entries_response, store, limit=limit, offset=offset)
+    total = await _run_sync_io(store.count)
+    return {
+        "items": items,
+        "total": int(total),
+        "limit": int(limit),
+        "offset": int(offset),
+        "has_next": int(offset) + len(items) < int(total),
+    }
 
 
 @router.post("/api/exam-import/score", response_model=ExamImportResponse)

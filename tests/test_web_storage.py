@@ -1582,8 +1582,8 @@ class FakeExamAnswersConnection:
             return self._update_row_preserve_scores(params)
         if normalized.startswith("UPDATE exam_answers SET source_row = %s, submitted_at = %s, full_name = %s, discord_tag = %s, passport = %s, exam_format = %s, payload_json = %s::jsonb, answer_count = %s, question_g_score = NULL, question_g_rationale = NULL, question_g_scored_at = NULL, exam_scores_json = NULL, exam_scores_scored_at = NULL, average_score = NULL, average_score_answer_count = NULL, average_score_scored_at = NULL, needs_rescore = %s, updated_at = NOW() WHERE id = %s"):
             return self._update_row(params)
-        if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, average_score, COALESCE(average_score_answer_count, 0) AS average_score_answer_count, needs_rescore, imported_at FROM exam_answers WHERE source_row > 0 ORDER BY source_row DESC LIMIT %s"):
-            return self._list_entries(int(params[0]))
+        if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, average_score, COALESCE(average_score_answer_count, 0) AS average_score_answer_count, needs_rescore, imported_at FROM exam_answers WHERE source_row > 0 ORDER BY source_row DESC LIMIT %s OFFSET %s"):
+            return self._list_entries(int(params[0]), int(params[1]))
         if normalized.startswith("SELECT source_row, submitted_at, full_name, discord_tag, passport, exam_format, answer_count, average_score, average_score_answer_count, imported_at FROM exam_answers WHERE source_row > 0 AND average_score IS NULL ORDER BY source_row ASC LIMIT %s"):
             rows = [row for row in self.state["rows"] if row["source_row"] > 0 and row["average_score"] is None]
             rows.sort(key=lambda item: item["source_row"])
@@ -1767,10 +1767,11 @@ class FakeExamAnswersConnection:
             "payload_json": row["payload_json"],
         }
 
-    def _list_entries(self, limit: int):
+    def _list_entries(self, limit: int, offset: int = 0):
         rows = [row for row in self.state["rows"] if row["source_row"] > 0]
         rows.sort(key=lambda item: item["source_row"], reverse=True)
-        rows = rows[:limit]
+        safe_offset = max(0, int(offset or 0))
+        rows = rows[safe_offset : safe_offset + limit]
         return FakeCursor(rowcount=len(rows), rows=[self._summary_row(row) for row in rows])
 
     def _save_scores(self, params):
