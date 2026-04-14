@@ -5,7 +5,10 @@ const resultField = document.getElementById("law-qa-result");
 const debugHost = document.getElementById("law-qa-debug");
 const debugMeta = document.getElementById("law-qa-debug-meta");
 const debugList = document.getElementById("law-qa-debug-list");
-const { parsePayload, redirectIfUnauthorized } = window.OGPWeb;
+
+function getWebApi() {
+  return window.OGPWeb || {};
+}
 
 function setMessage(message) {
   if (!messageBox) return;
@@ -95,26 +98,38 @@ form?.addEventListener("submit", async (event) => {
 
   const submitButton = form.querySelector("button[type='submit']");
   submitButton?.setAttribute("disabled", "disabled");
+
   try {
+    const webApi = getWebApi();
+    if (typeof webApi.apiFetch !== "function" || typeof webApi.parsePayload !== "function") {
+      throw new Error("Клиентская часть страницы не успела загрузиться. Обновите страницу и попробуйте снова.");
+    }
+
     const payload = {
       server_code: document.getElementById("law-server-code")?.value?.trim() || "",
       question: document.getElementById("law-question")?.value?.trim() || "",
       max_answer_chars: Number(document.getElementById("max-answer-chars")?.value || 2200),
     };
-    const response = await window.OGPWeb.apiFetch("/api/ai/law-qa-test", {
+
+    const response = await webApi.apiFetch("/api/ai/law-qa-test", {
       method: "POST",
       body: JSON.stringify(payload),
     });
-    const data = await parsePayload(response);
+    const data = await webApi.parsePayload(response);
+
     if (!response.ok) {
       setErrors(data.detail || ["Не удалось получить ответ."]);
-      redirectIfUnauthorized(response.status);
+      webApi.redirectIfUnauthorized?.(response.status);
       return;
     }
+
     const sources = Array.isArray(data.used_sources) && data.used_sources.length
       ? `\n\nИсточники:\n${data.used_sources.join("\n")}`
       : "";
-    if (resultField) resultField.value = `${data.text || ""}${sources}`.trim();
+
+    if (resultField) {
+      resultField.value = `${data.text || ""}${sources}`.trim();
+    }
     renderDebug(data);
     setMessage(
       `Готово. Проиндексировано документов: ${Number(data.indexed_documents || 0)}. ` +
