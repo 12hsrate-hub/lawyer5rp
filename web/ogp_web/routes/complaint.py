@@ -679,13 +679,14 @@ async def law_qa_test(
             flag="citations_required",
             context=RolloutContext(username=user.username, server_id=effective_server_code),
         )
+        response_warnings = list(getattr(result, "warnings", []) or [])
         if citations_flag.use_new_flow and not raw_citations:
             if citations_flag.enforcement.value == "hard":
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail=["citations_required policy blocked the response due to missing citations."],
                 )
-            result.warnings = [*list(result.warnings or []), "citations_required_warn:missing_citations"]
+            response_warnings.append("citations_required_warn:missing_citations")
         retrieval = run_retrieval(
             store=store,
             actor_username=user.username,
@@ -815,7 +816,7 @@ async def law_qa_test(
             bundle_generated_at=result.bundle_generated_at,
             bundle_fingerprint=result.bundle_fingerprint,
             law_version_id=payload.law_version_id,
-            warnings=result.warnings,
+            warnings=response_warnings,
             shadow=result.shadow,
             selected_norms=result.selected_norms,
             retrieval_run_id=retrieval.retrieval_run_id,
