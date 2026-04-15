@@ -23,6 +23,7 @@ from ogp_web.services.server_context_service import (
     resolve_server_law_bundle_path,
     resolve_server_law_sources,
     resolve_user_server_context,
+    resolve_user_server_permissions,
     server_has_feature,
 )
 
@@ -241,3 +242,16 @@ class ServerContextServiceTests(unittest.TestCase):
         self.assertIs(resolved_config, config)
         self.assertIs(resolved_permissions, permissions)
         resolve_server_config_mock.assert_called_once_with(server_code="Orange", fallback_server_code="blackberry")
+
+    def test_resolve_user_server_permissions_returns_permissions_only(self):
+        store = _DummyUserStore("blackberry")
+        permissions = object()
+
+        with patch(
+            "ogp_web.services.server_context_service.resolve_user_server_context",
+            return_value=(object(), permissions),
+        ) as resolve_user_server_context_mock:
+            resolved_permissions = resolve_user_server_permissions(store, "tester", server_code="orange")
+
+        self.assertIs(resolved_permissions, permissions)
+        resolve_user_server_context_mock.assert_called_once_with(store, "tester", server_code="orange")

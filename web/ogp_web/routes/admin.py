@@ -49,7 +49,11 @@ from ogp_web.services.validation_service import ValidationService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.content_contracts import normalize_content_type
-from ogp_web.services.server_context_service import extract_server_shell_context, resolve_user_server_context
+from ogp_web.services.server_context_service import (
+    extract_server_shell_context,
+    resolve_user_server_context,
+    resolve_user_server_permissions,
+)
 from ogp_web.services.async_job_service import AsyncJobService
 from ogp_web.services.job_status_service import enrich_job_status
 from ogp_web.services.admin_dashboard_service import AdminDashboardService
@@ -1748,14 +1752,14 @@ def _resolve_law_sources_server_code(
     if target_server_code == user.server_code:
         return target_server_code
 
-    _, current_permissions = resolve_user_server_context(user_store, user.username, server_code=user.server_code)
+    current_permissions = resolve_user_server_permissions(user_store, user.username, server_code=user.server_code)
     if not current_permissions.has("manage_servers"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=["Недостаточно прав для управления источниками законов другого сервера."],
         )
 
-    _, target_permissions = resolve_user_server_context(user_store, user.username, server_code=target_server_code)
+    target_permissions = resolve_user_server_permissions(user_store, user.username, server_code=target_server_code)
     if not target_permissions.has("manage_laws"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
