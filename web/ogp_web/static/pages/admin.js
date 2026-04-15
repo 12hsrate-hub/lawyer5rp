@@ -1852,7 +1852,6 @@ function derivePilotNextCandidateContext({ rolloutState, decision, signOff, scal
     nextStep: "Use SCALE_OUT_CHECKLIST_TEMPLATE.md to select a single next candidate and preserve rollback isolation.",
   };
 }
-
 function derivePilotObservationSignOff({ rolloutState, warningRows, fallbackToLegacyUsage, rollbackHistory }) {
   const fallbackCount = Number(fallbackToLegacyUsage || 0);
   const rollbackCount = Array.isArray(rollbackHistory) ? rollbackHistory.length : 0;
