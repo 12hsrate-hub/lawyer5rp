@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select I.3d after accepted jobs overview decomposition seam`
+- Next slice: `select I.3f after accepted runtime-servers decomposition block`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -182,6 +182,10 @@ Date: 2026-04-14
   - `law-jobs` overview payload assembly now converges behind a shared admin overview helper instead of route-local filtering/summary logic in `routes/admin.py`
   - `I.3c` deployed on production commit `e83b789`
   - `async-jobs` overview payload assembly now converges behind the same shared admin overview helper layer instead of route-local status bucketing/grouping logic
+  - `I.3d` deployed on production commit `1c532df`
+  - runtime-server CRUD payload assembly now converges behind a dedicated admin runtime-server helper layer instead of route-local response shaping
+  - `I.3e` deployed on production commit `1c532df`
+  - runtime-server health payload assembly now converges behind the same helper layer instead of route-local dependency orchestration inside `routes/admin.py`
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
