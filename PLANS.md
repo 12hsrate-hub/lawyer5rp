@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.2 snapshot/provenance schema convergence`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded snapshot/provenance convergence slice after I.2u`
+- Current micro-step: `select the next bounded snapshot/provenance convergence slice after I.2x`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -82,7 +82,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.2s` is now complete on production commit `d8dd0d8`: document-version provenance server-access and payload resolution now converge behind a shared `provenance_service` helper instead of route-local target checks plus route-local service wiring.
   - `I.2t` is now complete on production commit `d8dd0d8`: `GeneratedDocumentTraceBundle` now exposes normalized generated-document/server/version metadata accessors, and review/support builders consume those bundle-backed fields instead of re-decoding raw snapshot/version rows inline.
   - `I.2u` is now complete on production commit `d8dd0d8`: generated-document snapshot payload assembly now converges behind a shared builder reused by the bundle-backed snapshot wrapper instead of keeping the merge shape inline.
-  - immediate next step is `select I.2v after the accepted document-version/generated-document provenance helper block`.
+  - `I.2v` is now complete on production commit `62c2d5d`: generated-document list item normalization now converges behind shared helpers instead of route-local timestamp and field shaping.
+  - `I.2w` is now complete on production commit `62c2d5d`: the user generated-document history route now reads through a shared generated-document list helper instead of a route-local normalizer layered over raw store output.
+  - `I.2x` is now complete on production commit `62c2d5d`: the admin recent generated-documents route now reuses the same shared generated-document list helper layer with normalized `generation_snapshot_id` and `username` shaping.
+  - immediate next step is `select I.2y after the accepted generated-document list/helper convergence block`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.

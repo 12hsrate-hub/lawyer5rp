@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select I.2v after accepted document-version/generated-document provenance helper block`
+- Next slice: `select I.2y after accepted generated-document list/helper convergence block`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -167,6 +167,12 @@ Date: 2026-04-14
   - generated-document trace bundles now expose normalized generated-document/server/version metadata accessors consumed by review/support builders
   - `I.2u` deployed on production commit `d8dd0d8`
   - generated-document snapshot payload assembly now converges behind a shared builder instead of bundle-wrapper inline merging
+  - `I.2v` deployed on production commit `62c2d5d`
+  - generated-document list item normalization now converges behind shared helpers instead of route-local timestamp/field shaping
+  - `I.2w` deployed on production commit `62c2d5d`
+  - user generated-document history now flows through a shared generated-document list helper instead of route-local normalization
+  - `I.2x` deployed on production commit `62c2d5d`
+  - admin recent generated-documents now reuses the same shared list helper layer with normalized `generation_snapshot_id` and `username` shaping
   - route contracts remain unchanged and the first thirty Phase I convergence slices are accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
