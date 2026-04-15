@@ -7,7 +7,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase J — AI pipeline decomposition wave 1`
-- Current task: `J.3 AI facade tightening`
+- Current task: `select the next non-cosmetic post-Phase-J execution target`
 - Active execution phase override: `Phase I is accepted; Phase J is now opened as the next execution phase`
 - Current micro-step: `reduce ai_service.py to thin suggest/law-qa facades by moving runtime-context assembly and remaining transport glue into ai_pipeline`
 - Overall status: `in_progress`
@@ -134,6 +134,8 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - `J.3a` is now complete on production commit `63192a4`: suggest runtime-context assembly now converges behind `ai_pipeline.orchestration.resolve_suggest_runtime_context(...)`, leaving `suggest_text_details(...)` with less inline validation, retrieval-shadow, policy, and compaction-setup glue.
 - `J.3b` is now complete on production commit `74ad4d7`: suggest generation/retry plus validation-remediation flow now converges behind `ai_pipeline.orchestration.run_suggest_execution_flow(...)`, leaving `suggest_text_details(...)` closer to a thin facade over runtime-context resolution and result finalization.
 - `J.3c` is now complete on production commit `eed8971`: law-QA generation/client/retry flow now converges behind `ai_pipeline.orchestration.run_law_qa_execution_flow(...)`, leaving `answer_law_question_details(...)` closer to a thin facade over runtime-context resolution and result finalization.
+- `J.3` is accepted: after runtime-context, execution-flow, and result-finalization extraction, the remaining `ai_service.py` seams are compat wrappers, domain helpers, or thin facades rather than another high-value decomposition slice.
+- `Phase J` is accepted: no further meaningful `ai_service -> ai_pipeline` extraction seams remain that remove a real orchestration layer without sliding into provider-wrapper cosmetics.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
