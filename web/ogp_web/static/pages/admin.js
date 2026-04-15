@@ -1701,7 +1701,7 @@ function derivePilotRolloutDecisionContext({ rolloutState, warningRows, fallback
           : fallbackCount > 0
             ? `Fallback-to-legacy recorded: ${String(fallbackCount)} event(s).`
             : `Rollback history contains ${String(rollbackCount)} recorded batch(es).`,
-      nextStep: "Keep the pilot on legacy mode and review runtime errors before any further rollout change.",
+      nextStep: "Keep the current rollout state and review runtime errors before any further rollout change.",
     };
   }
 
@@ -1711,9 +1711,9 @@ function derivePilotRolloutDecisionContext({ rolloutState, warningRows, fallback
       tone: "info",
       note:
         rolloutState === "legacy_only"
-          ? "Pilot is still legacy-only and has not passed shadow-compare observation yet."
+          ? "Rollout is still in baseline mode and has not entered the observation window yet."
           : `${reviewSignals.length} review signal(s) still need owner follow-up.`,
-      nextStep: "Keep the pilot in legacy or shadow mode until the observation checklist is clean.",
+      nextStep: "Keep the current rollout state until the observation checklist is clean.",
     };
   }
 
@@ -1745,7 +1745,7 @@ function derivePilotScaleOutContext({ decision, warningRows, rollbackHistory, si
       note:
         reviewSignals.length
           ? `${reviewSignals.length} review signal(s) still need closure before reuse starts.`
-          : "Pilot observation is still incomplete.",
+          : "Rollout observation is still incomplete.",
       nextStep: "Keep the next migration candidate on hold until the observation checklist is fully clean.",
     };
   }
@@ -1754,7 +1754,7 @@ function derivePilotScaleOutContext({ decision, warningRows, rollbackHistory, si
     return {
       status: "not ready",
       tone: "info",
-      note: "Pilot observation sign-off is still incomplete.",
+      note: "Rollout observation sign-off is still incomplete.",
       nextStep: "Keep the next migration candidate on hold until the observation sign-off table is fully green.",
     };
   }
@@ -1788,12 +1788,12 @@ function derivePilotNextCandidateContext({ rolloutState, decision, signOff, scal
       candidate: "No candidate recommended yet",
       note:
         rolloutState === "legacy_only"
-          ? "Pilot has not yet entered shadow or active mode for a reusable observation window."
+          ? "Rollout has not yet entered an observable migration window for reuse."
           : criticalSignals.length
             ? `Critical pilot signals still need closure: ${criticalSignals.map((item) => item.label).join(", ")}.`
             : reviewSignals.length
               ? `${reviewSignals.length} review signal(s) still need owner sign-off before reuse starts.`
-              : "Observation sign-off is still incomplete for the pilot.",
+              : "Observation sign-off is still incomplete for the current rollout.",
       nextStep: "Keep the next migration candidate on hold until Cutover summary, Scale-out readiness, and Observation sign-off are all green.",
     };
   }
@@ -1818,8 +1818,8 @@ function derivePilotObservationSignOff({ rolloutState, warningRows, fallbackToLe
       status: rolloutState === "shadow_compare" || rolloutState === "new_runtime_active" ? "met" : "not met",
       note:
         rolloutState === "legacy_only"
-          ? "Pilot has not entered shadow or active mode yet."
-          : "Pilot has already entered an observable rollout mode.",
+          ? "Rollout has not entered the observation window yet."
+          : "Rollout has already entered an observable mode.",
     },
     {
       label: "No critical warning signals",
@@ -1905,12 +1905,6 @@ function renderPilotRolloutMarkup(payload) {
   });
   const legacyCleanupCandidates = [
     {
-      label: "Pilot adapter fallback-only visibility paths",
-      area: "pilot_runtime_adapter.py",
-      reason: "Fallback-only branches should stay visible until pilot cutover remains explainable and low-drift.",
-      gate: "Only after pilot cutover is accepted and fallback pressure stays at zero.",
-    },
-    {
       label: "Legacy-only rollout assumptions in admin copy",
       area: "dashboard rollout messaging",
       reason: "Some operator-facing copy still speaks in preflight/hold-first terms after the first accepted cleanup wave.",
@@ -1919,17 +1913,17 @@ function renderPilotRolloutMarkup(payload) {
   ];
   const checklist = [
     {
-      label: "Shadow compare enabled before cutover",
+      label: "Observation mode enabled before cutover",
       status: rolloutState === "shadow_compare" || rolloutState === "new_runtime_active" ? "pass" : "warn",
       note: rolloutState === "legacy_only"
-        ? "Pilot is still fully legacy-only."
-        : "Shadow compare is available for pilot monitoring.",
+        ? "Rollout is still in baseline mode."
+        : "Observation mode is available for rollout monitoring.",
     },
     {
       label: "No active rollout warning signals",
       status: warningSignals.length === 0 ? "pass" : "warn",
       note: warningSignals.length === 0
-        ? "No warning signals recorded for the pilot server."
+        ? "No warning signals recorded for the current rollout."
         : `${warningSignals.length} rollout warning signal(s) need review first.`,
     },
     {
@@ -1953,9 +1947,9 @@ function renderPilotRolloutMarkup(payload) {
   return `
     <div class="admin-performance-grid">
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Pilot state</span>
+        <span class="legal-status-card__label">Rollout state</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${renderBadge(rolloutState, rolloutTone)}</strong>
-        <span class="admin-user-cell__secondary">Derived from pilot adapter + shadow flags.</span>
+        <span class="admin-user-cell__secondary">Derived from runtime adapter and observation flags.</span>
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">Adapter mode</span>
@@ -1963,7 +1957,7 @@ function renderPilotRolloutMarkup(payload) {
         <span class="admin-user-cell__secondary">cohort=${escapeHtml(String(adapter.cohort || "default"))}, active=${escapeHtml(String(Boolean(adapter.use_new_flow)))}</span>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Shadow compare</span>
+        <span class="legal-status-card__label">Observation mode</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(shadow.mode || "off"))}</strong>
         <span class="admin-user-cell__secondary">cohort=${escapeHtml(String(shadow.cohort || "default"))}, active=${escapeHtml(String(Boolean(shadow.use_new_flow)))}</span>
       </article>
@@ -2096,7 +2090,7 @@ function renderPilotRolloutMarkup(payload) {
       </div>
     </div>
     <div class="legal-field">
-      <span class="legal-field__label">Activation checklist</span>
+        <span class="legal-field__label">Readiness checklist</span>
       <div class="legal-table-shell">
         <table class="legal-table admin-table admin-table--compact">
           <thead><tr><th>Gate</th><th>Status</th><th>Note</th></tr></thead>
@@ -2122,9 +2116,9 @@ function renderPilotRolloutMarkup(payload) {
           <thead><tr><th>Use case</th><th>Reference</th><th>When to use</th></tr></thead>
           <tbody>
             <tr>
-              <td>Preflight before any cutover</td>
+              <td>Readiness before any rollout change</td>
               <td><code>PILOT_ACTIVATION_CHECKLIST.md</code></td>
-              <td>Before enabling or expanding pilot runtime activation.</td>
+              <td>Before enabling or expanding runtime activation.</td>
             </tr>
             <tr>
               <td>Record rollout decision and observation window</td>
@@ -2134,7 +2128,7 @@ function renderPilotRolloutMarkup(payload) {
             <tr>
               <td>Prepare next server or procedure rollout</td>
               <td><code>SCALE_OUT_CHECKLIST_TEMPLATE.md</code></td>
-              <td>After pilot observation is accepted and reuse starts.</td>
+              <td>After observation is accepted and reuse starts.</td>
             </tr>
             <tr>
               <td>Log each observation-window review</td>
@@ -2152,7 +2146,7 @@ function renderPilotRolloutMarkup(payload) {
       <div class="admin-user-cell__secondary">These playbooks stay read-only here; rollout changes still require explicit operator action.</div>
     </div>
     <div class="legal-field">
-      <span class="legal-field__label">Remaining legacy cleanup backlog</span>
+      <span class="legal-field__label">Remaining admin copy cleanup</span>
       <div class="legal-table-shell">
         <table class="legal-table admin-table admin-table--compact">
           <thead><tr><th>Candidate</th><th>Area</th><th>Why it stays</th><th>Removal gate</th></tr></thead>
@@ -2170,7 +2164,7 @@ function renderPilotRolloutMarkup(payload) {
           </tbody>
         </table>
       </div>
-      <div class="admin-user-cell__secondary">Only the still-open cleanup candidates are shown here; completed H.2 removals are no longer listed.</div>
+      <div class="admin-user-cell__secondary">Only the remaining wording cleanup is listed here; completed H.2 removals are no longer shown.</div>
     </div>
     <div class="legal-field">
       <span class="legal-field__label">Observation guidance</span>
@@ -3278,14 +3272,14 @@ async function loadPilotRollout({ silent = false } = {}) {
     const payload = await parsePayload(response);
     if (!response.ok) {
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить pilot rollout state."));
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить rollout state."));
       }
       return;
     }
     pilotRolloutHost.innerHTML = renderPilotRolloutMarkup(payload);
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "Не удалось загрузить pilot rollout state.");
+      setStateError(errorsHost, error?.message || "Не удалось загрузить rollout state.");
     }
   }
 }

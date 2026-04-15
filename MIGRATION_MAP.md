@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase G`
 - Inventory slices completed: `5`
-- Next slice: `remove the next accepted compatibility seam after H.2e`
+- Next slice: `complete the remaining admin rollout copy cleanup and then close H.2 wave 1`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -35,10 +35,12 @@ Date: 2026-04-14
   - pilot adapter fallback-only `source_of_truth` visibility metadata has been removed
   - `H.2c` deployed on production commit `07f302a`
   - shadow-compare-only complaint metrics plumbing and the pilot snapshot parity helper have been removed
-  - `H.2d` is in progress locally
-  - compare-only pilot drift helper scripts are being removed because no runtime path emits `pilot_runtime_shadow_compare` anymore
-  - `H.2e` is in progress locally
-  - pilot adapter runtime snapshots are dropping fallback-only visibility fields (`status`, `content_item_id`) while keeping published-read resolution intact
+  - `H.2d` deployed on production commit `c40d859`
+  - compare-only pilot drift helper scripts were removed because no runtime path emits `pilot_runtime_shadow_compare` anymore
+  - `H.2e` deployed on production commit `751d0a0`
+  - pilot adapter runtime snapshots no longer expose fallback-only visibility fields (`status`, `content_item_id`) while keeping published-read resolution intact
+  - `H.2f` is in progress locally
+  - rollout/admin copy is being renamed away from pilot/preflight-only wording while preserving the same rollout-state logic
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
