@@ -610,6 +610,64 @@ def test_run_suggest_execution_flow_contract_builds_attempt_and_validation_flow(
     assert compaction_levels == [1]
 
 
+def test_run_law_qa_execution_flow_contract_builds_generation_attempt_and_latency():
+    runtime_context = orchestration.LawQaRuntimeContext(
+        question="When must detainee be released?",
+        requested_model="gpt-5.4-mini",
+        retrieval_result=type(
+            "RetrievalResult",
+            (),
+            {
+                "server_name": "BlackBerry",
+                "server_code": "blackberry",
+                "confidence": "low",
+            },
+        )(),
+        server_config=object(),
+        ai_context=object(),
+        model_name="gpt-5.4-mini",
+        selection_reason="law_qa_default",
+        low_confidence_model="gpt-5.4",
+        shadow={"enabled": False},
+        context_attempts=(("ctx-1",),),
+    )
+    generation_attempt = orchestration.LawQaGenerationAttemptResult(
+        text="answer",
+        usage={"total_tokens": 9},
+        prompt="prompt-text",
+        model_name="gpt-5.4",
+        selection_reason="law_qa_context_compacted",
+        compaction_level=1,
+    )
+
+    result = orchestration.run_law_qa_execution_flow(
+        runtime_context=runtime_context,
+        payload=LawQaPayload(question="When must detainee be released?", model="gpt-5.4-mini", server_code="blackberry", max_answer_chars=400),
+        default_server_code="default",
+        clock=iter((10.0, 10.3)).__next__,
+        new_generation_id=lambda: "law-gen-1",
+        create_client=lambda: object(),
+        request_law_qa_text=lambda **kwargs: ("answer", {"total_tokens": 9}),
+        build_law_qa_prompt=lambda **kwargs: "prompt-text",
+        run_law_qa_generation_attempts=lambda **kwargs: generation_attempt,
+        is_context_window_error=lambda exc: False,
+        ai_exception_details=lambda exc: [str(exc)],
+        logger_warning=lambda message, model_name, level: None,
+    )
+
+    assert result.generation_id == "law-gen-1"
+    assert result.retrieval_result is runtime_context.retrieval_result
+    assert result.requested_model == "gpt-5.4-mini"
+    assert result.shadow == {"enabled": False}
+    assert result.text == "answer"
+    assert result.usage == {"total_tokens": 9}
+    assert result.prompt == "prompt-text"
+    assert result.model_name == "gpt-5.4"
+    assert result.selection_reason == "law_qa_context_compacted"
+    assert result.compaction_level == 1
+    assert result.latency_ms == 300
+
+
 def test_telemetry_meta_contracts():
     law_result = ai_service.LawQaAnswerResult(
         text="ok",
