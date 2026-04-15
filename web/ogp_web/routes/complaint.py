@@ -43,6 +43,7 @@ from ogp_web.services.feature_flags import FeatureFlagService, RolloutContext
 from ogp_web.services.generation_orchestrator import GenerationOrchestrator
 from ogp_web.services.generated_document_trace_service import (
     build_store_provenance_service,
+    list_user_generated_document_history,
     resolve_generated_document_provenance_payload,
     resolve_user_generated_document_trace_bundle,
 )
@@ -536,7 +537,9 @@ async def generated_documents_history(
     user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ) -> GeneratedDocumentHistoryResponse:
-    items = _normalize_history_items(GenerationOrchestrator(store).list_history(username=user.username, limit=limit))
+    items = _normalize_history_items(
+        list_user_generated_document_history(store=store, username=user.username, limit=limit)
+    )
     return GeneratedDocumentHistoryResponse(items=items)
 
 
