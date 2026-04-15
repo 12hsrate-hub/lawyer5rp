@@ -1,4 +1,4 @@
-﻿const errorsHost = document.getElementById("admin-errors");
+const errorsHost = document.getElementById("admin-errors");
 const messageHost = document.getElementById("admin-message");
 const totalsHost = document.getElementById("admin-totals");
 const examImportHost = document.getElementById("admin-exam-import");
@@ -136,7 +136,7 @@ const {
 const ExamView = window.OGPExamImportView;
 const ADMIN_COLLAPSE_STORAGE_KEY = "ogp_admin_collapsible_sections";
 const LAW_REBUILD_TASK_STORAGE_KEY = "ogp_admin_law_rebuild_task_id";
-const DEFAULT_USER_MODAL_TITLE = userModalTitle?.textContent || "РљР°СЂС‚РѕС‡РєР° РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ";
+const DEFAULT_USER_MODAL_TITLE = userModalTitle?.textContent || "Карточка пользователя";
 
 let adminSearchTimer = null;
 let adminLiveTimer = null;
@@ -228,7 +228,7 @@ async function loadLawSourcesManager() {
   const response = await apiFetch(withLawServerQuery("/api/admin/law-sources"));
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РёСЃС‚РѕС‡РЅРёРєРё Р·Р°РєРѕРЅРѕРІ."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить источники законов."));
     return;
   }
   const payloadServerCode = String(payload?.server_code || "").trim().toLowerCase();
@@ -243,10 +243,10 @@ async function loadLawSourcesManager() {
     textarea.value = Array.isArray(payload?.source_urls) ? payload.source_urls.join("\n") : "";
   }
   if (statusHost) {
-    const activeVersionId = payload?.active_law_version?.id ?? "вЂ”";
-    const chunkCount = payload?.bundle_meta?.chunk_count ?? payload?.active_law_version?.chunk_count ?? "вЂ”";
+    const activeVersionId = payload?.active_law_version?.id ?? "—";
+    const chunkCount = payload?.bundle_meta?.chunk_count ?? payload?.active_law_version?.chunk_count ?? "—";
     const origin = String(payload?.source_origin || "unknown");
-    statusHost.textContent = `РСЃС‚РѕС‡РЅРёРє СЃСЃС‹Р»РѕРє: ${origin}. РђРєС‚РёРІРЅР°СЏ РІРµСЂСЃРёСЏ Р·Р°РєРѕРЅР°: ${activeVersionId}. РЎС‚Р°С‚РµР№ РІ РёРЅРґРµРєСЃРµ: ${chunkCount}.`;
+    statusHost.textContent = `Источник ссылок: ${origin}. Активная версия закона: ${activeVersionId}. Статей в индексе: ${chunkCount}.`;
   }
   await loadLawSourcesHistory();
   await loadLawSourcesDependencies();
@@ -266,13 +266,13 @@ function renderLawSourcesHistory(payload) {
   }
   const items = Array.isArray(payload?.items) ? payload.items : [];
   if (!items.length) {
-    host.innerHTML = '<p class="legal-section__description">РСЃС‚РѕСЂРёСЏ РїРµСЂРµСЃР±РѕСЂРѕРє РїРѕРєР° РїСѓСЃС‚Р°.</p>';
+    host.innerHTML = '<p class="legal-section__description">История пересборок пока пуста.</p>';
     return;
   }
   host.innerHTML = `
     <ul class="legal-section__description">
       ${items
-        .map((item) => `<li>Р’РµСЂСЃРёСЏ #${escapeHtml(String(item.id || "вЂ”"))} вЂў articles: ${escapeHtml(String(item.chunk_count || 0))} вЂў generated: ${escapeHtml(String(item.generated_at_utc || "вЂ”"))}</li>`)
+        .map((item) => `<li>Версия #${escapeHtml(String(item.id || "—"))} • articles: ${escapeHtml(String(item.chunk_count || 0))} • generated: ${escapeHtml(String(item.generated_at_utc || "—"))}</li>`)
         .join("")}
     </ul>
   `;
@@ -294,20 +294,20 @@ function renderLawSourcesDependencies(payload) {
   }
   const rows = Array.isArray(payload?.servers) ? payload.servers : [];
   if (!rows.length) {
-    host.innerHTML = '<p class="legal-section__description">РќРµС‚ РґР°РЅРЅС‹С… РїРѕ Р·Р°РІРёСЃРёРјРѕСЃС‚СЏРј РёСЃС‚РѕС‡РЅРёРєРѕРІ.</p>';
+    host.innerHTML = '<p class="legal-section__description">Нет данных по зависимостям источников.</p>';
     return;
   }
   host.innerHTML = `
-    <div class="legal-section__description"><strong>РЎРІСЏР·СЊ СЃРµСЂРІРµСЂРѕРІ Рё РёСЃС‚РѕС‡РЅРёРєРѕРІ Р·Р°РєРѕРЅРѕРІ</strong></div>
+    <div class="legal-section__description"><strong>Связь серверов и источников законов</strong></div>
     <table class="legal-table">
-      <thead><tr><th>РЎРµСЂРІРµСЂ</th><th>РСЃС‚РѕС‡РЅРёРєРѕРІ</th><th>РћР±С‰РёС… РёСЃС‚РѕС‡РЅРёРєРѕРІ</th><th>РЎРІСЏР·Р°РЅ СЃ СЃРµСЂРІРµСЂР°РјРё</th></tr></thead>
+      <thead><tr><th>Сервер</th><th>Источников</th><th>Общих источников</th><th>Связан с серверами</th></tr></thead>
       <tbody>
         ${rows
           .map((row) => `<tr>
-            <td>${escapeHtml(String(row?.server_name || row?.server_code || "вЂ”"))}</td>
+            <td>${escapeHtml(String(row?.server_name || row?.server_code || "—"))}</td>
             <td>${escapeHtml(String(row?.source_count || 0))}</td>
             <td>${escapeHtml(String(row?.shared_source_count || 0))}</td>
-            <td>${escapeHtml(String((row?.shared_with_servers || []).join(", ") || "вЂ”"))}</td>
+            <td>${escapeHtml(String((row?.shared_with_servers || []).join(", ") || "—"))}</td>
           </tr>`)
           .join("")}
       </tbody>
@@ -333,7 +333,7 @@ function renderPlatformBlueprintStage(payload) {
   const stageCode = String(stage?.stage_code || "phase_a_foundation").trim();
   const stageLabel = String(stage?.stage_label || "Phase A - Stabilize foundation").trim();
   host.innerHTML = `
-    <div class="legal-section__description"><strong>Р­С‚Р°Рї РїР»Р°С‚С„РѕСЂРјС‹:</strong> ${escapeHtml(stageLabel)}</div>
+    <div class="legal-section__description"><strong>Этап платформы:</strong> ${escapeHtml(stageLabel)}</div>
     <div class="legal-field__hint">code: <code>${escapeHtml(stageCode)}</code></div>
   `;
 }
@@ -346,7 +346,7 @@ async function loadPlatformBlueprintStage() {
   const response = await apiFetch("/api/admin/platform-blueprint/status");
   const payload = await parsePayload(response);
   if (!response.ok) {
-    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ С‚РµРєСѓС‰РёР№ СЌС‚Р°Рї РїР»Р°С‚С„РѕСЂРјС‹."))}</p>`;
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить текущий этап платформы."))}</p>`;
     return;
   }
   renderPlatformBlueprintStage(payload);
@@ -403,20 +403,20 @@ function renderLawSourceRegistry(payload) {
   lawSourceRegistryItems = items;
   host.innerHTML = `
     <table class="legal-table admin-table admin-table--compact">
-      <thead><tr><th>ID</th><th>РќР°Р·РІР°РЅРёРµ</th><th>Kind</th><th>URL</th><th>РЎС‚Р°С‚СѓСЃ</th><th>Р”РµР№СЃС‚РІРёСЏ</th></tr></thead>
+      <thead><tr><th>ID</th><th>Название</th><th>Kind</th><th>URL</th><th>Статус</th><th>Действия</th></tr></thead>
       <tbody>
         ${items.length ? items.map((item) => `
           <tr>
-            <td>${escapeHtml(String(item.id || "вЂ”"))}</td>
-            <td>${escapeHtml(String(item.name || "вЂ”"))}</td>
+            <td>${escapeHtml(String(item.id || "—"))}</td>
+            <td>${escapeHtml(String(item.name || "—"))}</td>
             <td>${escapeHtml(String(item.kind || "url"))}</td>
-            <td class="admin-user-cell__secondary">${escapeHtml(String(item.url || "вЂ”"))}</td>
+            <td class="admin-user-cell__secondary">${escapeHtml(String(item.url || "—"))}</td>
             <td>${item.is_active ? "active" : "disabled"}</td>
             <td>
-              <button type="button" class="ghost-button" data-law-source-edit="${escapeHtml(String(item.id || ""))}" data-law-source-name="${escapeHtml(String(item.name || ""))}" data-law-source-kind="${escapeHtml(String(item.kind || "url"))}" data-law-source-url="${escapeHtml(String(item.url || ""))}" data-law-source-active="${item.is_active ? "1" : "0"}">РР·РјРµРЅРёС‚СЊ</button>
+              <button type="button" class="ghost-button" data-law-source-edit="${escapeHtml(String(item.id || ""))}" data-law-source-name="${escapeHtml(String(item.name || ""))}" data-law-source-kind="${escapeHtml(String(item.kind || "url"))}" data-law-source-url="${escapeHtml(String(item.url || ""))}" data-law-source-active="${item.is_active ? "1" : "0"}">Изменить</button>
             </td>
           </tr>
-        `).join("") : '<tr><td colspan="6" class="legal-section__description">Р РµРµСЃС‚СЂ РёСЃС‚РѕС‡РЅРёРєРѕРІ РїСѓСЃС‚.</td></tr>'}
+        `).join("") : '<tr><td colspan="6" class="legal-section__description">Реестр источников пуст.</td></tr>'}
       </tbody>
     </table>
   `;
@@ -428,17 +428,17 @@ async function loadLawSourceRegistry() {
   const response = await apiFetch("/api/admin/law-source-registry");
   const payload = await parsePayload(response);
   if (!response.ok) {
-    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЂРµРµСЃС‚СЂ РёСЃС‚РѕС‡РЅРёРєРѕРІ."))}</p>`;
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить реестр источников."))}</p>`;
     return;
   }
   renderLawSourceRegistry(payload);
 }
 
 async function createLawSourceRegistryFlow() {
-  const name = String(window.prompt("РќР°Р·РІР°РЅРёРµ РёСЃС‚РѕС‡РЅРёРєР°", "") || "").trim();
+  const name = String(window.prompt("Название источника", "") || "").trim();
   if (!name) return;
   const kind = String(window.prompt("Kind (url|registry|api)", "url") || "url").trim().toLowerCase();
-  const url = String(window.prompt("URL РёСЃС‚РѕС‡РЅРёРєР°", "") || "").trim();
+  const url = String(window.prompt("URL источника", "") || "").trim();
   if (!url) return;
   const response = await apiFetch("/api/admin/law-source-registry", {
     method: "POST",
@@ -446,18 +446,18 @@ async function createLawSourceRegistryFlow() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ РёСЃС‚РѕС‡РЅРёРє."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось создать источник."));
     return;
   }
-  showMessage("РСЃС‚РѕС‡РЅРёРє РґРѕР±Р°РІР»РµРЅ РІ СЂРµРµСЃС‚СЂ.");
+  showMessage("Источник добавлен в реестр.");
   await loadLawSourceRegistry();
 }
 
 async function editLawSourceRegistryFlow(sourceId, currentName, currentKind, currentUrl, currentActive) {
-  const name = String(window.prompt("РќР°Р·РІР°РЅРёРµ РёСЃС‚РѕС‡РЅРёРєР°", currentName || "") || "").trim();
+  const name = String(window.prompt("Название источника", currentName || "") || "").trim();
   if (!name) return;
   const kind = String(window.prompt("Kind (url|registry|api)", currentKind || "url") || "url").trim().toLowerCase();
-  const url = String(window.prompt("URL РёСЃС‚РѕС‡РЅРёРєР°", currentUrl || "") || "").trim();
+  const url = String(window.prompt("URL источника", currentUrl || "") || "").trim();
   if (!url) return;
   const response = await apiFetch(`/api/admin/law-source-registry/${encodeURIComponent(String(sourceId))}`, {
     method: "PUT",
@@ -465,10 +465,10 @@ async function editLawSourceRegistryFlow(sourceId, currentName, currentKind, cur
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ РёСЃС‚РѕС‡РЅРёРє."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось обновить источник."));
     return;
   }
-  showMessage("РСЃС‚РѕС‡РЅРёРє РѕР±РЅРѕРІР»РµРЅ.");
+  showMessage("Источник обновлен.");
   await loadLawSourceRegistry();
 }
 
@@ -519,37 +519,37 @@ async function openServerLawBindingDialog() {
   const lawCodeOptions = normalizeLawCodeOptions([...catalogItems, ...serverLawBindingItems, ...lawSetOptions]);
   const sourceOptions = lawSourceRegistryItems.filter((item) => Number(item?.id) > 0);
   if (!sourceOptions.length) {
-    throw new Error("РЎРЅР°С‡Р°Р»Р° РґРѕР±Р°РІСЊС‚Рµ РёСЃС‚РѕС‡РЅРёРє РІ В«Р РµРµСЃС‚СЂ РёСЃС‚РѕС‡РЅРёРєРѕРІВ».");
+    throw new Error("Сначала добавьте источник в «Реестр источников».");
   }
   if (!lawCodeOptions.length) {
-    throw new Error("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР±СЂР°С‚СЊ СЃРїРёСЃРѕРє РєРѕРґРѕРІ Р·Р°РєРѕРЅРѕРІ РґР»СЏ РІС‹Р±РѕСЂР°.");
+    throw new Error("Не удалось собрать список кодов законов для выбора.");
   }
   const dialog = document.createElement("dialog");
   dialog.innerHTML = `
     <form method="dialog" class="legal-section">
-      <h3>РџСЂРёРІСЏР·Р°С‚СЊ Р·Р°РєРѕРЅ Рє СЃРµСЂРІРµСЂСѓ</h3>
-      <p class="legal-field__hint">РЎРµСЂРІРµСЂ: <strong>${escapeHtml(activeLawServerCode)}</strong></p>
-      <label class="legal-field"><span class="legal-field__label">РљРѕРґ Р·Р°РєРѕРЅР°</span>
+      <h3>Привязать закон к серверу</h3>
+      <p class="legal-field__hint">Сервер: <strong>${escapeHtml(activeLawServerCode)}</strong></p>
+      <label class="legal-field"><span class="legal-field__label">Код закона</span>
         <select name="law_code" required>
-          ${lawCodeOptions.map((item) => `<option value="${escapeHtml(item.code)}">${escapeHtml(item.code)} вЂ” ${escapeHtml(item.label)}</option>`).join("")}
+          ${lawCodeOptions.map((item) => `<option value="${escapeHtml(item.code)}">${escapeHtml(item.code)} — ${escapeHtml(item.label)}</option>`).join("")}
         </select>
       </label>
-      <label class="legal-field"><span class="legal-field__label">РСЃС‚РѕС‡РЅРёРє</span>
+      <label class="legal-field"><span class="legal-field__label">Источник</span>
         <select name="source_id" required>
-          ${sourceOptions.map((item) => `<option value="${escapeHtml(String(item.id))}">${escapeHtml(String(item.name || "РСЃС‚РѕС‡РЅРёРє"))} вЂ” ${escapeHtml(String(item.url || ""))}</option>`).join("")}
+          ${sourceOptions.map((item) => `<option value="${escapeHtml(String(item.id))}">${escapeHtml(String(item.name || "Источник"))} — ${escapeHtml(String(item.url || ""))}</option>`).join("")}
         </select>
       </label>
-      <label class="legal-field"><span class="legal-field__label">РќР°Р±РѕСЂ Р·Р°РєРѕРЅРѕРІ</span>
+      <label class="legal-field"><span class="legal-field__label">Набор законов</span>
         <select name="law_set_id">
-          <option value="">РђРІС‚РѕРІС‹Р±РѕСЂ (РїСѓР±Р»РёРєСѓРµРјС‹Р№/РїРѕСЃР»РµРґРЅРёР№)</option>
+          <option value="">Автовыбор (публикуемый/последний)</option>
           ${lawSetOptions.map((item) => `<option value="${escapeHtml(String(item.id || ""))}">${escapeHtml(String(item.name || item.id || ""))}</option>`).join("")}
         </select>
       </label>
       <label class="legal-field"><span class="legal-field__label">Priority</span><input type="number" name="priority" value="100" min="1" max="10000"></label>
       <label class="legal-field"><span class="legal-field__label">Effective from</span><input type="date" name="effective_from" value=""></label>
       <menu style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
-        <button type="button" class="ghost-button" data-action="cancel">РћС‚РјРµРЅР°</button>
-        <button type="submit" class="primary-button" data-action="submit">РџСЂРёРІСЏР·Р°С‚СЊ</button>
+        <button type="button" class="ghost-button" data-action="cancel">Отмена</button>
+        <button type="submit" class="primary-button" data-action="submit">Привязать</button>
       </menu>
     </form>
   `;
@@ -579,11 +579,11 @@ async function openServerLawBindingDialog() {
       const effectiveFrom = String(formData.get("effective_from") || "").trim();
       const lawSetIdRaw = String(formData.get("law_set_id") || "").trim();
       if (!lawCode) {
-        setStateError(errorsHost, "Р’С‹Р±РµСЂРёС‚Рµ РєРѕРґ Р·Р°РєРѕРЅР°.");
+        setStateError(errorsHost, "Выберите код закона.");
         return;
       }
       if (!Number.isFinite(sourceId) || sourceId <= 0) {
-        setStateError(errorsHost, "Р’С‹Р±РµСЂРёС‚Рµ РёСЃС‚РѕС‡РЅРёРє.");
+        setStateError(errorsHost, "Выберите источник.");
         return;
       }
       finish({
@@ -601,7 +601,7 @@ async function openServerLawBindingDialog() {
 async function addServerLawBindingFlow() {
   let formPayload = null;
   if (!activeLawServerCode) {
-    setStateError(errorsHost, "РЎРЅР°С‡Р°Р»Р° РІС‹Р±РµСЂРёС‚Рµ СЃРµСЂРІРµСЂ.");
+    setStateError(errorsHost, "Сначала выберите сервер.");
     return;
   }
   try {
@@ -617,10 +617,10 @@ async function addServerLawBindingFlow() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРёРІСЏР·Р°С‚СЊ Р·Р°РєРѕРЅ Рє СЃРµСЂРІРµСЂСѓ."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось привязать закон к серверу."));
     return;
   }
-  showMessage(`Р—Р°РєРѕРЅ ${String(formPayload.law_code || "")} РїСЂРёРІСЏР·Р°РЅ Рє СЃРµСЂРІРµСЂСѓ ${activeLawServerCode}.`);
+  showMessage(`Закон ${String(formPayload.law_code || "")} привязан к серверу ${activeLawServerCode}.`);
   await loadServerLawBindings();
 }
 
@@ -630,7 +630,7 @@ async function legacyLoadLawJobsOverview() {
   const response = await apiFetch("/api/admin/law-jobs/overview");
   const payload = await parsePayload(response);
   if (!response.ok) {
-    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ jobs/alerts."))}</p>`;
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить jobs/alerts."))}</p>`;
     return;
   }
   const summary = payload?.summary || {};
@@ -641,7 +641,7 @@ async function legacyLoadLawJobsOverview() {
       jobs: total=${escapeHtml(String(summary.total_tasks || 0))}, running=${escapeHtml(String(summary.running_tasks || 0))}, failed=${escapeHtml(String(summary.failed_tasks || 0))}, alerts=${escapeHtml(String(summary.alerts_count || 0))}
     </div>
     <details ${alerts.length ? "open" : ""}>
-      <summary>РђР»РµСЂС‚С‹</summary>
+      <summary>Алерты</summary>
       <pre class="legal-field__hint">${escapeHtml(JSON.stringify(alerts, null, 2) || "[]")}</pre>
     </details>
     <details>
@@ -657,7 +657,7 @@ async function loadLawJobsOverview() {
   const response = await apiFetch("/api/admin/law-jobs/overview");
   const payload = await parsePayload(response);
   if (!response.ok) {
-    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Р СњР Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ Р В·Р В°Р С–РЎР‚РЎС“Р В·Р С‘РЎвЂљРЎРЉ jobs/alerts."))}</p>`;
+    host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить jobs/alerts."))}</p>`;
     return;
   }
   host.innerHTML = renderLawJobsMarkup(payload, { escapeHtml });
@@ -680,10 +680,10 @@ async function rebuildLawSources() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ РїРµСЂРµСЃРѕР±СЂР°С‚СЊ Р·Р°РєРѕРЅС‹."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось пересобрать законы."));
     return;
   }
-  showMessage(`Р—Р°РєРѕРЅС‹ РѕР±РЅРѕРІР»РµРЅС‹: РІРµСЂСЃРёСЏ ${String(payload?.law_version_id || "вЂ”")}, СЃС‚Р°С‚РµР№ ${String(payload?.article_count || 0)}.`);
+  showMessage(`Законы обновлены: версия ${String(payload?.law_version_id || "—")}, статей ${String(payload?.article_count || 0)}.`);
   await loadCatalog("laws");
 }
 
@@ -711,19 +711,19 @@ async function pollLawRebuildTask(taskId) {
     stopLawRebuildPolling();
     setLawActionButtonsDisabled(false);
     if (statusHost) {
-      statusHost.textContent = "РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ СЃС‚Р°С‚СѓСЃ С„РѕРЅРѕРІРѕР№ РїРµСЂРµСЃР±РѕСЂРєРё.";
+      statusHost.textContent = "Не удалось получить статус фоновой пересборки.";
     }
     return;
   }
   const status = String(payload?.status || "queued");
   if (statusHost) {
-    statusHost.textContent = `Р¤РѕРЅРѕРІР°СЏ РїРµСЂРµСЃР±РѕСЂРєР°: ${status} (task: ${taskId})`;
+    statusHost.textContent = `Фоновая пересборка: ${status} (task: ${taskId})`;
   }
   if (status === "finished") {
     stopLawRebuildPolling();
     setLawActionButtonsDisabled(false);
     clearStoredLawRebuildTaskId();
-    showMessage(`Р¤РѕРЅРѕРІР°СЏ РїРµСЂРµСЃР±РѕСЂРєР° Р·Р°РІРµСЂС€РµРЅР°. Р’РµСЂСЃРёСЏ ${String(payload?.result?.law_version_id || "вЂ”")}.`);
+    showMessage(`Фоновая пересборка завершена. Версия ${String(payload?.result?.law_version_id || "—")}.`);
     await loadCatalog("laws");
     return;
   }
@@ -731,7 +731,7 @@ async function pollLawRebuildTask(taskId) {
     stopLawRebuildPolling();
     setLawActionButtonsDisabled(false);
     clearStoredLawRebuildTaskId();
-    setStateError(errorsHost, String(payload?.error || "Р¤РѕРЅРѕРІР°СЏ РїРµСЂРµСЃР±РѕСЂРєР° Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РѕС€РёР±РєРѕР№."));
+    setStateError(errorsHost, String(payload?.error || "Фоновая пересборка завершилась ошибкой."));
     return;
   }
   lawRebuildPollTimer = window.setTimeout(() => {
@@ -767,10 +767,10 @@ async function rebuildLawSourcesAsync() {
         return;
       }
     }
-    setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕСЃС‚Р°РІРёС‚СЊ РїРµСЂРµСЃР±РѕСЂРєСѓ РІ РѕС‡РµСЂРµРґСЊ."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось поставить пересборку в очередь."));
     return;
   }
-  showMessage(`РџРµСЂРµСЃР±РѕСЂРєР° РїРѕСЃС‚Р°РІР»РµРЅР° РІ РѕС‡РµСЂРµРґСЊ (task: ${String(payload?.task_id || "вЂ”")}).`);
+  showMessage(`Пересборка поставлена в очередь (task: ${String(payload?.task_id || "—")}).`);
   setStoredLawRebuildTaskId(String(payload?.task_id || ""));
   setLawActionButtonsDisabled(true);
   stopLawRebuildPolling();
@@ -794,10 +794,10 @@ async function saveLawSourcesManifest() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РёСЃС‚РѕС‡РЅРёРєРё Р·Р°РєРѕРЅРѕРІ."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось сохранить источники законов."));
     return;
   }
-  showMessage("РСЃС‚РѕС‡РЅРёРєРё Р·Р°РєРѕРЅРѕРІ СЃРѕС…СЂР°РЅРµРЅС‹ РІ workflow.");
+  showMessage("Источники законов сохранены в workflow.");
   await loadCatalog("laws");
 }
 
@@ -818,7 +818,7 @@ async function previewLawSources() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕРІРµСЂРёС‚СЊ СЃСЃС‹Р»РєРё Р·Р°РєРѕРЅРѕРІ."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось проверить ссылки законов."));
     return;
   }
   const detailsHost = document.getElementById("law-sources-validation");
@@ -827,18 +827,18 @@ async function previewLawSources() {
     const invalidDetails = Array.isArray(payload?.invalid_details) ? payload.invalid_details : [];
     const duplicateUrls = Array.isArray(payload?.duplicate_urls) ? payload.duplicate_urls : [];
     const invalidBlock = invalidDetails.length
-      ? `<br><strong>РќРµРІР°Р»РёРґРЅС‹Рµ СЃСЃС‹Р»РєРё:</strong><br>${invalidDetails
+      ? `<br><strong>Невалидные ссылки:</strong><br>${invalidDetails
         .map((item) => `${escapeHtml(String(item?.url || ""))} (${escapeHtml(String(item?.reason || "invalid"))})`)
         .join("<br>")}`
       : (invalidUrls.length
-        ? `<br><strong>РќРµРІР°Р»РёРґРЅС‹Рµ СЃСЃС‹Р»РєРё:</strong><br>${invalidUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
+        ? `<br><strong>Невалидные ссылки:</strong><br>${invalidUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
         : "");
     const duplicateBlock = duplicateUrls.length
-      ? `<br><strong>Р”СѓР±Р»РёРєР°С‚С‹ (РїРѕСЃР»Рµ РЅРѕСЂРјР°Р»РёР·Р°С†РёРё):</strong><br>${duplicateUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
+      ? `<br><strong>Дубликаты (после нормализации):</strong><br>${duplicateUrls.map((item) => escapeHtml(String(item))).join("<br>")}`
       : "";
-    detailsHost.innerHTML = `РџСЂРёРЅСЏС‚Рѕ: ${escapeHtml(String(payload?.accepted_count ?? 0))}. Р”СѓР±Р»РёРєР°С‚РѕРІ: ${escapeHtml(String(payload?.duplicate_count ?? 0))}. РќРµРІР°Р»РёРґРЅС‹С…: ${escapeHtml(String(payload?.invalid_count ?? 0))}.${invalidBlock}${duplicateBlock}`;
+    detailsHost.innerHTML = `Принято: ${escapeHtml(String(payload?.accepted_count ?? 0))}. Дубликатов: ${escapeHtml(String(payload?.duplicate_count ?? 0))}. Невалидных: ${escapeHtml(String(payload?.invalid_count ?? 0))}.${invalidBlock}${duplicateBlock}`;
   }
-  showMessage("РџСЂРѕРІРµСЂРєР° СЃСЃС‹Р»РѕРє РІС‹РїРѕР»РЅРµРЅР°.");
+  showMessage("Проверка ссылок выполнена.");
 }
 
 async function syncLawSourcesFromServerConfig() {
@@ -848,10 +848,10 @@ async function syncLawSourcesFromServerConfig() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°С‚СЊ СЃСЃС‹Р»РєРё Р·Р°РєРѕРЅРѕРІ."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось синхронизировать ссылки законов."));
     return;
   }
-  showMessage(payload?.changed ? "РЎСЃС‹Р»РєРё Р·Р°РєРѕРЅРѕРІ РїРµСЂРµРЅРµСЃРµРЅС‹ РёР· server config РІ DB." : "DB-РёСЃС‚РѕС‡РЅРёРєРё Р·Р°РєРѕРЅРѕРІ СѓР¶Рµ Р°РєС‚СѓР°Р»СЊРЅС‹.");
+  showMessage(payload?.changed ? "Ссылки законов перенесены из server config в DB." : "DB-источники законов уже актуальны.");
   await loadCatalog("laws");
 }
 
@@ -895,7 +895,7 @@ async function loadCatalogAuditTrail() {
   const host = document.getElementById("catalog-audit-results");
   if (!response.ok) {
     if (host) {
-      host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ Р¶СѓСЂРЅР°Р» РёР·РјРµРЅРµРЅРёР№."))}</p>`;
+      host.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить журнал изменений."))}</p>`;
     }
     return;
   }
@@ -940,7 +940,7 @@ async function loadCatalogPreview(itemId) {
   const response = await apiFetch(catalogEndpoint(activeCatalogEntity, itemId));
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РїСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ catalog."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить предпросмотр catalog."));
     return;
   }
   renderCatalogPreview(payload, itemId);
@@ -950,51 +950,51 @@ function slugifyCatalogKey(value) {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_\-.Р В°-РЎРЏРЎ']/gi, "")
+    .replace(/[^a-z0-9_\-.'а-яё]/gi, "")
     .replace(/_+/g, "_");
 }
 
 function getCatalogEntityFieldMeta(entityType) {
-  const sharedHelp = "Р—Р°РїРѕР»РЅРёС‚Рµ РїРѕР»СЏ С„РѕСЂРјС‹. JSON РЅСѓР¶РµРЅ С‚РѕР»СЊРєРѕ РґР»СЏ СЂРµРґРєРёС…/РЅРµСЃС‚Р°РЅРґР°СЂС‚РЅС‹С… Р°С‚СЂРёР±СѓС‚РѕРІ.";
+  const sharedHelp = "Заполните поля формы. JSON нужен только для редких/нестандартных атрибутов.";
   const byEntity = {
     servers: {
-      description: "РџСЂРѕС„РёР»СЊ СЃРµСЂРІРµСЂР°: РјРѕРґРµР»СЊ, URL Рё С‚РµС…РЅРёС‡РµСЃРєРёРµ РѕРіСЂР°РЅРёС‡РµРЅРёСЏ.",
+      description: "Профиль сервера: модель, URL и технические ограничения.",
       fields: [
-        { name: "server_code", label: "РљРѕРґ СЃРµСЂРІРµСЂР°", placeholder: "prod-1", help: "РЈРЅРёРєР°Р»СЊРЅС‹Р№ РєРѕРґ РѕРєСЂСѓР¶РµРЅРёСЏ." },
-        { name: "base_url", label: "Base URL", placeholder: "https://api.example.com", help: "Р‘Р°Р·РѕРІС‹Р№ URL СЃРµСЂРІРµСЂР°/РёРЅС‚РµРіСЂР°С†РёРё." },
-        { name: "timeout_sec", label: "Timeout (СЃРµРє)", type: "number", min: 1, placeholder: "30", help: "РўР°Р№РјР°СѓС‚ Р·Р°РїСЂРѕСЃРѕРІ РІ СЃРµРєСѓРЅРґР°С…." },
+        { name: "server_code", label: "Код сервера", placeholder: "prod-1", help: "Уникальный код окружения." },
+        { name: "base_url", label: "Base URL", placeholder: "https://api.example.com", help: "Базовый URL сервера/интеграции." },
+        { name: "timeout_sec", label: "Timeout (сек)", type: "number", min: 1, placeholder: "30", help: "Таймаут запросов в секундах." },
       ],
     },
     laws: {
-      description: "РќРѕСЂРјР°С‚РёРІРЅС‹Р№ РёСЃС‚РѕС‡РЅРёРє Рё РµРіРѕ СЂРµРєРІРёР·РёС‚С‹.",
+      description: "Нормативный источник и его реквизиты.",
       fields: [
-        { name: "law_code", label: "РљРѕРґ Р·Р°РєРѕРЅР°", placeholder: "uk_rf_2026", help: "Р’РЅСѓС‚СЂРµРЅРЅРёР№ РєРѕРґ Р·Р°РєРѕРЅР°/СЃР±РѕСЂРЅРёРєР°." },
-        { name: "source", label: "РСЃС‚РѕС‡РЅРёРє", placeholder: "consultant", help: "РћС‚РєСѓРґР° РІР·СЏС‚ С‚РµРєСЃС‚ (СЃРµСЂРІРёСЃ/СЂРµРµСЃС‚СЂ)." },
-        { name: "effective_from", label: "Р”РµР№СЃС‚РІСѓРµС‚ СЃ", placeholder: "2026-01-01", help: "Р”Р°С‚Р° РІ С„РѕСЂРјР°С‚Рµ YYYY-MM-DD." },
+        { name: "law_code", label: "Код закона", placeholder: "uk_rf_2026", help: "Внутренний код закона/сборника." },
+        { name: "source", label: "Источник", placeholder: "consultant", help: "Откуда взят текст (сервис/реестр)." },
+        { name: "effective_from", label: "Действует с", placeholder: "2026-01-01", help: "Дата в формате YYYY-MM-DD." },
       ],
     },
     templates: {
-      description: "РЁР°Р±Р»РѕРЅ РґРѕРєСѓРјРµРЅС‚Р°: С„РѕСЂРјР°С‚, С†РµР»СЊ Рё РѕР±СЏР·Р°С‚РµР»СЊРЅС‹Рµ Р±Р»РѕРєРё.",
+      description: "Шаблон документа: формат, цель и обязательные блоки.",
       fields: [
-        { name: "template_type", label: "РўРёРї С€Р°Р±Р»РѕРЅР°", placeholder: "complaint", help: "РќР°РїСЂРёРјРµСЂ: complaint, appeal, rehab." },
-        { name: "document_kind", label: "Р’РёРґ РґРѕРєСѓРјРµРЅС‚Р°", placeholder: "Р–Р°Р»РѕР±Р°", help: "Р§РµР»РѕРІРµРєРѕС‡РёС‚Р°РµРјС‹Р№ РІРёРґ РґРѕРєСѓРјРµРЅС‚Р°." },
-        { name: "output_format", label: "Р¤РѕСЂРјР°С‚ РІС‹РІРѕРґР°", placeholder: "bbcode", help: "РќР°РїСЂРёРјРµСЂ: bbcode, markdown, html." },
+        { name: "template_type", label: "Тип шаблона", placeholder: "complaint", help: "Например: complaint, appeal, rehab." },
+        { name: "document_kind", label: "Вид документа", placeholder: "Жалоба", help: "Человекочитаемый вид документа." },
+        { name: "output_format", label: "Формат вывода", placeholder: "bbcode", help: "Например: bbcode, markdown, html." },
       ],
     },
     features: {
-      description: "Р¤РёС‡Р°-С„Р»Р°Рі: rollout Рё СѓСЃР»РѕРІРёСЏ РІРєР»СЋС‡РµРЅРёСЏ.",
+      description: "Фича-флаг: rollout и условия включения.",
       fields: [
-        { name: "feature_flag", label: "Feature flag", placeholder: "new_law_qa", help: "РЈРЅРёРєР°Р»СЊРЅС‹Р№ РєРѕРґ С„Р»Р°РіР°." },
-        { name: "rollout_percent", label: "Rollout (%)", type: "number", min: 0, max: 100, placeholder: "25", help: "Р”РѕР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ РІ РїСЂРѕС†РµРЅС‚Р°С…." },
-        { name: "audience", label: "РђСѓРґРёС‚РѕСЂРёСЏ", placeholder: "testers", help: "РљРѕРјСѓ РІРєР»СЋС‡РµРЅРѕ: all/testers/staff/..." },
+        { name: "feature_flag", label: "Feature flag", placeholder: "new_law_qa", help: "Уникальный код флага." },
+        { name: "rollout_percent", label: "Rollout (%)", type: "number", min: 0, max: 100, placeholder: "25", help: "Доля пользователей в процентах." },
+        { name: "audience", label: "Аудитория", placeholder: "testers", help: "Кому включено: all/testers/staff/..." },
       ],
     },
     rules: {
-      description: "РџСЂР°РІРёР»Рѕ РїСЂРёРјРµРЅРµРЅРёСЏ: РїСЂРёРѕСЂРёС‚РµС‚, РѕР±Р»Р°СЃС‚СЊ Рё РґРµР№СЃС‚РІРёРµ.",
+      description: "Правило применения: приоритет, область и действие.",
       fields: [
-        { name: "rule_type", label: "РўРёРї РїСЂР°РІРёР»Р°", placeholder: "moderation", help: "РљР°С‚РµРіРѕСЂРёСЏ РїСЂР°РІРёР»Р°." },
-        { name: "priority", label: "РџСЂРёРѕСЂРёС‚РµС‚", type: "number", min: 0, placeholder: "100", help: "Р§РµРј Р±РѕР»СЊС€Рµ С‡РёСЃР»Рѕ, С‚РµРј РІС‹С€Рµ РїСЂРёРѕСЂРёС‚РµС‚." },
-        { name: "applies_to", label: "РћР±Р»Р°СЃС‚СЊ", placeholder: "complaint_generation", help: "Р“РґРµ РїСЂРёРјРµРЅСЏРµС‚СЃСЏ РїСЂР°РІРёР»Рѕ." },
+        { name: "rule_type", label: "Тип правила", placeholder: "moderation", help: "Категория правила." },
+        { name: "priority", label: "Приоритет", type: "number", min: 0, placeholder: "100", help: "Чем больше число, тем выше приоритет." },
+        { name: "applies_to", label: "Область", placeholder: "complaint_generation", help: "Где применяется правило." },
       ],
     },
   };
@@ -1027,7 +1027,7 @@ function parseCatalogAdvancedJson(rawJson) {
   }
   const parsed = JSON.parse(raw);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Advanced JSON РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РѕР±СЉРµРєС‚РѕРј.");
+    throw new Error("Advanced JSON должен быть объектом.");
   }
   return parsed;
 }
@@ -1053,41 +1053,41 @@ async function openCatalogFormDialog(entityType, seed = {}) {
     .join("");
   dialog.innerHTML = `
     <form method="dialog" class="legal-section">
-      <h3>${seed.id ? "Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ" : "РЎРѕР·РґР°РЅРёРµ"}: ${escapeHtml(entityType)}</h3>
+      <h3>${seed.id ? "Редактирование" : "Создание"}: ${escapeHtml(entityType)}</h3>
       <p class="legal-field__hint">${escapeHtml(meta.description || "")}</p>
       <label class="legal-field">
-        <span class="legal-field__label">РќР°Р·РІР°РЅРёРµ</span>
-        <input type="text" name="title" value="${escapeHtml(values.title)}" placeholder="РџРѕРЅСЏС‚РЅРѕРµ РёРјСЏ Р·Р°РїРёСЃРё" required>
+        <span class="legal-field__label">Название</span>
+        <input type="text" name="title" value="${escapeHtml(values.title)}" placeholder="Понятное имя записи" required>
       </label>
       <label class="legal-field">
-        <span class="legal-field__label">РљР»СЋС‡</span>
+        <span class="legal-field__label">Ключ</span>
         <input type="text" name="key" value="${escapeHtml(values.key)}" placeholder="server_main" required>
-        <span class="legal-field__hint">РЈРЅРёРєР°Р»СЊРЅС‹Р№ РєР»СЋС‡ (Р»Р°С‚РёРЅРёС†Р°/С†РёС„СЂС‹/РїРѕРґС‡РµСЂРєРёРІР°РЅРёРµ). РџСЂРёРјРµСЂ: <code>main_ruleset</code></span>
+        <span class="legal-field__hint">Уникальный ключ (латиница/цифры/подчеркивание). Пример: <code>main_ruleset</code></span>
       </label>
       <label class="legal-field">
-        <span class="legal-field__label">РћРїРёСЃР°РЅРёРµ</span>
-        <textarea name="description" rows="2" placeholder="РљСЂР°С‚РєРѕ: Р·Р°С‡РµРј РЅСѓР¶РЅР° Р·Р°РїРёСЃСЊ">${escapeHtml(values.description)}</textarea>
+        <span class="legal-field__label">Описание</span>
+        <textarea name="description" rows="2" placeholder="Кратко: зачем нужна запись">${escapeHtml(values.description)}</textarea>
       </label>
       <label class="legal-field">
-        <span class="legal-field__label">РЎС‚Р°С‚СѓСЃ</span>
+        <span class="legal-field__label">Статус</span>
         <select name="status">
           ${["draft", "review", "published", "active", "disabled", "archived"]
             .map((statusName) => `<option value="${statusName}" ${values.status === statusName ? "selected" : ""}>${statusName}</option>`)
             .join("")}
         </select>
-        <span class="legal-field__hint">РћР±С‹С‡РЅРѕ РґР»СЏ РЅРѕРІС‹С… Р·Р°РїРёСЃРµР№ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ <code>draft</code>.</span>
+        <span class="legal-field__hint">Обычно для новых записей используется <code>draft</code>.</span>
       </label>
       ${dynamicFields}
       <details>
-        <summary>Р”РѕРїРѕР»РЅРёС‚РµР»СЊРЅРѕ (JSON)</summary>
-        <p class="legal-field__hint">РћРїС†РёРѕРЅР°Р»СЊРЅРѕ. Р”РѕР±Р°РІСЊС‚Рµ СЂРµРґРєРёРµ РїРѕР»СЏ РІ JSON-РѕР±СЉРµРєС‚Рµ, РЅР°РїСЂРёРјРµСЂ: {\"tags\":[\"beta\"],\"owner\":\"team-legal\"}</p>
+        <summary>Дополнительно (JSON)</summary>
+        <p class="legal-field__hint">Опционально. Добавьте редкие поля в JSON-объекте, например: {\"tags\":[\"beta\"],\"owner\":\"team-legal\"}</p>
         <label class="legal-field">
           <textarea name="advanced_config" rows="7" placeholder='{\"tags\":[\"beta\"],\"owner\":\"team-legal\"}'>${escapeHtml(JSON.stringify(values.config || {}, null, 2))}</textarea>
         </label>
       </details>
       <menu style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
-        <button type="button" class="ghost-button" data-action="cancel">РћС‚РјРµРЅР°</button>
-        <button type="submit" class="primary-button" data-action="submit">РЎРѕС…СЂР°РЅРёС‚СЊ</button>
+        <button type="button" class="ghost-button" data-action="cancel">Отмена</button>
+        <button type="submit" class="primary-button" data-action="submit">Сохранить</button>
       </menu>
     </form>
   `;
@@ -1120,10 +1120,10 @@ async function openCatalogFormDialog(entityType, seed = {}) {
         const description = String(formData.get("description") || "").trim();
         const status = String(formData.get("status") || "draft").trim().toLowerCase();
         if (!title) {
-          throw new Error("РџРѕР»Рµ В«РќР°Р·РІР°РЅРёРµВ» РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ.");
+          throw new Error("Поле «Название» обязательно.");
         }
         if (!key) {
-          throw new Error("РџРѕР»Рµ В«РљР»СЋС‡В» РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ.");
+          throw new Error("Поле «Ключ» обязательно.");
         }
         const advanced = parseCatalogAdvancedJson(formData.get("advanced_config"));
         const payload = { title, key, description, status, config: advanced };
@@ -1166,7 +1166,7 @@ async function loadCatalog(entityType = activeCatalogEntity) {
   const response = await apiFetch(catalogEndpoint(entityType));
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ catalog."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить catalog."));
     return;
   }
   activeCatalogAuditEntityType = "";
@@ -1239,7 +1239,7 @@ function parseJsonConfig(rawText) {
     const source = String(rawText || "");
     const match = /position\s+(\d+)/i.exec(String(error?.message || ""));
     if (!match) {
-      return { ok: false, message: "РќРµ СѓРґР°Р»РѕСЃСЊ СЂР°Р·РѕР±СЂР°С‚СЊ JSON. РџСЂРѕРІРµСЂСЊС‚Рµ СЃРёРЅС‚Р°РєСЃРёСЃ." };
+      return { ok: false, message: "Не удалось разобрать JSON. Проверьте синтаксис." };
     }
     const index = Number(match[1]);
     const boundedIndex = Number.isFinite(index) ? Math.max(0, Math.min(index, source.length)) : 0;
@@ -1248,14 +1248,14 @@ function parseJsonConfig(rawText) {
     const column = boundedIndex - (before.lastIndexOf("\n") + 1) + 1;
     return {
       ok: false,
-      message: `РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ JSON: РѕС€РёР±РєР° РЅР° СЃС‚СЂРѕРєРµ ${line}, РїРѕР·РёС†РёСЏ ${column}.`,
+      message: `Некорректный JSON: ошибка на строке ${line}, позиция ${column}.`,
     };
   }
 }
 
 function resetCatalogModalState() {
   pendingCatalogContext = null;
-  if (catalogModalTitle) catalogModalTitle.textContent = "Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ РєР°С‚Р°Р»РѕРіР°";
+  if (catalogModalTitle) catalogModalTitle.textContent = "Редактирование каталога";
   if (catalogTitleInput) {
     catalogTitleInput.value = "";
     catalogTitleInput.disabled = false;
@@ -1268,14 +1268,14 @@ function resetCatalogModalState() {
     catalogJsonError.textContent = "";
     catalogJsonError.hidden = true;
   }
-  if (catalogPublishedHost) catalogPublishedHost.textContent = "вЂ”";
-  if (catalogDraftHost) catalogDraftHost.textContent = "вЂ”";
+  if (catalogPublishedHost) catalogPublishedHost.textContent = "—";
+  if (catalogDraftHost) catalogDraftHost.textContent = "—";
   if (catalogSaveButton) {
     catalogSaveButton.hidden = false;
     catalogSaveButton.disabled = false;
-    catalogSaveButton.textContent = "РЎРѕС…СЂР°РЅРёС‚СЊ";
+    catalogSaveButton.textContent = "Сохранить";
   }
-  if (catalogCancelButton) catalogCancelButton.textContent = "Р—Р°РєСЂС‹С‚СЊ";
+  if (catalogCancelButton) catalogCancelButton.textContent = "Закрыть";
   setStateIdle(catalogModalErrors);
 }
 
@@ -1303,8 +1303,8 @@ function openCatalogModal(config) {
     {};
 
   if (catalogModalTitle) {
-    const baseTitle = mode === "view" ? "РџСЂРѕСЃРјРѕС‚СЂ СЌР»РµРјРµРЅС‚Р°" : (config?.isCreate ? "РЎРѕР·РґР°РЅРёРµ СЌР»РµРјРµРЅС‚Р°" : "Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ СЌР»РµРјРµРЅС‚Р°");
-    catalogModalTitle.textContent = `${baseTitle}: ${String(item.title || "").trim() || "Р±РµР· РЅР°Р·РІР°РЅРёСЏ"}`;
+    const baseTitle = mode === "view" ? "Просмотр элемента" : (config?.isCreate ? "Создание элемента" : "Редактирование элемента");
+    catalogModalTitle.textContent = `${baseTitle}: ${String(item.title || "").trim() || "без названия"}`;
   }
   if (catalogTitleInput) {
     catalogTitleInput.value = String(item.title || "");
@@ -1316,12 +1316,12 @@ function openCatalogModal(config) {
   }
   if (catalogPublishedHost) {
     catalogPublishedHost.textContent = formatJsonForDisplay(
-      extractVersionPayload(publishedVersion) ?? "РћРїСѓР±Р»РёРєРѕРІР°РЅРЅР°СЏ РІРµСЂСЃРёСЏ РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚."
+      extractVersionPayload(publishedVersion) ?? "Опубликованная версия отсутствует."
     );
   }
   if (catalogDraftHost) {
     catalogDraftHost.textContent = formatJsonForDisplay(
-      extractVersionPayload(draftVersion) ?? "Р§РµСЂРЅРѕРІРёРє РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚."
+      extractVersionPayload(draftVersion) ?? "Черновик отсутствует."
     );
   }
   if (catalogSaveButton) {
@@ -1329,7 +1329,7 @@ function openCatalogModal(config) {
     catalogSaveButton.disabled = false;
   }
   if (catalogCancelButton) {
-    catalogCancelButton.textContent = mode === "view" ? "Р—Р°РєСЂС‹С‚СЊ" : "РћС‚РјРµРЅР°";
+    catalogCancelButton.textContent = mode === "view" ? "Закрыть" : "Отмена";
   }
   catalogModal.open();
 }
@@ -1342,7 +1342,7 @@ async function submitCatalogModal() {
   const title = String(catalogTitleInput?.value || "").trim();
   const rawJson = String(catalogJsonInput?.value || "").trim();
   if (!title) {
-    setStateError(catalogModalErrors, "РЈРєР°Р¶РёС‚Рµ РЅР°Р·РІР°РЅРёРµ СЌР»РµРјРµРЅС‚Р°.");
+    setStateError(catalogModalErrors, "Укажите название элемента.");
     return;
   }
   const parsed = parseJsonConfig(rawJson || "{}");
@@ -1372,15 +1372,15 @@ async function submitCatalogModal() {
     const response = await apiFetch(url, { method, body });
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(catalogModalErrors, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ СЌР»РµРјРµРЅС‚."));
+      setStateError(catalogModalErrors, formatHttpError(response, payload, "Не удалось сохранить элемент."));
       if (catalogSaveButton) catalogSaveButton.disabled = false;
       return;
     }
-    showMessage(isCreate ? "Р­Р»РµРјРµРЅС‚ СЃРѕР·РґР°РЅ." : "Р­Р»РµРјРµРЅС‚ РѕР±РЅРѕРІР»РµРЅ.");
+    showMessage(isCreate ? "Элемент создан." : "Элемент обновлен.");
     closeCatalogModal();
     await loadCatalog(activeCatalogEntity);
   } catch (error) {
-    setStateError(catalogModalErrors, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ СЌР»РµРјРµРЅС‚.");
+    setStateError(catalogModalErrors, error?.message || "Не удалось сохранить элемент.");
     if (catalogSaveButton) catalogSaveButton.disabled = false;
   }
 }
@@ -1412,7 +1412,7 @@ function setCollapsibleExpanded(button, expanded, state = null) {
   }
 
   button.setAttribute("aria-expanded", expanded ? "true" : "false");
-  button.textContent = expanded ? "РЎРєСЂС‹С‚СЊ" : "РџРѕРєР°Р·Р°С‚СЊ";
+  button.textContent = expanded ? "Скрыть" : "Показать";
   content.hidden = !expanded;
   section.dataset.collapsibleOpen = expanded ? "true" : "false";
 
@@ -1451,42 +1451,42 @@ function initCollapsibles() {
 function describeApiPath(path) {
   const normalized = String(path || "").trim();
   if (!normalized) {
-    return "РЎРёСЃС‚РµРјРЅС‹Р№ Р·Р°РїСЂРѕСЃ Р±РµР· СѓРєР°Р·Р°РЅРЅРѕРіРѕ РїСѓС‚Рё.";
+    return "Системный запрос без указанного пути.";
   }
 
   const patterns = [
-    [/^\/api\/admin\/overview$/, "Р—Р°РіСЂСѓР·РєР° РІСЃРµР№ Р°РґРјРёРЅ-РїР°РЅРµР»Рё: СЃРІРѕРґРєР°, РїРѕР»СЊР·РѕРІР°С‚РµР»Рё, СЃРѕР±С‹С‚РёСЏ Рё СЃС‚Р°С‚РёСЃС‚РёРєР°."],
-    [/^\/api\/admin\/users\.csv$/, "Р’С‹РіСЂСѓР·РєР° CSV СЃРѕ СЃРїРёСЃРєРѕРј РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ РїРѕ С‚РµРєСѓС‰РёРј С„РёР»СЊС‚СЂР°Рј."],
-    [/^\/api\/admin\/events\.csv$/, "Р’С‹РіСЂСѓР·РєР° CSV СЃРѕ СЃРїРёСЃРєРѕРј СЃРѕР±С‹С‚РёР№ РїРѕ С‚РµРєСѓС‰РёРј С„РёР»СЊС‚СЂР°Рј."],
-    [/^\/api\/admin\/users\/[^/]+\/verify-email$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РІСЂСѓС‡РЅСѓСЋ РїРѕРґС‚РІРµСЂР¶РґР°РµС‚ email РІС‹Р±СЂР°РЅРЅРѕРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
-    [/^\/api\/admin\/users\/[^/]+\/block$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ Р±Р»РѕРєРёСЂСѓРµС‚ РґРѕСЃС‚СѓРї РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ Рє Р°РєРєР°СѓРЅС‚Сѓ."],
-    [/^\/api\/admin\/users\/[^/]+\/unblock$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅРёРјР°РµС‚ Р±Р»РѕРєРёСЂРѕРІРєСѓ Рё РІРѕР·РІСЂР°С‰Р°РµС‚ РґРѕСЃС‚СѓРї Рє Р°РєРєР°СѓРЅС‚Сѓ."],
-    [/^\/api\/admin\/users\/[^/]+\/grant-tester$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РІС‹РґР°РµС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ СЃС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР°."],
-    [/^\/api\/admin\/users\/[^/]+\/revoke-tester$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅРёРјР°РµС‚ Сѓ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ СЃС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР°."],
-    [/^\/api\/admin\/users\/[^/]+\/grant-gka$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РїСЂРёСЃРІР°РёРІР°РµС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ С‚РёРї Р“РљРђ-Р—Р“РљРђ."],
-    [/^\/api\/admin\/users\/[^/]+\/revoke-gka$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅРёРјР°РµС‚ Сѓ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ С‚РёРї Р“РљРђ-Р—Р“РљРђ."],
-    [/^\/api\/admin\/users\/[^/]+\/email$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РІСЂСѓС‡РЅСѓСЋ РјРµРЅСЏРµС‚ email РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
-    [/^\/api\/admin\/users\/[^/]+\/reset-password$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РІСЂСѓС‡РЅСѓСЋ Р·Р°РґР°РµС‚ РЅРѕРІС‹Р№ РїР°СЂРѕР»СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ."],
-    [/^\/api\/admin\/users\/[^/]+\/deactivate$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РјСЏРіРєРѕ РґРµР°РєС‚РёРІРёСЂСѓРµС‚ Р°РєРєР°СѓРЅС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
-    [/^\/api\/admin\/users\/[^/]+\/reactivate$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅРёРјР°РµС‚ РґРµР°РєС‚РёРІР°С†РёСЋ Р°РєРєР°СѓРЅС‚Р°."],
-    [/^\/api\/admin\/users\/[^/]+\/daily-quota$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ Р·Р°РґР°РµС‚ СЃСѓС‚РѕС‡РЅС‹Р№ Р»РёРјРёС‚ API РґР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
-    [/^\/api\/admin\/users\/bulk-actions$/, "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ Р·Р°РїСѓСЃРєР°РµС‚ РјР°СЃСЃРѕРІСѓСЋ РѕРїРµСЂР°С†РёСЋ РїРѕ РІС‹Р±СЂР°РЅРЅС‹Рј РїРѕР»СЊР·РѕРІР°С‚РµР»СЏРј."],
-    [/^\/api\/admin\/tasks\/[^/]+$/, "РџСЂРѕРІРµСЂРєР° СЃС‚Р°С‚СѓСЃР° С„РѕРЅРѕРІРѕР№ Р·Р°РґР°С‡Рё Р°РґРјРёРЅ-РѕРїРµСЂР°С†РёР№."],
-    [/^\/api\/complaint-draft$/, "РЎРѕС…СЂР°РЅРµРЅРёРµ, Р·Р°РіСЂСѓР·РєР° РёР»Рё РѕС‡РёСЃС‚РєР° С‡РµСЂРЅРѕРІРёРєР° Р¶Р°Р»РѕР±С‹ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
-    [/^\/api\/generate$/, "Р“РµРЅРµСЂР°С†РёСЏ РёС‚РѕРіРѕРІРѕР№ Р¶Р°Р»РѕР±С‹ РїРѕ Р·Р°РїРѕР»РЅРµРЅРЅРѕР№ С„РѕСЂРјРµ."],
-    [/^\/api\/generate-rehab$/, "Р“РµРЅРµСЂР°С†РёСЏ Р·Р°СЏРІР»РµРЅРёСЏ РЅР° СЂРµР°Р±РёР»РёС‚Р°С†РёСЋ."],
-    [/^\/api\/ai\/suggest$/, "AI СѓР»СѓС‡С€Р°РµС‚ Рё РїРµСЂРµРїРёСЃС‹РІР°РµС‚ РѕРїРёСЃР°РЅРёРµ Р¶Р°Р»РѕР±С‹."],
-    [/^\/api\/ai\/extract-principal$/, "AI СЂР°СЃРїРѕР·РЅР°РµС‚ РґР°РЅРЅС‹Рµ РґРѕРІРµСЂРёС‚РµР»СЏ СЃ РёР·РѕР±СЂР°Р¶РµРЅРёСЏ РґРѕРєСѓРјРµРЅС‚Р°."],
-    [/^\/api\/auth\/login$/, "Р’С…РѕРґ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІ Р°РєРєР°СѓРЅС‚."],
-    [/^\/api\/auth\/register$/, "Р РµРіРёСЃС‚СЂР°С†РёСЏ РЅРѕРІРѕРіРѕ Р°РєРєР°СѓРЅС‚Р°."],
-    [/^\/api\/auth\/logout$/, "Р’С‹С…РѕРґ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РёР· Р°РєРєР°СѓРЅС‚Р°."],
-    [/^\/api\/auth\/forgot-password$/, "Р—Р°РїСѓСЃРє РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёСЏ РїР°СЂРѕР»СЏ."],
-    [/^\/api\/auth\/reset-password$/, "РЎР±СЂРѕСЃ РїР°СЂРѕР»СЏ РїРѕ С‚РѕРєРµРЅСѓ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёСЏ."],
-    [/^\/api\/profile$/, "Р—Р°РіСЂСѓР·РєР° РёР»Рё СЃРѕС…СЂР°РЅРµРЅРёРµ РґР°РЅРЅС‹С… РїСЂРѕС„РёР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."],
-    [/^\/api\/exam-import\/sync$/, "РРјРїРѕСЂС‚ РЅРѕРІС‹С… РѕС‚РІРµС‚РѕРІ РЅР° СЌРєР·Р°РјРµРЅС‹ РёР· Google Sheets."],
-    [/^\/api\/exam-import\/score$/, "РњР°СЃСЃРѕРІР°СЏ РїСЂРѕРІРµСЂРєР° РёРјРїРѕСЂС‚РёСЂРѕРІР°РЅРЅС‹С… СЌРєР·Р°РјРµРЅР°С†РёРѕРЅРЅС‹С… РѕС‚РІРµС‚РѕРІ."],
-    [/^\/api\/exam-import\/rows\/\d+$/, "РџСЂРѕСЃРјРѕС‚СЂ РґРµС‚Р°Р»РµР№ РїРѕ РѕРґРЅРѕР№ РёРјРїРѕСЂС‚РёСЂРѕРІР°РЅРЅРѕР№ СЃС‚СЂРѕРєРµ СЌРєР·Р°РјРµРЅР°."],
-    [/^\/api\/exam-import\/rows\/\d+\/score$/, "РџСЂРѕРІРµСЂРєР° Рё РѕС†РµРЅРєР° РѕРґРЅРѕР№ РєРѕРЅРєСЂРµС‚РЅРѕР№ СЃС‚СЂРѕРєРё СЌРєР·Р°РјРµРЅР°."],
+    [/^\/api\/admin\/overview$/, "Загрузка всей админ-панели: сводка, пользователи, события и статистика."],
+    [/^\/api\/admin\/users\.csv$/, "Выгрузка CSV со списком пользователей по текущим фильтрам."],
+    [/^\/api\/admin\/events\.csv$/, "Выгрузка CSV со списком событий по текущим фильтрам."],
+    [/^\/api\/admin\/users\/[^/]+\/verify-email$/, "Администратор вручную подтверждает email выбранного пользователя."],
+    [/^\/api\/admin\/users\/[^/]+\/block$/, "Администратор блокирует доступ пользователя к аккаунту."],
+    [/^\/api\/admin\/users\/[^/]+\/unblock$/, "Администратор снимает блокировку и возвращает доступ к аккаунту."],
+    [/^\/api\/admin\/users\/[^/]+\/grant-tester$/, "Администратор выдает пользователю статус тестера."],
+    [/^\/api\/admin\/users\/[^/]+\/revoke-tester$/, "Администратор снимает у пользователя статус тестера."],
+    [/^\/api\/admin\/users\/[^/]+\/grant-gka$/, "Администратор присваивает пользователю тип ГКА-ЗГКА."],
+    [/^\/api\/admin\/users\/[^/]+\/revoke-gka$/, "Администратор снимает у пользователя тип ГКА-ЗГКА."],
+    [/^\/api\/admin\/users\/[^/]+\/email$/, "Администратор вручную меняет email пользователя."],
+    [/^\/api\/admin\/users\/[^/]+\/reset-password$/, "Администратор вручную задает новый пароль пользователю."],
+    [/^\/api\/admin\/users\/[^/]+\/deactivate$/, "Администратор мягко деактивирует аккаунт пользователя."],
+    [/^\/api\/admin\/users\/[^/]+\/reactivate$/, "Администратор снимает деактивацию аккаунта."],
+    [/^\/api\/admin\/users\/[^/]+\/daily-quota$/, "Администратор задает суточный лимит API для пользователя."],
+    [/^\/api\/admin\/users\/bulk-actions$/, "Администратор запускает массовую операцию по выбранным пользователям."],
+    [/^\/api\/admin\/tasks\/[^/]+$/, "Проверка статуса фоновой задачи админ-операций."],
+    [/^\/api\/complaint-draft$/, "Сохранение, загрузка или очистка черновика жалобы пользователя."],
+    [/^\/api\/generate$/, "Генерация итоговой жалобы по заполненной форме."],
+    [/^\/api\/generate-rehab$/, "Генерация заявления на реабилитацию."],
+    [/^\/api\/ai\/suggest$/, "AI улучшает и переписывает описание жалобы."],
+    [/^\/api\/ai\/extract-principal$/, "AI распознает данные доверителя с изображения документа."],
+    [/^\/api\/auth\/login$/, "Вход пользователя в аккаунт."],
+    [/^\/api\/auth\/register$/, "Регистрация нового аккаунта."],
+    [/^\/api\/auth\/logout$/, "Выход пользователя из аккаунта."],
+    [/^\/api\/auth\/forgot-password$/, "Запуск восстановления пароля."],
+    [/^\/api\/auth\/reset-password$/, "Сброс пароля по токену восстановления."],
+    [/^\/api\/profile$/, "Загрузка или сохранение данных профиля пользователя."],
+    [/^\/api\/exam-import\/sync$/, "Импорт новых ответов на экзамены из Google Sheets."],
+    [/^\/api\/exam-import\/score$/, "Массовая проверка импортированных экзаменационных ответов."],
+    [/^\/api\/exam-import\/rows\/\d+$/, "Просмотр деталей по одной импортированной строке экзамена."],
+    [/^\/api\/exam-import\/rows\/\d+\/score$/, "Проверка и оценка одной конкретной строки экзамена."],
   ];
 
   for (const [pattern, description] of patterns) {
@@ -1495,37 +1495,37 @@ function describeApiPath(path) {
     }
   }
 
-  return "РўРµС…РЅРёС‡РµСЃРєРёР№ API-Р·Р°РїСЂРѕСЃ. Р”Р»СЏ СЌС‚РѕРіРѕ РїСѓС‚Рё РµС‰Рµ РЅРµ РґРѕР±Р°РІР»РµРЅРѕ С‡РµР»РѕРІРµРєРѕС‡РёС‚Р°РµРјРѕРµ РѕРїРёСЃР°РЅРёРµ.";
+  return "Технический API-запрос. Для этого пути еще не добавлено человекочитаемое описание.";
 }
 
 function describeEventType(eventType) {
   const normalized = String(eventType || "").trim().toLowerCase();
   const descriptions = {
-    api_request: "РћР±С‹С‡РЅС‹Р№ Р·Р°РїСЂРѕСЃ Рє API РїСЂРёР»РѕР¶РµРЅРёСЏ.",
-    complaint_generated: "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃРіРµРЅРµСЂРёСЂРѕРІР°Р» Р¶Р°Р»РѕР±Сѓ.",
-    rehab_generated: "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃРіРµРЅРµСЂРёСЂРѕРІР°Р» Р·Р°СЏРІР»РµРЅРёРµ РЅР° СЂРµР°Р±РёР»РёС‚Р°С†РёСЋ.",
-    complaint_draft_saved: "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃРѕС…СЂР°РЅРёР» С‡РµСЂРЅРѕРІРёРє Р¶Р°Р»РѕР±С‹.",
-    complaint_draft_cleared: "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РѕС‡РёСЃС‚РёР» С‡РµСЂРЅРѕРІРёРє Р¶Р°Р»РѕР±С‹.",
-    ai_suggest: "AI РѕР±СЂР°Р±РѕС‚Р°Р» Рё СѓР»СѓС‡С€РёР» С‚РµРєСЃС‚ Р¶Р°Р»РѕР±С‹.",
-    ai_extract_principal: "AI СЂР°СЃРїРѕР·РЅР°Р» РґР°РЅРЅС‹Рµ СЃ РґРѕРєСѓРјРµРЅС‚Р°.",
-    ai_exam_scoring: "AI РїСЂРѕРІРµСЂРёР» СЌРєР·Р°РјРµРЅР°С†РёРѕРЅРЅС‹Рµ РѕС‚РІРµС‚С‹ Рё РІРµСЂРЅСѓР» СЃС‚Р°С‚РёСЃС‚РёРєСѓ РїРѕ cache, СЌРІСЂРёСЃС‚РёРєР°Рј Рё LLM.",
-    exam_import_sync_error: "РРјРїРѕСЂС‚ РёР· Google Sheets Р·Р°РІРµСЂС€РёР»СЃСЏ РѕС€РёР±РєРѕР№.",
-    exam_import_score_failures: "Р’Рѕ РІСЂРµРјСЏ РјР°СЃСЃРѕРІРѕР№ РїСЂРѕРІРµСЂРєРё СЌРєР·Р°РјРµРЅРѕРІ С‡Р°СЃС‚СЊ СЃС‚СЂРѕРє РЅРµ РѕР±СЂР°Р±РѕС‚Р°Р»Р°СЃСЊ.",
-    exam_import_row_score_error: "РџСЂРѕРІРµСЂРєР° РѕРґРЅРѕР№ СЃС‚СЂРѕРєРё СЌРєР·Р°РјРµРЅР° Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РѕС€РёР±РєРѕР№.",
-    admin_verify_email: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РїРѕРґС‚РІРµСЂРґРёР» email РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
-    admin_block_user: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°Р» РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
-    admin_unblock_user: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЂР°Р·Р±Р»РѕРєРёСЂРѕРІР°Р» РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
-    admin_grant_tester: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РІС‹РґР°Р» СЃС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР°.",
-    admin_revoke_tester: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅСЏР» СЃС‚Р°С‚СѓСЃ С‚РµСЃС‚РµСЂР°.",
-    admin_grant_gka: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РїСЂРёСЃРІРѕРёР» С‚РёРї Р“РљРђ-Р—Р“РљРђ.",
-    admin_revoke_gka: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅСЏР» С‚РёРї Р“РљРђ-Р—Р“РљРђ.",
-    admin_update_email: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РёР·РјРµРЅРёР» email РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
-    admin_reset_password: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ Р·Р°РґР°Р» РЅРѕРІС‹Р№ РїР°СЂРѕР»СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ.",
-    admin_deactivate_user: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РґРµР°РєС‚РёРІРёСЂРѕРІР°Р» Р°РєРєР°СѓРЅС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
-    admin_reactivate_user: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃРЅСЏР» РґРµР°РєС‚РёРІР°С†РёСЋ Р°РєРєР°СѓРЅС‚Р°.",
-    admin_set_daily_quota: "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РѕР±РЅРѕРІРёР» СЃСѓС‚РѕС‡РЅСѓСЋ РєРІРѕС‚Сѓ API РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.",
+    api_request: "Обычный запрос к API приложения.",
+    complaint_generated: "Пользователь сгенерировал жалобу.",
+    rehab_generated: "Пользователь сгенерировал заявление на реабилитацию.",
+    complaint_draft_saved: "Пользователь сохранил черновик жалобы.",
+    complaint_draft_cleared: "Пользователь очистил черновик жалобы.",
+    ai_suggest: "AI обработал и улучшил текст жалобы.",
+    ai_extract_principal: "AI распознал данные с документа.",
+    ai_exam_scoring: "AI проверил экзаменационные ответы и вернул статистику по cache, эвристикам и LLM.",
+    exam_import_sync_error: "Импорт из Google Sheets завершился ошибкой.",
+    exam_import_score_failures: "Во время массовой проверки экзаменов часть строк не обработалась.",
+    exam_import_row_score_error: "Проверка одной строки экзамена завершилась ошибкой.",
+    admin_verify_email: "Администратор подтвердил email пользователя.",
+    admin_block_user: "Администратор заблокировал пользователя.",
+    admin_unblock_user: "Администратор разблокировал пользователя.",
+    admin_grant_tester: "Администратор выдал статус тестера.",
+    admin_revoke_tester: "Администратор снял статус тестера.",
+    admin_grant_gka: "Администратор присвоил тип ГКА-ЗГКА.",
+    admin_revoke_gka: "Администратор снял тип ГКА-ЗГКА.",
+    admin_update_email: "Администратор изменил email пользователя.",
+    admin_reset_password: "Администратор задал новый пароль пользователю.",
+    admin_deactivate_user: "Администратор деактивировал аккаунт пользователя.",
+    admin_reactivate_user: "Администратор снял деактивацию аккаунта.",
+    admin_set_daily_quota: "Администратор обновил суточную квоту API пользователя.",
   };
-  return descriptions[normalized] || "РЎРёСЃС‚РµРјРЅРѕРµ СЃРѕР±С‹С‚РёРµ Р±РµР· РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅРѕРіРѕ РѕРїРёСЃР°РЅРёСЏ.";
+  return descriptions[normalized] || "Системное событие без дополнительного описания.";
 }
 
 function showMessage(text) {
@@ -1605,16 +1605,16 @@ function renderBandBadge(band) {
 
 function riskLabel(user) {
   const riskScore = Number(user.risk_score || 0);
-  if (riskScore >= 4) return renderBadge("Р РёСЃРє: РІС‹СЃРѕРєРёР№", "danger");
-  if (riskScore >= 2) return renderBadge("Р РёСЃРє: СЃСЂРµРґРЅРёР№", "info");
-  return renderBadge("Р В Р С‘РЎРѓР С”: Р Р…Р С‘Р В·Р С”Р С‘Р в„–", "success-soft");
+  if (riskScore >= 4) return renderBadge("Риск: высокий", "danger");
+  if (riskScore >= 2) return renderBadge("Риск: средний", "info");
+  return renderBadge("Риск: низкий", "success-soft");
 }
 
 function renderFilterChip(label, key) {
   return `
     <button type="button" class="admin-filter-chip" data-clear-filter="${escapeHtml(key)}">
       <span>${escapeHtml(label)}</span>
-      <span class="admin-filter-chip__close" aria-hidden="true">Р“вЂ”</span>
+      <span class="admin-filter-chip__close" aria-hidden="true">Г—</span>
     </button>
   `;
 }
@@ -1638,7 +1638,7 @@ function renderLoadingState(host, options = {}) {
 
   host.innerHTML = `
     <div class="admin-loading" aria-live="polite" aria-busy="true">
-      <p class="legal-section__description">Р—Р°РіСЂСѓР¶Р°РµРј РґР°РЅРЅС‹Рµ...</p>
+      <p class="legal-section__description">Загружаем данные...</p>
       ${lines}
     </div>
   `;
@@ -1817,7 +1817,7 @@ function renderPilotRolloutMarkup(payload) {
                 .filter((item) => ["pilot_runtime_adapter_v1", "pilot_shadow_compare_v1"].includes(String(item?.flag || "")))
                 .map((item) => `
                   <tr>
-                    <td>${escapeHtml(String(item.flag || "вЂ”"))}</td>
+                    <td>${escapeHtml(String(item.flag || "—"))}</td>
                     <td>${escapeHtml(String(item.mode || "off"))}</td>
                     <td>${escapeHtml(String(item.cohort || "default"))}</td>
                     <td>${escapeHtml(String(Boolean(item.use_new_flow)))}</td>
@@ -1865,9 +1865,9 @@ function renderPilotRolloutMarkup(payload) {
             ${checklist
               .map((item) => `
                 <tr>
-                  <td>${escapeHtml(String(item.label || "вЂ”"))}</td>
+                  <td>${escapeHtml(String(item.label || "—"))}</td>
                   <td>${renderBadge(item.status === "pass" ? "pass" : "review", item.status === "pass" ? "success-soft" : "info")}</td>
-                  <td>${escapeHtml(String(item.note || "вЂ”"))}</td>
+                  <td>${escapeHtml(String(item.note || "—"))}</td>
                 </tr>
               `)
               .join("")}
@@ -1942,7 +1942,7 @@ function renderPilotRolloutMarkup(payload) {
 }
 function renderProvenanceTraceMarkup(trace) {
   if (!trace) {
-    return '<p class="legal-section__description">Trace РЅРµ РЅР°Р№РґРµРЅ.</p>';
+    return '<p class="legal-section__description">Trace не найден.</p>';
   }
   const config = trace.config || {};
   const ai = trace.ai || {};
@@ -1952,18 +1952,18 @@ function renderProvenanceTraceMarkup(trace) {
     <div class="admin-performance-grid">
       <article class="legal-status-card">
         <span class="legal-status-card__label">Document version</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(trace.document_version_id || "вЂ”"))}</strong>
-        <span class="admin-user-cell__secondary">${escapeHtml(String(trace.document_kind || "вЂ”"))}</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(trace.document_version_id || "—"))}</strong>
+        <span class="admin-user-cell__secondary">${escapeHtml(String(trace.document_kind || "—"))}</span>
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">Server</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(trace.server_id || "вЂ”"))}</strong>
-        <span class="admin-user-cell__secondary">Snapshot: ${escapeHtml(String(trace.generation_snapshot_id || "вЂ”"))}</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(trace.server_id || "—"))}</strong>
+        <span class="admin-user-cell__secondary">Snapshot: ${escapeHtml(String(trace.generation_snapshot_id || "—"))}</span>
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">Generated at</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(trace.generation_timestamp || "вЂ”"))}</strong>
-        <span class="admin-user-cell__secondary">Validation: ${escapeHtml(String(validation.latest_status || "вЂ”"))}</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(trace.generation_timestamp || "—"))}</strong>
+        <span class="admin-user-cell__secondary">Validation: ${escapeHtml(String(validation.latest_status || "—"))}</span>
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">Retrieval</span>
@@ -1989,7 +1989,7 @@ function renderProvenanceTraceMarkup(trace) {
           ${renderNormalizedKeyValueField("Model id", ai.model_id)}
           ${renderNormalizedKeyValueField("Prompt version", ai.prompt_version)}
           ${renderNormalizedKeyValueField("Retrieval run id", retrieval.retrieval_run_id)}
-          ${renderKeyValueField("Citation ids", Array.isArray(retrieval.citation_ids) && retrieval.citation_ids.length ? retrieval.citation_ids.join(", ") : "вЂ”")}
+          ${renderKeyValueField("Citation ids", Array.isArray(retrieval.citation_ids) && retrieval.citation_ids.length ? retrieval.citation_ids.join(", ") : "—")}
           ${renderNormalizedKeyValueField("Latest validation run", validation.latest_run_id)}
         </div>
       </div>
@@ -2000,7 +2000,7 @@ function renderProvenanceTraceMarkup(trace) {
 function renderRecentGeneratedDocumentsMarkup(payload) {
   const items = Array.isArray(payload?.items) ? payload.items : [];
   if (!items.length) {
-    return '<p class="legal-section__description">РќРµРґР°РІРЅРёС… generated documents СЃРµР№С‡Р°СЃ РЅРµС‚.</p>';
+    return '<p class="legal-section__description">Недавних generated documents сейчас нет.</p>';
   }
   return `
     <div class="legal-table-shell">
@@ -2011,11 +2011,11 @@ function renderRecentGeneratedDocumentsMarkup(payload) {
             .map(
               (item) => `
                 <tr>
-                  <td>${escapeHtml(String(item.id || "вЂ”"))}</td>
-                  <td>${escapeHtml(String(item.username || "вЂ”"))}</td>
-                  <td>${escapeHtml(String(item.server_code || "вЂ”"))}</td>
-                  <td>${escapeHtml(String(item.document_kind || "вЂ”"))}</td>
-                  <td>${escapeHtml(String(item.created_at || "вЂ”"))}</td>
+                  <td>${escapeHtml(String(item.id || "—"))}</td>
+                  <td>${escapeHtml(String(item.username || "—"))}</td>
+                  <td>${escapeHtml(String(item.server_code || "—"))}</td>
+                  <td>${escapeHtml(String(item.document_kind || "—"))}</td>
+                  <td>${escapeHtml(String(item.created_at || "—"))}</td>
                   <td>
                     <button
                       type="button"
@@ -2050,23 +2050,23 @@ function renderGeneratedDocumentContextMarkup(payload) {
     <div class="admin-performance-grid">
       <article class="legal-status-card">
         <span class="legal-status-card__label">Generated document</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(generatedDocument.id || "вЂ”"))}</strong>
-        <span class="admin-user-cell__secondary">${escapeHtml(String(generatedDocument.document_kind || "вЂ”"))}</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(generatedDocument.id || "—"))}</strong>
+        <span class="admin-user-cell__secondary">${escapeHtml(String(generatedDocument.document_kind || "—"))}</span>
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">Document version</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(documentVersion.id || "вЂ”"))}</strong>
-        <span class="admin-user-cell__secondary">Version: ${escapeHtml(String(documentVersion.version_number || "вЂ”"))}</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(documentVersion.id || "—"))}</strong>
+        <span class="admin-user-cell__secondary">Version: ${escapeHtml(String(documentVersion.version_number || "—"))}</span>
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">Latest validation</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(validationSummary.latest_status || "вЂ”"))}</strong>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(validationSummary.latest_status || "—"))}</strong>
         <span class="admin-user-cell__secondary">Issues: ${escapeHtml(String(validationSummary.issues_count || 0))}</span>
       </article>
       <article class="legal-status-card">
         <span class="legal-status-card__label">Snapshot</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(generatedDocument.generation_snapshot_id || "вЂ”"))}</strong>
-        <span class="admin-user-cell__secondary">${escapeHtml(String(generatedDocument.created_at || "вЂ”"))}</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(generatedDocument.generation_snapshot_id || "—"))}</strong>
+        <span class="admin-user-cell__secondary">${escapeHtml(String(generatedDocument.created_at || "—"))}</span>
       </article>
     </div>
     <div class="admin-section-toolbar">
@@ -2090,7 +2090,7 @@ function renderGeneratedDocumentContextMarkup(payload) {
       <div class="legal-field">
         <span class="legal-field__label">Content preview</span>
         <div class="legal-table-shell">
-          <pre class="admin-ops-log">${escapeHtml(String(documentVersion.bbcode_preview || "вЂ”"))}</pre>
+          <pre class="admin-ops-log">${escapeHtml(String(documentVersion.bbcode_preview || "—"))}</pre>
         </div>
       </div>
     </div>
@@ -2233,7 +2233,7 @@ async function loadDocumentProvenanceTrace() {
   const hasVersionId = Number.isInteger(versionId) && versionId > 0;
   const hasGeneratedDocumentId = Number.isInteger(generatedDocumentId) && generatedDocumentId > 0;
   if (!hasVersionId && !hasGeneratedDocumentId) {
-    setStateError(errorsHost, "РЈРєР°Р¶РёС‚Рµ РєРѕСЂСЂРµРєС‚РЅС‹Р№ document version id РёР»Рё generated document id.");
+    setStateError(errorsHost, "Укажите корректный document version id или generated document id.");
     provenanceTraceVersionField.focus();
     return;
   }
@@ -2249,17 +2249,17 @@ async function loadDocumentProvenanceTrace() {
     const payload = await parsePayload(response);
     if (!response.ok) {
       const targetLabel = hasVersionId ? `version #${versionId}` : `generated document #${generatedDocumentId}`;
-      provenanceTraceHost.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, `РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ provenance trace РґР»СЏ ${targetLabel}.`))}</p>`;
+      provenanceTraceHost.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, `Не удалось загрузить provenance trace для ${targetLabel}.`))}</p>`;
       return;
     }
     provenanceTraceHost.innerHTML = renderProvenanceTraceMarkup(payload);
     showMessage(
       hasVersionId
-        ? `Provenance trace РґР»СЏ document version #${versionId} Р·Р°РіСЂСѓР¶РµРЅ.`
-        : `Provenance trace РґР»СЏ generated document #${generatedDocumentId} Р·Р°РіСЂСѓР¶РµРЅ.`,
+        ? `Provenance trace для document version #${versionId} загружен.`
+        : `Provenance trace для generated document #${generatedDocumentId} загружен.`,
     );
   } catch (error) {
-    provenanceTraceHost.innerHTML = `<p class="legal-section__description">${escapeHtml(error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ provenance trace.")}</p>`;
+    provenanceTraceHost.innerHTML = `<p class="legal-section__description">${escapeHtml(error?.message || "Не удалось загрузить provenance trace.")}</p>`;
   } finally {
     provenanceTraceLoadButton && (provenanceTraceLoadButton.disabled = false);
   }
@@ -2276,12 +2276,12 @@ async function loadRecentGeneratedDocuments({ silent = false } = {}) {
     const response = await apiFetch("/api/admin/generated-documents/recent?limit=8");
     const payload = await parsePayload(response);
     if (!response.ok) {
-      generatedDocumentsReviewHost.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ recent generated documents."))}</p>`;
+      generatedDocumentsReviewHost.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, "Не удалось загрузить recent generated documents."))}</p>`;
       return;
     }
     generatedDocumentsReviewHost.innerHTML = renderRecentGeneratedDocumentsMarkup(payload);
   } catch (error) {
-    generatedDocumentsReviewHost.innerHTML = `<p class="legal-section__description">${escapeHtml(error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ recent generated documents.")}</p>`;
+    generatedDocumentsReviewHost.innerHTML = `<p class="legal-section__description">${escapeHtml(error?.message || "Не удалось загрузить recent generated documents.")}</p>`;
   }
 }
 
@@ -2291,7 +2291,7 @@ async function loadGeneratedDocumentReviewContext(documentId) {
   }
   const normalizedId = Number(documentId || "0");
   if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
-    generatedDocumentContextHost.innerHTML = '<p class="legal-section__description">Р’С‹Р±РµСЂРёС‚Рµ РєРѕСЂСЂРµРєС‚РЅС‹Р№ generated document.</p>';
+    generatedDocumentContextHost.innerHTML = '<p class="legal-section__description">Выберите корректный generated document.</p>';
     return;
   }
   renderLoadingState(generatedDocumentContextHost, { count: 4, compact: true });
@@ -2299,12 +2299,12 @@ async function loadGeneratedDocumentReviewContext(documentId) {
     const response = await apiFetch(`/api/admin/generated-documents/${encodeURIComponent(String(normalizedId))}/review-context`);
     const payload = await parsePayload(response);
     if (!response.ok) {
-      generatedDocumentContextHost.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, `РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ review context РґР»СЏ generated document #${normalizedId}.`))}</p>`;
+      generatedDocumentContextHost.innerHTML = `<p class="legal-section__description">${escapeHtml(formatHttpError(response, payload, `Не удалось загрузить review context для generated document #${normalizedId}.`))}</p>`;
       return;
     }
     generatedDocumentContextHost.innerHTML = renderGeneratedDocumentContextMarkup(payload);
   } catch (error) {
-    generatedDocumentContextHost.innerHTML = `<p class="legal-section__description">${escapeHtml(error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ review context.")}</p>`;
+    generatedDocumentContextHost.innerHTML = `<p class="legal-section__description">${escapeHtml(error?.message || "Не удалось загрузить review context.")}</p>`;
   }
 }
 
@@ -2382,13 +2382,13 @@ async function runSyntheticSuite(suite) {
     });
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, `РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ synthetic suite ${normalizedSuite}.`));
+      setStateError(errorsHost, formatHttpError(response, payload, `Не удалось запустить synthetic suite ${normalizedSuite}.`));
       return;
     }
-    showMessage(`Synthetic suite ${normalizedSuite} Р·Р°РІРµСЂС€РµРЅ: ${String(payload?.status || "unknown")}.`);
+    showMessage(`Synthetic suite ${normalizedSuite} завершен: ${String(payload?.status || "unknown")}.`);
     await loadAdminOverview({ silent: true });
   } catch (error) {
-    setStateError(errorsHost, error?.message || `РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ synthetic suite ${normalizedSuite}.`);
+    setStateError(errorsHost, error?.message || `Не удалось запустить synthetic suite ${normalizedSuite}.`);
   } finally {
     activeSyntheticSuite = "";
     await loadAdminOverview({ silent: true });
@@ -2578,23 +2578,23 @@ function renderActiveFilters(filters) {
   }
 
   const chips = [];
-  if (filters.search) chips.push(renderFilterChip(`РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ: ${filters.search}`, "search"));
+  if (filters.search) chips.push(renderFilterChip(`Пользователь: ${filters.search}`, "search"));
   if (filters.user_sort && filters.user_sort !== "complaints") {
     const sortLabels = {
-      api_requests: "РЎРѕСЂС‚РёСЂРѕРІРєР°: API-Р°РєС‚РёРІРЅРѕСЃС‚СЊ",
-      last_seen: "РЎРѕСЂС‚РёСЂРѕРІРєР°: РїРѕСЃР»РµРґРЅСЏСЏ Р°РєС‚РёРІРЅРѕСЃС‚СЊ",
-      created_at: "РЎРѕСЂС‚РёСЂРѕРІРєР°: РґР°С‚Р° СЂРµРіРёСЃС‚СЂР°С†РёРё",
-      username: "РЎРѕСЂС‚РёСЂРѕРІРєР°: username",
+      api_requests: "Сортировка: API-активность",
+      last_seen: "Сортировка: последняя активность",
+      created_at: "Сортировка: дата регистрации",
+      username: "Сортировка: username",
     };
-    chips.push(renderFilterChip(sortLabels[filters.user_sort] || `РЎРѕСЂС‚РёСЂРѕРІРєР°: ${filters.user_sort}`, "user_sort"));
+    chips.push(renderFilterChip(sortLabels[filters.user_sort] || `Сортировка: ${filters.user_sort}`, "user_sort"));
   }
-  if (filters.blocked_only) chips.push(renderFilterChip("РўРѕР»СЊРєРѕ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅРЅС‹Рµ", "blocked_only"));
-  if (filters.tester_only) chips.push(renderFilterChip("РўРѕР»СЊРєРѕ С‚РµСЃС‚РµСЂС‹", "tester_only"));
-  if (filters.gka_only) chips.push(renderFilterChip("РўРѕР»СЊРєРѕ Р“РљРђ-Р—Р“РљРђ", "gka_only"));
-  if (filters.unverified_only) chips.push(renderFilterChip("РўРѕР»СЊРєРѕ Р±РµР· РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ email", "unverified_only"));
-  if (filters.event_search) chips.push(renderFilterChip(`РЎРѕР±С‹С‚РёСЏ: ${filters.event_search}`, "event_search"));
-  if (filters.event_type) chips.push(renderFilterChip(`Р СћР С‘Р С—: ${filters.event_type}`, "event_type"));
-  if (filters.failed_events_only) chips.push(renderFilterChip("РўРѕР»СЊРєРѕ РѕС€РёР±РєРё", "failed_events_only"));
+  if (filters.blocked_only) chips.push(renderFilterChip("Только заблокированные", "blocked_only"));
+  if (filters.tester_only) chips.push(renderFilterChip("Только тестеры", "tester_only"));
+  if (filters.gka_only) chips.push(renderFilterChip("Только ГКА-ЗГКА", "gka_only"));
+  if (filters.unverified_only) chips.push(renderFilterChip("Только без подтверждения email", "unverified_only"));
+  if (filters.event_search) chips.push(renderFilterChip(`События: ${filters.event_search}`, "event_search"));
+  if (filters.event_type) chips.push(renderFilterChip(`Тип: ${filters.event_type}`, "event_type"));
+  if (filters.failed_events_only) chips.push(renderFilterChip("Только ошибки", "failed_events_only"));
 
   if (!chips.length) {
     activeFiltersHost.innerHTML = "";
@@ -2608,12 +2608,12 @@ function renderActiveFilters(filters) {
 
 function renderUserStatuses(user) {
   const badges = [
-    user.email_verified ? renderBadge("Email OK", "success") : renderBadge("Email РЅРµ РїРѕРґС‚РІРµСЂР¶РґРµРЅ", "muted"),
-    user.access_blocked ? renderBadge("Р—Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ", "danger") : renderBadge("РђРєС‚РёРІРµРЅ", "success-soft"),
-    user.deactivated_at ? renderBadge("Р”РµР°РєС‚РёРІРёСЂРѕРІР°РЅ", "danger") : null,
-    user.is_tester ? renderBadge("РўРµСЃС‚РµСЂ", "info") : renderBadge("РћР±С‹С‡РЅС‹Р№", "neutral"),
-    user.is_gka ? renderBadge("Р“РљРђ-Р—Р“РљРђ", "info") : null,
-    Number(user.api_quota_daily || 0) > 0 ? renderBadge(`РљРІРѕС‚Р°/РґРµРЅСЊ: ${Number(user.api_quota_daily || 0)}`, "info") : renderBadge("РљРІРѕС‚Р°: Р±РµР· Р»РёРјРёС‚Р°", "muted"),
+    user.email_verified ? renderBadge("Email OK", "success") : renderBadge("Email не подтвержден", "muted"),
+    user.access_blocked ? renderBadge("Заблокирован", "danger") : renderBadge("Активен", "success-soft"),
+    user.deactivated_at ? renderBadge("Деактивирован", "danger") : null,
+    user.is_tester ? renderBadge("Тестер", "info") : renderBadge("Обычный", "neutral"),
+    user.is_gka ? renderBadge("ГКА-ЗГКА", "info") : null,
+    Number(user.api_quota_daily || 0) > 0 ? renderBadge(`Квота/день: ${Number(user.api_quota_daily || 0)}`, "info") : renderBadge("Квота: без лимита", "muted"),
     riskLabel(user),
   ];
   return `<div class="admin-badge-row">${badges.filter(Boolean).join("")}</div>`;
@@ -2623,7 +2623,7 @@ function renderUserActivity(user) {
   return `
     <div class="admin-activity">
       <div class="admin-activity__main">
-        <strong>${escapeHtml(String(user.complaints || 0))}</strong><span>Р¶Р°Р»РѕР±</span>
+        <strong>${escapeHtml(String(user.complaints || 0))}</strong><span>жалоб</span>
         <strong>${escapeHtml(String(user.rehabs || 0))}</strong><span>rehab</span>
       </div>
       <div class="admin-activity__meta">
@@ -2762,37 +2762,37 @@ function renderExamEntryDetailModal(entry) {
     return;
   }
   if (userModalTitle) {
-    userModalTitle.textContent = `Р Р°Р·Р±РѕСЂ РѕС‚РІРµС‚Р° В· СЃС‚СЂРѕРєР° ${entry.source_row || "вЂ”"}`;
+    userModalTitle.textContent = `Разбор ответа · строка ${entry.source_row || "—"}`;
   }
 
   userModalBody.innerHTML = `
     <div class="legal-status-row legal-status-row--three">
       <article class="legal-status-card">
-        <span class="legal-status-card__label">РЎС‚СЂРѕРєР°</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(entry.source_row || "вЂ”"))}</strong>
+        <span class="legal-status-card__label">Строка</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(entry.source_row || "—"))}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">РљР°РЅРґРёРґР°С‚</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.full_name || "вЂ”")}</strong>
+        <span class="legal-status-card__label">Кандидат</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.full_name || "—")}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">РЎСЂРµРґРЅРёР№ Р±Р°Р»Р»</span>
+        <span class="legal-status-card__label">Средний балл</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(formatExamAverage(entry))}</strong>
       </article>
     </div>
 
     <div class="legal-status-row legal-status-row--three">
       <article class="legal-status-card">
-        <span class="legal-status-card__label">Р¤РѕСЂРјР°С‚</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.exam_format || "вЂ”")}</strong>
+        <span class="legal-status-card__label">Формат</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.exam_format || "—")}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">РћС‚РІРµС‚РѕРІ</span>
+        <span class="legal-status-card__label">Ответов</span>
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(entry.answer_count || 0))}</strong>
       </article>
       <article class="legal-status-card">
-        <span class="legal-status-card__label">РћР±РЅРѕРІР»РµРЅРѕ</span>
-        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.updated_at || entry.imported_at || "вЂ”")}</strong>
+        <span class="legal-status-card__label">Обновлено</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(entry.updated_at || entry.imported_at || "—")}</strong>
       </article>
     </div>
 
@@ -2801,21 +2801,21 @@ function renderExamEntryDetailModal(entry) {
     <section class="legal-subcard admin-user-detail-card">
       <div class="legal-subcard__header">
         <div>
-          <span class="legal-field__label">РСЃС…РѕРґРЅС‹Рµ РїРѕР»СЏ СЃС‚СЂРѕРєРё</span>
-          <p class="legal-section__description">РќРёР¶Рµ РІРёРґРЅРѕ, РєР°РєРёРµ РґР°РЅРЅС‹Рµ РїСЂРёС€Р»Рё РёР· С‚Р°Р±Р»РёС†С‹ Рё СЃ С‡РµРј СЃСЂР°РІРЅРёРІР°Р»Р°СЃСЊ РїСЂРѕРІРµСЂРєР°.</p>
+          <span class="legal-field__label">Исходные поля строки</span>
+          <p class="legal-section__description">Ниже видно, какие данные пришли из таблицы и с чем сравнивалась проверка.</p>
         </div>
       </div>
       <div class="legal-table-shell exam-detail-shell exam-detail-shell--payload">
         <table class="legal-table admin-table admin-table--compact exam-detail-table exam-detail-table--payload">
           <thead>
             <tr>
-              <th>РЎС‚РѕР»Р±РµС† / РџРѕР»Рµ</th>
-              <th>Р—РЅР°С‡РµРЅРёРµ</th>
+              <th>Столбец / Поле</th>
+              <th>Значение</th>
             </tr>
           </thead>
           <tbody id="admin-exam-detail-body">
             <tr>
-              <td colspan="2" class="legal-table__empty">Р”Р°РЅРЅС‹Рµ СЃС‚СЂРѕРєРё Р·Р°РіСЂСѓР¶РµРЅС‹.</td>
+              <td colspan="2" class="legal-table__empty">Данные строки загружены.</td>
             </tr>
           </tbody>
         </table>
@@ -2836,7 +2836,7 @@ function renderExamEntryDetailModal(entry) {
 async function openExamEntryDetail(sourceRow) {
   const normalizedSourceRow = Number(sourceRow);
   if (!Number.isFinite(normalizedSourceRow) || normalizedSourceRow <= 0) {
-    setStateError(errorsHost, "РќРµ СѓРґР°Р»РѕСЃСЊ РѕРїСЂРµРґРµР»РёС‚СЊ СЃС‚СЂРѕРєСѓ СЌРєР·Р°РјРµРЅР° РґР»СЏ СЂР°Р·Р±РѕСЂР°.");
+    setStateError(errorsHost, "Не удалось определить строку экзамена для разбора.");
     return;
   }
 
@@ -2844,14 +2844,14 @@ async function openExamEntryDetail(sourceRow) {
     const response = await apiFetch(`/api/exam-import/rows/${encodeURIComponent(normalizedSourceRow)}`);
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЂР°Р·Р±РѕСЂ РѕС‚РІРµС‚Р°."));
+      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить разбор ответа."));
       return;
     }
     selectedUser = null;
     renderExamEntryDetailModal(payload);
     userModal.open();
   } catch (error) {
-    setStateError(errorsHost, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЂР°Р·Р±РѕСЂ РѕС‚РІРµС‚Р°.");
+    setStateError(errorsHost, error?.message || "Не удалось загрузить разбор ответа.");
   }
 }
 
@@ -2877,7 +2877,7 @@ async function loadAiPipeline({ silent = false } = {}) {
     const payload = await parsePayload(response);
     if (!response.ok) {
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ AI Pipeline."));
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить AI Pipeline."));
       }
       return;
     }
@@ -2887,11 +2887,11 @@ async function loadAiPipeline({ silent = false } = {}) {
       const first = partialErrors[0] || {};
       const source = first.source ? `[${String(first.source)}] ` : "";
       const message = String(first.message || "").trim();
-      setStateError(errorsHost, `AI Pipeline Р·Р°РіСЂСѓР¶РµРЅ С‡Р°СЃС‚РёС‡РЅРѕ (${partialErrors.length}). ${source}${message}`.trim());
+      setStateError(errorsHost, `AI Pipeline загружен частично (${partialErrors.length}). ${source}${message}`.trim());
     }
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ AI Pipeline.");
+      setStateError(errorsHost, error?.message || "Не удалось загрузить AI Pipeline.");
     }
   }
 }
@@ -2908,14 +2908,14 @@ async function loadRoleHistory({ silent = false } = {}) {
     const payload = await parsePayload(response);
     if (!response.ok) {
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РёСЃС‚РѕСЂРёСЋ СЂРѕР»РµР№."));
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить историю ролей."));
       }
       return;
     }
     renderRoleHistory(payload);
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РёСЃС‚РѕСЂРёСЋ СЂРѕР»РµР№.");
+      setStateError(errorsHost, error?.message || "Не удалось загрузить историю ролей.");
     }
   }
 }
@@ -2929,7 +2929,7 @@ async function loadAdminPerformance({ silent = false } = {}) {
     if (!response.ok) {
       const payload = await parsePayload(response);
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РјРµС‚СЂРёРєРё РїСЂРѕРёР·РІРѕРґРёС‚РµР»СЊРЅРѕСЃС‚Рё."));
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить метрики производительности."));
       }
       return;
     }
@@ -2937,7 +2937,7 @@ async function loadAdminPerformance({ silent = false } = {}) {
     renderPerformance(payload);
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РјРµС‚СЂРёРєРё РїСЂРѕРёР·РІРѕРґРёС‚РµР»СЊРЅРѕСЃС‚Рё.");
+      setStateError(errorsHost, error?.message || "Не удалось загрузить метрики производительности.");
     }
   }
 }
@@ -2954,7 +2954,7 @@ async function loadAdminAsyncJobs({ silent = false } = {}) {
     const payload = await parsePayload(response);
     if (!response.ok) {
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ async jobs overview."));
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить async jobs overview."));
       }
       return;
     }
@@ -2964,7 +2964,7 @@ async function loadAdminAsyncJobs({ silent = false } = {}) {
         const jobId = Number(item?.id || "0");
         const canonicalStatus = String(item?.canonical_status || "").trim().toLowerCase();
         if (!jobId) {
-          return '<span class="admin-user-cell__secondary">РІР‚вЂќ</span>';
+          return '<span class="admin-user-cell__secondary">—</span>';
         }
         if (canonicalStatus === "failed") {
           return `<button type="button" class="ghost-button" data-async-job-action="retry" data-async-job-id="${escapeHtml(String(jobId))}">Retry</button>`;
@@ -2972,12 +2972,12 @@ async function loadAdminAsyncJobs({ silent = false } = {}) {
         if (canonicalStatus === "retry_scheduled") {
           return `<button type="button" class="ghost-button" data-async-job-action="cancel" data-async-job-id="${escapeHtml(String(jobId))}">Cancel retry</button>`;
         }
-        return '<span class="admin-user-cell__secondary">РІР‚вЂќ</span>';
+        return '<span class="admin-user-cell__secondary">—</span>';
       },
     });
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ async jobs overview.");
+      setStateError(errorsHost, error?.message || "Не удалось загрузить async jobs overview.");
     }
   }
 }
@@ -2994,14 +2994,14 @@ async function loadExamImportOps({ silent = false } = {}) {
     const payload = await parsePayload(response);
     if (!response.ok) {
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ exam import ops overview."));
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить exam import ops overview."));
       }
       return;
     }
     examImportOpsHost.innerHTML = renderExamImportOpsMarkup(payload, { escapeHtml });
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ exam import ops overview.");
+      setStateError(errorsHost, error?.message || "Не удалось загрузить exam import ops overview.");
     }
   }
 }
@@ -3018,14 +3018,14 @@ async function loadPilotRollout({ silent = false } = {}) {
     const payload = await parsePayload(response);
     if (!response.ok) {
       if (!silent) {
-        setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ pilot rollout state."));
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить pilot rollout state."));
       }
       return;
     }
     pilotRolloutHost.innerHTML = renderPilotRolloutMarkup(payload);
   } catch (error) {
     if (!silent) {
-      setStateError(errorsHost, error?.message || "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ pilot rollout state.");
+      setStateError(errorsHost, error?.message || "Не удалось загрузить pilot rollout state.");
     }
   }
 }
@@ -3038,7 +3038,7 @@ async function handleAsyncJobAction(target) {
   const action = String(button.getAttribute("data-async-job-action") || "").trim().toLowerCase();
   const jobId = Number(button.getAttribute("data-async-job-id") || "0");
   if (!action || !jobId) {
-    setStateError(errorsHost, "Р СњР Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ Р С•Р С—РЎР‚Р ВµР Т‘Р ВµР В»Р С‘РЎвЂљРЎРЉ async job action.");
+    setStateError(errorsHost, "Не удалось определить async job action.");
     return;
   }
   clearMessage();
@@ -3050,17 +3050,17 @@ async function handleAsyncJobAction(target) {
     });
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, `Р СњР Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ Р Р†РЎвЂ№Р С—Р С•Р В»Р Р…Р С‘РЎвЂљРЎРЉ action ${action} Р Т‘Р В»РЎРЏ job #${jobId}.`));
+      setStateError(errorsHost, formatHttpError(response, payload, `Не удалось выполнить action ${action} для job #${jobId}.`));
       return;
     }
     showMessage(
       action === "retry"
-        ? `Async job #${jobId} Р С—Р С•РЎРѓРЎвЂљР В°Р Р†Р В»Р ВµР Р…Р В° Р Р…Р В° РЎР‚РЎС“РЎвЂЎР Р…Р С•Р в„– retry.`
-        : `Async job #${jobId} РЎРѓР Р…РЎРЏРЎвЂљР В° РЎРѓ Р С•РЎвЂЎР ВµРЎР‚Р ВµР Т‘Р С‘ Р С—Р С•Р Р†РЎвЂљР С•РЎР‚Р Р…Р С•Р в„– Р С—Р С•Р С—РЎвЂ№РЎвЂљР С”Р С‘.`,
+        ? `Async job #${jobId} поставлена на ручной retry.`
+        : `Async job #${jobId} снята с очереди повторной попытки.`,
     );
     await loadAdminAsyncJobs({ silent: true });
   } catch (error) {
-    setStateError(errorsHost, error?.message || `Р СњР Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ Р Р†РЎвЂ№Р С—Р С•Р В»Р Р…Р С‘РЎвЂљРЎРЉ action ${action} Р Т‘Р В»РЎРЏ job #${jobId}.`);
+    setStateError(errorsHost, error?.message || `Не удалось выполнить action ${action} для job #${jobId}.`);
   } finally {
     button.disabled = false;
   }
@@ -3184,13 +3184,13 @@ function clearLiveTimer() {
 function scheduleLiveRefresh() {
   clearLiveTimer();
   if (!liveRefreshField?.checked) {
-    setLiveStatus("Live: РІС‹РєР»СЋС‡РµРЅРѕ", "muted");
+    setLiveStatus("Live: выключено", "muted");
     return;
   }
 
   const intervalSeconds = Number(liveIntervalField?.value || 30);
   const safeIntervalMs = Math.max(10, intervalSeconds) * 1000;
-  setLiveStatus(`Live: РёРЅС‚РµСЂРІР°Р» ${Math.max(10, intervalSeconds)}СЃ`, "info");
+  setLiveStatus(`Live: интервал ${Math.max(10, intervalSeconds)}с`, "info");
 
   adminLiveTimer = window.setInterval(async () => {
     if (document.hidden) {
@@ -3253,7 +3253,7 @@ async function pollBulkTask(taskId) {
     const response = await apiFetch(`/api/admin/tasks/${encodeURIComponent(taskId)}`);
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ СЃС‚Р°С‚СѓСЃ bulk-Р·Р°РґР°С‡Рё."));
+      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось получить статус bulk-задачи."));
       return;
     }
     const progress = payload.progress || {};
@@ -3261,30 +3261,30 @@ async function pollBulkTask(taskId) {
       statusHost.textContent = `Bulk: ${payload.status} (${progress.done || 0}/${progress.total || 0})`;
     }
     if (payload.status === "finished") {
-      showMessage(`Bulk Р·Р°РІРµСЂС€РµРЅ: ok ${payload.result?.success_count || 0}, РѕС€РёР±РѕРє ${payload.result?.failed_count || 0}.`);
+      showMessage(`Bulk завершен: ok ${payload.result?.success_count || 0}, ошибок ${payload.result?.failed_count || 0}.`);
       selectedBulkUsers = new Set();
       await loadAdminOverview();
       return;
     }
     if (payload.status === "failed") {
-      setStateError(errorsHost, payload.error || "Bulk-Р·Р°РґР°С‡Р° Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РѕС€РёР±РєРѕР№.");
+      setStateError(errorsHost, payload.error || "Bulk-задача завершилась ошибкой.");
       return;
     }
     // eslint-disable-next-line no-await-in-loop
     await new Promise((resolve) => window.setTimeout(resolve, 1000));
   }
-  setStateError(errorsHost, "РўР°Р№РјР°СѓС‚ РѕР¶РёРґР°РЅРёСЏ bulk-Р·Р°РґР°С‡Рё.");
+  setStateError(errorsHost, "Таймаут ожидания bulk-задачи.");
 }
 
 async function runBulkAction() {
   const usernames = Array.from(selectedBulkUsers);
   if (!usernames.length) {
-    setStateError(errorsHost, "Р’С‹Р±РµСЂРёС‚Рµ С…РѕС‚СЏ Р±С‹ РѕРґРЅРѕРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РґР»СЏ РјР°СЃСЃРѕРІРѕР№ РѕРїРµСЂР°С†РёРё.");
+    setStateError(errorsHost, "Выберите хотя бы одного пользователя для массовой операции.");
     return;
   }
   const action = String(document.getElementById("admin-bulk-action")?.value || "").trim();
   if (!action) {
-    setStateError(errorsHost, "Р’С‹Р±РµСЂРёС‚Рµ РјР°СЃСЃРѕРІРѕРµ РґРµР№СЃС‚РІРёРµ.");
+    setStateError(errorsHost, "Выберите массовое действие.");
     return;
   }
   const reason = String(document.getElementById("admin-bulk-reason")?.value || "").trim();
@@ -3297,10 +3297,10 @@ async function runBulkAction() {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ bulk-РѕРїРµСЂР°С†РёСЋ."));
+    setStateError(errorsHost, formatHttpError(response, payload, "Не удалось запустить bulk-операцию."));
     return;
   }
-  showMessage("Bulk-Р·Р°РґР°С‡Р° РґРѕР±Р°РІР»РµРЅР° РІ РѕС‡РµСЂРµРґСЊ.");
+  showMessage("Bulk-задача добавлена в очередь.");
   await pollBulkTask(payload.task_id);
 }
 
@@ -3341,7 +3341,7 @@ usersHost?.addEventListener("click", async (event) => {
       }
     });
     const statusHost = document.getElementById("admin-bulk-status");
-    if (statusHost) statusHost.textContent = `Р’С‹Р±СЂР°РЅРѕ: ${selectedBulkUsers.size}`;
+    if (statusHost) statusHost.textContent = `Выбрано: ${selectedBulkUsers.size}`;
   }
 });
 
@@ -3382,7 +3382,7 @@ usersHost?.addEventListener("change", (event) => {
       selectedBulkUsers.delete(String(username).toLowerCase());
     }
     const statusHost = document.getElementById("admin-bulk-status");
-    if (statusHost) statusHost.textContent = `Р’С‹Р±СЂР°РЅРѕ: ${selectedBulkUsers.size}`;
+    if (statusHost) statusHost.textContent = `Выбрано: ${selectedBulkUsers.size}`;
   }
 });
 
@@ -3403,7 +3403,7 @@ catalogHost?.addEventListener("click", async (event) => {
   if (target.id === "catalog-create") {
     const payload = await openCatalogFormDialog(activeCatalogEntity);
     if (!payload) return;
-    await performAdminAction(catalogEndpoint(activeCatalogEntity), "Р­Р»РµРјРµРЅС‚ СЃРѕР·РґР°РЅ.", payload);
+    await performAdminAction(catalogEndpoint(activeCatalogEntity), "Элемент создан.", payload);
     await loadCatalog(activeCatalogEntity);
     return;
   }
@@ -3416,7 +3416,7 @@ catalogHost?.addEventListener("click", async (event) => {
     const response = await apiFetch(catalogEndpoint(activeCatalogEntity, viewId));
     const payload = await parsePayload(response);
     if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЌР»РµРјРµРЅС‚ catalog."));
+      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось загрузить элемент catalog."));
       return;
     }
     openCatalogModal({
@@ -3432,7 +3432,7 @@ catalogHost?.addEventListener("click", async (event) => {
     const itemResponse = await apiFetch(catalogEndpoint(activeCatalogEntity, editId));
     const itemPayload = await parsePayload(itemResponse);
     if (!itemResponse.ok) {
-      setStateError(errorsHost, formatHttpError(itemResponse, itemPayload, "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЌР»РµРјРµРЅС‚ catalog."));
+      setStateError(errorsHost, formatHttpError(itemResponse, itemPayload, "Не удалось загрузить элемент catalog."));
       return;
     }
     const payload = await openCatalogFormDialog(activeCatalogEntity, extractCatalogEditableData(itemPayload));
@@ -3441,7 +3441,7 @@ catalogHost?.addEventListener("click", async (event) => {
       method: "PUT",
       body: JSON.stringify(payload),
     });
-    if (response.ok) showMessage("Р­Р»РµРјРµРЅС‚ РѕР±РЅРѕРІР»РµРЅ.");
+    if (response.ok) showMessage("Элемент обновлен.");
     await loadCatalog(activeCatalogEntity);
     return;
   }
@@ -3450,7 +3450,7 @@ catalogHost?.addEventListener("click", async (event) => {
     const action = String(target.getAttribute("data-catalog-workflow-action") || "").trim().toLowerCase();
     const changeRequestId = Number(target.getAttribute("data-catalog-workflow-cr-id") || "0");
     if (!action || !changeRequestId) {
-      setStateError(errorsHost, "РќРµ СѓРґР°Р»РѕСЃСЊ РѕРїСЂРµРґРµР»РёС‚СЊ РґРµР№СЃС‚РІРёРµ workflow: РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚ change request.");
+      setStateError(errorsHost, "Не удалось определить действие workflow: отсутствует change request.");
       return;
     }
     if (action === "validate") {
@@ -3459,22 +3459,22 @@ catalogHost?.addEventListener("click", async (event) => {
       const response = await apiFetch(`/api/admin/change-requests/${encodeURIComponent(String(changeRequestId))}/validate`);
       const payload = await parsePayload(response);
       if (!response.ok) {
-        setStateError(errorsHost, formatHttpError(response, payload, "РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕРІРµСЂРёС‚СЊ С‡РµСЂРЅРѕРІРёРє."));
+        setStateError(errorsHost, formatHttpError(response, payload, "Не удалось проверить черновик."));
         return;
       }
       const result = payload?.result || {};
       const validationErrors = Array.isArray(result?.errors) ? result.errors.filter(Boolean) : [];
       if (result?.ok) {
-        showMessage(`Р§РµСЂРЅРѕРІРёРє #${changeRequestId} РїСЂРѕС€РµР» РІР°Р»РёРґР°С†РёСЋ Рё РіРѕС‚РѕРІ Рє РѕС‚РїСЂР°РІРєРµ РЅР° СЂРµРІСЊСЋ.`);
+        showMessage(`Черновик #${changeRequestId} прошел валидацию и готов к отправке на ревью.`);
       } else {
         setStateError(
           errorsHost,
-          `Р§РµСЂРЅРѕРІРёРє #${changeRequestId} РЅРµ РїСЂРѕС€РµР» РІР°Р»РёРґР°С†РёСЋ: ${validationErrors.join("; ") || "РµСЃС‚СЊ РѕС€РёР±РєРё РєРѕРЅС‚СЂР°РєС‚Р°."}`,
+          `Черновик #${changeRequestId} не прошел валидацию: ${validationErrors.join("; ") || "есть ошибки контракта."}`,
         );
       }
       return;
     }
-    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, workflowItemId)}/workflow`, "Workflow РѕР±РЅРѕРІР»РµРЅ.", {
+    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, workflowItemId)}/workflow`, "Workflow обновлен.", {
       action,
       change_request_id: changeRequestId,
     });
@@ -3492,23 +3492,23 @@ catalogHost?.addEventListener("click", async (event) => {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-      showMessage("JSON СЃРєРѕРїРёСЂРѕРІР°РЅ.");
+      showMessage("JSON скопирован.");
     } catch {
-      showMessage("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРєРѕРїРёСЂРѕРІР°С‚СЊ JSON.");
+      showMessage("Не удалось скопировать JSON.");
     }
     return;
   }
   const rollbackId = target.getAttribute("data-catalog-rollback");
   if (rollbackId) {
     const version = Number(window.prompt("Rollback to version", "1") || "1");
-    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, rollbackId)}/rollback`, "Rollback РІС‹РїРѕР»РЅРµРЅ.", { version });
+    await performAdminAction(`${catalogEndpoint(activeCatalogEntity, rollbackId)}/rollback`, "Rollback выполнен.", { version });
     await loadCatalog(activeCatalogEntity);
     return;
   }
   const deleteId = target.getAttribute("data-catalog-delete");
   if (deleteId) {
     const response = await apiFetch(catalogEndpoint(activeCatalogEntity, deleteId), { method: "DELETE" });
-    if (response.ok) showMessage("Р­Р»РµРјРµРЅС‚ СѓРґР°Р»РµРЅ.");
+    if (response.ok) showMessage("Элемент удален.");
     await loadCatalog(activeCatalogEntity);
   }
 });
