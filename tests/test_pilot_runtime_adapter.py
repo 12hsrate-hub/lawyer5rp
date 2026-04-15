@@ -63,6 +63,8 @@ def test_pilot_runtime_adapter_prefers_published_workflow_versions(monkeypatch):
         assert "content_item_id" not in context.procedure_version
         assert "status" not in context.template_version
         assert context.feature_flags == ()
+        snapshot = context.to_generation_context_snapshot()
+        assert "runtime_adapter" not in snapshot
     finally:
         if store is not None:
             store.repository.close()

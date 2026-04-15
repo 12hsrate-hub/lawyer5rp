@@ -49,6 +49,8 @@ Date: 2026-04-14
   - `resolve_pilot_complaint_runtime_context` no longer needs legacy `get_server_config(...)` lookup just to resolve law bundle metadata
   - `H.3c` is in progress locally
   - complaint adapter snapshots now carry `feature_flags` directly, so the route no longer needs a route-level legacy server-config read when adapter flow is active
+  - `H.3d` is in progress locally
+  - complaint adapter snapshots are dropping the unused internal `runtime_adapter` ID block while preserving review/provenance-visible snapshot fields
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
