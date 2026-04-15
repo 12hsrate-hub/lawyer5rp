@@ -97,6 +97,22 @@ from ogp_web.services.admin_law_sources_service import (
     save_law_sources_payload,
     sync_law_sources_payload,
 )
+from ogp_web.services.admin_catalog_service import (
+    build_catalog_audit_payload,
+    build_catalog_item_payload,
+    build_catalog_list_payload,
+    build_catalog_payload_config,
+    build_catalog_versions_payload,
+    create_catalog_item_payload,
+    execute_catalog_workflow_payload,
+    normalize_admin_catalog_entity_type,
+    resolve_active_change_request,
+    resolve_active_change_request_id,
+    review_catalog_change_request_payload,
+    rollback_catalog_payload,
+    validate_catalog_change_request_payload,
+    update_catalog_item_payload,
+)
 from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
@@ -204,10 +220,6 @@ def _raise_not_found(*detail: Any) -> None:
 
 def _admin_ok(**payload: Any) -> dict[str, Any]:
     return {"ok": True, **payload}
-
-
-def _normalize_admin_catalog_entity_type(entity_type: str) -> str:
-    return normalize_content_type(entity_type, allow_legacy_import_alias=True)
 
 
 def _get_async_job_service(request: Request, user_store: UserStore) -> AsyncJobService:
@@ -1552,76 +1564,6 @@ def _resolve_law_sources_server_code(
     )
 
 
-def _resolve_active_change_request_id(item: dict[str, Any], change_requests: list[dict[str, Any]]) -> int | None:
-    item_status = str(item.get("status") or "").strip().lower()
-    if not change_requests:
-        return None
-    if item_status in {"draft", "in_review", "approved"}:
-        for change_request in change_requests:
-            if str(change_request.get("status") or "").strip().lower() == item_status:
-                try:
-                    return int(change_request.get("id"))
-                except (TypeError, ValueError):
-                    continue
-    try:
-        return int(change_requests[0].get("id"))
-    except (TypeError, ValueError, IndexError):
-        return None
-
-def _resolve_active_change_request(item: dict[str, Any], change_requests: list[dict[str, Any]]) -> dict[str, Any] | None:
-    active_change_request_id = _resolve_active_change_request_id(item, change_requests)
-    if active_change_request_id is None:
-        return None
-    for change_request in change_requests:
-        try:
-            if int(change_request.get("id")) == active_change_request_id:
-                return change_request
-        except (TypeError, ValueError):
-            continue
-    return None
-
-
-def _build_catalog_payload_config(payload: AdminCatalogItemPayload) -> dict[str, Any]:
-    typed_fields: dict[str, Any] = {
-        "key": payload.key,
-        "description": payload.description,
-        "status": payload.status,
-        "server_code": payload.server_code,
-        "base_url": payload.base_url,
-        "timeout_sec": payload.timeout_sec,
-        "law_code": payload.law_code,
-        "source": payload.source,
-        "effective_from": payload.effective_from,
-        "template_type": payload.template_type,
-        "document_kind": payload.document_kind,
-        "output_format": payload.output_format,
-        "feature_flag": payload.feature_flag,
-        "rollout_percent": payload.rollout_percent,
-        "audience": payload.audience,
-        "rule_type": payload.rule_type,
-        "priority": payload.priority,
-        "applies_to": payload.applies_to,
-    }
-    cleaned_typed = {
-        key: value
-        for key, value in typed_fields.items()
-        if value not in (None, "", [], {})
-    }
-    merged = {
-        key: value
-        for key, value in (payload.config or {}).items()
-        if value is not None
-    }
-    merged.update(cleaned_typed)
-    if "key" not in merged:
-        merged["key"] = str(payload.title or "").strip().lower().replace(" ", "_")
-    if "status" not in merged:
-        merged["status"] = payload.status or "draft"
-    if not str(merged.get("key") or "").strip():
-        raise ValueError("key_required")
-    return merged
-
-
 @router.get("/api/admin/platform-blueprint/status")
 async def admin_platform_blueprint_status(user: AuthUser = Depends(require_admin_user)):
     stage = _resolve_admin_platform_stage()
@@ -1640,14 +1582,12 @@ async def admin_catalog_audit(
     entity_type: str = Query(""),
     entity_id: str = Query(""),
 ):
-    normalized_entity_type = str(entity_type or "").strip().lower()
-    normalized_entity_id = str(entity_id or "").strip()
     try:
-        audit = workflow_service.list_audit_trail(
-            server_scope="server",
-            server_id=user.server_code,
-            entity_type=normalized_entity_type,
-            entity_id=normalized_entity_id,
+        return build_catalog_audit_payload(
+            workflow_service=workflow_service,
+            server_code=user.server_code,
+            entity_type=entity_type,
+            entity_id=entity_id,
             limit=limit,
         )
     except ValueError as exc:
@@ -1662,14 +1602,6 @@ async def admin_catalog_audit(
             code="admin_catalog_audit_not_found",
             message=str(exc) or "audit_scope_not_found",
         )
-    return {
-        "items": audit,
-        "filters": {
-            "entity_type": normalized_entity_type,
-            "entity_id": normalized_entity_id,
-            "limit": limit,
-        },
-    }
 
 
 @router.get("/api/admin/catalog/{entity_type}")
@@ -1679,39 +1611,13 @@ async def admin_catalog_list(
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
 ):
     try:
-        normalized_entity_type = _normalize_admin_catalog_entity_type(entity_type)
-        result = workflow_service.list_content_items(
-            server_scope="server",
-            server_id=user.server_code,
-            content_type=normalized_entity_type,
-            include_legacy_fallback=False,
+        return build_catalog_list_payload(
+            workflow_service=workflow_service,
+            server_code=user.server_code,
+            entity_type=entity_type,
         )
-        audit = workflow_service.list_audit_trail(
-            server_scope="server",
-            server_id=user.server_code,
-            entity_type="",
-            entity_id="",
-            limit=100,
-        )
-        enriched_items: list[dict[str, Any]] = []
-        for item in result["items"]:
-            item_copy = dict(item)
-            change_requests = workflow_service.list_change_requests(
-                content_item_id=int(item_copy.get("id")),
-                server_scope="server",
-                server_id=user.server_code,
-            )
-            active_change_request = _resolve_active_change_request(item_copy, change_requests)
-            item_copy["active_change_request_id"] = (
-                int(active_change_request.get("id")) if active_change_request and active_change_request.get("id") is not None else None
-            )
-            item_copy["active_change_request_status"] = (
-                str(active_change_request.get("status") or "").strip().lower() if active_change_request else ""
-            )
-            enriched_items.append(item_copy)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
-    return {"entity_type": entity_type, "items": enriched_items, "legacy_fallback": result["legacy_fallback"], "audit": audit}
 
 
 @router.get("/api/admin/catalog/{entity_type}/{item_id}")
@@ -1721,61 +1627,16 @@ async def admin_catalog_get_item(
     user: AuthUser = Depends(require_admin_user),
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
 ):
-    _ = entity_type
     try:
-        item = workflow_service.get_content_item(
-            content_item_id=int(item_id),
-            server_scope="server",
-            server_id=user.server_code,
-        )
-        versions = workflow_service.list_versions(
-            content_item_id=int(item_id),
-            server_scope="server",
-            server_id=user.server_code,
-        )
-        change_requests = workflow_service.list_change_requests(
-            content_item_id=int(item_id),
-            server_scope="server",
-            server_id=user.server_code,
+        return build_catalog_item_payload(
+            workflow_service=workflow_service,
+            server_code=user.server_code,
+            item_id=int(item_id),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     except (KeyError, PermissionError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
-    versions_by_id = {
-        int(version.get("id")): version
-        for version in versions
-        if isinstance(version, dict) and version.get("id") is not None
-    }
-    latest_change_request = change_requests[0] if change_requests else None
-    effective_version = None
-    effective_payload: dict[str, Any] = {}
-
-    published_version_id = item.get("current_published_version_id")
-    if published_version_id is not None:
-        effective_version = versions_by_id.get(int(published_version_id))
-
-    if not effective_version and latest_change_request:
-        candidate_version_id = latest_change_request.get("candidate_version_id")
-        if candidate_version_id is not None:
-            effective_version = versions_by_id.get(int(candidate_version_id))
-
-    if not effective_version and versions:
-        effective_version = versions[-1]
-
-    if effective_version:
-        payload_candidate = effective_version.get("payload_json")
-        if isinstance(payload_candidate, dict):
-            effective_payload = payload_candidate
-
-    return {
-        "item": item,
-        "versions": versions,
-        "change_requests": change_requests,
-        "effective_version": effective_version,
-        "effective_payload": effective_payload,
-        "latest_change_request": latest_change_request,
-    }
 
 
 @router.get("/api/admin/catalog/{entity_type}/{item_id}/versions")
@@ -1785,18 +1646,16 @@ async def admin_catalog_versions(
     user: AuthUser = Depends(require_admin_user),
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
 ):
-    _ = entity_type
     try:
-        versions = workflow_service.list_versions(
-            content_item_id=int(item_id),
-            server_scope="server",
-            server_id=user.server_code,
+        return build_catalog_versions_payload(
+            workflow_service=workflow_service,
+            server_code=user.server_code,
+            item_id=int(item_id),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     except (KeyError, PermissionError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
-    return {"versions": versions}
 
 
 @router.post("/api/admin/change-requests/{change_request_id}/review")
@@ -1811,21 +1670,19 @@ async def admin_catalog_review_action(
 ):
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     try:
-        result = workflow_service.review_change_request(
+        return review_catalog_change_request_payload(
+            workflow_service=workflow_service,
+            server_code=user.server_code,
             change_request_id=change_request_id,
-            reviewer_user_id=actor_user_id,
+            actor_user_id=actor_user_id,
+            request_id=getattr(request.state, "request_id", ""),
             decision=decision,
             comment=comment,
-            diff_json={"review_via": "admin_api"},
-            request_id=getattr(request.state, "request_id", ""),
-            server_scope="server",
-            server_id=user.server_code,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     except (KeyError, PermissionError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
-    return {"ok": True, "result": result}
 
 
 @router.get("/api/admin/change-requests/{change_request_id}/validate")
@@ -1835,16 +1692,15 @@ async def admin_catalog_validate_change_request(
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
 ):
     try:
-        result = workflow_service.validate_change_request(
+        return validate_catalog_change_request_payload(
+            workflow_service=workflow_service,
+            server_code=user.server_code,
             change_request_id=change_request_id,
-            server_scope="server",
-            server_id=user.server_code,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     except (KeyError, PermissionError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
-    return {"ok": True, "result": result}
 
 
 
@@ -1861,22 +1717,18 @@ async def admin_catalog_create(
 ):
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     try:
-        normalized_entity_type = _normalize_admin_catalog_entity_type(entity_type)
-        final_config = _build_catalog_payload_config(payload)
-        item = workflow_service.create_content_item(
-            server_scope="server",
-            server_id=user.server_code,
-            content_type=normalized_entity_type,
-            content_key=str(final_config.get("key") or payload.title or "").strip().lower().replace(" ", "_"),
-            title=payload.title,
-            metadata_json={"config": final_config},
+        result = create_catalog_item_payload(
+            workflow_service=workflow_service,
+            server_code=user.server_code,
             actor_user_id=actor_user_id,
             request_id=getattr(request.state, "request_id", ""),
+            entity_type=entity_type,
+            payload=payload,
         )
     except (ValueError, PermissionError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
-    metrics_store.log_event(event_type=f"admin_catalog_{entity_type}_create", username=user.username, server_code=user.server_code, path=f"/api/admin/catalog/{entity_type}", method="POST", status_code=200, meta={"entity_id": item.get("id"), "author": user.username})
-    return {"ok": True, "item": item}
+    metrics_store.log_event(event_type=f"admin_catalog_{entity_type}_create", username=user.username, server_code=user.server_code, path=f"/api/admin/catalog/{entity_type}", method="POST", status_code=200, meta={"entity_id": result['item'].get("id"), "author": user.username})
+    return result
 
 
 @router.put("/api/admin/catalog/{entity_type}/{item_id}")
@@ -1892,24 +1744,20 @@ async def admin_catalog_update(
 ):
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     try:
-        final_config = _build_catalog_payload_config(payload)
-        result = workflow_service.create_draft_version(
-            content_item_id=int(item_id),
-            payload_json=final_config,
-            schema_version=1,
+        result = update_catalog_item_payload(
+            workflow_service=workflow_service,
+            server_code=user.server_code,
             actor_user_id=actor_user_id,
             request_id=getattr(request.state, "request_id", ""),
-            server_scope="server",
-            server_id=user.server_code,
-            comment=f"update:{payload.title}",
+            item_id=int(item_id),
+            payload=payload,
         )
-        item = result["content_item"]
     except (ValueError, PermissionError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
     metrics_store.log_event(event_type=f"admin_catalog_{entity_type}_update", username=user.username, server_code=user.server_code, path=f"/api/admin/catalog/{entity_type}/{item_id}", method="PUT", status_code=200, meta={"entity_id": item_id, "author": user.username})
-    return {"ok": True, "item": item, "change_request": result["change_request"], "version": result["version"]}
+    return result
 
 
 @router.delete("/api/admin/catalog/{entity_type}/{item_id}")
@@ -1919,8 +1767,6 @@ async def admin_catalog_delete(
     user: AuthUser = Depends(require_admin_user),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
-    _ = entity_type
-    _ = item_id
     metrics_store.log_event(event_type=f"admin_catalog_{entity_type}_delete_blocked", username=user.username, server_code=user.server_code, path=f"/api/admin/catalog/{entity_type}/{item_id}", method="DELETE", status_code=405, meta={"entity_id": item_id, "author": user.username})
     raise HTTPException(status_code=status.HTTP_405_METHOD_NOT_ALLOWED, detail=["delete_not_supported_in_versioned_workflow"])
 
@@ -1938,28 +1784,21 @@ async def admin_catalog_workflow(
     user_store: UserStore = Depends(get_user_store),
 ):
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
-    _ = entity_type
     try:
-        action = str(payload.action or "").strip().lower()
-        change_request_id = int(payload.change_request_id or cr_id or 0)
-        if change_request_id <= 0:
-            raise ValueError("change_request_id_required")
-        if action == "submit_for_review":
-            response = workflow_service.submit_change_request(change_request_id=change_request_id, actor_user_id=actor_user_id, request_id=getattr(request.state, "request_id", ""), server_scope="server", server_id=user.server_code)
-        elif action == "approve":
-            response = workflow_service.review_change_request(change_request_id=change_request_id, reviewer_user_id=actor_user_id, decision="approve", comment="approved_via_admin_route", diff_json={"source": "admin_route"}, request_id=getattr(request.state, "request_id", ""), server_scope="server", server_id=user.server_code)
-        elif action == "request_changes":
-            response = workflow_service.review_change_request(change_request_id=change_request_id, reviewer_user_id=actor_user_id, decision="request_changes", comment="requested_changes_via_admin_route", diff_json={"source": "admin_route"}, request_id=getattr(request.state, "request_id", ""), server_scope="server", server_id=user.server_code)
-        elif action == "publish":
-            response = workflow_service.publish_change_request(change_request_id=change_request_id, actor_user_id=actor_user_id, request_id=getattr(request.state, "request_id", ""), summary_json={"source": "admin_route"}, server_scope="server", server_id=user.server_code)
-        else:
-            raise ValueError("unsupported_workflow_action")
+        result = execute_catalog_workflow_payload(
+            workflow_service=workflow_service,
+            server_code=user.server_code,
+            actor_user_id=actor_user_id,
+            request_id=getattr(request.state, "request_id", ""),
+            payload=payload,
+            query_change_request_id=cr_id,
+        )
     except (ValueError, PermissionError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
     metrics_store.log_event(event_type=f"admin_catalog_{entity_type}_workflow", username=user.username, server_code=user.server_code, path=f"/api/admin/catalog/{entity_type}/{item_id}/workflow", method="POST", status_code=200, meta={"entity_id": item_id, "author": user.username, "action": payload.action, "change_request_id": payload.change_request_id or cr_id})
-    return {"ok": True, "result": response}
+    return result
 
 
 @router.post("/api/admin/catalog/{entity_type}/{item_id}/rollback")
@@ -1974,23 +1813,20 @@ async def admin_catalog_rollback(
     user_store: UserStore = Depends(get_user_store),
 ):
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
-    _ = entity_type
-    _ = item_id
     try:
-        result = workflow_service.rollback_publish_batch(
-            publish_batch_id=int(payload.version),
+        result = rollback_catalog_payload(
+            workflow_service=workflow_service,
+            server_code=user.server_code,
             actor_user_id=actor_user_id,
             request_id=getattr(request.state, "request_id", ""),
-            reason="manual_admin_rollback",
-            server_scope="server",
-            server_id=user.server_code,
+            payload=payload,
         )
     except (ValueError, PermissionError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=[str(exc)]) from exc
     metrics_store.log_event(event_type=f"admin_catalog_{entity_type}_rollback", username=user.username, server_code=user.server_code, path=f"/api/admin/catalog/{entity_type}/{item_id}/rollback", method="POST", status_code=200, meta={"entity_id": item_id, "author": user.username, "rollback_batch": payload.version})
-    return {"ok": True, "result": result}
+    return result
 
 
 @router.get("/api/admin/law-sources")
