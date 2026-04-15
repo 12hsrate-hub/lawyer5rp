@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `6`
-- Next slice: `select I.3r after accepted admin users read/reporting block`
+- Next slice: `select I.3u after accepted admin user mutation block`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -210,6 +210,12 @@ Date: 2026-04-14
   - admin user details payload assembly now converges behind the same helper layer instead of route-local permission snapshot and activity summary shaping
   - `I.3q` deployed on production commit `2bed351`
   - role-history and users.csv reporting now converge behind the same helper layer instead of route-local overview/export wiring in `routes/admin.py`
+  - `I.3r` deployed on production commit `024c3e2`
+  - verify-email plus block/unblock payload assembly now converges behind a shared admin user-mutations helper layer instead of route-local store-call wiring
+  - `I.3s` deployed on production commit `024c3e2`
+  - tester/gka role toggles and email/password update payload assembly now converge behind the same helper layer instead of route-local per-endpoint mutation shaping
+  - `I.3t` deployed on production commit `024c3e2`
+  - deactivate/reactivate and daily-quota payload assembly now converge behind the same helper layer instead of route-local write-path handling in `routes/admin.py`
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
