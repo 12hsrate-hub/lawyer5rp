@@ -13,11 +13,14 @@ for candidate in (ROOT_DIR, WEB_DIR):
 
 from ogp_web.services.server_context_service import (
     extract_server_ai_context_settings,
+    extract_server_feature_flags,
+    extract_server_identity_settings,
     extract_server_law_context_settings,
     resolve_server_config,
     resolve_server_law_bundle_path,
     resolve_server_law_sources,
     resolve_user_server_context,
+    server_has_feature,
 )
 
 
@@ -101,6 +104,27 @@ class ServerContextServiceTests(unittest.TestCase):
         self.assertEqual(settings.shadow_suggest_profile, "suggest_shadow")
         self.assertEqual(settings.suggest_prompt_mode, "data_driven")
         self.assertEqual(settings.suggest_low_confidence_policy, "soft_fail")
+
+    def test_extract_server_identity_settings_normalizes_code_and_name(self):
+        config = type("Cfg", (), {"code": " Orange ", "name": " Orange County "})()
+
+        settings = extract_server_identity_settings(config, fallback_server_code="blackberry")
+
+        self.assertEqual(settings.code, "orange")
+        self.assertEqual(settings.name, "Orange County")
+
+    def test_extract_server_feature_flags_sorts_and_deduplicates_values(self):
+        config = type("Cfg", (), {"feature_flags": (" beta_mode ", "", "alpha_mode", "beta_mode")})()
+
+        feature_flags = extract_server_feature_flags(config)
+
+        self.assertEqual(feature_flags, ("alpha_mode", "beta_mode"))
+
+    def test_server_has_feature_uses_feature_flags_when_checker_missing(self):
+        config = type("Cfg", (), {"feature_flags": ("law_qa_nano_enabled",)})()
+
+        self.assertTrue(server_has_feature(config, "law_qa_nano_enabled"))
+        self.assertFalse(server_has_feature(config, "suggest_nano_enabled"))
 
     def test_resolve_user_server_context_uses_store_server_by_default(self):
         store = _DummyUserStore("blackberry")

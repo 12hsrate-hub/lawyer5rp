@@ -22,10 +22,27 @@ class ServerAiContextSettings:
     suggest_low_confidence_policy: str
 
 
+@dataclass(frozen=True)
+class ServerIdentitySettings:
+    code: str
+    name: str
+
+
 def resolve_server_config(*, server_code: str = "", fallback_server_code: str = DEFAULT_SERVER_CODE) -> ServerConfig:
     normalized_server_code = str(server_code or "").strip().lower()
     effective_server_code = normalized_server_code or str(fallback_server_code or DEFAULT_SERVER_CODE).strip().lower()
     return get_server_config(effective_server_code)
+
+
+def extract_server_identity_settings(
+    server_config: object,
+    *,
+    fallback_server_code: str = DEFAULT_SERVER_CODE,
+) -> ServerIdentitySettings:
+    normalized_fallback = str(fallback_server_code or DEFAULT_SERVER_CODE).strip().lower() or DEFAULT_SERVER_CODE
+    code = str(getattr(server_config, "code", normalized_fallback) or normalized_fallback).strip().lower() or normalized_fallback
+    name = str(getattr(server_config, "name", code) or code).strip() or code
+    return ServerIdentitySettings(code=code, name=name)
 
 
 def extract_server_law_context_settings(server_config: object) -> ServerLawContextSettings:
@@ -47,6 +64,26 @@ def extract_server_ai_context_settings(server_config: object) -> ServerAiContext
         .strip()
         .lower(),
     )
+
+
+def extract_server_feature_flags(server_config: object) -> tuple[str, ...]:
+    feature_flags = getattr(server_config, "feature_flags", ()) or ()
+    normalized = [
+        str(item or "").strip()
+        for item in feature_flags
+        if str(item or "").strip()
+    ]
+    return tuple(sorted(dict.fromkeys(normalized)))
+
+
+def server_has_feature(server_config: object, feature_name: str) -> bool:
+    checker = getattr(server_config, "has_feature", None)
+    if callable(checker):
+        try:
+            return bool(checker(feature_name))
+        except Exception:
+            return False
+    return str(feature_name or "").strip() in set(extract_server_feature_flags(server_config))
 
 
 def resolve_server_law_bundle_path(*, server_code: str = "", fallback_server_code: str = DEFAULT_SERVER_CODE) -> str:
