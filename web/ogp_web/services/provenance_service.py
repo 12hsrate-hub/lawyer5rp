@@ -59,3 +59,14 @@ class ProvenanceService:
                 "latest_status": str((latest_validation or {}).get("status") or ""),
             },
         }
+
+    def get_latest_trace_for_generation_snapshot(self, *, generation_snapshot_id: int) -> dict[str, Any] | None:
+        normalized_snapshot_id = int(generation_snapshot_id or 0)
+        if normalized_snapshot_id <= 0:
+            return None
+        version_row = self.document_repository.get_latest_document_version_by_generation_snapshot_id(
+            generation_snapshot_id=normalized_snapshot_id,
+        )
+        if not version_row:
+            return None
+        return self.get_document_version_trace(document_version_id=int(version_row["id"]))

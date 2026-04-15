@@ -549,20 +549,13 @@ async def generated_document_snapshot(
     if snapshot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Документ не найден."])
     payload = dict(snapshot)
-    provenance = None
     generation_snapshot_id = int(payload.get("generation_snapshot_id") or 0)
-    if generation_snapshot_id > 0:
-        document_repository = DocumentRepository(store.backend)
-        version_row = document_repository.get_latest_document_version_by_generation_snapshot_id(
-            generation_snapshot_id=generation_snapshot_id,
-        )
-        if version_row:
-            service = ProvenanceService(
-                document_repository=document_repository,
-                user_store=store,
-                validation_service=ValidationService(ValidationRepository(store.backend)),
-            )
-            provenance = service.get_document_version_trace(document_version_id=int(version_row["id"]))
+    service = ProvenanceService(
+        document_repository=DocumentRepository(store.backend),
+        user_store=store,
+        validation_service=ValidationService(ValidationRepository(store.backend)),
+    )
+    provenance = service.get_latest_trace_for_generation_snapshot(generation_snapshot_id=generation_snapshot_id)
     return GeneratedDocumentSnapshotResponse(**payload, provenance=provenance)
 
 
