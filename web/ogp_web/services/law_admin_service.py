@@ -51,7 +51,6 @@ class LawAdminService:
         self.repository = workflow_service.repository
 
     def get_effective_sources(self, *, server_code: str) -> LawSourcesSnapshot:
-        server_config = resolve_server_config(server_code=server_code)
         manifest_item = self.repository.get_content_item_by_identity(
             server_scope="server",
             server_id=server_code,
@@ -228,7 +227,6 @@ class LawAdminService:
                 comment="law_index_rebuild",
             )
 
-        server_config = resolve_server_config(server_code=server_code)
         bundle = build_law_bundle(server_code, effective_urls)
         if dry_run:
             return {
@@ -286,14 +284,10 @@ class LawAdminService:
         server_rows: list[dict[str, Any]] = []
         for item in list_servers_with_law_qa_context():
             snapshot = self.get_effective_sources(server_code=item["code"])
-            identity = extract_server_identity_settings(
-                resolve_server_config(server_code=item["code"]),
-                fallback_server_code=item["code"],
-            )
             server_rows.append(
                 {
-                    "server_code": identity.code,
-                    "server_name": identity.name,
+                    "server_code": item["code"],
+                    "server_name": item["name"],
                     "source_origin": snapshot.source_origin,
                     "source_urls": list(snapshot.source_urls),
                     "active_law_version_id": (snapshot.active_law_version or {}).get("id") if isinstance(snapshot.active_law_version, dict) else None,

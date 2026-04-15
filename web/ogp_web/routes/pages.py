@@ -15,6 +15,7 @@ from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.law_admin_service import LawAdminService
 from ogp_web.services.server_context_service import (
     extract_server_complaint_settings,
+    extract_server_identity_settings,
     extract_server_shell_context,
     list_servers_with_law_qa_context,
     resolve_server_config,
@@ -222,16 +223,17 @@ async def law_qa_test_page(
     store: UserStore = Depends(get_user_store),
 ):
     server_config, permissions = _server_context(store, user.username)
-    law_sources = list(resolve_server_law_sources(server_code=server_config.code))
+    server_identity = extract_server_identity_settings(server_config)
+    law_sources = list(resolve_server_law_sources(server_code=server_identity.code))
     try:
         law_admin_service = LawAdminService(
             ContentWorkflowService(ContentWorkflowRepository(get_database_backend()), legacy_store=None)
         )
-        law_sources_snapshot = law_admin_service.get_effective_sources(server_code=server_config.code)
+        law_sources_snapshot = law_admin_service.get_effective_sources(server_code=server_identity.code)
         law_sources = list(law_sources_snapshot.source_urls)
     except Exception:
         # Allow law QA page rendering in tests/local runtimes without PostgreSQL.
-        law_sources = list(resolve_server_law_sources(server_code=server_config.code))
+        law_sources = list(resolve_server_law_sources(server_code=server_identity.code))
     return templates.TemplateResponse(
         request,
         "law_qa_test.html",
