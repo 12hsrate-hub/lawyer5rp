@@ -6,10 +6,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 
 ## Current Execution State
 
-- Current phase: `Phase H — Post-pilot scale-out and legacy reduction`
-- Current task: `Phase H accepted; define the next execution phase`
-- Active execution phase override: `Phase H is now accepted after H.3 runtime tightening closure`
-- Current micro-step: `prepare the next post-H planning brief`
+- Current phase: `Phase I — Runtime/admin convergence wave 1`
+- Current task: `I.1 execution brief finalization`
+- Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
+- Current micro-step: `start I.1 with the first bounded server-config seam`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -30,6 +30,11 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - pilot adapter runtime snapshots no longer expose fallback-only `seeded/published` visibility markers or `content_item_id` noise.
   - the rollout workspace is now renamed away from pilot/preflight-only wording where the underlying state machine already stays the same.
   - `Phase H.2 wave 1` is accepted as complete.
+  - `H.3a` through `H.3l` are accepted on production.
+  - `H.3` is accepted: no further meaningful complaint-path transitional seams remain that can be removed as small safe slices without inventing artificial refactors.
+  - `Phase H` is accepted as complete.
+  - `Phase I` is opened as the next execution phase.
+  - immediate next step is `I.1` execution brief finalization and first bounded seam selection.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -466,6 +471,43 @@ Dependencies: Phase G.
 
 ---
 
+## Phase I — Runtime/admin convergence wave 1
+
+Execution status: `ready_to_start`
+
+### I.1 Shared server-context seam extraction
+- Replace repeated direct `get_server_config(...)`/legacy server-context shaping in non-adapter runtime/admin paths with small shared helpers.
+- Start only with one bounded seam at a time; do not fan out across unrelated routes in one pass.
+- First candidate slice: complaint/admin server-context reads that still duplicate legacy `server_config` access patterns outside the accepted adapter path.
+
+### I.2 Snapshot/provenance schema convergence
+- Align legacy and adapter snapshot/provenance internals behind common helper contracts where the payload shape is already the same.
+- Keep external route contracts and admin review payloads stable.
+- Add parity assertions/tests whenever an internal snapshot block is deduplicated.
+
+### I.3 Admin route decomposition wave 1
+- Continue shrinking `routes/admin.py` by extracting one bounded server-backed subsection at a time into service/helper seams.
+- Prioritize surfaces that already have clear service boundaries underneath them.
+- Do not mix UI copy work, route splitting, and domain behavior changes in one slice.
+
+### Deliverables
+- `Phase I` execution brief with the first accepted bounded seam
+- shared runtime/admin context helper map
+- first accepted convergence slice on production
+
+### Acceptance
+- the first `Phase I` slice removes a real duplicated runtime/admin seam without changing route contracts
+- tests cover parity for the extracted helper path
+- GitHub, local docs, and server checkout remain synchronized after the slice
+
+### Rollback/containment
+- keep changes bounded to one seam per slice
+- revert the single slice if parity or admin visibility regresses
+
+Dependencies: Phase H.
+
+---
+
 ## 3) What to do first
 
 1. Finish Phase A inventory and lock pilot scenario.
@@ -594,8 +636,8 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 
 ## Execution override update
 
-- Current active phase: `Phase H`
-- Last completed phase: `Phase G`
+- Current active phase: `Phase I`
+- Last completed phase: `Phase H`
 - Phase G progress:
   - pilot rollout visibility is now exposed in `admin/dashboard`
   - the ops workspace now includes a `Pilot rollout` block backed by `/api/admin/dashboard/sections/release`
@@ -641,7 +683,8 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `H.3l` is complete on production commit `1695401`: legacy complaint generation snapshots now use the same small helper structure for server/effective-config/content-workflow assembly, with parity coverage keeping content-workflow aligned to effective-config output
 - `H.3` is accepted: no further meaningful complaint-path transitional seams remain that can be removed as small safe slices without inventing artificial refactors
 - `Phase H` is accepted as complete
-- immediate next step is `define the next execution phase after post-pilot runtime tightening`
+- `Phase I` is opened as the next execution phase
+- immediate next step is `I.1 execution brief finalization and first bounded seam selection`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`
@@ -653,5 +696,3 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
   - safe review drilldown links now exist for snapshot/validation/citations/exports APIs
 - Phase F acceptance:
   - pilot generated output trace is explainable end-to-end from admin UI without direct DB inspection
-- Next phase:
-  - `Phase G` observation window, stabilization, and rollout checkpointing
