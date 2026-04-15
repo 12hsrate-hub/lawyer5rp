@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase H — Post-pilot scale-out and legacy reduction`
 - Current task: `H.3 runtime source-of-truth tightening`
 - Active execution phase override: `Phase H.2 wave 1 accepted; H.3 is now in progress`
-- Current micro-step: `select the first accepted H.3 tightening slice`
+- Current micro-step: `select the sixth accepted H.3 tightening slice`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -627,12 +627,13 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `H.2d` is complete on production commit `c40d859`
 - `H.2e` is complete on production commit `751d0a0`
 - `H.2f` is complete on production commit `5fb1671`
-- `H.3a` is in progress locally: complaint generate skips the legacy snapshot builder when adapter flow is active
-- `H.3b` is in progress locally: pilot runtime adapter no longer depends on legacy server-config lookup for law bundle metadata
-- `H.3c` is in progress locally: complaint adapter snapshots now carry their own `feature_flags` without a route-level legacy server-config read
-- `H.3d` is in progress locally: adapter snapshots drop the unused internal `runtime_adapter` ID block
-- `H.3e` is in progress locally: adapter fallback template/validation refs now reuse the shared complaint-service helpers instead of duplicating hash logic
-- immediate next step is `Phase H.3 fifth tightening slice merge + production verification`
+- `H.3a` is complete on production commit `6d21f72`: complaint generate skips the legacy snapshot builder when adapter flow is active
+- `H.3b` is complete on production commit `b6b5328`: pilot runtime adapter no longer depends on legacy server-config lookup for law bundle metadata
+- `H.3c` is complete on production commit `55a10a7`: complaint adapter snapshots now carry their own `feature_flags` without a route-level legacy server-config read
+- `H.3d` is complete on production commit `b7699e7`: adapter snapshots drop the unused internal `runtime_adapter` ID block
+- `H.3e` is complete on production commit `85078b2`: adapter fallback template/validation refs now reuse the shared complaint-service helpers instead of duplicating hash logic
+- `H.3f` is in progress locally: complaint form fallback refs now reuse the shared draft-schema helper instead of a second adapter-local hash path
+- immediate next step is `Phase H.3 sixth tightening slice merge + production verification`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`

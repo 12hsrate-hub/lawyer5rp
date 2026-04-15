@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import inspect
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -67,6 +69,11 @@ DEFAULT_VALUE_TRANSFORM_RULES: dict[str, str] = {
     "evidence.video_fix_urls": "trim_string_list",
     "evidence.provided_video_urls": "trim_string_list",
 }
+
+
+def form_version_hash() -> str:
+    source = inspect.getsource(normalize_complaint_draft)
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()[:16]
 
 
 @dataclass(frozen=True)

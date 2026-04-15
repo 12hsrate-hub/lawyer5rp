@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import hashlib
-import inspect
 from dataclasses import dataclass
 from typing import Any
 
 from ogp_web.server_config import effective_server_pack
 from ogp_web.services.auth_service import AuthUser
-from ogp_web.services.complaint_draft_schema import normalize_complaint_draft
+from ogp_web.services.complaint_draft_schema import form_version_hash
 from ogp_web.services.complaint_service import _template_hash as complaint_template_hash
 from ogp_web.services.complaint_service import _validation_rules_version as complaint_validation_rules_version
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
@@ -61,17 +59,6 @@ class PilotComplaintRuntimeContext:
             },
             "feature_flags": list(self.feature_flags),
         }
-
-
-def _short_hash(value: str) -> str:
-    normalized = str(value or "").strip()
-    if not normalized:
-        return ""
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
-
-
-def _form_hash() -> str:
-    return _short_hash(inspect.getsource(normalize_complaint_draft))
 
 
 def supports_pilot_runtime_adapter(*, server_code: str, document_kind: str) -> bool:
@@ -178,10 +165,10 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
             "document_kind": str(procedure_payload.get("document_kind") or PILOT_PROCEDURE_CODE),
         },
         form_version={
-            "id": (form_version or {}).get("id") or f"form:{server_code}:{PILOT_PROCEDURE_CODE}:{_form_hash()}",
+            "id": (form_version or {}).get("id") or f"form:{server_code}:{PILOT_PROCEDURE_CODE}:{form_version_hash()}",
             "form_key": str(form_payload.get("form_code") or "complaint_draft_semantic"),
             "version": str((form_version or {}).get("version_number") or "1"),
-            "hash": _form_hash(),
+            "hash": form_version_hash(),
         },
         validation_rule_version={
             "id": (validation_version or {}).get("id") or f"validation:{server_code}:{PILOT_PROCEDURE_CODE}:{complaint_validation_rules_version(PILOT_PROCEDURE_CODE)}",
