@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `6`
-- Next slice: `select I.3o after accepted admin catalog decomposition block`
+- Next slice: `select I.3r after accepted admin users read/reporting block`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -204,6 +204,12 @@ Date: 2026-04-14
   - catalog workflow action dispatch plus change-request review/validate payload shaping now converge behind the same helper layer instead of route-local action branching
   - `I.3n` deployed on production commit `d660d7f`
   - catalog item create/update/rollback payload configuration and active change-request resolution now converge behind the same helper layer instead of route-local config shaping in `routes/admin.py`
+  - `I.3o` deployed on production commit `2bed351`
+  - admin users list payload assembly now converges behind a shared admin users helper layer instead of route-local metrics/user overview shaping
+  - `I.3p` deployed on production commit `2bed351`
+  - admin user details payload assembly now converges behind the same helper layer instead of route-local permission snapshot and activity summary shaping
+  - `I.3q` deployed on production commit `2bed351`
+  - role-history and users.csv reporting now converge behind the same helper layer instead of route-local overview/export wiring in `routes/admin.py`
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
