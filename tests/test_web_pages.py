@@ -118,6 +118,18 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["location"], "/complaint")
 
+    def test_verify_email_page_renders_server_context(self):
+        response = self.client.get("/verify-email")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Подтверждение email", response.text)
+        self.assertIn("OGP Builder", response.text)
+
+    def test_reset_password_page_renders_server_context(self):
+        response = self.client.get("/reset-password?token=test-token")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("test-token", response.text)
+        self.assertIn("OGP Builder", response.text)
+
     def test_admin_page_requires_admin_user(self):
         response = self.client.get("/admin")
         self.assertEqual(response.status_code, 403)

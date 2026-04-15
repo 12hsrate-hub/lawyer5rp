@@ -11,7 +11,7 @@ for candidate in (ROOT_DIR, WEB_DIR):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-from ogp_web.services.server_context_service import resolve_user_server_context
+from ogp_web.services.server_context_service import resolve_server_config, resolve_user_server_context
 
 
 class _DummyUserStore:
@@ -23,15 +23,27 @@ class _DummyUserStore:
 
 
 class ServerContextServiceTests(unittest.TestCase):
+    def test_resolve_server_config_uses_fallback_when_server_code_missing(self):
+        config = type("Cfg", (), {"code": "blackberry"})()
+
+        with patch(
+            "ogp_web.services.server_context_service.get_server_config",
+            return_value=config,
+        ) as get_server_config_mock:
+            resolved = resolve_server_config(fallback_server_code="blackberry")
+
+        self.assertIs(resolved, config)
+        get_server_config_mock.assert_called_once_with("blackberry")
+
     def test_resolve_user_server_context_uses_store_server_by_default(self):
         store = _DummyUserStore("blackberry")
         config = type("Cfg", (), {"code": "blackberry"})()
         permissions = object()
 
         with patch(
-            "ogp_web.services.server_context_service.get_server_config",
+            "ogp_web.services.server_context_service.resolve_server_config",
             return_value=config,
-        ) as get_server_config_mock, patch(
+        ) as resolve_server_config_mock, patch(
             "ogp_web.services.server_context_service.build_permission_set",
             return_value=permissions,
         ) as build_permission_set_mock:
@@ -39,7 +51,7 @@ class ServerContextServiceTests(unittest.TestCase):
 
         self.assertIs(resolved_config, config)
         self.assertIs(resolved_permissions, permissions)
-        get_server_config_mock.assert_called_once_with("blackberry")
+        resolve_server_config_mock.assert_called_once_with(server_code="", fallback_server_code="blackberry")
         build_permission_set_mock.assert_called_once_with(store, "tester", config)
 
     def test_resolve_user_server_context_honors_explicit_server_code(self):
@@ -48,9 +60,9 @@ class ServerContextServiceTests(unittest.TestCase):
         permissions = object()
 
         with patch(
-            "ogp_web.services.server_context_service.get_server_config",
+            "ogp_web.services.server_context_service.resolve_server_config",
             return_value=config,
-        ) as get_server_config_mock, patch(
+        ) as resolve_server_config_mock, patch(
             "ogp_web.services.server_context_service.build_permission_set",
             return_value=permissions,
         ):
@@ -62,4 +74,4 @@ class ServerContextServiceTests(unittest.TestCase):
 
         self.assertIs(resolved_config, config)
         self.assertIs(resolved_permissions, permissions)
-        get_server_config_mock.assert_called_once_with("orange")
+        resolve_server_config_mock.assert_called_once_with(server_code="Orange", fallback_server_code="blackberry")
