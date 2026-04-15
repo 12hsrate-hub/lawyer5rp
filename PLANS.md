@@ -7,9 +7,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase H — Post-pilot scale-out and legacy reduction`
-- Current task: `H.3 runtime source-of-truth tightening`
-- Active execution phase override: `Phase H.2 wave 1 accepted; H.3 is now in progress`
-- Current micro-step: `select the thirteenth accepted H.3 tightening slice`
+- Current task: `Phase H accepted; define the next execution phase`
+- Active execution phase override: `Phase H is now accepted after H.3 runtime tightening closure`
+- Current micro-step: `prepare the next post-H planning brief`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -639,7 +639,9 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `H.3j` is complete on production commit `4e04822`: complaint generation routes now isolate adapter-vs-legacy context snapshot assembly and shared shadow citations-policy injection behind local helpers
 - `H.3k` is complete on production commit `d4170c3`: complaint adapter snapshot internals now use dedicated effective-config, content-workflow, and server snapshot helpers with parity coverage in tests
 - `H.3l` is complete on production commit `1695401`: legacy complaint generation snapshots now use the same small helper structure for server/effective-config/content-workflow assembly, with parity coverage keeping content-workflow aligned to effective-config output
-- immediate next step is `Phase H.3 thirteenth tightening slice selection`
+- `H.3` is accepted: no further meaningful complaint-path transitional seams remain that can be removed as small safe slices without inventing artificial refactors
+- `Phase H` is accepted as complete
+- immediate next step is `define the next execution phase after post-pilot runtime tightening`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`
