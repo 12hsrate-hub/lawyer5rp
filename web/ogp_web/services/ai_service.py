@@ -39,7 +39,7 @@ from ogp_web.services.legal_pipeline_service import (
     normalize_law_qa_text_formatting,
     strip_law_qa_source_urls,
 )
-from ogp_web.services.server_context_service import resolve_server_config
+from ogp_web.services.server_context_service import resolve_server_config, resolve_server_law_bundle_path
 from ogp_web.services.point3_pipeline import (
     MODE_FACTUAL_FALLBACK_EXPANDED,
     RemediationOutcome,
@@ -1916,7 +1916,7 @@ def _build_suggest_forced_norms(
         return ()
     try:
         server_config = resolve_server_config(server_code=server_code)
-        bundle_path = str(getattr(server_config, "law_qa_bundle_path", "") or "").strip()
+        bundle_path = resolve_server_law_bundle_path(server_code=server_code)
         if not bundle_path:
             return ()
         if law_version_id is None:

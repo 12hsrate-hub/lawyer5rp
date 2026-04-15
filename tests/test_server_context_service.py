@@ -11,7 +11,12 @@ for candidate in (ROOT_DIR, WEB_DIR):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-from ogp_web.services.server_context_service import resolve_server_config, resolve_user_server_context
+from ogp_web.services.server_context_service import (
+    resolve_server_config,
+    resolve_server_law_bundle_path,
+    resolve_server_law_sources,
+    resolve_user_server_context,
+)
 
 
 class _DummyUserStore:
@@ -34,6 +39,30 @@ class ServerContextServiceTests(unittest.TestCase):
 
         self.assertIs(resolved, config)
         get_server_config_mock.assert_called_once_with("blackberry")
+
+    def test_resolve_server_law_bundle_path_uses_shared_server_config(self):
+        config = type("Cfg", (), {"law_qa_bundle_path": "/tmp/laws.json"})()
+
+        with patch(
+            "ogp_web.services.server_context_service.resolve_server_config",
+            return_value=config,
+        ) as resolve_server_config_mock:
+            bundle_path = resolve_server_law_bundle_path(server_code="blackberry")
+
+        self.assertEqual(bundle_path, "/tmp/laws.json")
+        resolve_server_config_mock.assert_called_once_with(server_code="blackberry", fallback_server_code="blackberry")
+
+    def test_resolve_server_law_sources_normalizes_values(self):
+        config = type("Cfg", (), {"law_qa_sources": (" https://example.com/a ", "", "https://example.com/a ")})()
+
+        with patch(
+            "ogp_web.services.server_context_service.resolve_server_config",
+            return_value=config,
+        ) as resolve_server_config_mock:
+            source_urls = resolve_server_law_sources(server_code="blackberry")
+
+        self.assertEqual(source_urls, ("https://example.com/a",))
+        resolve_server_config_mock.assert_called_once_with(server_code="blackberry", fallback_server_code="blackberry")
 
     def test_resolve_user_server_context_uses_store_server_by_default(self):
         store = _DummyUserStore("blackberry")
