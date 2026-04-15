@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.1 shared server-context seam extraction`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded runtime/admin server-config seam after I.1a`
+- Current micro-step: `select the next bounded runtime/admin server-config seam after I.1b`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -35,7 +35,8 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `Phase H` is accepted as complete.
   - `Phase I` is opened as the next execution phase.
   - `I.1a` is now complete on production commit `1b071bd`: shared user server-context resolution is extracted and reused by `pages.py` plus bounded `admin.py` paths.
-  - immediate next step is `I.1b` bounded seam selection after the accepted shared server-context extraction.
+  - `I.1b` is now complete on production commit `436fba9`: the same shared user server-context helper now also covers user-bound `complaint.py` and `profile.py` server-config reads.
+  - immediate next step is `I.1c` bounded seam selection after the accepted user-bound server-context reuse.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -481,7 +482,8 @@ Execution status: `ready_to_start`
 - Start only with one bounded seam at a time; do not fan out across unrelated routes in one pass.
 - First candidate slice: complaint/admin server-context reads that still duplicate legacy `server_config` access patterns outside the accepted adapter path.
 - `I.1a` complete on production commit `1b071bd`: `resolve_user_server_context(...)` now centralizes shared user server-config plus permission resolution for `pages.py` and bounded `admin.py` paths while keeping route contracts stable.
-- Current I.1 executable slice: `select I.1b after the accepted shared context seam`.
+- `I.1b` complete on production commit `436fba9`: user-bound server-config reads in `complaint.py` and `profile.py` now reuse the same shared helper while keeping draft/profile route contracts stable.
+- Current I.1 executable slice: `select I.1c after the accepted user-bound context seam`.
 
 ### I.2 Snapshot/provenance schema convergence
 - Align legacy and adapter snapshot/provenance internals behind common helper contracts where the payload shape is already the same.
@@ -688,7 +690,8 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `Phase H` is accepted as complete
 - `Phase I` is opened as the next execution phase
 - `I.1a` is complete on production commit `1b071bd`: shared user server-context resolution is extracted and reused by `pages.py` plus bounded `admin.py` paths
-- immediate next step is `I.1b bounded seam selection after the accepted shared server-context extraction`
+- `I.1b` is complete on production commit `436fba9`: the same shared helper now also covers user-bound `complaint.py` and `profile.py` server-config reads
+- immediate next step is `I.1c bounded seam selection after the accepted user-bound server-context extraction`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`
