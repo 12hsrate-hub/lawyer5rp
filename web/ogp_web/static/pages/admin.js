@@ -1718,6 +1718,18 @@ function derivePilotRolloutState(featureFlags) {
   return "legacy_only";
 }
 
+function describePilotWarningSignal(eventType) {
+  const key = String(eventType || "").trim();
+  const catalog = {
+    rollout_generation_latency: ["Generation latency", "info", "Compare recent generation timings with the pre-pilot baseline."],
+    rollout_async_queue_lag: ["Async queue lag", "info", "Inspect queue backlog and confirm no retry storm is forming."],
+    rollout_validation_fail_rate: ["Validation fail rate", "info", "Review recent validation failures before any rollout change."],
+    rollout_error_rate: ["Rollout error rate", "danger-soft", "Investigate error spikes first; do not expand rollout while active."],
+  };
+  const [label, tone, action] = catalog[key] || [key || "Unknown signal", "info", "Classify this signal before changing rollout state."];
+  return { label, tone, action };
+}
+
 function renderPilotRolloutMarkup(payload) {
   const data = payload?.data || payload || {};
   const featureFlags = Array.isArray(data.feature_flags) ? data.feature_flags : [];
@@ -1730,6 +1742,11 @@ function renderPilotRolloutMarkup(payload) {
   const adapter = featureFlags.find((item) => String(item?.flag || "") === "pilot_runtime_adapter_v1") || {};
   const shadow = featureFlags.find((item) => String(item?.flag || "") === "pilot_shadow_compare_v1") || {};
   const warningSignals = Array.isArray(data.warning_signals) ? data.warning_signals : [];
+  const warningRows = warningSignals.map((item) => ({
+    event_type: String(item?.event_type || ""),
+    total: Number(item?.total || 0),
+    ...describePilotWarningSignal(item?.event_type),
+  }));
   const rollbackHistory = Array.isArray(data.rollback_history) ? data.rollback_history : [];
   const checklist = [
     {
@@ -1815,17 +1832,19 @@ function renderPilotRolloutMarkup(payload) {
       <div class="legal-field">
         <span class="legal-field__label">Warning signals</span>
         ${
-          warningSignals.length
+          warningRows.length
             ? `
               <div class="legal-table-shell">
                 <table class="legal-table admin-table admin-table--compact">
-                  <thead><tr><th>Signal</th><th>Total</th></tr></thead>
+                  <thead><tr><th>Signal</th><th>Status</th><th>Total</th><th>Next action</th></tr></thead>
                   <tbody>
-                    ${warningSignals
+                    ${warningRows
                       .map((item) => `
                         <tr>
-                          <td>${escapeHtml(String(item.event_type || "—"))}</td>
+                          <td>${escapeHtml(String(item.label || item.event_type || "-"))}</td>
+                          <td>${renderBadge(item.tone === "danger-soft" ? "critical" : "review", item.tone)}</td>
                           <td>${escapeHtml(String(item.total || 0))}</td>
+                          <td>${escapeHtml(String(item.action || "-"))}</td>
                         </tr>
                       `)
                       .join("")}
