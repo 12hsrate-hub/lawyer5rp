@@ -1737,14 +1737,16 @@ function derivePilotRolloutDecisionContext({ rolloutState, warningRows, fallback
   const fallbackCount = Number(fallbackToLegacyUsage || 0);
   const rollbackCount = Array.isArray(rollbackHistory) ? rollbackHistory.length : 0;
 
-  if (criticalSignals.length || fallbackCount > 0) {
+  if (criticalSignals.length || fallbackCount > 0 || rollbackCount > 0) {
     return {
       decision: "rollback",
       tone: "danger-soft",
       note:
         criticalSignals.length
           ? `Critical warning signals: ${criticalSignals.map((item) => item.label).join(", ")}.`
-          : `Fallback-to-legacy recorded: ${String(fallbackCount)} event(s).`,
+          : fallbackCount > 0
+            ? `Fallback-to-legacy recorded: ${String(fallbackCount)} event(s).`
+            : `Rollback history contains ${String(rollbackCount)} recorded batch(es).`,
       nextStep: "Keep the pilot on legacy mode and review runtime errors before any further rollout change.",
     };
   }
@@ -1769,7 +1771,7 @@ function derivePilotRolloutDecisionContext({ rolloutState, warningRows, fallback
   };
 }
 
-function derivePilotScaleOutContext({ decision, warningRows, rollbackHistory }) {
+function derivePilotScaleOutContext({ decision, warningRows, rollbackHistory, signOffStatus }) {
   const reviewSignals = warningRows.filter((item) => String(item?.severity || "") === "review");
   const rollbackCount = Array.isArray(rollbackHistory) ? rollbackHistory.length : 0;
 
@@ -1791,6 +1793,15 @@ function derivePilotScaleOutContext({ decision, warningRows, rollbackHistory }) 
           ? `${reviewSignals.length} review signal(s) still need closure before reuse starts.`
           : "Pilot observation is still incomplete.",
       nextStep: "Keep the next migration candidate on hold until the observation checklist is fully clean.",
+    };
+  }
+
+  if (signOffStatus !== "ready") {
+    return {
+      status: "not ready",
+      tone: "info",
+      note: "Pilot observation sign-off is still incomplete.",
+      nextStep: "Keep the next migration candidate on hold until the observation sign-off table is fully green.",
     };
   }
 
@@ -1880,16 +1891,17 @@ function renderPilotRolloutMarkup(payload) {
     fallbackToLegacyUsage: data.fallback_to_legacy_usage,
     rollbackHistory,
   });
-  const scaleOut = derivePilotScaleOutContext({
-    decision: decision.decision,
-    warningRows,
-    rollbackHistory,
-  });
   const signOff = derivePilotObservationSignOff({
     rolloutState,
     warningRows,
     fallbackToLegacyUsage: data.fallback_to_legacy_usage,
     rollbackHistory,
+  });
+  const scaleOut = derivePilotScaleOutContext({
+    decision: decision.decision,
+    warningRows,
+    rollbackHistory,
+    signOffStatus: signOff.status,
   });
   const checklist = [
     {
