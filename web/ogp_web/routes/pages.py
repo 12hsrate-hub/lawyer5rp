@@ -153,6 +153,7 @@ async def complaint_test_page(
     store: UserStore = Depends(get_user_store),
 ):
     server_config, permissions = _server_context(store, user.username)
+    complaint_settings = extract_server_complaint_settings(server_config)
     return templates.TemplateResponse(
         request,
         "complaint.html",

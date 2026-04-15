@@ -168,3 +168,13 @@ def resolve_user_server_context(
     server_config = resolve_server_config(server_code=server_code, fallback_server_code=fallback_server_code)
     permissions = build_permission_set(user_store, username, server_config)
     return server_config, permissions
+
+
+def resolve_user_server_permissions(
+    user_store: UserStore,
+    username: str,
+    *,
+    server_code: str = "",
+) -> PermissionSet:
+    _, permissions = resolve_user_server_context(user_store, username, server_code=server_code)
+    return permissions
