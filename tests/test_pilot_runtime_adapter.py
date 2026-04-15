@@ -13,7 +13,6 @@ for candidate in (ROOT_DIR, WEB_DIR):
 from ogp_web.services.auth_service import AuthUser
 from ogp_web.services.complaint_service import build_generation_context_snapshot
 from ogp_web.services.pilot_runtime_adapter import (
-    compare_generation_context_snapshots,
     PILOT_FORM_CONTENT_KEY,
     PILOT_PROCEDURE_CONTENT_KEY,
     PILOT_TEMPLATE_CONTENT_KEY,
@@ -31,29 +30,6 @@ def test_pilot_runtime_adapter_supports_only_blackberry_complaint():
     assert supports_pilot_runtime_adapter(server_code="blackberry", document_kind="complaint") is True
     assert supports_pilot_runtime_adapter(server_code="blackberry", document_kind="rehab") is False
     assert supports_pilot_runtime_adapter(server_code="other", document_kind="complaint") is False
-
-
-def test_pilot_runtime_adapter_matches_legacy_context_for_core_version_fields():
-    tmpdir = make_temporary_directory()
-    store = None
-    try:
-        root = Path(tmpdir.name)
-        store = UserStore(
-            root / "app.db",
-            root / "users.json",
-            repository=UserRepository(PostgresBackend()),
-        )
-        user = AuthUser(username="tester", email="tester@example.com", server_code="blackberry")
-        legacy = build_generation_context_snapshot(store, user, document_kind="complaint")
-        adapter = resolve_pilot_complaint_runtime_context(store, user).to_generation_context_snapshot()
-        comparison = compare_generation_context_snapshots(legacy_snapshot=legacy, adapter_snapshot=adapter)
-        assert comparison["mismatch_count"] == 0
-        assert set(comparison["matched_keys"]) >= {"server_id", "template_version", "law_set_version", "validation_version"}
-    finally:
-        if store is not None:
-            store.repository.close()
-        tmpdir.cleanup()
-
 
 def test_pilot_runtime_adapter_prefers_published_workflow_versions(monkeypatch):
     tmpdir = make_temporary_directory()

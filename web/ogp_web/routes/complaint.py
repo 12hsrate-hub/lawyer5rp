@@ -43,7 +43,6 @@ from ogp_web.services.citation_service import save_answer_citations
 from ogp_web.services.feature_flags import FeatureFlagService, RolloutContext
 from ogp_web.services.generation_orchestrator import GenerationOrchestrator
 from ogp_web.services.pilot_runtime_adapter import (
-    compare_generation_context_snapshots,
     resolve_pilot_complaint_runtime_context,
     supports_pilot_runtime_adapter,
 )
@@ -368,43 +367,16 @@ async def generate(
         flag="pilot_runtime_adapter_v1",
         context=RolloutContext(username=user.username, server_id=user.server_code),
     )
-    shadow_flag = flag_service.evaluate(
-        flag="pilot_shadow_compare_v1",
-        context=RolloutContext(username=user.username, server_id=user.server_code),
-    )
     _validate_server_payload(store, user, org=payload.org)
     legacy_context_snapshot = build_generation_context_snapshot(store, user, document_kind="complaint")
     context_snapshot = dict(legacy_context_snapshot)
-    adapter_snapshot: dict[str, object] | None = None
     if supports_pilot_runtime_adapter(server_code=user.server_code, document_kind="complaint"):
-        if adapter_flag.use_new_flow or shadow_flag.use_new_flow:
+        if adapter_flag.use_new_flow:
             adapter_snapshot = resolve_pilot_complaint_runtime_context(store, user).to_generation_context_snapshot()
-            comparison = compare_generation_context_snapshots(
-                legacy_snapshot=legacy_context_snapshot,
-                adapter_snapshot=adapter_snapshot,
-            )
-            metrics_store.log_event(
-                event_type="pilot_runtime_shadow_compare",
-                username=user.username,
-                server_code=user.server_code,
-                path="/api/generate",
-                method="POST",
-                status_code=200,
-                meta={
-                    "server_code": user.server_code,
-                    "document_kind": "complaint",
-                    "adapter_flag_mode": adapter_flag.mode.value,
-                    "adapter_flag_enabled": adapter_flag.use_new_flow,
-                    "shadow_flag_mode": shadow_flag.mode.value,
-                    "shadow_flag_enabled": shadow_flag.use_new_flow,
-                    **comparison,
-                },
-            )
-            if adapter_flag.use_new_flow:
-                context_snapshot = {
-                    **adapter_snapshot,
-                    "feature_flags": sorted(_server_config_for_user(store, user).feature_flags),
-                }
+            context_snapshot = {
+                **adapter_snapshot,
+                "feature_flags": sorted(_server_config_for_user(store, user).feature_flags),
+            }
     context_snapshot["citations_policy_gate"] = {"mode": "shadow", "status": "flagged_no_citations"}
     bbcode = generate_bbcode_text(store, payload, user)
     orchestrator = GenerationOrchestrator(store)
