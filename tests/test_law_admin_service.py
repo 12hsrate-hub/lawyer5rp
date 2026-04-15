@@ -181,6 +181,29 @@ class LawAdminServiceHelpersTests(unittest.TestCase):
         self.assertTrue(fake_conn.committed)
         self.assertEqual(len(fake_conn.queries), 2)
 
+    def test_describe_sources_dependencies_uses_shared_law_qa_server_list(self):
+        repository = types.SimpleNamespace()
+        service = LawAdminService(workflow_service=types.SimpleNamespace(repository=repository))
+        service.get_effective_sources = lambda server_code: types.SimpleNamespace(
+            source_origin="content_workflow",
+            source_urls=("https://example.com/law/a",),
+            active_law_version={"id": 42},
+        )
+
+        with patch(
+            "ogp_web.services.law_admin_service.list_servers_with_law_qa_context",
+            return_value=[{"code": "orange", "name": "Orange County"}],
+        ), patch(
+            "ogp_web.services.law_admin_service.resolve_server_config",
+            return_value=types.SimpleNamespace(code="orange", name="Orange County"),
+        ):
+            payload = service.describe_sources_dependencies()
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["server_count"], 1)
+        self.assertEqual(payload["servers"][0]["server_code"], "orange")
+        self.assertEqual(payload["servers"][0]["server_name"], "Orange County")
+
 
 if __name__ == "__main__":
     unittest.main()

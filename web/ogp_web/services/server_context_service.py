@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ogp_web.server_config import DEFAULT_SERVER_CODE, PermissionSet, ServerConfig, build_permission_set, get_server_config
+from ogp_web.server_config import (
+    DEFAULT_SERVER_CODE,
+    PermissionSet,
+    ServerConfig,
+    build_permission_set,
+    get_server_config,
+    list_server_configs,
+)
 from ogp_web.services.law_sources_validation import normalize_source_urls
 from ogp_web.storage.user_store import UserStore
 
@@ -178,3 +185,24 @@ def resolve_user_server_permissions(
 ) -> PermissionSet:
     _, permissions = resolve_user_server_context(user_store, username, server_code=server_code)
     return permissions
+
+
+def resolve_user_server_config(
+    user_store: UserStore,
+    username: str,
+    *,
+    server_code: str = "",
+) -> ServerConfig:
+    server_config, _ = resolve_user_server_context(user_store, username, server_code=server_code)
+    return server_config
+
+
+def list_servers_with_law_qa_context() -> list[dict[str, str]]:
+    items: list[dict[str, str]] = []
+    for config in list_server_configs():
+        law_context = extract_server_law_context_settings(config)
+        if not (law_context.source_urls or law_context.bundle_path):
+            continue
+        identity = extract_server_identity_settings(config)
+        items.append({"code": identity.code, "name": identity.name})
+    return items

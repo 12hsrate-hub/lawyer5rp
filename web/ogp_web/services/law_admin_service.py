@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ogp_web.server_config import list_server_configs
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.law_bundle_service import (
     build_law_bundle,
@@ -12,6 +11,8 @@ from ogp_web.services.law_bundle_service import (
     write_law_bundle,
 )
 from ogp_web.services.server_context_service import (
+    extract_server_identity_settings,
+    list_servers_with_law_qa_context,
     resolve_server_config,
     resolve_server_law_bundle_path,
     resolve_server_law_sources,
@@ -283,12 +284,16 @@ class LawAdminService:
 
     def describe_sources_dependencies(self) -> dict[str, Any]:
         server_rows: list[dict[str, Any]] = []
-        for config in list_server_configs():
-            snapshot = self.get_effective_sources(server_code=config.code)
+        for item in list_servers_with_law_qa_context():
+            snapshot = self.get_effective_sources(server_code=item["code"])
+            identity = extract_server_identity_settings(
+                resolve_server_config(server_code=item["code"]),
+                fallback_server_code=item["code"],
+            )
             server_rows.append(
                 {
-                    "server_code": config.code,
-                    "server_name": getattr(config, "name", config.code),
+                    "server_code": identity.code,
+                    "server_name": identity.name,
                     "source_origin": snapshot.source_origin,
                     "source_urls": list(snapshot.source_urls),
                     "active_law_version_id": (snapshot.active_law_version or {}).get("id") if isinstance(snapshot.active_law_version, dict) else None,

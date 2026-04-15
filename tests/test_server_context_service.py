@@ -19,9 +19,11 @@ from ogp_web.services.server_context_service import (
     extract_server_identity_settings,
     extract_server_law_context_settings,
     extract_server_shell_context,
+    list_servers_with_law_qa_context,
     resolve_server_config,
     resolve_server_law_bundle_path,
     resolve_server_law_sources,
+    resolve_user_server_config,
     resolve_user_server_context,
     resolve_user_server_permissions,
     server_has_feature,
@@ -255,3 +257,39 @@ class ServerContextServiceTests(unittest.TestCase):
 
         self.assertIs(resolved_permissions, permissions)
         resolve_user_server_context_mock.assert_called_once_with(store, "tester", server_code="orange")
+
+    def test_resolve_user_server_config_returns_server_config_only(self):
+        store = _DummyUserStore("blackberry")
+        server_config = object()
+
+        with patch(
+            "ogp_web.services.server_context_service.resolve_user_server_context",
+            return_value=(server_config, object()),
+        ) as resolve_user_server_context_mock:
+            resolved_config = resolve_user_server_config(store, "tester", server_code="orange")
+
+        self.assertIs(resolved_config, server_config)
+        resolve_user_server_context_mock.assert_called_once_with(store, "tester", server_code="orange")
+
+    def test_list_servers_with_law_qa_context_uses_identity_and_law_extractors(self):
+        law_server = type("Cfg", (), {"code": "Orange", "name": "Orange County"})()
+        empty_server = type("Cfg", (), {"code": "Blackberry", "name": "BlackBerry"})()
+
+        with patch(
+            "ogp_web.services.server_context_service.list_server_configs",
+            return_value=(law_server, empty_server),
+        ), patch(
+            "ogp_web.services.server_context_service.extract_server_law_context_settings",
+            side_effect=[
+                type("Law", (), {"source_urls": ("https://example.com/law",), "bundle_path": ""})(),
+                type("Law", (), {"source_urls": (), "bundle_path": ""})(),
+            ],
+        ), patch(
+            "ogp_web.services.server_context_service.extract_server_identity_settings",
+            side_effect=[
+                type("Identity", (), {"code": "orange", "name": "Orange County"})(),
+            ],
+        ):
+            payload = list_servers_with_law_qa_context()
+
+        self.assertEqual(payload, [{"code": "orange", "name": "Orange County"}])

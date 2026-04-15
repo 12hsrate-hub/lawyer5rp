@@ -7,7 +7,7 @@ from ogp_web.schemas import DraftSwitchAction, ProfileResponse, RepresentativePa
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_draft_schema import classify_switch_actions, normalize_complaint_draft
 from ogp_web.services.profile_service import get_profile_payload, save_profile_payload
-from ogp_web.services.server_context_service import resolve_user_server_context
+from ogp_web.services.server_context_service import resolve_user_server_config
 from ogp_web.storage.user_store import UserStore
 
 
@@ -49,7 +49,7 @@ async def profile_selected_server(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
 
-    target_config, _ = resolve_user_server_context(store, user.username, server_code=selected)
+    target_config = resolve_user_server_config(store, user.username, server_code=selected)
     current_draft = store.get_complaint_draft(user.username, server_code=selected).get("draft", {})
     normalized = normalize_complaint_draft(current_draft, config=target_config)
     switch_items = classify_switch_actions(normalized.draft, target_config=target_config)
