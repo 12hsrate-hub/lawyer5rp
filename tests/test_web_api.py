@@ -1106,11 +1106,14 @@ class WebApiTests(unittest.TestCase):
 
         self.client.app.dependency_overrides[admin_route.get_content_workflow_service] = lambda: DummyWorkflowService()
         try:
-            with patch("ogp_web.dependencies.build_permission_set", side_effect=fake_build_permission_set), patch(
-                "ogp_web.routes.admin.build_permission_set",
+            with patch(
+                "ogp_web.dependencies.build_permission_set",
                 side_effect=fake_build_permission_set,
             ), patch(
-                "ogp_web.routes.admin.get_server_config",
+                "ogp_web.services.server_context_service.build_permission_set",
+                side_effect=fake_build_permission_set,
+            ), patch(
+                "ogp_web.services.server_context_service.get_server_config",
                 side_effect=lambda server_code: type("Cfg", (), {"code": server_code})(),
             ):
                 response = self.client.post(

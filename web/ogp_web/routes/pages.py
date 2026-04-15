@@ -8,11 +8,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from ogp_web.db.factory import get_database_backend
 from ogp_web.dependencies import get_exam_answers_store, get_user_store, requires_permission
 from ogp_web.env import is_test_user
-from ogp_web.server_config import PermissionSet, ServerConfig, build_permission_set, get_server_config, list_server_configs
+from ogp_web.server_config import PermissionSet, ServerConfig, get_server_config, list_server_configs
 from ogp_web.services.ai_service import get_default_law_qa_model
 from ogp_web.services.auth_service import AuthError, AuthUser, get_current_user
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.law_admin_service import LawAdminService
+from ogp_web.services.server_context_service import resolve_user_server_context
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.content_workflow_repository import ContentWorkflowRepository
 from ogp_web.storage.user_store import UserStore
@@ -39,9 +40,7 @@ def _complaint_nav_items(server_config: ServerConfig, permissions: PermissionSet
 
 
 def _server_context(store: UserStore, username: str) -> tuple[ServerConfig, PermissionSet]:
-    server_config = get_server_config(store.get_server_code(username))
-    permissions = build_permission_set(store, username, server_config)
-    return server_config, permissions
+    return resolve_user_server_context(store, username)
 
 
 def _build_page_context(
