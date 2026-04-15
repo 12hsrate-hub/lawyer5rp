@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from ogp_web.server_config import DEFAULT_SERVER_CODE, PermissionSet, ServerConfig, build_permission_set, get_server_config
 from ogp_web.services.law_sources_validation import normalize_source_urls
 from ogp_web.storage.user_store import UserStore
+
+
+@dataclass(frozen=True)
+class ServerLawContextSettings:
+    source_urls: tuple[str, ...]
+    bundle_path: str
+    bundle_max_age_hours: int
 
 
 def resolve_server_config(*, server_code: str = "", fallback_server_code: str = DEFAULT_SERVER_CODE) -> ServerConfig:
@@ -11,14 +20,22 @@ def resolve_server_config(*, server_code: str = "", fallback_server_code: str = 
     return get_server_config(effective_server_code)
 
 
+def extract_server_law_context_settings(server_config: object) -> ServerLawContextSettings:
+    return ServerLawContextSettings(
+        source_urls=normalize_source_urls(getattr(server_config, "law_qa_sources", ())),
+        bundle_path=str(getattr(server_config, "law_qa_bundle_path", "") or "").strip(),
+        bundle_max_age_hours=int(getattr(server_config, "law_qa_bundle_max_age_hours", 168) or 168),
+    )
+
+
 def resolve_server_law_bundle_path(*, server_code: str = "", fallback_server_code: str = DEFAULT_SERVER_CODE) -> str:
     server_config = resolve_server_config(server_code=server_code, fallback_server_code=fallback_server_code)
-    return str(getattr(server_config, "law_qa_bundle_path", "") or "").strip()
+    return extract_server_law_context_settings(server_config).bundle_path
 
 
 def resolve_server_law_sources(*, server_code: str = "", fallback_server_code: str = DEFAULT_SERVER_CODE) -> tuple[str, ...]:
     server_config = resolve_server_config(server_code=server_code, fallback_server_code=fallback_server_code)
-    return normalize_source_urls(getattr(server_config, "law_qa_sources", ()))
+    return extract_server_law_context_settings(server_config).source_urls
 
 
 def resolve_user_server_context(

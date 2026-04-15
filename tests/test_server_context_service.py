@@ -12,6 +12,7 @@ for candidate in (ROOT_DIR, WEB_DIR):
         sys.path.insert(0, str(candidate))
 
 from ogp_web.services.server_context_service import (
+    extract_server_law_context_settings,
     resolve_server_config,
     resolve_server_law_bundle_path,
     resolve_server_law_sources,
@@ -63,6 +64,23 @@ class ServerContextServiceTests(unittest.TestCase):
 
         self.assertEqual(source_urls, ("https://example.com/a",))
         resolve_server_config_mock.assert_called_once_with(server_code="blackberry", fallback_server_code="blackberry")
+
+    def test_extract_server_law_context_settings_collects_bundle_and_sources(self):
+        config = type(
+            "Cfg",
+            (),
+            {
+                "law_qa_sources": (" https://example.com/a ", "https://example.com/a ", "https://example.com/b "),
+                "law_qa_bundle_path": " /tmp/law-bundle.json ",
+                "law_qa_bundle_max_age_hours": 72,
+            },
+        )()
+
+        settings = extract_server_law_context_settings(config)
+
+        self.assertEqual(settings.source_urls, ("https://example.com/a", "https://example.com/b"))
+        self.assertEqual(settings.bundle_path, "/tmp/law-bundle.json")
+        self.assertEqual(settings.bundle_max_age_hours, 72)
 
     def test_resolve_user_server_context_uses_store_server_by_default(self):
         store = _DummyUserStore("blackberry")

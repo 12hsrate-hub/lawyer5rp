@@ -8,6 +8,7 @@ from typing import Any
 from ogp_web.server_config import DEFAULT_SERVER_CODE
 from ogp_web.services.law_bundle_service import LawChunk, load_law_bundle_meta
 from ogp_web.services.legal_pipeline_service import BundleHealth, build_bundle_health
+from ogp_web.services.server_context_service import extract_server_law_context_settings
 
 
 @dataclass(frozen=True)
@@ -62,11 +63,10 @@ def retrieve_law_context(
     normalized_server_code = str(server_code or default_server_code).strip() or default_server_code
     retrieval_query = str(query or "").strip()
     server_config = get_server_config_func(normalized_server_code)
-    configured_sources = tuple(
-        str(item or "").strip() for item in getattr(server_config, "law_qa_sources", ()) if str(item or "").strip()
-    )
-    bundle_path = str(getattr(server_config, "law_qa_bundle_path", "") or "").strip()
-    bundle_max_age_hours = int(getattr(server_config, "law_qa_bundle_max_age_hours", 168) or 168)
+    law_context = extract_server_law_context_settings(server_config)
+    configured_sources = law_context.source_urls
+    bundle_path = law_context.bundle_path
+    bundle_max_age_hours = law_context.bundle_max_age_hours
     bundle_meta = load_law_bundle_meta(normalized_server_code, bundle_path, requested_version_id=law_version_id)
 
     chunks: list[LawChunk] = []
