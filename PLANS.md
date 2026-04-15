@@ -544,6 +544,7 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
   - the dashboard rollout block now includes `Operator playbooks` so preflight, cutover, scale-out, and deprecation references stay visible in one place
   - `PILOT_OBSERVATION_LOG_TEMPLATE.md` added for repeated observation-window checkpoints during `G.2`
   - the dashboard rollout block now includes `Observation guidance` for warning signals, fallback usage, rollback readiness, and review journaling
+  - rollout warning signals now expose `severity`, `owner`, and `next action` directly in the dashboard so the observation window has an explicit triage surface
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`

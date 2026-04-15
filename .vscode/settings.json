@@ -6,6 +6,12 @@
   "files.trimTrailingWhitespace": true,
   "editor.renderControlCharacters": true,
   "editor.renderWhitespace": "selection",
+  "terminal.integrated.defaultProfile.windows": "PowerShell 7",
+  "terminal.integrated.profiles.windows": {
+    "PowerShell 7": {
+      "path": "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+    }
+  },
   "terminal.integrated.env.windows": {
     "PYTHONUTF8": "1",
     "PYTHONIOENCODING": "utf-8"
