@@ -7,11 +7,11 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase I`
-- Active task: `I.1 shared server-context seam extraction`
+- Active task: `I.2 snapshot/provenance schema convergence`
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select Phase I.2 after accepted I.1 convergence`
+- Next slice: `select I.2b after accepted snapshot schema helper slice`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -125,7 +125,9 @@ Date: 2026-04-14
   - `I.1z` deployed on production commit `c7be298`
   - verify-email page server selection now reuses a single page-level resolver for request-default and username-bound rendering paths
   - `I.1` is accepted
-  - route contracts remain unchanged and the first twenty-six Phase I convergence slices are accepted
+  - `I.2a` deployed on production commit `6844864`
+  - shared generation snapshot schema helpers now back admin review-context summary/linkage shaping and provenance extraction without changing route payloads
+  - route contracts remain unchanged and the first twenty-seven Phase I convergence slices are accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
