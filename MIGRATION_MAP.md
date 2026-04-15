@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select I.2g after accepted generated-document trace convergence block`
+- Next slice: `select I.2j after accepted generated-document store convergence block`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -137,6 +137,12 @@ Date: 2026-04-14
   - shared generated-document trace bundle resolution now backs user snapshot, admin provenance, and admin review-context routes
   - `I.2f` deployed on production commit `33533e0`
   - shared generated-document provenance/review-context builders now own the remaining route-local generated-document trace payload assembly without changing external contracts
+  - `I.2g` deployed on production commit `15def5a`
+  - user generated-document snapshot and history reads now resolve through shared store/service helpers instead of the read-only `GenerationOrchestrator` bridge path
+  - `I.2h` deployed on production commit `15def5a`
+  - generation-snapshot row decoding is now centralized inside `UserStore` for the generated-document snapshot readers
+  - `I.2i` deployed on production commit `15def5a`
+  - dead read-only snapshot/history bridge methods were removed from `GenerationOrchestrator` after the store-backed read path took ownership
   - route contracts remain unchanged and the first thirty Phase I convergence slices are accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
