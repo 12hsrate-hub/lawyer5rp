@@ -72,6 +72,25 @@ def test_pilot_runtime_adapter_prefers_published_workflow_versions(monkeypatch):
         tmpdir.cleanup()
 
 
+def test_legacy_generation_context_snapshot_keeps_content_workflow_in_sync():
+    tmpdir = make_temporary_directory()
+    store = None
+    try:
+        root = Path(tmpdir.name)
+        store = UserStore(
+            root / "app.db",
+            root / "users.json",
+            repository=UserRepository(PostgresBackend()),
+        )
+        user = AuthUser(username="tester", email="tester@example.com", server_code="blackberry")
+        snapshot = build_generation_context_snapshot(store, user, document_kind="complaint")
+        assert snapshot["content_workflow"]["applied_published_versions"] == snapshot["effective_config_snapshot"]
+    finally:
+        if store is not None:
+            store.repository.close()
+        tmpdir.cleanup()
+
+
 def test_pilot_runtime_adapter_resolves_without_server_config_lookup(monkeypatch):
     tmpdir = make_temporary_directory()
     store = None
