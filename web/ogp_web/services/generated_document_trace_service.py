@@ -20,12 +20,29 @@ class GeneratedDocumentTraceBundle:
     version_row: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class GeneratedDocumentReviewSupportData:
+    content_payload: dict[str, Any]
+    latest_validation: dict[str, Any] | None
+    citations: list[dict[str, Any]]
+    exports: list[dict[str, Any]]
+    attachments: list[dict[str, Any]]
+    provenance: dict[str, Any] | None
+
+
 def parse_document_content_payload(version_row: dict[str, Any]) -> dict[str, Any]:
     try:
         payload = json.loads(str(version_row.get("content_json") or "{}"))
     except json.JSONDecodeError:
         payload = {}
     return payload if isinstance(payload, dict) else {}
+
+
+def build_bbcode_preview(content_payload: dict[str, Any], *, max_length: int = 600) -> str:
+    preview = str(content_payload.get("bbcode") or "").strip()
+    if len(preview) > max_length:
+        return f"{preview[:max_length].rstrip()}..."
+    return preview
 
 
 def _resolve_generation_snapshot_version_row(
@@ -109,6 +126,40 @@ def resolve_generated_document_provenance_payload_from_bundle(
     )
 
 
+def resolve_generated_document_review_support_data(
+    *,
+    store: UserStore,
+    bundle: GeneratedDocumentTraceBundle,
+) -> GeneratedDocumentReviewSupportData:
+    snapshot_payload = dict(bundle.snapshot)
+    version_row = dict(bundle.version_row)
+    version_id = int(version_row["id"])
+    content_payload = parse_document_content_payload(version_row)
+    validation_service = ValidationService(ValidationRepository(store.backend))
+    latest_validation = validation_service.get_latest_target_validation(
+        target_type="document_version",
+        target_id=version_id,
+    )
+    artifact_repository = ArtifactRepository(store.backend)
+    citations = list(
+        store.get_document_version_citations(
+            document_version_id=version_id,
+            server_id=str(snapshot_payload.get("server_code") or "").strip().lower() or None,
+        )
+    )
+    exports = list(artifact_repository.list_exports_for_document_version(document_version_id=version_id))
+    attachments = list(artifact_repository.list_attachments_for_document_version(document_version_id=version_id))
+    provenance = build_store_provenance_service(store=store).get_document_version_trace_from_row(version_row=version_row)
+    return GeneratedDocumentReviewSupportData(
+        content_payload=content_payload,
+        latest_validation=latest_validation,
+        citations=citations,
+        exports=exports,
+        attachments=attachments,
+        provenance=provenance,
+    )
+
+
 def build_generated_document_review_context_payload(
     *,
     store: UserStore,
@@ -118,25 +169,7 @@ def build_generated_document_review_context_payload(
     generation_snapshot_id = int(bundle.generation_snapshot_id)
     version_row = dict(bundle.version_row)
     version_id = int(version_row["id"])
-    content_payload = parse_document_content_payload(version_row)
-
-    validation_service = ValidationService(ValidationRepository(store.backend))
-    latest_validation = validation_service.get_latest_target_validation(
-        target_type="document_version",
-        target_id=version_id,
-    )
-    artifact_repository = ArtifactRepository(store.backend)
-    citations = store.get_document_version_citations(
-        document_version_id=version_id,
-        server_id=str(snapshot_payload.get("server_code") or "").strip().lower() or None,
-    )
-    exports = artifact_repository.list_exports_for_document_version(document_version_id=version_id)
-    attachments = artifact_repository.list_attachments_for_document_version(document_version_id=version_id)
-    provenance = build_store_provenance_service(store=store).get_document_version_trace(document_version_id=version_id)
-
-    bbcode_preview = str(content_payload.get("bbcode") or "").strip()
-    if len(bbcode_preview) > 600:
-        bbcode_preview = f"{bbcode_preview[:600].rstrip()}..."
+    support_data = resolve_generated_document_review_support_data(store=store, bundle=bundle)
 
     return {
         "generated_document": {
@@ -150,12 +183,12 @@ def build_generated_document_review_context_payload(
         "document_version": {
             "id": version_id,
             "version_number": int(version_row.get("version_number") or 0),
-            "bbcode_preview": bbcode_preview,
+            "bbcode_preview": build_bbcode_preview(support_data.content_payload),
         },
         "validation_summary": {
-            "latest_run_id": int((latest_validation or {}).get("id") or 0) or None,
-            "latest_status": str((latest_validation or {}).get("status") or ""),
-            "issues_count": len((latest_validation or {}).get("issues") or []),
+            "latest_run_id": int((support_data.latest_validation or {}).get("id") or 0) or None,
+            "latest_status": str((support_data.latest_validation or {}).get("status") or ""),
+            "issues_count": len((support_data.latest_validation or {}).get("issues") or []),
             "issues": [
                 {
                     "issue_code": str(item.get("issue_code") or ""),
@@ -163,17 +196,17 @@ def build_generated_document_review_context_payload(
                     "message": str(item.get("message") or ""),
                     "field_ref": str(item.get("field_ref") or ""),
                 }
-                for item in ((latest_validation or {}).get("issues") or [])[:5]
+                for item in ((support_data.latest_validation or {}).get("issues") or [])[:5]
             ],
         },
         "workflow_linkage": build_workflow_linkage(
             snapshot_payload,
             document_version_id=version_id,
             generation_snapshot_id=generation_snapshot_id,
-            latest_validation_run_id=int((latest_validation or {}).get("id") or 0) or None,
+            latest_validation_run_id=int((support_data.latest_validation or {}).get("id") or 0) or None,
         ),
         "citations_summary": {
-            "count": len(citations),
+            "count": len(support_data.citations),
             "items": [
                 {
                     "id": int(item.get("id") or 0),
@@ -181,12 +214,12 @@ def build_generated_document_review_context_payload(
                     "usage_type": str(item.get("usage_type") or ""),
                     "quoted_text": str(item.get("quoted_text") or ""),
                 }
-                for item in citations[:5]
+                for item in support_data.citations[:5]
             ],
         },
         "artifact_summary": {
-            "exports_count": len(exports),
-            "attachments_count": len(attachments),
+            "exports_count": len(support_data.exports),
+            "attachments_count": len(support_data.attachments),
             "exports": [
                 {
                     "id": int(item.get("id") or 0),
@@ -194,7 +227,7 @@ def build_generated_document_review_context_payload(
                     "status": str(item.get("status") or ""),
                     "created_at": str(item.get("created_at") or ""),
                 }
-                for item in exports[:5]
+                for item in support_data.exports[:5]
             ],
             "attachments": [
                 {
@@ -203,8 +236,16 @@ def build_generated_document_review_context_payload(
                     "upload_status": str(item.get("upload_status") or ""),
                     "link_type": str(item.get("link_type") or ""),
                 }
-                for item in attachments[:5]
+                for item in support_data.attachments[:5]
             ],
         },
-        "provenance": provenance,
+        "provenance": support_data.provenance,
     }
+
+
+def resolve_generated_document_review_context_payload_from_bundle(
+    *,
+    store: UserStore,
+    bundle: GeneratedDocumentTraceBundle,
+) -> dict[str, Any]:
+    return build_generated_document_review_context_payload(store=store, bundle=bundle)

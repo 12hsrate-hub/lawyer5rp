@@ -44,8 +44,8 @@ from ogp_web.services.law_rebuild_tasks import find_active_law_rebuild_task
 from ogp_web.services.law_version_service import resolve_active_law_version
 from ogp_web.services.auth_service import AuthError, AuthUser, require_admin_user
 from ogp_web.services.generated_document_trace_service import (
-    build_generated_document_review_context_payload,
     resolve_generated_document_provenance_payload_from_bundle,
+    resolve_generated_document_review_context_payload_from_bundle,
     resolve_admin_generated_document_trace_bundle,
 )
 from ogp_web.services.point3_policy_service import load_point3_eval_thresholds
@@ -1525,7 +1525,7 @@ async def admin_generated_document_review_context(
     bundle = resolve_admin_generated_document_trace_bundle(store=store, document_id=document_id)
     if bundle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Generated document not found."])
-    return build_generated_document_review_context_payload(store=store, bundle=bundle)
+    return resolve_generated_document_review_context_payload_from_bundle(store=store, bundle=bundle)
 
 
 @router.put("/api/admin/law-source-registry/{source_id}")
