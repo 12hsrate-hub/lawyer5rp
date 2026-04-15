@@ -25,7 +25,7 @@ from shared.ogp_core import (
 )
 from ogp_web.server_config import effective_server_pack
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
-from ogp_web.services.server_context_service import resolve_server_config
+from ogp_web.services.server_context_service import resolve_server_config, resolve_server_law_bundle_path
 
 
 _TEMPLATE_VERSION_IDS = {
@@ -148,7 +148,7 @@ def build_generation_context_snapshot(store: UserStore, user: AuthUser, *, docum
     server_code = user.server_code or store.get_server_code(user.username)
     server_config = resolve_server_config(server_code=server_code)
     server_pack = effective_server_pack(server_code)
-    bundle_meta = load_law_bundle_meta(server_code, server_config.law_qa_bundle_path)
+    bundle_meta = load_law_bundle_meta(server_code, resolve_server_law_bundle_path(server_code=server_code))
     template_version = {
         "id": _TEMPLATE_VERSION_IDS.get(document_kind, "complaint_bbcode_v1"),
         "hash": _template_hash(document_kind),

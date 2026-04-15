@@ -11,7 +11,11 @@ from ogp_web.services.law_bundle_service import (
     resolve_law_bundle_path,
     write_law_bundle,
 )
-from ogp_web.services.server_context_service import resolve_server_config
+from ogp_web.services.server_context_service import (
+    resolve_server_config,
+    resolve_server_law_bundle_path,
+    resolve_server_law_sources,
+)
 from ogp_web.services.law_version_service import (
     import_law_snapshot,
     list_recent_law_versions,
@@ -68,12 +72,12 @@ class LawAdminService:
                     source_origin = "content_workflow"
 
         if not source_urls:
-            source_urls = normalize_source_urls(getattr(server_config, "law_qa_sources", ()))
+            source_urls = resolve_server_law_sources(server_code=server_code)
 
         active_version = resolve_active_law_version(server_code=server_code)
         bundle_meta = load_law_bundle_meta(
             server_code,
-            getattr(server_config, "law_qa_bundle_path", ""),
+            resolve_server_law_bundle_path(server_code=server_code),
         )
 
         return LawSourcesSnapshot(
@@ -94,7 +98,7 @@ class LawAdminService:
         request_id: str,
         safe_rerun: bool = True,
     ) -> dict[str, Any]:
-        source_urls = normalize_source_urls(getattr(resolve_server_config(server_code=server_code), "law_qa_sources", ()))
+        source_urls = resolve_server_law_sources(server_code=server_code)
         if not source_urls:
             raise ValueError("server_has_no_law_qa_sources")
         snapshot = self.get_effective_sources(server_code=server_code)
@@ -235,7 +239,7 @@ class LawAdminService:
                 "article_count": len(bundle.get("articles", []) if isinstance(bundle, dict) else []),
                 "manifest": manifest_result,
             }
-        bundle_path = resolve_law_bundle_path(server_code, getattr(server_config, "law_qa_bundle_path", ""))
+        bundle_path = resolve_law_bundle_path(server_code, resolve_server_law_bundle_path(server_code=server_code))
         write_law_bundle(bundle, bundle_path)
         version_id = import_law_snapshot(
             server_code=server_code,
