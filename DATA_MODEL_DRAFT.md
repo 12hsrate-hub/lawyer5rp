@@ -322,13 +322,11 @@ Current implementation anchor:
 What it does now:
 - resolves a pilot-scoped runtime context for `blackberry + complaint`
 - keeps route contracts unchanged
-- allows the route layer to compare adapter-derived runtime context against the legacy context snapshot
 
 Current rollout control:
 - `pilot_runtime_adapter_v1`
 - `pilot_shadow_compare_v1`
 
 Current drift visibility:
-- `/api/generate` logs `pilot_runtime_shadow_compare` events into `metric_events`
-- `scripts/report_pilot_drift.py` summarizes those events
-- `scripts/check_pilot_drift.py` provides a rollout-gate style threshold check
+- historical shadow-compare metrics plumbing existed during pilot observation
+- that compare-only event logging and helper scripts were removed in `Phase H.2` after pilot acceptance

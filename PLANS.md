@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase H — Post-pilot scale-out and legacy reduction`
 - Current task: `H.2 legacy cleanup wave 1`
 - Active execution phase override: `Phase H.1 accepted; H.2 wave 1 is now in progress`
-- Current micro-step: `select the fourth accepted H.2 cleanup slice`
+- Current micro-step: `select the fifth accepted H.2 cleanup slice`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -26,6 +26,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - review-context refs are now normalized on the server side and the client-side legacy raw-ref compaction path has been removed.
   - pilot adapter fallback-only `source_of_truth` visibility metadata has been removed without changing adapter behavior.
   - shadow-compare-only telemetry plumbing has now been removed from complaint generation and pilot adapter support code.
+  - compare-only pilot drift helper scripts have been removed and archived as historical observation tooling.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -159,12 +160,12 @@ Status: `done`
 Status: `done`
 - Add shadow compare for pilot scenario: legacy output vs new-runtime-derived output.
 - Persist mismatch logs with reason category.
-- Initial implementation slice complete via `pilot_runtime_shadow_compare` metrics events and `scripts/report_pilot_drift.py`.
+- Initial implementation slice completed during pilot observation; compare-only metrics plumbing was later retired during `Phase H.2`.
 
 ### Deliverables
 - `DATA_MODEL_DRAFT.md`
 - feature flags matrix (`legacy_only`, `shadow_compare`, `new_runtime_active`)
-- drift-report script/check
+- historical drift-report instrumentation for the pilot observation window
 - Implemented pilot adapter seam with workflow-backed published reads + legacy fallback for `blackberry + complaint`
 
 ### Acceptance
@@ -435,7 +436,8 @@ Execution status: `in_progress`
   - `H.2a` server-side normalization of admin review-context refs plus removal of the client-side legacy raw-ref compaction workaround (`55accd1`)
   - `H.2b` removal of pilot adapter fallback-only `source_of_truth` visibility metadata (`e0098b3`)
   - `H.2c` removal of shadow-compare-only metrics plumbing and snapshot parity helper code (`07f302a`)
-- Current H.2 executable slice: `pick the next already-gated cleanup candidate from the rollout backlog after H.2c`
+  - `H.2d` removal of compare-only pilot drift helper scripts and promotion of their docs to historical status (`pending merge`)
+- Current H.2 executable slice: `pick the next already-gated cleanup candidate from the rollout backlog after H.2d`
 
 ### H.3 Runtime source-of-truth tightening
 - Reduce transitional reads and legacy fallback assumptions only after the second candidate stabilizes.
@@ -617,7 +619,8 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `H.2a` is complete on production commit `55accd1`
 - `H.2b` is complete on production commit `e0098b3`
 - `H.2c` is complete on production commit `07f302a`
-- immediate next step is `Phase H.2 wave 1 fourth cleanup candidate`
+- `H.2d` is in progress locally: compare-only drift helper scripts removed and docs are being synced
+- immediate next step is `Phase H.2 wave 1 fifth cleanup candidate`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`
