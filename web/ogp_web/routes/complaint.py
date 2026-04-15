@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 from functools import partial
 from threading import BoundedSemaphore, Lock
 from time import monotonic
@@ -84,19 +83,6 @@ def _flatten_complaint_draft(payload: object) -> dict[str, object]:
         result = str(document.get("result") or "")
         return {**draft, "result": result}
     return dict(payload)
-
-
-def _normalize_history_items(items: list[dict[str, object]]) -> list[dict[str, object]]:
-    normalized: list[dict[str, object]] = []
-    for item in items:
-        row = dict(item)
-        created_at = row.get("created_at")
-        if isinstance(created_at, datetime):
-            row["created_at"] = created_at.isoformat()
-        elif created_at is not None and not isinstance(created_at, str):
-            row["created_at"] = str(created_at)
-        normalized.append(row)
-    return normalized
 
 
 def _env_positive_int(name: str, default: int) -> int:
@@ -537,9 +523,7 @@ async def generated_documents_history(
     user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ) -> GeneratedDocumentHistoryResponse:
-    items = _normalize_history_items(
-        list_user_generated_document_history(store=store, username=user.username, limit=limit)
-    )
+    items = list_user_generated_document_history(store=store, username=user.username, limit=limit)
     return GeneratedDocumentHistoryResponse(items=items)
 
 

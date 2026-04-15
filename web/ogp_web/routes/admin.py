@@ -44,6 +44,7 @@ from ogp_web.services.law_rebuild_tasks import find_active_law_rebuild_task
 from ogp_web.services.law_version_service import resolve_active_law_version
 from ogp_web.services.auth_service import AuthError, AuthUser, require_admin_user
 from ogp_web.services.generated_document_trace_service import (
+    list_admin_recent_generated_documents,
     require_admin_generated_document_trace_bundle,
     resolve_generated_document_provenance_payload_from_bundle,
     resolve_generated_document_review_context_payload_from_bundle,
@@ -1510,7 +1511,7 @@ async def admin_recent_generated_documents(
     store: UserStore = Depends(get_user_store),
 ):
     return {
-        "items": store.list_recent_generated_documents_admin(limit=limit),
+        "items": list_admin_recent_generated_documents(store=store, limit=limit),
     }
 
 

@@ -15,7 +15,9 @@ from ogp_web.services.generated_document_trace_service import (
     build_bbcode_preview,
     build_generated_document_review_context_payload,
     build_generated_document_snapshot_payload,
+    list_admin_recent_generated_documents,
     list_user_generated_document_history,
+    normalize_generated_document_list_item,
     parse_document_content_payload,
     resolve_generated_document_provenance_payload,
     resolve_generated_document_provenance_payload_from_bundle,
@@ -74,6 +76,18 @@ class _FakeStore:
                 "server_code": "blackberry",
                 "document_kind": "complaint",
                 "created_at": "2026-04-15T00:00:00+00:00",
+            }
+        ][:limit]
+
+    def list_recent_generated_documents_admin(self, *, limit: int = 10):
+        return [
+            {
+                "id": 100,
+                "generation_snapshot_id": 501,
+                "server_code": "blackberry",
+                "document_kind": "complaint",
+                "created_at": "2026-04-15T00:00:00+00:00",
+                "username": "tester",
             }
         ][:limit]
 
@@ -161,6 +175,47 @@ def test_list_user_generated_document_history_uses_store_history():
             "created_at": "2026-04-15T00:00:00+00:00",
         }
     ]
+
+
+def test_list_admin_recent_generated_documents_normalizes_store_items():
+    items = list_admin_recent_generated_documents(store=_FakeStore(), limit=10)
+
+    assert items == [
+        {
+            "id": 100,
+            "generation_snapshot_id": 501,
+            "server_code": "blackberry",
+            "document_kind": "complaint",
+            "created_at": "2026-04-15T00:00:00+00:00",
+            "username": "tester",
+        }
+    ]
+
+
+def test_normalize_generated_document_list_item_normalizes_datetime_and_optional_fields():
+    from datetime import datetime
+
+    payload = normalize_generated_document_list_item(
+        {
+            "id": 100,
+            "generation_snapshot_id": 501,
+            "server_code": "blackberry",
+            "document_kind": "complaint",
+            "created_at": datetime.fromisoformat("2026-04-15T00:00:00+00:00"),
+            "username": "tester",
+        },
+        include_generation_snapshot_id=True,
+        include_username=True,
+    )
+
+    assert payload == {
+        "id": 100,
+        "generation_snapshot_id": 501,
+        "server_code": "blackberry",
+        "document_kind": "complaint",
+        "created_at": "2026-04-15T00:00:00+00:00",
+        "username": "tester",
+    }
 
 
 def test_resolve_generated_document_provenance_payload_uses_shared_service(monkeypatch):

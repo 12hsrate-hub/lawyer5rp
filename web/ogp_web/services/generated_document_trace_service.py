@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -54,6 +55,34 @@ class GeneratedDocumentReviewSupportData:
     exports: list[dict[str, Any]]
     attachments: list[dict[str, Any]]
     provenance: dict[str, Any] | None
+
+
+def normalize_generated_document_list_item(
+    item: dict[str, Any],
+    *,
+    include_generation_snapshot_id: bool = False,
+    include_username: bool = False,
+) -> dict[str, Any]:
+    row = dict(item)
+    payload = {
+        "id": int(row.get("id") or 0),
+        "server_code": str(row.get("server_code") or ""),
+        "document_kind": str(row.get("document_kind") or ""),
+        "created_at": _normalize_generated_document_created_at(row.get("created_at")),
+    }
+    if include_generation_snapshot_id:
+        payload["generation_snapshot_id"] = int(row.get("generation_snapshot_id") or 0) or None
+    if include_username:
+        payload["username"] = str(row.get("username") or "")
+    return payload
+
+
+def _normalize_generated_document_created_at(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if value is None:
+        return ""
+    return str(value)
 
 
 def parse_document_content_payload(version_row: dict[str, Any]) -> dict[str, Any]:
@@ -150,7 +179,25 @@ def list_user_generated_document_history(
     username: str,
     limit: int,
 ) -> list[dict[str, Any]]:
-    return list(store.list_generation_snapshot_history_for_user(username=username, limit=limit))
+    return [
+        normalize_generated_document_list_item(item)
+        for item in store.list_generation_snapshot_history_for_user(username=username, limit=limit)
+    ]
+
+
+def list_admin_recent_generated_documents(
+    *,
+    store: UserStore,
+    limit: int,
+) -> list[dict[str, Any]]:
+    return [
+        normalize_generated_document_list_item(
+            item,
+            include_generation_snapshot_id=True,
+            include_username=True,
+        )
+        for item in store.list_recent_generated_documents_admin(limit=limit)
+    ]
 
 
 def resolve_generated_document_provenance_payload(
