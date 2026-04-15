@@ -242,6 +242,11 @@ Date: 2026-04-14
   - `Phase I` is accepted
   - the next real seam is no longer in `admin.py`; it is the still-monolithic suggest/law-QA orchestration that remains inside `ai_service.py` despite the existing `ogp_web.services.ai_pipeline` package
   - `Phase J` is opened for bounded `ai_service -> ai_pipeline` extraction work
+  - `J.1a` deployed on production commit `dbeacc2`
+  - suggest prompt-compaction and generation-retry orchestration now converge behind `ai_pipeline.orchestration` helpers instead of staying inline in `ai_service.py`
+  - `J.1b` deployed on production commit `dbeacc2`
+  - suggest validation retry / safe-fallback remediation now converge behind the same orchestration layer while keeping the public suggest contract stable
+  - the local `get_server_config(...)` seam in `ai_service.py` now uses a compatibility wrapper so shared server-context resolution remains positional-safe for retrieval helpers
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
