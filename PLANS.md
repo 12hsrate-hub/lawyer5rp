@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase H — Post-pilot scale-out and legacy reduction`
 - Current task: `H.2 legacy cleanup wave 1`
 - Active execution phase override: `Phase H.1 accepted; H.2 wave 1 is now in progress`
-- Current micro-step: `select the fifth accepted H.2 cleanup slice`
+- Current micro-step: `select the sixth accepted H.2 cleanup slice`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -27,6 +27,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - pilot adapter fallback-only `source_of_truth` visibility metadata has been removed without changing adapter behavior.
   - shadow-compare-only telemetry plumbing has now been removed from complaint generation and pilot adapter support code.
   - compare-only pilot drift helper scripts have been removed and archived as historical observation tooling.
+  - pilot adapter runtime snapshots no longer expose fallback-only `seeded/published` visibility markers or `content_item_id` noise.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -437,7 +438,8 @@ Execution status: `in_progress`
   - `H.2b` removal of pilot adapter fallback-only `source_of_truth` visibility metadata (`e0098b3`)
   - `H.2c` removal of shadow-compare-only metrics plumbing and snapshot parity helper code (`07f302a`)
   - `H.2d` removal of compare-only pilot drift helper scripts and promotion of their docs to historical status (`pending merge`)
-- Current H.2 executable slice: `pick the next already-gated cleanup candidate from the rollout backlog after H.2d`
+  - `H.2e` removal of fallback-only adapter snapshot visibility fields (`pending merge`)
+- Current H.2 executable slice: `pick the next already-gated cleanup candidate from the rollout backlog after H.2e`
 
 ### H.3 Runtime source-of-truth tightening
 - Reduce transitional reads and legacy fallback assumptions only after the second candidate stabilizes.
@@ -620,7 +622,8 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `H.2b` is complete on production commit `e0098b3`
 - `H.2c` is complete on production commit `07f302a`
 - `H.2d` is in progress locally: compare-only drift helper scripts removed and docs are being synced
-- immediate next step is `Phase H.2 wave 1 fifth cleanup candidate`
+- `H.2e` is in progress locally: adapter snapshot visibility fields are being pruned
+- immediate next step is `Phase H.2 wave 1 sixth cleanup candidate`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`

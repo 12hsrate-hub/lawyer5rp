@@ -258,7 +258,7 @@ For `blackberry + complaint`, runtime resolution should read in this order:
 6. `law_versions` plus law-source manifest
    - resolve active legal bundle fingerprint and published source manifest if present
 7. fallback
-   - if any required published pilot entity is absent, adapter falls back to the current legacy seed for that entity and records hybrid/seeded source-of-truth metadata
+  - if any required published pilot entity is absent, adapter falls back to the current legacy seed for that entity without surfacing extra hybrid visibility metadata in the runtime snapshot
 
 ## B.2 acceptance target for pilot read path
 

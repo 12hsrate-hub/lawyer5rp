@@ -100,7 +100,7 @@ def _load_published_content_version(
     server_code: str,
     content_type: str,
     content_key: str,
-) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+) -> dict[str, Any] | None:
     try:
         item = repository.get_content_item_by_identity(
             server_scope="server",
@@ -109,17 +109,17 @@ def _load_published_content_version(
             content_key=content_key,
         )
     except Exception:  # noqa: BLE001
-        return None, None
+        return None
     if not item:
-        return None, None
+        return None
     published_version_id = item.get("current_published_version_id")
     if not published_version_id:
-        return item, None
+        return None
     try:
         version = repository.get_content_version(version_id=int(published_version_id))
     except Exception:  # noqa: BLE001
-        return item, None
-    return item, version
+        return None
+    return version
 
 
 def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) -> PilotComplaintRuntimeContext:
@@ -131,31 +131,31 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
     server_config = get_server_config(server_code)
     server_pack = effective_server_pack(server_code)
     bundle_meta = load_law_bundle_meta(server_code, server_config.law_qa_bundle_path)
-    procedure_item, procedure_version = _load_published_content_version(
+    procedure_version = _load_published_content_version(
         repository,
         server_code=server_code,
         content_type="procedures",
         content_key=PILOT_PROCEDURE_CONTENT_KEY,
     )
-    form_item, form_version = _load_published_content_version(
+    form_version = _load_published_content_version(
         repository,
         server_code=server_code,
         content_type="forms",
         content_key=PILOT_FORM_CONTENT_KEY,
     )
-    validation_item, validation_version = _load_published_content_version(
+    validation_version = _load_published_content_version(
         repository,
         server_code=server_code,
         content_type="validation_rules",
         content_key=PILOT_VALIDATION_CONTENT_KEY,
     )
-    template_item, template_version = _load_published_content_version(
+    template_version = _load_published_content_version(
         repository,
         server_code=server_code,
         content_type="templates",
         content_key=PILOT_TEMPLATE_CONTENT_KEY,
     )
-    law_item, law_version = _load_published_content_version(
+    law_version = _load_published_content_version(
         repository,
         server_code=server_code,
         content_type="laws",
@@ -175,47 +175,35 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
         server_config_version={
             "id": f"server_config:{server_code}:v{server_pack_version}",
             "version": server_pack_version,
-            "status": "published",
         },
         procedure_version={
             "id": (procedure_version or {}).get("id") or f"procedure:{server_code}:{PILOT_PROCEDURE_CODE}:v1",
             "procedure_code": str(procedure_payload.get("procedure_code") or PILOT_PROCEDURE_CODE),
             "version": str((procedure_version or {}).get("version_number") or "1"),
-            "status": "published" if procedure_version else "seeded",
             "document_kind": str(procedure_payload.get("document_kind") or PILOT_PROCEDURE_CODE),
-            "content_item_id": (procedure_item or {}).get("id"),
         },
         form_version={
             "id": (form_version or {}).get("id") or f"form:{server_code}:{PILOT_PROCEDURE_CODE}:{_form_hash()}",
             "form_key": str(form_payload.get("form_code") or "complaint_draft_semantic"),
             "version": str((form_version or {}).get("version_number") or "1"),
             "hash": _form_hash(),
-            "status": "published" if form_version else "seeded",
-            "content_item_id": (form_item or {}).get("id"),
         },
         validation_rule_version={
             "id": (validation_version or {}).get("id") or f"validation:{server_code}:{PILOT_PROCEDURE_CODE}:{_validation_hash()}",
             "rule_set_key": str(validation_payload.get("rule_code") or PILOT_VALIDATION_CONTENT_KEY),
             "version": str((validation_version or {}).get("version_number") or "1"),
             "hash": _validation_hash(),
-            "status": "published" if validation_version else "seeded",
-            "content_item_id": (validation_item or {}).get("id"),
         },
         template_version={
             "id": (template_version or {}).get("id") or "complaint_bbcode_v1",
             "template_code": str(template_payload.get("template_code") or PILOT_TEMPLATE_CONTENT_KEY),
             "version": str((template_version or {}).get("version_number") or "1"),
             "hash": _template_hash(),
-            "status": "published" if template_version else "seeded",
-            "content_item_id": (template_item or {}).get("id"),
         },
         law_set_version={
             "id": (law_version or {}).get("id") or f"law_set:{server_code}:{bundle_hash or 'unknown'}",
             "law_set_key": str(law_payload.get("key") or PILOT_LAWS_CONTENT_KEY),
             "version": str((law_version or {}).get("version_number") or "1"),
             "hash": bundle_hash,
-            "status": "published" if law_version else "seeded",
-            "content_item_id": (law_item or {}).get("id"),
         },
     )
-
