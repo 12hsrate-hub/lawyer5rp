@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select I.2j after accepted generated-document store convergence block`
+- Next slice: `select I.2m after accepted provenance bundle convergence block`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -143,6 +143,12 @@ Date: 2026-04-14
   - generation-snapshot row decoding is now centralized inside `UserStore` for the generated-document snapshot readers
   - `I.2i` deployed on production commit `15def5a`
   - dead read-only snapshot/history bridge methods were removed from `GenerationOrchestrator` after the store-backed read path took ownership
+  - `I.2j` deployed on production commit `ed75805`
+  - row-based provenance trace building now avoids duplicate `document_version` reads when resolving by `generation_snapshot_id`
+  - `I.2k` deployed on production commit `ed75805`
+  - the store-backed provenance service factory is now centralized in `provenance_service`
+  - `I.2l` deployed on production commit `ed75805`
+  - complaint/admin generated-document provenance routes now reuse bundle-based provenance resolution instead of split `generation_snapshot_id/version_row` wiring
   - route contracts remain unchanged and the first thirty Phase I convergence slices are accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.

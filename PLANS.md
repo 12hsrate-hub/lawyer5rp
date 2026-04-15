@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.2 snapshot/provenance schema convergence`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded snapshot/provenance convergence slice after I.2i`
+- Current micro-step: `select the next bounded snapshot/provenance convergence slice after I.2l`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -70,7 +70,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.2g` is now complete on production commit `15def5a`: user generated-document snapshot and history reads now resolve through shared store/service helpers instead of the read-only `GenerationOrchestrator` bridge path.
   - `I.2h` is now complete on production commit `15def5a`: generation-snapshot row decoding is now centralized inside `UserStore` for user/admin generated-document snapshot readers.
   - `I.2i` is now complete on production commit `15def5a`: dead read-only generated-document snapshot/history methods were removed from `GenerationOrchestrator` after the store-backed read path took ownership.
-  - immediate next step is `select I.2j after the accepted generated-document store convergence block`.
+  - `I.2j` is now complete on production commit `ed75805`: `ProvenanceService` now builds traces directly from a provided `document_version` row, so generation-snapshot provenance no longer re-fetches the same document version.
+  - `I.2k` is now complete on production commit `ed75805`: the store-backed provenance service factory is now centralized in `provenance_service` instead of being redefined in generated-document helper code.
+  - `I.2l` is now complete on production commit `ed75805`: complaint/admin generated-document provenance routes now reuse bundle-based provenance resolution instead of passing split `generation_snapshot_id/version_row` args.
+  - immediate next step is `select I.2m after the accepted provenance bundle convergence block`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -530,7 +533,7 @@ Execution status: `ready_to_start`
 - Align legacy and adapter snapshot/provenance internals behind common helper contracts where the payload shape is already the same.
 - Keep external route contracts and admin review payloads stable.
 - Add parity assertions/tests whenever an internal snapshot block is deduplicated.
-- Current I.2 executable slice: `select I.2j after the accepted generated-document store convergence block`.
+- Current I.2 executable slice: `select I.2m after the accepted provenance bundle convergence block`.
 
 ### I.3 Admin route decomposition wave 1
 - Continue shrinking `routes/admin.py` by extracting one bounded server-backed subsection at a time into service/helper seams.
