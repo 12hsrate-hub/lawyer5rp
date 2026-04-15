@@ -124,8 +124,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - `J.1a` is now complete on production commit `dbeacc2`: bounded suggest generation-attempt compaction/retry orchestration now converges behind `ai_pipeline.orchestration` instead of staying inline in `ai_service.py`.
 - `J.1b` is now complete on production commit `dbeacc2`: bounded suggest validation/retry/fallback remediation orchestration now converges behind the same `ai_pipeline.orchestration` layer while keeping `suggest_text_details(...)` contract-stable.
 - `J.1c` is now complete on production commit `3114c63`: suggest warning aggregation and `SuggestTextResult` payload assembly now converge behind the same orchestration layer, leaving `ai_service.suggest_text_details(...)` closer to a thin facade.
+- `J.1d` is now complete on production commit `c5ad780`: suggest telemetry/result finalization now converges behind the same orchestration layer, and the old local suggest/law-qa metrics helper duplicates were removed from `ai_service.py`.
 - the old positional `get_server_config(...)` retrieval seam in `ai_service.py` is now wrapped through a compatibility adapter so shared server-context resolution still works on the extracted suggest path.
-- immediate next step is `Phase J.1 suggest orchestration extraction` with the next bounded seam focused on remaining telemetry/result persistence wiring inside `suggest_text_details(...)`.
+- immediate next step is `Phase J.1 suggest orchestration extraction` with the next bounded seam focused on the remaining suggest request-assembly/persistence wiring, unless the next pass shows that `J.1` has reached diminishing returns and `J.2 law_qa` is the better seam.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -613,8 +614,9 @@ Execution status: `ready_to_start`
 - `J.1a` complete on production commit `dbeacc2`: suggest prompt-compaction / retry orchestration now lives behind dedicated `ai_pipeline.orchestration` helpers while `ai_service.suggest_text_details(...)` stays a stable facade.
 - `J.1b` complete on production commit `dbeacc2`: suggest validation retry / safe-fallback remediation now lives behind the same orchestration layer, with existing suggest and point3 tests remaining green.
 - `J.1c` complete on production commit `3114c63`: suggest warning aggregation and `SuggestTextResult` assembly now live behind the same orchestration layer, with suggest service, point3 policy, and API tests remaining green after the extraction.
+- `J.1d` complete on production commit `c5ad780`: suggest telemetry/result finalization now lives behind the same orchestration layer, and the dead local metrics helper duplicates were removed from `ai_service.py`.
 - Next candidate slice:
-  - shrink the remaining `suggest_text_details(...)` assembly block by moving warning aggregation / result assembly into the same bounded `ai_pipeline` layer without changing telemetry shape.
+  - decide between the remaining suggest request-assembly/persistence seam and a pivot to `J.2 law_qa` if the suggest path is no longer removing a meaningful orchestration block.
 
 ### J.2 Law-QA extraction follow-up
 - After the suggest path is stable, mirror the same extraction approach for `answer_law_question_details(...)`.
