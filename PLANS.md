@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.3 admin route decomposition wave 1`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded admin route decomposition seam after I.3q`
+- Current micro-step: `select the next bounded admin route decomposition seam after I.3t`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -103,7 +103,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.3o` is now complete on production commit `2bed351`: admin users list payload assembly now converges behind a shared admin users helper layer instead of route-local metrics/user overview shaping in `routes/admin.py`.
   - `I.3p` is now complete on production commit `2bed351`: admin user details payload assembly now converges behind the same helper layer instead of route-local permission snapshot and activity summary shaping.
   - `I.3q` is now complete on production commit `2bed351`: role-history and users.csv reporting now converge behind the same helper layer instead of route-local overview/export wiring.
-  - immediate next step is `select I.3r after the accepted admin users read/reporting block`, prioritizing the user mutation cluster so multiple admin write paths can move in one release.
+  - `I.3r` is now complete on production commit `024c3e2`: user verify/block/unblock mutation payload assembly now converges behind a shared admin user-mutations helper layer instead of route-local store-call wiring in `routes/admin.py`.
+  - `I.3s` is now complete on production commit `024c3e2`: tester/gka role toggles and email/password update payload assembly now converge behind the same helper layer instead of route-local per-endpoint mutation shaping.
+  - `I.3t` is now complete on production commit `024c3e2`: deactivate/reactivate and daily-quota payload assembly now converge behind the same helper layer instead of route-local write-path handling.
+  - immediate next step is `select I.3u after the accepted admin user mutation block`, prioritizing `bulk-actions` plus adjacent task-boundary cleanup only if it still removes real route-local orchestration.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -569,7 +572,7 @@ Execution status: `ready_to_start`
 - Continue shrinking `routes/admin.py` by extracting one bounded server-backed subsection at a time into service/helper seams.
 - Prioritize surfaces that already have clear service boundaries underneath them.
 - Do not mix UI copy work, route splitting, and domain behavior changes in one slice.
-- Current I.3 executable slice: `select I.3r after the accepted admin users read/reporting block`, prioritizing the user mutation cluster.
+- Current I.3 executable slice: `select I.3u after the accepted admin user mutation block`, prioritizing `bulk-actions` plus adjacent task-boundary cleanup only if it removes real route-local orchestration.
 
 ### Deliverables
 - `Phase I` execution brief with the first accepted bounded seam
