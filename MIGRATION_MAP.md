@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase G`
 - Inventory slices completed: `5`
-- Next slice: `select the eighth accepted H.3 tightening seam`
+- Next slice: `select the tenth accepted H.3 tightening seam`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -57,6 +57,10 @@ Date: 2026-04-14
 - complaint form fallback refs now reuse the shared draft-schema helper instead of maintaining a second adapter-local hash path
 - `H.3g` deployed on production commit `fda2d0f`
 - complaint adapter published workflow version reads and payload extraction are now centralized behind shared helper paths without changing the snapshot contract
+- `H.3h` deployed on production commit `429287d`
+- complaint adapter runtime version dictionaries and feature-flag normalization are now assembled through strict helper builders instead of repeated inline fallback blocks
+- `H.3i` deployed on production commit `6b21e6e`
+- complaint adapter now caches published payload extraction and fallback hash/ref helpers inside the resolver instead of recomputing them for each runtime version block
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.

@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase H — Post-pilot scale-out and legacy reduction`
 - Current task: `H.3 runtime source-of-truth tightening`
 - Active execution phase override: `Phase H.2 wave 1 accepted; H.3 is now in progress`
-- Current micro-step: `select the eighth accepted H.3 tightening slice`
+- Current micro-step: `select the tenth accepted H.3 tightening slice`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -634,7 +634,9 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `H.3e` is complete on production commit `85078b2`: adapter fallback template/validation refs now reuse the shared complaint-service helpers instead of duplicating hash logic
 - `H.3f` is complete on production commit `246ee73`: complaint form fallback refs now reuse the shared draft-schema helper instead of a second adapter-local hash path
 - `H.3g` is complete on production commit `fda2d0f`: complaint adapter published workflow version reads and payload extraction are now centralized behind shared helper paths
-- immediate next step is `Phase H.3 eighth tightening slice selection`
+- `H.3h` is complete on production commit `429287d`: complaint adapter runtime version dictionaries and feature-flag normalization now reuse strict helper builders instead of repeated inline assembly
+- `H.3i` is complete on production commit `6b21e6e`: complaint adapter now caches published payload extraction plus fallback hash/ref helpers inside the resolver instead of recomputing them per version block
+- immediate next step is `Phase H.3 tenth tightening slice selection`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`
