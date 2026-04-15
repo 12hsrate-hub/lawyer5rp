@@ -102,13 +102,18 @@ def test_legacy_generation_context_snapshot_uses_shared_server_context_resolver(
             repository=UserRepository(PostgresBackend()),
         )
         monkeypatch.setattr(
-            "ogp_web.services.complaint_service.resolve_server_config",
-            lambda **kwargs: type("Cfg", (), {"code": "blackberry", "law_qa_bundle_path": "", "feature_flags": ()})(),
+            "ogp_web.services.complaint_service.resolve_server_identity",
+            lambda **kwargs: type("Identity", (), {"code": "blackberry", "name": "BlackBerry"})(),
         )
         monkeypatch.setattr(
-            "ogp_web.services.complaint_service.effective_server_pack",
-            lambda server_code: {"version": "2"},
+            "ogp_web.services.complaint_service.resolve_server_feature_flags",
+            lambda **kwargs: (),
         )
+        monkeypatch.setattr(
+            "ogp_web.services.complaint_service.resolve_server_law_bundle_path",
+            lambda **kwargs: "",
+        )
+        monkeypatch.setattr("ogp_web.services.complaint_service.effective_server_pack", lambda server_code: {"version": "2"})
         monkeypatch.setattr(
             "ogp_web.services.complaint_service.load_law_bundle_meta",
             lambda server_code, bundle_path: type("Meta", (), {"fingerprint": "bundle_hash"})(),

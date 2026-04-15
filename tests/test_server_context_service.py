@@ -21,6 +21,9 @@ from ogp_web.services.server_context_service import (
     extract_server_shell_context,
     list_servers_with_law_qa_context,
     resolve_server_config,
+    resolve_server_ai_context_settings,
+    resolve_server_feature_flags,
+    resolve_server_identity,
     resolve_server_law_bundle_path,
     resolve_server_law_sources,
     resolve_user_server_config,
@@ -118,6 +121,18 @@ class ServerContextServiceTests(unittest.TestCase):
         self.assertEqual(settings.suggest_prompt_mode, "data_driven")
         self.assertEqual(settings.suggest_low_confidence_policy, "soft_fail")
 
+    def test_resolve_server_ai_context_settings_uses_shared_server_config(self):
+        config = type("Cfg", (), {"suggest_prompt_mode": "legacy", "suggest_low_confidence_policy": "controlled_fallback"})()
+
+        with patch(
+            "ogp_web.services.server_context_service.resolve_server_config",
+            return_value=config,
+        ) as resolve_server_config_mock:
+            settings = resolve_server_ai_context_settings(server_code="blackberry")
+
+        self.assertEqual(settings.suggest_prompt_mode, "legacy")
+        resolve_server_config_mock.assert_called_once_with(server_code="blackberry", fallback_server_code="blackberry")
+
     def test_extract_server_identity_settings_normalizes_code_and_name(self):
         config = type("Cfg", (), {"code": " Orange ", "name": " Orange County "})()
 
@@ -126,12 +141,37 @@ class ServerContextServiceTests(unittest.TestCase):
         self.assertEqual(settings.code, "orange")
         self.assertEqual(settings.name, "Orange County")
 
+    def test_resolve_server_identity_uses_shared_server_config(self):
+        config = type("Cfg", (), {"code": "Orange", "name": "Orange County"})()
+
+        with patch(
+            "ogp_web.services.server_context_service.resolve_server_config",
+            return_value=config,
+        ) as resolve_server_config_mock:
+            settings = resolve_server_identity(server_code="orange")
+
+        self.assertEqual(settings.code, "orange")
+        self.assertEqual(settings.name, "Orange County")
+        resolve_server_config_mock.assert_called_once_with(server_code="orange", fallback_server_code="blackberry")
+
     def test_extract_server_feature_flags_sorts_and_deduplicates_values(self):
         config = type("Cfg", (), {"feature_flags": (" beta_mode ", "", "alpha_mode", "beta_mode")})()
 
         feature_flags = extract_server_feature_flags(config)
 
         self.assertEqual(feature_flags, ("alpha_mode", "beta_mode"))
+
+    def test_resolve_server_feature_flags_uses_shared_server_config(self):
+        config = type("Cfg", (), {"feature_flags": (" law_qa ", "law_qa", " suggest ")})()
+
+        with patch(
+            "ogp_web.services.server_context_service.resolve_server_config",
+            return_value=config,
+        ) as resolve_server_config_mock:
+            feature_flags = resolve_server_feature_flags(server_code="blackberry")
+
+        self.assertEqual(feature_flags, ("law_qa", "suggest"))
+        resolve_server_config_mock.assert_called_once_with(server_code="blackberry", fallback_server_code="blackberry")
 
     def test_server_has_feature_uses_feature_flags_when_checker_missing(self):
         config = type("Cfg", (), {"feature_flags": ("law_qa_nano_enabled",)})()
