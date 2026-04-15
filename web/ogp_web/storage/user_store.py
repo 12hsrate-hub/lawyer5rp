@@ -821,32 +821,6 @@ class UserStore:
             items.append(payload)
         return items
 
-    def get_generated_document_snapshot(self, username: str, document_id: int) -> dict[str, Any] | None:
-        normalized_username = _normalize_username(username)
-        normalized_document_id = int(document_id or 0)
-        if normalized_document_id <= 0:
-            return None
-        row = self._pg_fetchone(
-            """
-            SELECT
-                gs.legacy_generated_document_id AS id,
-                gs.server_id AS server_code,
-                gs.document_kind AS document_kind,
-                gs.created_at AS created_at,
-                CAST(gs.context_snapshot_json AS TEXT) AS context_snapshot_json
-            FROM generation_snapshots gs
-            JOIN users u ON u.id = gs.user_id
-            WHERE u.username = %s
-              AND gs.legacy_generated_document_id = %s
-            ORDER BY gs.id DESC
-            LIMIT 1
-            """,
-            (normalized_username, normalized_document_id),
-        )
-        if row is None:
-            return None
-        return self._generation_snapshot_payload_from_row(row)
-
     def get_generation_snapshot_by_generated_document_id_for_user(
         self,
         *,
@@ -941,22 +915,23 @@ class UserStore:
         *,
         include_generation_snapshot_id: bool = False,
     ) -> dict[str, Any]:
-        try:
-            snapshot = json.loads(str(row["context_snapshot_json"] or "{}"))
-        except json.JSONDecodeError:
-            snapshot = {}
-        if not isinstance(snapshot, dict):
-            snapshot = {}
         payload = {
             "id": int(row["id"]),
             "server_code": str(row["server_code"] or ""),
             "document_kind": str(row["document_kind"] or ""),
             "created_at": str(row["created_at"] or ""),
-            "context_snapshot": snapshot,
+            "context_snapshot": self._decode_json_object(row.get("context_snapshot_json")),
         }
         if include_generation_snapshot_id:
             payload["generation_snapshot_id"] = int(row["generation_snapshot_id"])
         return payload
+
+    def _decode_json_object(self, value: Any) -> dict[str, Any]:
+        try:
+            payload = json.loads(str(value or "{}"))
+        except json.JSONDecodeError:
+            payload = {}
+        return payload if isinstance(payload, dict) else {}
 
     def list_recent_generated_documents_admin(self, *, limit: int = 10) -> list[dict[str, Any]]:
         safe_limit = max(1, min(int(limit or 10), 50))
@@ -1014,21 +989,14 @@ class UserStore:
         if row is None:
             return None
 
-        def _decode(value: Any) -> dict[str, Any]:
-            try:
-                payload = json.loads(str(value or "{}"))
-            except json.JSONDecodeError:
-                payload = {}
-            return payload if isinstance(payload, dict) else {}
-
         return {
             "id": int(row["id"]),
             "server_code": str(row["server_code"] or ""),
             "document_kind": str(row["document_kind"] or ""),
             "created_at": str(row["created_at"] or ""),
-            "context_snapshot": _decode(row.get("context_snapshot_json")),
-            "effective_config_snapshot": _decode(row.get("effective_config_snapshot_json")),
-            "content_workflow_ref": _decode(row.get("content_workflow_ref_json")),
+            "context_snapshot": self._decode_json_object(row.get("context_snapshot_json")),
+            "effective_config_snapshot": self._decode_json_object(row.get("effective_config_snapshot_json")),
+            "content_workflow_ref": self._decode_json_object(row.get("content_workflow_ref_json")),
         }
 
 
