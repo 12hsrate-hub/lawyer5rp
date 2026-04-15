@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.2 snapshot/provenance schema convergence`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded snapshot/provenance convergence slice after I.2f`
+- Current micro-step: `select the next bounded snapshot/provenance convergence slice after I.2i`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -67,7 +67,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.2d` is now complete on production commit `81faa7b`: shared provenance lookup by `generation_snapshot_id` now backs generated-document snapshot and admin provenance bridge paths.
   - `I.2e` is now complete on production commit `33533e0`: generated-document trace bundle resolution is now centralized behind a shared helper reused by user snapshot, admin provenance, and admin review-context paths.
   - `I.2f` is now complete on production commit `33533e0`: shared generated-document provenance and review-context builders now own the remaining route-local payload assembly for complaint/admin generated-document trace surfaces.
-  - immediate next step is `select I.2g after the accepted generated-document trace convergence block`.
+  - `I.2g` is now complete on production commit `15def5a`: user generated-document snapshot and history reads now resolve through shared store/service helpers instead of the read-only `GenerationOrchestrator` bridge path.
+  - `I.2h` is now complete on production commit `15def5a`: generation-snapshot row decoding is now centralized inside `UserStore` for user/admin generated-document snapshot readers.
+  - `I.2i` is now complete on production commit `15def5a`: dead read-only generated-document snapshot/history methods were removed from `GenerationOrchestrator` after the store-backed read path took ownership.
+  - immediate next step is `select I.2j after the accepted generated-document store convergence block`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -527,7 +530,7 @@ Execution status: `ready_to_start`
 - Align legacy and adapter snapshot/provenance internals behind common helper contracts where the payload shape is already the same.
 - Keep external route contracts and admin review payloads stable.
 - Add parity assertions/tests whenever an internal snapshot block is deduplicated.
-- Current I.2 executable slice: `select I.2g after the accepted generated-document trace convergence block`.
+- Current I.2 executable slice: `select I.2j after the accepted generated-document store convergence block`.
 
 ### I.3 Admin route decomposition wave 1
 - Continue shrinking `routes/admin.py` by extracting one bounded server-backed subsection at a time into service/helper seams.
