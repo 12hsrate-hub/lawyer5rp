@@ -7,19 +7,23 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase H`
-- Active task: `H.1c Rehab runtime gap closure`
+- Active task: `H.1d Rehab runtime/provenance parity confirmation`
 - Status: `in_progress`
 - Last completed phase: `Phase G`
 - Inventory slices completed: `5`
-- Next slice: `align rehab template binding and validation coverage after H.1b production verification`
+- Next slice: `confirm rehab runtime-path and provenance parity after H.1c PASS`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`
-  - production verification confirmed published coverage for `procedures:rehab_law_index` and `laws:law_sources_manifest`
-  - production verification failed on two gating gaps:
-    - bootstrap pack binds rehab template key `rehab_v1`, while the published seeded template is `rehab_template_v1`
-    - no published rehab-specific validation rule/profile is currently present
+  - `H.1c` deployed on production commit `de6bb2f`
+  - production verification now passes for:
+    - `procedures:rehab_law_index`
+    - `templates:rehab_template_v1`
+    - `laws:law_sources_manifest`
+    - `validation_rules:rehab_default`
+    - bootstrap `validation_profiles.rehab`
+  - next remaining H.1 gate is runtime/provenance parity, not catalog coverage
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
