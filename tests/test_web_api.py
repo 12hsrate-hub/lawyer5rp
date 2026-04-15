@@ -30,6 +30,7 @@ from ogp_web.routes import complaint as complaint_route
 from ogp_web.routes import admin as admin_route
 from ogp_web.routes import exam_import as exam_import_route
 from ogp_web.services import ai_service
+from ogp_web.services import admin_ai_pipeline_service
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
 from ogp_web.services.generation_orchestrator import GenerationOrchestrator
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -2596,12 +2597,12 @@ class WebApiTests(unittest.TestCase):
         self.assertFalse(payload.get("partial_errors"))
 
     def test_safe_float_parsing_cases(self):
-        self.assertEqual(admin_route._safe_float("12.5"), 12.5)
-        with self.assertLogs("ogp_web.routes.admin", level="WARNING") as captured:
-            self.assertEqual(admin_route._safe_float(None, generation_id="gen_none"), 0.0)
-            self.assertEqual(admin_route._safe_float("", generation_id="gen_empty"), 0.0)
-            self.assertEqual(admin_route._safe_float("n/a", generation_id="gen_na"), 0.0)
-            self.assertEqual(admin_route._safe_float({"bad": "object"}, generation_id="gen_obj"), 0.0)
+        self.assertEqual(admin_ai_pipeline_service.safe_float("12.5"), 12.5)
+        with self.assertLogs("ogp_web.services.admin_ai_pipeline_service", level="WARNING") as captured:
+            self.assertEqual(admin_ai_pipeline_service.safe_float(None, generation_id="gen_none"), 0.0)
+            self.assertEqual(admin_ai_pipeline_service.safe_float("", generation_id="gen_empty"), 0.0)
+            self.assertEqual(admin_ai_pipeline_service.safe_float("n/a", generation_id="gen_na"), 0.0)
+            self.assertEqual(admin_ai_pipeline_service.safe_float({"bad": "object"}, generation_id="gen_obj"), 0.0)
         self.assertTrue(any("generation_id=gen_none" in item for item in captured.output))
         self.assertTrue(any("generation_id=gen_empty" in item for item in captured.output))
         self.assertTrue(any("generation_id=gen_na" in item for item in captured.output))
@@ -2614,7 +2615,7 @@ class WebApiTests(unittest.TestCase):
             {"meta": {"context_compacted": True, "guard_status": "pass"}},
         ]
 
-        payload = admin_route._build_ai_pipeline_quality_summary(generations=generations, feedback=[])
+        payload = admin_ai_pipeline_service.build_ai_pipeline_quality_summary(generations=generations, feedback=[])
 
         self.assertEqual(payload["generation_samples"], 3)
         self.assertEqual(payload["fallback_rate"], 66.67)
@@ -2641,11 +2642,11 @@ class WebApiTests(unittest.TestCase):
             },
         }
 
-        filtered = admin_route._filter_recent_metric_items(
+        filtered = admin_ai_pipeline_service.filter_recent_metric_items(
             [recent_generation, old_generation],
             since_hours=24,
         )
-        summary = admin_route._summarize_generation_rows(filtered)
+        summary = admin_ai_pipeline_service.summarize_generation_rows(filtered)
 
         self.assertEqual(len(filtered), 1)
         self.assertEqual(summary["total_generations"], 1)
