@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select I.1c after the accepted user-bound server-context seam`
+- Next slice: `select I.1d after the accepted public/default server-context seam`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -76,7 +76,9 @@ Date: 2026-04-14
   - shared `resolve_user_server_context(...)` now owns the bounded user server-config plus permission resolution seam reused by `pages.py` and selected `admin.py` paths
   - `I.1b` deployed on production commit `436fba9`
   - user-bound server-config reads in `complaint.py` and `profile.py` now reuse the same shared helper without changing complaint draft or selected-server route contracts
-  - route contracts remain unchanged and the first two Phase I convergence slices are accepted
+  - `I.1c` deployed on production commit `d740b24`
+  - public/default server-config reads in `pages.py` now reuse shared `resolve_server_config(...)` for login, verify-email, and reset-password context assembly
+  - route contracts remain unchanged and the first three Phase I convergence slices are accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
