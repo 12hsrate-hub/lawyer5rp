@@ -9,19 +9,21 @@ Track compatibility seams that may become removable after pilot observation and 
 
 ## Current candidates
 
-### 1. Legacy provenance/raw-ref presentation workarounds
-- Area: `web/ogp_web/static/pages/admin.js`
-- Reason:
-  - current UI still normalizes some legacy-shaped snapshot refs on the client side
-  - after stable normalized payloads exist, this compatibility formatting can shrink
-
-### 2. Legacy-only rollout assumptions in admin copy
+### 1. Legacy-only rollout assumptions in admin copy
 - Area: dashboard/admin rollout messaging
 - Reason:
   - current wording is intentionally cautious for observation mode
   - after stable activation, some “preflight-only” copy may be simplified
 
 ## Removed in Phase H.2
+
+### Legacy provenance/raw-ref presentation workarounds
+- Removed on production commit `55accd1`
+- Removed artifacts:
+  - client-side raw-ref compaction in `admin.js`
+  - legacy-shaped review-context presentation fallback
+- Outcome:
+  - admin review context now receives normalized server-side string refs
 
 ### Shadow-compare-only metrics plumbing
 - Removed on production commit `07f302a`
@@ -33,7 +35,7 @@ Track compatibility seams that may become removable after pilot observation and 
   - compare-only pilot observation helpers no longer appear in the active cleanup backlog
 
 ### Pilot adapter fallback-only visibility paths
-- Removed locally during `H.2e` and pending production commit
+- Removed on production commit `751d0a0`
 - Removed artifacts:
   - adapter snapshot `status` markers for published/seeded fallback visibility
   - adapter snapshot `content_item_id` fields that were not used by runtime consumers
