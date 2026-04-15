@@ -7,9 +7,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
-- Current task: `I.3 admin route decomposition wave 1`
+- Current task: `select the next Phase I task after accepted I.3`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded admin route decomposition seam after I.3t`
+- Current micro-step: `pick the next non-wrapper Phase I convergence target after accepted I.3`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -106,7 +106,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.3r` is now complete on production commit `024c3e2`: user verify/block/unblock mutation payload assembly now converges behind a shared admin user-mutations helper layer instead of route-local store-call wiring in `routes/admin.py`.
   - `I.3s` is now complete on production commit `024c3e2`: tester/gka role toggles and email/password update payload assembly now converge behind the same helper layer instead of route-local per-endpoint mutation shaping.
   - `I.3t` is now complete on production commit `024c3e2`: deactivate/reactivate and daily-quota payload assembly now converge behind the same helper layer instead of route-local write-path handling.
-  - immediate next step is `select I.3u after the accepted admin user mutation block`, prioritizing `bulk-actions` plus adjacent task-boundary cleanup only if it still removes real route-local orchestration.
+  - `I.3u` is now complete on production commit `f9d34a8`: bulk user-mutation dispatch now converges behind the same shared admin user-mutations helper layer instead of route-local action branching and duplicated metrics meta in `routes/admin.py`.
+  - `I.3` is accepted: the remaining admin endpoints are now mostly task boundaries, dashboard/performance contracts, or thin wrappers rather than another high-value route decomposition seam.
+  - immediate next step is `select the next non-wrapper Phase I convergence target outside accepted I.3`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -572,7 +574,7 @@ Execution status: `ready_to_start`
 - Continue shrinking `routes/admin.py` by extracting one bounded server-backed subsection at a time into service/helper seams.
 - Prioritize surfaces that already have clear service boundaries underneath them.
 - Do not mix UI copy work, route splitting, and domain behavior changes in one slice.
-- Current I.3 executable slice: `select I.3u after the accepted admin user mutation block`, prioritizing `bulk-actions` plus adjacent task-boundary cleanup only if it removes real route-local orchestration.
+- `I.3` accepted on production through `I.3u`.
 
 ### Deliverables
 - `Phase I` execution brief with the first accepted bounded seam

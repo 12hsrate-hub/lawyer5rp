@@ -7,11 +7,11 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase I`
-- Active task: `I.3 admin route decomposition wave 1`
+- Active task: `select the next Phase I task after accepted I.3`
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `6`
-- Next slice: `select I.3u after accepted admin user mutation block`
+- Next slice: `select the next non-wrapper Phase I convergence target after accepted I.3`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -216,6 +216,10 @@ Date: 2026-04-14
   - tester/gka role toggles and email/password update payload assembly now converge behind the same helper layer instead of route-local per-endpoint mutation shaping
   - `I.3t` deployed on production commit `024c3e2`
   - deactivate/reactivate and daily-quota payload assembly now converge behind the same helper layer instead of route-local write-path handling in `routes/admin.py`
+  - `I.3u` deployed on production commit `f9d34a8`
+  - bulk user-mutation dispatch now converges behind the same shared admin user-mutations helper layer instead of route-local action branching and duplicated metrics meta
+  - `I.3` is accepted
+  - no further meaningful admin route decomposition seams remain that remove a real second orchestration layer without slipping into task-boundary or wrapper-only reshuffling
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
