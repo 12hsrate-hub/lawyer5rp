@@ -114,6 +114,21 @@ class SuggestExecutionFlowResult:
     final_text: str
 
 
+@dataclass(frozen=True)
+class LawQaExecutionFlowResult:
+    generation_id: str
+    retrieval_result: Any
+    requested_model: str
+    shadow: dict[str, object]
+    text: str
+    usage: Any
+    prompt: str
+    model_name: str
+    selection_reason: str
+    compaction_level: int
+    latency_ms: int
+
+
 def run_law_qa(payload: LawQaPayload, deps: LawQaOrchestrationDeps):
     return deps.impl(payload)
 
@@ -669,6 +684,65 @@ def run_law_qa_generation_attempts(
         model_name=current_model,
         selection_reason=current_selection_reason,
         compaction_level=compaction_level,
+    )
+
+
+def run_law_qa_execution_flow(
+    *,
+    runtime_context: LawQaRuntimeContext,
+    payload: LawQaPayload,
+    default_server_code: str,
+    clock: Callable[[], float],
+    new_generation_id: Callable[[], str],
+    create_client: Callable[..., Any],
+    request_law_qa_text: Callable[..., tuple[str, Any]],
+    build_law_qa_prompt: Callable[..., str],
+    run_law_qa_generation_attempts: Callable[..., LawQaGenerationAttemptResult],
+    is_context_window_error: Callable[[Exception], bool],
+    ai_exception_details: Callable[[Exception], list[str]],
+    logger_warning: Callable[[str, str, int], None] | None,
+) -> LawQaExecutionFlowResult:
+    generation_id = new_generation_id()
+    retrieval_result = runtime_context.retrieval_result
+    request_started_at = clock()
+    client = create_client()
+    generation_attempt = run_law_qa_generation_attempts(
+        context_attempts=runtime_context.context_attempts,
+        prompt_builder=lambda context_blocks, attempt_model_name: build_law_qa_prompt(
+            server_name=retrieval_result.server_name,
+            server_code=retrieval_result.server_code,
+            model_name=attempt_model_name,
+            question=runtime_context.question,
+            max_answer_chars=payload.max_answer_chars,
+            context_blocks=context_blocks,
+            retrieval_confidence=retrieval_result.confidence,
+        ),
+        request_generator=lambda attempt_prompt, attempt_model_name: request_law_qa_text(
+            client=client,
+            model_name=attempt_model_name,
+            prompt=attempt_prompt,
+            max_output_tokens=800,
+        ),
+        is_context_window_error=is_context_window_error,
+        ai_exception_details=ai_exception_details,
+        logger_warning=logger_warning,
+        selected_model=runtime_context.model_name,
+        selection_reason=runtime_context.selection_reason,
+        low_confidence_model=runtime_context.low_confidence_model,
+    )
+    latency_ms = int((clock() - request_started_at) * 1000)
+    return LawQaExecutionFlowResult(
+        generation_id=generation_id,
+        retrieval_result=retrieval_result,
+        requested_model=runtime_context.requested_model,
+        shadow=runtime_context.shadow,
+        text=generation_attempt.text,
+        usage=generation_attempt.usage,
+        prompt=generation_attempt.prompt,
+        model_name=generation_attempt.model_name,
+        selection_reason=generation_attempt.selection_reason,
+        compaction_level=generation_attempt.compaction_level,
+        latency_ms=latency_ms,
     )
 
 

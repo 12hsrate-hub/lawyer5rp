@@ -63,6 +63,7 @@ from ogp_web.services.ai_pipeline.orchestration import (
     PrincipalScanDeps,
     resolve_law_qa_runtime_context,
     resolve_suggest_runtime_context,
+    run_law_qa_execution_flow,
     run_suggest_execution_flow,
     run_law_qa_generation_attempts,
     SuggestOrchestrationDeps,
@@ -2165,37 +2166,19 @@ def _answer_law_question_details_impl(payload: LawQaPayload) -> LawQaAnswerResul
         build_law_qa_context_blocks=_build_law_qa_context_blocks,
         build_law_qa_context_blocks_limited=_build_law_qa_context_blocks_limited,
     )
-    question = runtime_context.question
-    requested_model = runtime_context.requested_model
-    generation_id = new_generation_id()
-    retrieval_result = runtime_context.retrieval_result
-    model_name = runtime_context.model_name
-    selection_reason = runtime_context.selection_reason
-    low_confidence_model = runtime_context.low_confidence_model
-    shadow = runtime_context.shadow
-    context_attempts = runtime_context.context_attempts
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
-    request_started_at = monotonic()
-    client = create_openai_client(api_key=api_key, proxy_url=proxy_url)
-    generation_attempt = run_law_qa_generation_attempts(
-        context_attempts=context_attempts,
-        prompt_builder=lambda context_blocks, attempt_model_name: _build_law_qa_prompt(
-            server_name=retrieval_result.server_name,
-            server_code=retrieval_result.server_code,
-            model_name=attempt_model_name,
-            question=question,
-            max_answer_chars=payload.max_answer_chars,
-            context_blocks=context_blocks,
-            retrieval_confidence=retrieval_result.confidence,
-        ),
-        request_generator=lambda attempt_prompt, attempt_model_name: _request_law_qa_text(
-            client=client,
-            model_name=attempt_model_name,
-            prompt=attempt_prompt,
-            max_output_tokens=800,
-        ),
+    execution_flow = run_law_qa_execution_flow(
+        runtime_context=runtime_context,
+        payload=payload,
+        default_server_code=DEFAULT_SERVER_CODE,
+        clock=monotonic,
+        new_generation_id=new_generation_id,
+        create_client=lambda: create_openai_client(api_key=api_key, proxy_url=proxy_url),
+        request_law_qa_text=_request_law_qa_text,
+        build_law_qa_prompt=_build_law_qa_prompt,
+        run_law_qa_generation_attempts=run_law_qa_generation_attempts,
         is_context_window_error=_is_context_window_error,
         ai_exception_details=_ai_exception_details,
         logger_warning=lambda message, attempt_model_name, attempt_level: LOGGER.warning(
@@ -2203,31 +2186,20 @@ def _answer_law_question_details_impl(payload: LawQaPayload) -> LawQaAnswerResul
             attempt_model_name,
             attempt_level,
         ),
-        selected_model=model_name,
-        selection_reason=selection_reason,
-        low_confidence_model=low_confidence_model,
     )
-    text = generation_attempt.text
-    usage = generation_attempt.usage or AiUsageSummary()
-    prompt = generation_attempt.prompt
-    model_name = generation_attempt.model_name
-    selection_reason = generation_attempt.selection_reason
-    compaction_level = generation_attempt.compaction_level
-
-    latency_ms = int((monotonic() - request_started_at) * 1000)
     return finalize_law_qa_result(
-        text=text,
-        generation_id=generation_id,
+        text=execution_flow.text,
+        generation_id=execution_flow.generation_id,
         contract_version=LEGAL_PIPELINE_CONTRACT_VERSION,
-        retrieval_result=retrieval_result,
-        shadow=_shadow_to_dict(shadow),
-        model_name=model_name,
-        selection_reason=selection_reason,
-        requested_model=requested_model,
-        compaction_level=compaction_level,
-        prompt=prompt,
-        usage=usage,
-        latency_ms=latency_ms,
+        retrieval_result=execution_flow.retrieval_result,
+        shadow=_shadow_to_dict(execution_flow.shadow),
+        model_name=execution_flow.model_name,
+        selection_reason=execution_flow.selection_reason,
+        requested_model=execution_flow.requested_model,
+        compaction_level=execution_flow.compaction_level,
+        prompt=execution_flow.prompt,
+        usage=execution_flow.usage or AiUsageSummary(),
+        latency_ms=execution_flow.latency_ms,
         max_answer_chars=payload.max_answer_chars,
         build_ai_telemetry=build_ai_telemetry,
         evaluate_budget=evaluate_budget,
