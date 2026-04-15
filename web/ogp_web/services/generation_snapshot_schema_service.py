@@ -36,6 +36,52 @@ def extract_snapshot_blocks(snapshot_payload: dict[str, Any]) -> tuple[dict[str,
     return context_snapshot, effective_config, workflow_ref
 
 
+def build_generation_server_snapshot(*, server_code: str) -> dict[str, str]:
+    return {
+        "id": str(server_code or ""),
+        "code": str(server_code or ""),
+    }
+
+
+def build_content_workflow_snapshot(effective_config_snapshot: dict[str, str]) -> dict[str, Any]:
+    return {
+        "applied_published_versions": dict(effective_config_snapshot),
+        "rollback_safe": True,
+    }
+
+
+def build_effective_generation_config_snapshot(
+    *,
+    server_pack_version: str,
+    law_set_hash: str,
+    template_version_id: str,
+    validation_rules_version: str,
+    procedure_version: str = "",
+    form_version: str = "",
+) -> dict[str, str]:
+    payload = {
+        "server_pack_version": str(server_pack_version or "0"),
+        "law_set_version": str(law_set_hash or "unknown"),
+        "template_version": str(template_version_id or "unknown"),
+        "validation_version": str(validation_rules_version or "unknown"),
+    }
+    if str(procedure_version or "").strip():
+        payload["procedure_version"] = str(procedure_version).strip()
+    if str(form_version or "").strip():
+        payload["form_version"] = str(form_version).strip()
+    return payload
+
+
+def extract_generation_persistence_blocks(context_snapshot: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    effective_config_snapshot = as_dict(context_snapshot.get("effective_config_snapshot"))
+    if not effective_config_snapshot:
+        raise RuntimeError("effective_config_snapshot is required in generation context snapshot.")
+    content_workflow_ref = as_dict(context_snapshot.get("content_workflow"))
+    if not content_workflow_ref:
+        raise RuntimeError("content_workflow is required in generation context snapshot.")
+    return effective_config_snapshot, content_workflow_ref
+
+
 def build_snapshot_summary(snapshot_payload: dict[str, Any]) -> dict[str, str]:
     context_snapshot, effective_config, workflow_ref = extract_snapshot_blocks(snapshot_payload)
     return {

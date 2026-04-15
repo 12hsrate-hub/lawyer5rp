@@ -25,6 +25,11 @@ from shared.ogp_core import (
 )
 from ogp_web.server_config import effective_server_pack
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
+from ogp_web.services.generation_snapshot_schema_service import (
+    build_content_workflow_snapshot,
+    build_effective_generation_config_snapshot,
+    build_generation_server_snapshot,
+)
 from ogp_web.services.server_context_service import (
     resolve_server_feature_flags,
     resolve_server_identity,
@@ -119,35 +124,6 @@ def _validation_rules_version(document_kind: str) -> str:
     return _short_hash(source)
 
 
-def _generation_server_snapshot(*, server_code: str) -> dict[str, str]:
-    return {
-        "id": server_code,
-        "code": server_code,
-    }
-
-
-def _content_workflow_snapshot(effective_config_snapshot: dict[str, str]) -> dict[str, object]:
-    return {
-        "applied_published_versions": dict(effective_config_snapshot),
-        "rollback_safe": True,
-    }
-
-
-def _effective_generation_config_snapshot(
-    *,
-    server_pack_version: str,
-    law_set_hash: str,
-    template_version_id: str,
-    validation_rules_version: str,
-) -> dict[str, str]:
-    return {
-        "server_pack_version": str(server_pack_version or "0"),
-        "law_set_version": str(law_set_hash or "unknown"),
-        "template_version": str(template_version_id or "unknown"),
-        "validation_version": str(validation_rules_version or "unknown"),
-    }
-
-
 def build_generation_context_snapshot(store: UserStore, user: AuthUser, *, document_kind: str) -> dict[str, object]:
     server_code = user.server_code or store.get_server_code(user.username)
     server_identity = resolve_server_identity(server_code=server_code, fallback_server_code=server_code)
@@ -161,18 +137,18 @@ def build_generation_context_snapshot(store: UserStore, user: AuthUser, *, docum
         "hash": str(getattr(bundle_meta, "fingerprint", "") or "").strip(),
     }
     validation_rules_version = _validation_rules_version(document_kind)
-    effective_config_snapshot = _effective_generation_config_snapshot(
+    effective_config_snapshot = build_effective_generation_config_snapshot(
         server_pack_version=str(server_pack.get("version") or "0"),
         law_set_hash=str(law_version_set["hash"] or "unknown"),
         template_version_id=str(template_version["id"] or "unknown"),
         validation_rules_version=str(validation_rules_version or "unknown"),
     )
     return {
-        "server": _generation_server_snapshot(server_code=server_identity.code),
+        "server": build_generation_server_snapshot(server_code=server_identity.code),
         "template_version": template_version,
         "law_version_set": law_version_set,
         "validation_rules_version": validation_rules_version,
         "effective_config_snapshot": effective_config_snapshot,
-        "content_workflow": _content_workflow_snapshot(effective_config_snapshot),
+        "content_workflow": build_content_workflow_snapshot(effective_config_snapshot),
         "feature_flags": list(resolve_server_feature_flags(server_code=server_code, fallback_server_code=server_code)),
     }
