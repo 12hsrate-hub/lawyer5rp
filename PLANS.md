@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.2 snapshot/provenance schema convergence`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded snapshot/provenance convergence slice after I.2o`
+- Current micro-step: `select the next bounded snapshot/provenance convergence slice after I.2r`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -76,7 +76,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.2m` is now complete on production commit `ff6884f`: generated-document review-context supporting data now resolves through a shared helper instead of route-local service wiring inside the payload builder.
   - `I.2n` is now complete on production commit `ff6884f`: bbcode preview truncation is now centralized in a dedicated generated-document helper instead of inline review-context formatting.
   - `I.2o` is now complete on production commit `ff6884f`: admin generated-document review-context now uses a bundle-based wrapper helper for naming parity with the provenance path.
-  - immediate next step is `select I.2p after the accepted review-context support convergence block`.
+  - `I.2p` is now complete on production commit `c1fdaa9`: shared admin/user generated-document bundle require helpers now own route-appropriate 404 handling instead of route-local bundle guards.
+  - `I.2q` is now complete on production commit `c1fdaa9`: the user generated-document snapshot route now uses a shared snapshot payload wrapper instead of inline `snapshot + provenance` response assembly.
+  - `I.2r` is now complete on production commit `c1fdaa9`: complaint/admin generated-document routes now follow one consistent bundle-guard/wrapper pattern across snapshot, provenance, and review-context surfaces.
+  - immediate next step is `select I.2s after the accepted generated-document route-glue convergence block`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -536,7 +539,7 @@ Execution status: `ready_to_start`
 - Align legacy and adapter snapshot/provenance internals behind common helper contracts where the payload shape is already the same.
 - Keep external route contracts and admin review payloads stable.
 - Add parity assertions/tests whenever an internal snapshot block is deduplicated.
-- Current I.2 executable slice: `select I.2p after the accepted review-context support convergence block`.
+- Current I.2 executable slice: `select I.2s after the accepted generated-document route-glue convergence block`.
 
 ### I.3 Admin route decomposition wave 1
 - Continue shrinking `routes/admin.py` by extracting one bounded server-backed subsection at a time into service/helper seams.

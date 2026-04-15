@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select I.2p after accepted review-context support convergence block`
+- Next slice: `select I.2s after accepted generated-document route-glue convergence block`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -155,6 +155,12 @@ Date: 2026-04-14
   - bbcode preview truncation is now centralized in a dedicated generated-document helper
   - `I.2o` deployed on production commit `ff6884f`
   - admin generated-document review-context now uses a bundle-based wrapper helper for naming parity with the provenance path
+  - `I.2p` deployed on production commit `c1fdaa9`
+  - shared admin/user generated-document bundle require helpers now own route-appropriate 404 handling
+  - `I.2q` deployed on production commit `c1fdaa9`
+  - the user generated-document snapshot route now uses a shared snapshot payload wrapper instead of inline `snapshot + provenance` assembly
+  - `I.2r` deployed on production commit `c1fdaa9`
+  - complaint/admin generated-document routes now follow one consistent bundle-guard/wrapper pattern across snapshot, provenance, and review-context surfaces
   - route contracts remain unchanged and the first thirty Phase I convergence slices are accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
