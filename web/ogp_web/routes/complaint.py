@@ -41,6 +41,7 @@ from ogp_web.services.complaint_service import build_generation_context_snapshot
 from ogp_web.services.citation_service import save_answer_citations
 from ogp_web.services.feature_flags import FeatureFlagService, RolloutContext
 from ogp_web.services.generation_orchestrator import GenerationOrchestrator
+from ogp_web.services.generated_document_trace_service import resolve_user_generated_document_trace_bundle
 from ogp_web.services.pilot_runtime_adapter import (
     resolve_pilot_complaint_runtime_context,
     supports_pilot_runtime_adapter,
@@ -542,21 +543,20 @@ async def generated_document_snapshot(
     user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ) -> GeneratedDocumentSnapshotResponse:
-    snapshot = GenerationOrchestrator(store).get_snapshot_by_legacy_id(
+    bundle = resolve_user_generated_document_trace_bundle(
+        store=store,
         username=user.username,
         legacy_generated_document_id=document_id,
     )
-    if snapshot is None:
+    if bundle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Документ не найден."])
-    payload = dict(snapshot)
-    generation_snapshot_id = int(payload.get("generation_snapshot_id") or 0)
     service = ProvenanceService(
         document_repository=DocumentRepository(store.backend),
         user_store=store,
         validation_service=ValidationService(ValidationRepository(store.backend)),
     )
-    provenance = service.get_latest_trace_for_generation_snapshot(generation_snapshot_id=generation_snapshot_id)
-    return GeneratedDocumentSnapshotResponse(**payload, provenance=provenance)
+    provenance = service.get_latest_trace_for_generation_snapshot(generation_snapshot_id=bundle.generation_snapshot_id)
+    return GeneratedDocumentSnapshotResponse(**bundle.snapshot, provenance=provenance)
 
 
 @router.post("/api/ai/suggest", response_model=SuggestResponse)
