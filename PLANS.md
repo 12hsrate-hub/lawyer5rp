@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.3 admin route decomposition wave 1`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded admin route decomposition seam after I.3e`
+- Current micro-step: `select the next bounded admin route decomposition seam after I.3h`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -91,7 +91,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.3c` is now complete on production commit `e83b789`: `async-jobs` overview payload assembly is now centralized behind the same shared admin overview helper layer instead of route-local status bucketing and grouping logic.
   - `I.3d` is now complete on production commit `1c532df`: runtime-server CRUD payload assembly now converges behind a dedicated admin runtime-server helper layer instead of staying route-local across list/create/update/activate/deactivate endpoints.
   - `I.3e` is now complete on production commit `1c532df`: runtime-server health payload assembly now converges behind the same admin runtime-server helper layer instead of route-local dependency orchestration inside `routes/admin.py`.
-  - immediate next step is `select I.3f after the accepted runtime-servers decomposition block`.
+  - `I.3f` is now complete on production commit `dcd6adc`: runtime-server law-sets and law-bindings payload assembly now converges behind a shared admin law-management helper layer instead of staying route-local in `routes/admin.py`.
+  - `I.3g` is now complete on production commit `dcd6adc`: law-set rebuild and rollback context resolution now converges behind the same helper layer instead of route-local store orchestration.
+  - `I.3h` is now complete on production commit `dcd6adc`: law-source registry payload assembly now converges behind the same admin law-management helper layer instead of route-local shaping in `routes/admin.py`.
+  - immediate next step is `select I.3i after the accepted admin law-management decomposition block`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -557,7 +560,7 @@ Execution status: `ready_to_start`
 - Continue shrinking `routes/admin.py` by extracting one bounded server-backed subsection at a time into service/helper seams.
 - Prioritize surfaces that already have clear service boundaries underneath them.
 - Do not mix UI copy work, route splitting, and domain behavior changes in one slice.
-- Current I.3 executable slice: `select I.3f after the accepted runtime-servers decomposition block`.
+- Current I.3 executable slice: `select I.3i after the accepted admin law-management decomposition block`.
 
 ### Deliverables
 - `Phase I` execution brief with the first accepted bounded seam

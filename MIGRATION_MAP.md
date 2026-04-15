@@ -10,8 +10,8 @@ Date: 2026-04-14
 - Active task: `I.3 admin route decomposition wave 1`
 - Status: `in_progress`
 - Last completed phase: `Phase H`
-- Inventory slices completed: `5`
-- Next slice: `select I.3f after accepted runtime-servers decomposition block`
+- Inventory slices completed: `6`
+- Next slice: `select I.3i after accepted admin law-management decomposition block`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -186,6 +186,12 @@ Date: 2026-04-14
   - runtime-server CRUD payload assembly now converges behind a dedicated admin runtime-server helper layer instead of route-local response shaping
   - `I.3e` deployed on production commit `1c532df`
   - runtime-server health payload assembly now converges behind the same helper layer instead of route-local dependency orchestration inside `routes/admin.py`
+  - `I.3f` deployed on production commit `dcd6adc`
+  - runtime-server law-sets and law-bindings payload assembly now converges behind a shared admin law-management helper layer instead of route-local store orchestration in `routes/admin.py`
+  - `I.3g` deployed on production commit `dcd6adc`
+  - law-set rebuild and rollback context preparation now converges behind the same helper layer instead of route-local store lookups and empty-source validation
+  - `I.3h` deployed on production commit `dcd6adc`
+  - law-source registry list/create/update payload assembly now converges behind the same helper layer instead of route-local shaping in `routes/admin.py`
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
