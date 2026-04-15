@@ -192,6 +192,12 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn("Law Sets", response.text)
         self.assertIn("Server Bindings", response.text)
 
+    def test_law_qa_test_page_renders_sources_panel(self):
+        response = self.client.get("/law-qa-test")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Q&A по законодательной базе", response.text)
+        self.assertIn("Законы, которые используются в поиске", response.text)
+
     def test_admin_servers_page_contains_phase_c_read_only_domain_summary(self):
         self.client.post("/api/auth/logout")
         response = self.client.post(

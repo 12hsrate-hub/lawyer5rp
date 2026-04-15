@@ -13,7 +13,12 @@ from ogp_web.services.ai_service import get_default_law_qa_model
 from ogp_web.services.auth_service import AuthError, AuthUser, get_current_user
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.law_admin_service import LawAdminService
-from ogp_web.services.server_context_service import resolve_server_config, resolve_user_server_context
+from ogp_web.services.server_context_service import (
+    extract_server_law_context_settings,
+    resolve_server_config,
+    resolve_server_law_sources,
+    resolve_user_server_context,
+)
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.content_workflow_repository import ContentWorkflowRepository
 from ogp_web.storage.user_store import UserStore
@@ -241,7 +246,7 @@ async def law_qa_test_page(
     store: UserStore = Depends(get_user_store),
 ):
     server_config, permissions = _server_context(store, user.username)
-    law_sources = list(server_config.law_qa_sources)
+    law_sources = list(resolve_server_law_sources(server_code=server_config.code))
     try:
         law_admin_service = LawAdminService(
             ContentWorkflowService(ContentWorkflowRepository(get_database_backend()), legacy_store=None)
@@ -250,7 +255,7 @@ async def law_qa_test_page(
         law_sources = list(law_sources_snapshot.source_urls)
     except Exception:
         # Allow law QA page rendering in tests/local runtimes without PostgreSQL.
-        law_sources = list(server_config.law_qa_sources)
+        law_sources = list(resolve_server_law_sources(server_code=server_config.code))
     return templates.TemplateResponse(
         request,
         "law_qa_test.html",
@@ -262,7 +267,10 @@ async def law_qa_test_page(
             law_qa_servers=[
                 {"code": item.code, "name": item.name}
                 for item in list_server_configs()
-                if item.law_qa_sources or item.law_qa_bundle_path
+                if (
+                    extract_server_law_context_settings(item).source_urls
+                    or extract_server_law_context_settings(item).bundle_path
+                )
             ],
             law_qa_sources=law_sources,
             law_qa_default_model=get_default_law_qa_model(),
