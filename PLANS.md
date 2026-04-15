@@ -549,6 +549,7 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
   - the dashboard rollout block now includes a `scale-out readiness` summary so reuse of the pilot template is gated before the next server or procedure candidate is selected
   - the dashboard rollout block now includes an `observation sign-off` table so cutover approval criteria are visible as `met / not met` checks
   - the dashboard rollout block now includes a human-readable `next candidate recommendation` summary so post-pilot reuse stays blocked or approved with an explicit reason
+  - the dashboard rollout block now includes a `legacy cleanup backlog` table so post-pilot removal candidates are visible before any compatibility seam is deleted
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`
