@@ -6,12 +6,12 @@ Date: 2026-04-14
 ## Execution Status
 
 - Execution checkpoint: `2026-04-15`
-- Active phase: `Phase H`
-- Active task: `Phase H accepted; define the next execution phase`
-- Status: `done`
+- Active phase: `Phase I`
+- Active task: `I.1 execution brief finalization`
+- Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `define the next post-H execution brief`
+- Next slice: `start I.1 with the first bounded server-config seam`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -53,23 +53,25 @@ Date: 2026-04-14
   - complaint adapter snapshots no longer carry the unused internal `runtime_adapter` ID block
   - `H.3e` deployed on production commit `85078b2`
   - complaint adapter fallback template/validation refs now reuse the shared complaint-service helper logic instead of maintaining a second hash-calculation path
-- `H.3f` deployed on production commit `246ee73`
-- complaint form fallback refs now reuse the shared draft-schema helper instead of maintaining a second adapter-local hash path
-- `H.3g` deployed on production commit `fda2d0f`
-- complaint adapter published workflow version reads and payload extraction are now centralized behind shared helper paths without changing the snapshot contract
-- `H.3h` deployed on production commit `429287d`
-- complaint adapter runtime version dictionaries and feature-flag normalization are now assembled through strict helper builders instead of repeated inline fallback blocks
-- `H.3i` deployed on production commit `6b21e6e`
-- complaint adapter now caches published payload extraction and fallback hash/ref helpers inside the resolver instead of recomputing them for each runtime version block
-- `H.3j` deployed on production commit `4e04822`
-- complaint generation routes now isolate adapter-vs-legacy context snapshot assembly and shared shadow citations-policy injection behind local helpers without changing route contracts
-- `H.3k` deployed on production commit `d4170c3`
-- complaint adapter snapshot internals now use dedicated effective-config, content-workflow, and server snapshot helpers, with a parity assertion keeping `content_workflow.applied_published_versions` aligned with `effective_config_snapshot`
-- `H.3l` deployed on production commit `1695401`
-- legacy complaint generation snapshots now use the same small helper structure for server/effective-config/content-workflow assembly, with parity coverage keeping legacy content_workflow aligned with effective_config_snapshot
-- `H.3` is accepted
-- no further meaningful complaint-path transitional seams remain that can be removed as small safe slices without inventing artificial refactors
-- `Phase H` is accepted as complete
+  - `H.3f` deployed on production commit `246ee73`
+  - complaint form fallback refs now reuse the shared draft-schema helper instead of maintaining a second adapter-local hash path
+  - `H.3g` deployed on production commit `fda2d0f`
+  - complaint adapter published workflow version reads and payload extraction are now centralized behind shared helper paths without changing the snapshot contract
+  - `H.3h` deployed on production commit `429287d`
+  - complaint adapter runtime version dictionaries and feature-flag normalization are now assembled through strict helper builders instead of repeated inline fallback blocks
+  - `H.3i` deployed on production commit `6b21e6e`
+  - complaint adapter now caches published payload extraction and fallback hash/ref helpers inside the resolver instead of recomputing them for each runtime version block
+  - `H.3j` deployed on production commit `4e04822`
+  - complaint generation routes now isolate adapter-vs-legacy context snapshot assembly and shared shadow citations-policy injection behind local helpers without changing route contracts
+  - `H.3k` deployed on production commit `d4170c3`
+  - complaint adapter snapshot internals now use dedicated effective-config, content-workflow, and server snapshot helpers, with a parity assertion keeping `content_workflow.applied_published_versions` aligned with `effective_config_snapshot`
+  - `H.3l` deployed on production commit `1695401`
+  - legacy complaint generation snapshots now use the same small helper structure for server/effective-config/content-workflow assembly, with parity coverage keeping legacy content_workflow aligned with effective_config_snapshot
+  - `H.3` is accepted
+  - no further meaningful complaint-path transitional seams remain that can be removed as small safe slices without inventing artificial refactors
+  - `Phase H` is accepted as complete
+  - `Phase I` is opened
+  - first focus area is runtime/admin convergence for remaining non-adapter `server_config` seams outside the accepted complaint adapter path
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
