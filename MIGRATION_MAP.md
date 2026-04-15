@@ -6,12 +6,12 @@ Date: 2026-04-14
 ## Execution Status
 
 - Execution checkpoint: `2026-04-15`
-- Active phase: `Phase I`
-- Active task: `select the next Phase I task after accepted I.5`
+- Active phase: `Phase J`
+- Active task: `J.1 suggest orchestration extraction`
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `6`
-- Next slice: `pick the next non-wrapper Phase I convergence target after accepted I.5`
+- Next slice: `extract the first bounded ai_service -> ai_pipeline suggest seam without changing route contracts`
 - Last updated: `2026-04-16`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -239,6 +239,9 @@ Date: 2026-04-14
   - `I.5c` deployed on production commit `6ad4359`
   - async `users/bulk-actions` dispatch and generic `/api/admin/tasks/{task_id}` status now reuse the same service, and API tests now override the dependency-backed task service instead of patching route globals
   - `I.5` is accepted
+  - `Phase I` is accepted
+  - the next real seam is no longer in `admin.py`; it is the still-monolithic suggest/law-QA orchestration that remains inside `ai_service.py` despite the existing `ogp_web.services.ai_pipeline` package
+  - `Phase J` is opened for bounded `ai_service -> ai_pipeline` extraction work
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
