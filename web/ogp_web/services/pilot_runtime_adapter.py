@@ -5,7 +5,7 @@ import inspect
 from dataclasses import dataclass
 from typing import Any
 
-from ogp_web.server_config import effective_server_pack, get_server_config
+from ogp_web.server_config import effective_server_pack
 from ogp_web.services.auth_service import AuthUser
 from ogp_web.services.complaint_draft_schema import normalize_complaint_draft
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
@@ -128,9 +128,8 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
         raise ValueError("pilot_runtime_adapter_not_supported")
 
     repository = ContentWorkflowRepository(store.backend)
-    server_config = get_server_config(server_code)
     server_pack = effective_server_pack(server_code)
-    bundle_meta = load_law_bundle_meta(server_code, server_config.law_qa_bundle_path)
+    bundle_meta = load_law_bundle_meta(server_code)
     procedure_version = _load_published_content_version(
         repository,
         server_code=server_code,

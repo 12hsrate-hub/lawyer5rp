@@ -66,3 +66,34 @@ def test_pilot_runtime_adapter_prefers_published_workflow_versions(monkeypatch):
         if store is not None:
             store.repository.close()
         tmpdir.cleanup()
+
+
+def test_pilot_runtime_adapter_resolves_without_server_config_lookup(monkeypatch):
+    tmpdir = make_temporary_directory()
+    store = None
+    try:
+        root = Path(tmpdir.name)
+        store = UserStore(
+            root / "app.db",
+            root / "users.json",
+            repository=UserRepository(PostgresBackend()),
+        )
+
+        monkeypatch.setattr(
+            "ogp_web.services.pilot_runtime_adapter.get_server_config",
+            lambda server_code: (_ for _ in ()).throw(AssertionError(f"unexpected get_server_config lookup for {server_code}")),
+            raising=False,
+        )
+        monkeypatch.setattr(
+            "ogp_web.services.pilot_runtime_adapter.load_law_bundle_meta",
+            lambda server_code: type("Meta", (), {"fingerprint": "bundle_hash"})(),
+        )
+
+        user = AuthUser(username="tester", email="tester@example.com", server_code="blackberry")
+        context = resolve_pilot_complaint_runtime_context(store, user)
+        assert context.server_code == "blackberry"
+        assert context.law_set_version["hash"] == "bundle_hash"
+    finally:
+        if store is not None:
+            store.repository.close()
+        tmpdir.cleanup()
