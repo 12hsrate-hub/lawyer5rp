@@ -7,7 +7,7 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase J`
-- Active task: `J.3 AI facade tightening`
+- Active task: `select the next non-cosmetic post-Phase-J execution target`
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `6`
@@ -259,12 +259,15 @@ Date: 2026-04-14
   - law-QA runtime-context assembly now converges behind the same shared layer instead of staying inline in `ai_service.py`
   - `J.2` is accepted
   - after runtime-context, retry, and finalization extraction, the remaining law-QA block is mostly thin facade glue rather than another high-value orchestration seam
-  - `J.3a` deployed on production commit `63192a4`
-  - suggest runtime-context assembly now converges behind `ai_pipeline.orchestration.resolve_suggest_runtime_context(...)`, so `suggest_text_details(...)` no longer keeps inline validation, retrieval-shadow, low-confidence policy, and compaction-attempt assembly
-  - `J.3b` deployed on production commit `74ad4d7`
-  - suggest generation/retry plus validation-remediation flow now converges behind `ai_pipeline.orchestration.run_suggest_execution_flow(...)`, so `suggest_text_details(...)` no longer keeps the remaining inline prompt/transport/retry/remediation glue
-  - `J.3c` deployed on production commit `eed8971`
-  - law-QA generation/client/retry flow now converges behind `ai_pipeline.orchestration.run_law_qa_execution_flow(...)`, so `answer_law_question_details(...)` no longer keeps the remaining inline client/request/retry glue
+- `J.3a` deployed on production commit `63192a4`
+- suggest runtime-context assembly now converges behind `ai_pipeline.orchestration.resolve_suggest_runtime_context(...)`, so `suggest_text_details(...)` no longer keeps inline validation, retrieval-shadow, low-confidence policy, and compaction-attempt assembly
+- `J.3b` deployed on production commit `74ad4d7`
+- suggest generation/retry plus validation-remediation flow now converges behind `ai_pipeline.orchestration.run_suggest_execution_flow(...)`, so `suggest_text_details(...)` no longer keeps the remaining inline prompt/transport/retry/remediation glue
+- `J.3c` deployed on production commit `eed8971`
+- law-QA generation/client/retry flow now converges behind `ai_pipeline.orchestration.run_law_qa_execution_flow(...)`, so `answer_law_question_details(...)` no longer keeps the remaining inline client/request/retry glue
+- `J.3` is accepted
+- the remaining `ai_service.py` seams are compat wrappers, domain helpers, or thin facades rather than another high-value orchestration extraction slice
+- `Phase J` is accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
