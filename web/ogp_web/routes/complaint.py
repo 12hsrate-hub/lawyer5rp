@@ -230,6 +230,23 @@ def _validation_service(store: UserStore) -> ValidationService:
     return ValidationService(ValidationRepository(store.backend))
 
 
+def _with_shadow_citations_policy(context_snapshot: dict[str, object]) -> dict[str, object]:
+    snapshot = dict(context_snapshot)
+    snapshot["citations_policy_gate"] = {"mode": "shadow", "status": "flagged_no_citations"}
+    return snapshot
+
+
+def _build_complaint_generation_context_snapshot(
+    *,
+    store: UserStore,
+    user: AuthUser,
+    adapter_flag,
+) -> dict[str, object]:
+    if supports_pilot_runtime_adapter(server_code=user.server_code, document_kind="complaint") and adapter_flag.use_new_flow:
+        return resolve_pilot_complaint_runtime_context(store, user).to_generation_context_snapshot()
+    return dict(build_generation_context_snapshot(store, user, document_kind="complaint"))
+
+
 def _validate_server_payload(store: UserStore, user: AuthUser, *, org: str = "", complaint_basis: str = "") -> None:
     server_config = _server_config_for_user(store, user)
     normalized_org = str(org or "").strip()
@@ -368,12 +385,9 @@ async def generate(
         context=RolloutContext(username=user.username, server_id=user.server_code),
     )
     _validate_server_payload(store, user, org=payload.org)
-    if supports_pilot_runtime_adapter(server_code=user.server_code, document_kind="complaint") and adapter_flag.use_new_flow:
-        context_snapshot = resolve_pilot_complaint_runtime_context(store, user).to_generation_context_snapshot()
-    else:
-        legacy_context_snapshot = build_generation_context_snapshot(store, user, document_kind="complaint")
-        context_snapshot = dict(legacy_context_snapshot)
-    context_snapshot["citations_policy_gate"] = {"mode": "shadow", "status": "flagged_no_citations"}
+    context_snapshot = _with_shadow_citations_policy(
+        _build_complaint_generation_context_snapshot(store=store, user=user, adapter_flag=adapter_flag)
+    )
     bbcode = generate_bbcode_text(store, payload, user)
     orchestrator = GenerationOrchestrator(store)
     bridge_result = orchestrator.write_generation_bridge(
@@ -457,8 +471,7 @@ async def generate_rehab(
         flag="validation_gate_v1",
         context=RolloutContext(username=user.username, server_id=user.server_code),
     )
-    context_snapshot = build_generation_context_snapshot(store, user, document_kind="rehab")
-    context_snapshot["citations_policy_gate"] = {"mode": "shadow", "status": "flagged_no_citations"}
+    context_snapshot = _with_shadow_citations_policy(build_generation_context_snapshot(store, user, document_kind="rehab"))
     bbcode = generate_rehab_bbcode_text(store, payload, user)
     bridge_result = GenerationOrchestrator(store).write_generation_bridge(
         username=user.username,
