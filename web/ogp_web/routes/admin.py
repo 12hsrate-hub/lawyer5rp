@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from ogp_web.dependencies import get_content_workflow_service
 from ogp_web.dependencies import get_admin_dashboard_service, get_admin_metrics_store, get_exam_answers_store, get_user_store, requires_permission
 from ogp_web.dependencies import get_runtime_law_sets_store, get_runtime_servers_store
-from ogp_web.server_config import build_permission_set, get_server_config
+from ogp_web.server_config import get_server_config
 from ogp_web.schemas import (
     AdminBlockPayload,
     AdminBulkActionPayload,
@@ -49,6 +49,7 @@ from ogp_web.services.validation_service import ValidationService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.content_contracts import normalize_content_type
+from ogp_web.services.server_context_service import resolve_user_server_context
 from ogp_web.services.async_job_service import AsyncJobService
 from ogp_web.services.job_status_service import enrich_job_status
 from ogp_web.services.admin_dashboard_service import AdminDashboardService
@@ -916,8 +917,7 @@ def _apply_bulk_action(
 
 def _admin_template_payload(request: Request, user: AuthUser, *, admin_focus: str) -> dict[str, Any]:
     user_store = request.app.state.user_store
-    server_config = get_server_config(user_store.get_server_code(user.username))
-    permissions = build_permission_set(user_store, user.username, server_config)
+    server_config, permissions = resolve_user_server_context(user_store, user.username)
     return page_context(
         username=user.username,
         nav_active="admin",
@@ -1754,14 +1754,14 @@ def _resolve_law_sources_server_code(
     if target_server_code == user.server_code:
         return target_server_code
 
-    current_permissions = build_permission_set(user_store, user.username, get_server_config(user.server_code))
+    _, current_permissions = resolve_user_server_context(user_store, user.username, server_code=user.server_code)
     if not current_permissions.has("manage_servers"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=["Недостаточно прав для управления источниками законов другого сервера."],
         )
 
-    target_permissions = build_permission_set(user_store, user.username, get_server_config(target_server_code))
+    _, target_permissions = resolve_user_server_context(user_store, user.username, server_code=target_server_code)
     if not target_permissions.has("manage_laws"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
