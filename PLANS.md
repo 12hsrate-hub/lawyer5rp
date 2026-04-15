@@ -631,7 +631,8 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `H.3b` is in progress locally: pilot runtime adapter no longer depends on legacy server-config lookup for law bundle metadata
 - `H.3c` is in progress locally: complaint adapter snapshots now carry their own `feature_flags` without a route-level legacy server-config read
 - `H.3d` is in progress locally: adapter snapshots drop the unused internal `runtime_adapter` ID block
-- immediate next step is `Phase H.3 fourth tightening slice merge + production verification`
+- `H.3e` is in progress locally: adapter fallback template/validation refs now reuse the shared complaint-service helpers instead of duplicating hash logic
+- immediate next step is `Phase H.3 fifth tightening slice merge + production verification`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`
