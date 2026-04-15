@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
+from ogp_web.services.generation_snapshot_schema_service import (
+    extract_provenance_ai,
+    extract_provenance_config,
+)
 
 
 class ProvenanceService:
@@ -8,31 +11,6 @@ class ProvenanceService:
         self.document_repository = document_repository
         self.user_store = user_store
         self.validation_service = validation_service
-
-    @staticmethod
-    def _as_dict(value: Any) -> dict[str, Any]:
-        return value if isinstance(value, dict) else {}
-
-    @staticmethod
-    def _extract_config(snapshot: dict[str, Any], workflow: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        effective_versions = ProvenanceService._as_dict(context.get("effective_versions"))
-        return {
-            "server_config_version": str(snapshot.get("server_config_version") or ""),
-            "procedure_version": str(workflow.get("procedure") or ProvenanceService._as_dict(context.get("content_workflow")).get("procedure") or ""),
-            "template_version": str(workflow.get("template") or ProvenanceService._as_dict(context.get("content_workflow")).get("template") or ""),
-            "law_set_version": str(snapshot.get("law_set_version") or ""),
-            "law_version_id": effective_versions.get("law_version_id"),
-        }
-
-    @staticmethod
-    def _extract_ai(workflow: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        ai = ProvenanceService._as_dict(context.get("ai"))
-        content_workflow = ProvenanceService._as_dict(context.get("content_workflow"))
-        return {
-            "provider": str(ai.get("provider") or ""),
-            "model_id": str(ai.get("model") or ""),
-            "prompt_version": str(workflow.get("prompt_version") or content_workflow.get("prompt_version") or ""),
-        }
 
     def get_document_version_trace(self, *, document_version_id: int) -> dict[str, Any] | None:
         version_row = self.document_repository.get_document_version(version_id=document_version_id)
@@ -52,9 +30,6 @@ class ProvenanceService:
         )
 
         snapshot_payload = dict(snapshot or {})
-        context_snapshot = self._as_dict(snapshot_payload.get("context_snapshot"))
-        effective_config = self._as_dict(snapshot_payload.get("effective_config_snapshot"))
-        workflow_ref = self._as_dict(snapshot_payload.get("content_workflow_ref"))
 
         retrieval_run_id = None
         citation_ids: list[int] = []
@@ -66,18 +41,14 @@ class ProvenanceService:
             source_version_id = int(first.get("source_version_id") or 0) or None
             law_version_id = source_version_id
 
-        config = self._extract_config(effective_config, workflow_ref, context_snapshot)
-        if law_version_id and not config.get("law_version_id"):
-            config["law_version_id"] = law_version_id
-
         return {
             "document_version_id": int(version_payload["id"]),
             "server_id": str(snapshot_payload.get("server_code") or ""),
             "document_kind": str(snapshot_payload.get("document_kind") or ""),
             "generation_timestamp": str(snapshot_payload.get("created_at") or ""),
             "generation_snapshot_id": int(snapshot_payload.get("id") or 0) or None,
-            "config": config,
-            "ai": self._extract_ai(workflow_ref, context_snapshot),
+            "config": extract_provenance_config(snapshot_payload, fallback_law_version_id=law_version_id),
+            "ai": extract_provenance_ai(snapshot_payload),
             "retrieval": {
                 "retrieval_run_id": retrieval_run_id,
                 "citation_ids": citation_ids,
