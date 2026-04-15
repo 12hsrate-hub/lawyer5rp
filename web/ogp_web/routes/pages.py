@@ -40,6 +40,12 @@ def _request_server_config(request: Request) -> ServerConfig:
     return resolve_server_config(server_code=getattr(default_server, "code", "blackberry"))
 
 
+def _page_server_config(request: Request, store: UserStore, *, username: str = "") -> ServerConfig:
+    if username:
+        return resolve_server_config(server_code=store.get_server_code(username))
+    return _request_server_config(request)
+
+
 def _build_page_context(
     *,
     user: AuthUser,
@@ -99,12 +105,7 @@ async def verify_email_page(
             message = "Email подтвержден. Теперь можно войти в аккаунт."
         except AuthError as exc:
             message = str(exc)
-    server_code = (
-        store.get_server_code(username)
-        if username
-        else _request_server_config(request).code
-    )
-    server_config = resolve_server_config(server_code=server_code)
+    server_config = _page_server_config(request, store, username=username)
     return templates.TemplateResponse(
         request,
         "verify_email.html",

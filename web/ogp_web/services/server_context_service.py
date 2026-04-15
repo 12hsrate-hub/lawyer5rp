@@ -224,6 +224,27 @@ def resolve_user_server_config(
     return server_config
 
 
+def resolve_user_server_identity(
+    user_store: UserStore,
+    username: str,
+    *,
+    server_code: str = "",
+) -> ServerIdentitySettings:
+    server_config = resolve_user_server_config(user_store, username, server_code=server_code)
+    fallback_server_code = server_code or user_store.get_server_code(username)
+    return extract_server_identity_settings(server_config, fallback_server_code=fallback_server_code)
+
+
+def resolve_user_server_complaint_settings(
+    user_store: UserStore,
+    username: str,
+    *,
+    server_code: str = "",
+) -> ServerComplaintSettings:
+    server_config = resolve_user_server_config(user_store, username, server_code=server_code)
+    return extract_server_complaint_settings(server_config)
+
+
 def list_servers_with_law_qa_context() -> list[dict[str, str]]:
     items: list[dict[str, str]] = []
     for config in list_server_configs():

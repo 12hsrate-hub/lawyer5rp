@@ -54,8 +54,8 @@ from ogp_web.services.regression_metrics import (
     start_timer,
 )
 from ogp_web.services.server_context_service import (
-    extract_server_complaint_settings,
-    extract_server_identity_settings,
+    resolve_user_server_complaint_settings,
+    resolve_user_server_identity,
     resolve_user_server_config,
 )
 from ogp_web.services.validation_service import ValidationService
@@ -226,10 +226,6 @@ async def _run_ai_task(
     return result
 
 
-def _server_config_for_user(store: UserStore, user: AuthUser):
-    return resolve_user_server_config(store, user.username, server_code=user.server_code)
-
-
 def _validation_service(store: UserStore) -> ValidationService:
     return ValidationService(ValidationRepository(store.backend))
 
@@ -252,9 +248,8 @@ def _build_complaint_generation_context_snapshot(
 
 
 def _validate_server_payload(store: UserStore, user: AuthUser, *, org: str = "", complaint_basis: str = "") -> None:
-    server_config = _server_config_for_user(store, user)
-    complaint_settings = extract_server_complaint_settings(server_config)
-    server_identity = extract_server_identity_settings(server_config, fallback_server_code=user.server_code)
+    complaint_settings = resolve_user_server_complaint_settings(store, user.username, server_code=user.server_code)
+    server_identity = resolve_user_server_identity(store, user.username, server_code=user.server_code)
     normalized_org = str(org or "").strip()
     normalized_basis = str(complaint_basis or "").strip()
     if normalized_org and complaint_settings.organizations and normalized_org not in complaint_settings.organizations:
@@ -276,7 +271,7 @@ async def get_complaint_draft(
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ) -> ComplaintDraftResponse:
-    server_config = _server_config_for_user(store, user)
+    server_config = resolve_user_server_config(store, user.username, server_code=user.server_code)
     draft = store.get_complaint_draft(user.username, server_code=user.server_code, document_type=document_type)
     metadata = draft.get("_meta", {}) if isinstance(draft.get("_meta"), dict) else {}
     normalized = normalize_complaint_draft(_flatten_complaint_draft(draft.get("draft", {})), config=server_config)
@@ -300,7 +295,7 @@ async def save_complaint_draft(
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ComplaintDraftResponse:
-    server_config = _server_config_for_user(store, user)
+    server_config = resolve_user_server_config(store, user.username, server_code=user.server_code)
     normalized = normalize_complaint_draft(_flatten_complaint_draft(payload.draft), config=server_config)
     if normalized.unknown_keys:
         unknown = ", ".join(normalized.unknown_keys)

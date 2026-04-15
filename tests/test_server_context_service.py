@@ -26,8 +26,10 @@ from ogp_web.services.server_context_service import (
     resolve_server_identity,
     resolve_server_law_bundle_path,
     resolve_server_law_sources,
+    resolve_user_server_complaint_settings,
     resolve_user_server_config,
     resolve_user_server_context,
+    resolve_user_server_identity,
     resolve_user_server_permissions,
     server_has_feature,
 )
@@ -310,6 +312,43 @@ class ServerContextServiceTests(unittest.TestCase):
 
         self.assertIs(resolved_config, server_config)
         resolve_user_server_context_mock.assert_called_once_with(store, "tester", server_code="orange")
+
+    def test_resolve_user_server_identity_uses_shared_user_server_config(self):
+        store = _DummyUserStore("blackberry")
+        server_config = type("Cfg", (), {"code": "Orange", "name": "Orange County"})()
+
+        with patch(
+            "ogp_web.services.server_context_service.resolve_user_server_config",
+            return_value=server_config,
+        ) as resolve_user_server_config_mock:
+            resolved_identity = resolve_user_server_identity(store, "tester", server_code="orange")
+
+        self.assertEqual(resolved_identity.code, "orange")
+        self.assertEqual(resolved_identity.name, "Orange County")
+        resolve_user_server_config_mock.assert_called_once_with(store, "tester", server_code="orange")
+
+    def test_resolve_user_server_complaint_settings_uses_shared_user_server_config(self):
+        store = _DummyUserStore("blackberry")
+        server_config = type(
+            "Cfg",
+            (),
+            {
+                "organizations": ("LSPD",),
+                "complaint_bases": (type("Basis", (), {"code": "wrongful_arrest"})(),),
+                "complaint_test_preset": {"org": "LSPD"},
+                "exam_sheet_url": "https://docs.example/sheet",
+            },
+        )()
+
+        with patch(
+            "ogp_web.services.server_context_service.resolve_user_server_config",
+            return_value=server_config,
+        ) as resolve_user_server_config_mock:
+            settings = resolve_user_server_complaint_settings(store, "tester", server_code="orange")
+
+        self.assertEqual(settings.organizations, ("LSPD",))
+        self.assertEqual(settings.complaint_basis_codes, ("wrongful_arrest",))
+        resolve_user_server_config_mock.assert_called_once_with(store, "tester", server_code="orange")
 
     def test_list_servers_with_law_qa_context_uses_identity_and_law_extractors(self):
         law_server = type("Cfg", (), {"code": "Orange", "name": "Orange County"})()
