@@ -6,12 +6,12 @@ Date: 2026-04-14
 ## Execution Status
 
 - Execution checkpoint: `2026-04-15`
-- Active phase: `Phase G`
-- Active task: `Phase G complete`
-- Status: `phase_checkpoint_complete`
+- Active phase: `Phase H`
+- Active task: `H.1b Rehab runtime catalog verification`
+- Status: `in_progress`
 - Last completed phase: `Phase G`
 - Inventory slices completed: `5`
-- Next slice: `Post-Phase-G planning / next roadmap segment`
+- Next slice: `run scripts/verify_rehab_runtime_catalog.py for blackberry + rehab`
 - Last updated: `2026-04-15`
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
@@ -447,6 +447,12 @@ Fallback criteria:
   - the `Pilot rollout` block now includes an `observation sign-off` table so pilot cutover criteria are visible as explicit `met / not met` checks
   - the `Pilot rollout` block now includes a human-readable `next candidate recommendation` summary so reuse decisions are visible before a second candidate is chosen
   - the `Pilot rollout` block now includes a `legacy cleanup backlog` table so compatibility-seam removal stays visible and gated after pilot observation
+- Phase H start:
+  - next work begins with one bounded post-pilot candidate, not broad rollout
+  - legacy cleanup should follow the already-published removal gates from the rollout backlog
+  - first recommended H.1 candidate is `blackberry + rehab` because it expands only the procedure dimension while keeping the pilot server and rollback surface unchanged
+  - `H.1a` is complete at the code/seed level via `REHAB_ROLLOUT_GAP_MAP.md`
+  - current H.1b target is runtime verification of effective rehab inventory, validation, and provenance coverage
 - Phase F outcome:
   - provenance baseline mapped in `PROVENANCE_SCHEMA.md` for `blackberry + complaint`
   - read-only provenance assembler and API added for `document_version_id`
