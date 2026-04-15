@@ -111,10 +111,10 @@ class LawAdminServiceHelpersTests(unittest.TestCase):
 
     def test_rebuild_index_dry_run_skips_snapshot_import(self):
         service = LawAdminService(workflow_service=types.SimpleNamespace(repository=types.SimpleNamespace()))
-        with patch("ogp_web.services.law_admin_service.resolve_server_config") as fake_config, \
+        with patch("ogp_web.services.law_admin_service.resolve_server_law_bundle_path") as fake_bundle_path, \
             patch("ogp_web.services.law_admin_service.build_law_bundle") as fake_bundle, \
             patch("ogp_web.services.law_admin_service.import_law_snapshot") as fake_import:
-            fake_config.return_value = types.SimpleNamespace(law_qa_bundle_path="")
+            fake_bundle_path.return_value = ""
             fake_bundle.return_value = {
                 "sources": [{"url": "https://example.com/law/a"}],
                 "articles": [{"article_label": "1", "text": "t", "url": "https://example.com/law/a", "document_title": "Doc"}],
@@ -189,9 +189,6 @@ class LawAdminServiceHelpersTests(unittest.TestCase):
         with patch(
             "ogp_web.services.law_admin_service.list_servers_with_law_qa_context",
             return_value=[{"code": "orange", "name": "Orange County"}],
-        ), patch(
-            "ogp_web.services.law_admin_service.resolve_server_config",
-            return_value=types.SimpleNamespace(code="orange", name="Orange County"),
         ):
             payload = service.describe_sources_dependencies()
 

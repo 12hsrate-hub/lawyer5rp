@@ -11,9 +11,7 @@ from ogp_web.services.law_bundle_service import (
     write_law_bundle,
 )
 from ogp_web.services.server_context_service import (
-    extract_server_identity_settings,
     list_servers_with_law_qa_context,
-    resolve_server_config,
     resolve_server_law_bundle_path,
     resolve_server_law_sources,
 )
