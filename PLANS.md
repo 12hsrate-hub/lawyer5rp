@@ -7,7 +7,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase J — AI pipeline decomposition wave 1`
-- Current task: `J.2 law-qa extraction follow-up`
+- Current task: `J.3 AI facade tightening`
 - Active execution phase override: `Phase I is accepted; Phase J is now opened as the next execution phase`
 - Current micro-step: `select the first bounded ai_service -> ai_pipeline extraction seam without changing route contracts`
 - Overall status: `in_progress`
@@ -127,8 +127,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - `J.1d` is now complete on production commit `c5ad780`: suggest telemetry/result finalization now converges behind the same orchestration layer, and the old local suggest/law-qa metrics helper duplicates were removed from `ai_service.py`.
 - `J.2a` is now complete on production commit `00bcafe`: law-QA telemetry/result finalization now converges behind `ai_pipeline.orchestration`, leaving `answer_law_question_details(...)` thinner without changing the public contract.
 - `J.2b` is now complete on production commit `872bc05`: law-QA context-compaction retry orchestration now converges behind the same `ai_pipeline.orchestration` layer, leaving `ai_service.py` with less inline retry/control-flow logic.
+- `J.2c` is now complete on production commit `3004077`: law-QA runtime-context assembly now converges behind the same orchestration layer, leaving `answer_law_question_details(...)` close to a thin facade over shared helpers.
+- `J.2` is accepted: after runtime-context, retry, and finalization extraction, the remaining law-QA block is mostly facade glue rather than another high-value orchestration seam.
 - the old positional `get_server_config(...)` retrieval seam in `ai_service.py` is now wrapped through a compatibility adapter so shared server-context resolution still works on the extracted suggest path.
-- immediate next step is `Phase J.2 law-qa extraction follow-up`, with the next bounded seam focused on the remaining law-QA request assembly / retrieval wiring before deciding whether `Phase J` is ready to move into facade tightening.
+- immediate next step is `Phase J.3 AI facade tightening`, with the next bounded seam focused on reducing `ai_service.py` to compatibility facades, shared retrieval helpers, and stable metrics adapters without drifting into cosmetic-only movement.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -625,12 +627,14 @@ Execution status: `ready_to_start`
 - Reuse the same bounded rule: internal orchestration moves, route/service contracts stay stable.
 - `J.2a` complete on production commit `00bcafe`: law-QA telemetry/result finalization now lives behind shared `ai_pipeline.orchestration` helpers while the route/service contract remains stable.
 - `J.2b` complete on production commit `872bc05`: law-QA context-compaction retry orchestration now lives behind the same shared layer, with existing law-QA service and API tests remaining green.
-- Next candidate slice:
-  - move the remaining law-QA request assembly / retrieval control seam out of `ai_service.py`, or stop and switch to `J.3` once the remaining block is mostly thin facade glue.
+- `J.2c` complete on production commit `3004077`: law-QA runtime-context assembly now lives behind the same shared layer, and the remaining `answer_law_question_details(...)` block is mostly thin facade glue.
+- `J.2` accepted: further slicing the law-QA path would now have diminishing architectural return.
 
 ### J.3 AI facade tightening
 - Once suggest and law-QA internals are extracted, reduce `ai_service.py` to compatibility facades, shared retrieval helpers, and stable metrics adapters.
 - Stop as soon as the remaining code is mostly thin facade glue; do not keep slicing for cosmetic movement.
+- Next candidate slice:
+  - remove any remaining dead/local wrapper-only helper duplication in `ai_service.py` only when it reduces a real compatibility seam instead of merely moving names around.
 
 ### Deliverables
 - `Phase I` execution brief with the first accepted bounded seam

@@ -255,6 +255,10 @@ Date: 2026-04-14
   - law-QA telemetry/result finalization now converges behind `ai_pipeline.orchestration` instead of staying inline in `ai_service.py`
   - `J.2b` deployed on production commit `872bc05`
   - law-QA context-compaction retry orchestration now converges behind the same shared layer instead of staying inline in `ai_service.py`
+  - `J.2c` deployed on production commit `3004077`
+  - law-QA runtime-context assembly now converges behind the same shared layer instead of staying inline in `ai_service.py`
+  - `J.2` is accepted
+  - after runtime-context, retry, and finalization extraction, the remaining law-QA block is mostly thin facade glue rather than another high-value orchestration seam
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
