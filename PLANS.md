@@ -7,9 +7,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
-- Current task: `I.2 snapshot/provenance schema convergence`
+- Current task: `I.3 admin route decomposition wave 1`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded snapshot/provenance convergence slice after I.2x`
+- Current micro-step: `select the first bounded admin route decomposition seam after accepted I.2 convergence`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -85,7 +85,8 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.2v` is now complete on production commit `62c2d5d`: generated-document list item normalization now converges behind shared helpers instead of route-local timestamp and field shaping.
   - `I.2w` is now complete on production commit `62c2d5d`: the user generated-document history route now reads through a shared generated-document list helper instead of a route-local normalizer layered over raw store output.
   - `I.2x` is now complete on production commit `62c2d5d`: the admin recent generated-documents route now reuses the same shared generated-document list helper layer with normalized `generation_snapshot_id` and `username` shaping.
-  - immediate next step is `select I.2y after the accepted generated-document list/helper convergence block`.
+  - `I.2` is accepted: no further meaningful snapshot/provenance convergence seams remain that remove real duplicated logic without drifting into wrapper-only reshuffling.
+  - immediate next step is `select I.3a after the accepted I.2 snapshot/provenance convergence wave`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -545,12 +546,13 @@ Execution status: `ready_to_start`
 - Align legacy and adapter snapshot/provenance internals behind common helper contracts where the payload shape is already the same.
 - Keep external route contracts and admin review payloads stable.
 - Add parity assertions/tests whenever an internal snapshot block is deduplicated.
-- Current I.2 executable slice: `select I.2s after the accepted generated-document route-glue convergence block`.
+- `I.2` accepted on production through `I.2x`.
 
 ### I.3 Admin route decomposition wave 1
 - Continue shrinking `routes/admin.py` by extracting one bounded server-backed subsection at a time into service/helper seams.
 - Prioritize surfaces that already have clear service boundaries underneath them.
 - Do not mix UI copy work, route splitting, and domain behavior changes in one slice.
+- Current I.3 executable slice: `select I.3a after the accepted I.2 snapshot/provenance convergence wave`.
 
 ### Deliverables
 - `Phase I` execution brief with the first accepted bounded seam
