@@ -7,11 +7,11 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase I`
-- Active task: `Phase I.4 admin analytics convergence wave 1`
+- Active task: `select the next Phase I task after accepted I.4`
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `6`
-- Next slice: `I.4d ai-pipeline analytics convergence review after accepted dashboard/overview/performance block`
+- Next slice: `pick the next non-wrapper Phase I convergence target after accepted I.4`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -226,6 +226,12 @@ Date: 2026-04-14
   - `/api/admin/overview` metrics, model-policy, error-explorer, synthetic summary, and partial-error orchestration now converge behind the same shared analytics helper instead of route-local glue
   - `I.4c` deployed on production commit `c9ad609`
   - `/api/admin/performance` caching, latency/rates/totals shaping, and snapshot metadata now converge behind the same shared analytics helper instead of route-local cache and formatting helpers
+  - `I.4d` deployed on production commit `6d93cc7`
+  - `/api/admin/ai-pipeline` summary/generation/feedback orchestration now converges behind a dedicated admin AI pipeline service instead of staying inline in `routes/admin.py`
+  - `I.4e` deployed on production commit `6d93cc7`
+  - ai-pipeline recent-window filtering, quality summary, cost tables, top inaccurate generations, and policy-action shaping now converge behind the same shared service instead of route-local helper sprawl
+  - `I.4f` deployed on production commit `6d93cc7`
+  - the remaining ai-pipeline helper leftovers were removed from `routes/admin.py`, helper tests now target the service layer directly, and the admin analytics wave is accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.

@@ -7,9 +7,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
-- Current task: `Phase I.4 admin analytics convergence wave 1`
+- Current task: `select the next Phase I task after accepted I.4`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `I.4d ai-pipeline analytics convergence review after accepted dashboard/overview/performance block`
+- Current micro-step: `pick the next non-wrapper Phase I convergence target after accepted I.4`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -111,7 +111,11 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.4a` is now complete on production commit `c9ad609`: `/api/admin/dashboard` KPI, alerts, quick-links, and recent-event aggregation now converge behind a shared admin analytics service instead of route-local assembly in `routes/admin.py`.
   - `I.4b` is now complete on production commit `c9ad609`: `/api/admin/overview` metrics, model-policy, error-explorer, synthetic summary, and partial-error orchestration now converge behind the same shared analytics service instead of route-local glue.
   - `I.4c` is now complete on production commit `c9ad609`: `/api/admin/performance` caching, latency/rates/totals shaping, and snapshot metadata now converge behind the same shared analytics service instead of route-local cache and formatting helpers.
-  - immediate next step is `I.4d ai-pipeline analytics convergence review after accepted dashboard/overview/performance block`.
+  - `I.4d` is now complete on production commit `6d93cc7`: `/api/admin/ai-pipeline` summary/generation/feedback orchestration now converges behind a dedicated admin AI pipeline service instead of staying inline in `routes/admin.py`.
+  - `I.4e` is now complete on production commit `6d93cc7`: ai-pipeline recent-window filtering, quality summary, cost tables, top inaccurate generations, and policy-action shaping now converge behind the same shared service instead of route-local helper sprawl.
+  - `I.4f` is now complete on production commit `6d93cc7`: the remaining ai-pipeline helper leftovers were removed from `routes/admin.py`, helper tests now target the service layer directly, and API coverage remains green.
+  - `I.4` is accepted: no further meaningful admin analytics convergence seams remain that remove a real orchestration layer without drifting into thin ops wrappers or task-boundary reshuffling.
+  - immediate next step is `pick the next non-wrapper Phase I convergence target after accepted I.4`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
