@@ -23,6 +23,16 @@ class FakeDocumentRepository:
             "generation_snapshot_id": 501,
         }
 
+    def get_latest_document_version_by_generation_snapshot_id(self, *, generation_snapshot_id: int):
+        if generation_snapshot_id != 501:
+            return None
+        return {
+            "id": 77,
+            "document_id": 12,
+            "version_number": 3,
+            "generation_snapshot_id": 501,
+        }
+
 
 class FakeUserStore:
     def get_generation_snapshot_by_id(self, snapshot_id: int):
@@ -100,3 +110,17 @@ def test_provenance_service_returns_none_for_missing_version():
     )
 
     assert service.get_document_version_trace(document_version_id=999) is None
+
+
+def test_provenance_service_builds_trace_from_generation_snapshot_id():
+    service = ProvenanceService(
+        document_repository=FakeDocumentRepository(),
+        user_store=FakeUserStore(),
+        validation_service=FakeValidationService(),
+    )
+
+    payload = service.get_latest_trace_for_generation_snapshot(generation_snapshot_id=501)
+
+    assert payload is not None
+    assert payload["document_version_id"] == 77
+    assert payload["generation_snapshot_id"] == 501

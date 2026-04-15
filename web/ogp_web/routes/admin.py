@@ -1514,7 +1514,7 @@ async def admin_generated_document_provenance(
         user_store=store,
         validation_service=ValidationService(ValidationRepository(store.backend)),
     )
-    payload = service.get_document_version_trace(document_version_id=int(version_row["id"]))
+    payload = service.get_latest_trace_for_generation_snapshot(generation_snapshot_id=generation_snapshot_id)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Provenance trace not found."])
     return DocumentVersionProvenanceResponse(**payload)
