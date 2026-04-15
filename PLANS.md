@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.1 shared server-context seam extraction`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded runtime/admin server-config seam after I.1d`
+- Current micro-step: `select the next bounded runtime/admin server-config seam after I.1f`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -38,7 +38,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.1b` is now complete on production commit `436fba9`: the same shared user server-context helper now also covers user-bound `complaint.py` and `profile.py` server-config reads.
   - `I.1c` is now complete on production commit `d740b24`: public/default server-config reads in `pages.py` now reuse a shared resolver for login, verify-email, and reset-password surfaces.
   - `I.1d` is now complete on production commit `bc161e1`: `law_admin_service.py` now reuses shared server-config resolution across effective, sync, and rebuild paths.
-  - immediate next step is `I.1e` bounded seam selection after the accepted law-admin server-context reuse.
+  - `I.1e` is now complete on production commit `a562afc`: `complaint_service.build_generation_context_snapshot(...)` now reuses shared server-config resolution.
+  - `I.1f` is now complete on production commit `a562afc`: bounded `ai_service` suggest/law helper paths now reuse shared server-config resolution instead of direct service-level reads.
+  - immediate next step is `I.1g` bounded seam selection after the accepted service-level context reuse pass.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -487,7 +489,9 @@ Execution status: `ready_to_start`
 - `I.1b` complete on production commit `436fba9`: user-bound server-config reads in `complaint.py` and `profile.py` now reuse the same shared helper while keeping draft/profile route contracts stable.
 - `I.1c` complete on production commit `d740b24`: `resolve_server_config(...)` now centralizes public/default server-config reads for login, verify-email, and reset-password page context assembly.
 - `I.1d` complete on production commit `bc161e1`: `law_admin_service.py` now reuses shared server-config resolution in effective source, sync, and rebuild flows.
-- Current I.1 executable slice: `select I.1e after the accepted law-admin context seam`.
+- `I.1e` complete on production commit `a562afc`: legacy complaint generation snapshot assembly now reuses shared server-config resolution.
+- `I.1f` complete on production commit `a562afc`: bounded `ai_service` suggest/law helper paths now reuse shared server-config resolution.
+- Current I.1 executable slice: `select I.1g after the accepted service-level context seam`.
 
 ### I.2 Snapshot/provenance schema convergence
 - Align legacy and adapter snapshot/provenance internals behind common helper contracts where the payload shape is already the same.
@@ -697,7 +701,9 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `I.1b` is complete on production commit `436fba9`: the same shared helper now also covers user-bound `complaint.py` and `profile.py` server-config reads
 - `I.1c` is complete on production commit `d740b24`: public/default server-config reads in `pages.py` now reuse a shared resolver for login, verify-email, and reset-password surfaces
 - `I.1d` is complete on production commit `bc161e1`: `law_admin_service.py` now reuses shared server-config resolution across effective, sync, and rebuild paths
-- immediate next step is `I.1e bounded seam selection after the accepted law-admin server-context extraction`
+- `I.1e` is complete on production commit `a562afc`: `complaint_service.build_generation_context_snapshot(...)` now reuses shared server-config resolution
+- `I.1f` is complete on production commit `a562afc`: bounded `ai_service` suggest/law helper paths now reuse shared server-config resolution
+- immediate next step is `I.1g bounded seam selection after the accepted service-level server-context pass`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`
