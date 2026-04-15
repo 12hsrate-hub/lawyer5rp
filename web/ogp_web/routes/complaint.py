@@ -53,7 +53,7 @@ from ogp_web.services.regression_metrics import (
     record_validation_fail_rate,
     start_timer,
 )
-from ogp_web.services.server_context_service import resolve_user_server_context
+from ogp_web.services.server_context_service import extract_server_complaint_settings, extract_server_identity_settings, resolve_user_server_context
 from ogp_web.services.validation_service import ValidationService
 from ogp_web.services.retrieval_service import run_retrieval
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -250,18 +250,20 @@ def _build_complaint_generation_context_snapshot(
 
 def _validate_server_payload(store: UserStore, user: AuthUser, *, org: str = "", complaint_basis: str = "") -> None:
     server_config = _server_config_for_user(store, user)
+    complaint_settings = extract_server_complaint_settings(server_config)
+    server_identity = extract_server_identity_settings(server_config, fallback_server_code=user.server_code)
     normalized_org = str(org or "").strip()
     normalized_basis = str(complaint_basis or "").strip()
-    if normalized_org and server_config.organizations and normalized_org not in server_config.organizations:
+    if normalized_org and complaint_settings.organizations and normalized_org not in complaint_settings.organizations:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=[f"Организация {normalized_org!r} не относится к серверу {server_config.name}."],
+            detail=[f"Организация {normalized_org!r} не относится к серверу {server_identity.name}."],
         )
-    allowed_bases = set(server_config.complaint_basis_codes())
+    allowed_bases = set(complaint_settings.complaint_basis_codes)
     if normalized_basis and allowed_bases and normalized_basis not in allowed_bases:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=[f"Основание жалобы {normalized_basis!r} не поддерживается для сервера {server_config.name}."],
+            detail=[f"Основание жалобы {normalized_basis!r} не поддерживается для сервера {server_identity.name}."],
         )
 
 
