@@ -58,6 +58,7 @@ from ogp_web.services.law_retrieval_service import retrieve_law_context, unique_
 from ogp_web.services.ai_pipeline.guardrails import clean_suggest_text as _pipeline_clean_suggest_text, truncate_suggest_value as _pipeline_truncate_suggest_value
 from ogp_web.services.ai_pipeline.interfaces import LawQaAnswerResult, SuggestContextBuildResult, SuggestTextResult
 from ogp_web.services.ai_pipeline.orchestration import (
+    finalize_law_qa_result,
     LawQaOrchestrationDeps,
     PrincipalScanDeps,
     SuggestGenerationAttempt,
@@ -2295,64 +2296,30 @@ def _answer_law_question_details_impl(payload: LawQaPayload) -> LawQaAnswerResul
             raise
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
 
-    sanitized_text = strip_law_qa_source_urls(text)
-    sanitized_text = normalize_law_qa_text_formatting(sanitized_text)
-    limited = sanitized_text[: payload.max_answer_chars].strip()
     latency_ms = int((monotonic() - request_started_at) * 1000)
-    telemetry = build_ai_telemetry(
-        model_name=model_name,
-        prompt_text=prompt,
-        output_text=limited,
-        usage=usage,
-        latency_ms=latency_ms,
-        cache_hit=False,
-    )
-    budget_assessment = evaluate_budget(flow="law_qa", telemetry=telemetry)
-    used_sources = list(unique_sources(retrieval_result))
-    guard_result = guard_law_qa_answer(
-        text=limited,
-        allowed_source_urls=used_sources,
-        bundle_health=retrieval_result.bundle_health,
-    )
-    telemetry_meta = telemetry_to_meta(telemetry)
-    telemetry_meta.update(
-        {
-            "selected_model": model_name,
-            "selection_reason": selection_reason,
-            "requested_model": requested_model,
-            "context_compaction_level": compaction_level,
-            "context_compacted": bool(compaction_level > 0),
-        }
-    )
-    return LawQaAnswerResult(
-        text=limited,
+    return finalize_law_qa_result(
+        text=text,
         generation_id=generation_id,
-        used_sources=used_sources,
-        indexed_documents=retrieval_result.indexed_chunk_count,
-        retrieval_confidence=retrieval_result.confidence,
-        retrieval_profile=retrieval_result.profile,
-        guard_status=guard_result.status,
         contract_version=LEGAL_PIPELINE_CONTRACT_VERSION,
-        bundle_status=retrieval_result.bundle_health.status,
-        bundle_generated_at=retrieval_result.bundle_health.generated_at,
-        bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
-        warnings=list(
-            dict.fromkeys(
-                list(retrieval_result.bundle_health.warnings)
-                + list(guard_result.warning_codes)
-                + list(budget_assessment.warnings)
-                + (["law_qa_context_compacted"] if compaction_level > 0 else [])
-            )
-        ),
+        retrieval_result=retrieval_result,
         shadow=_shadow_to_dict(shadow),
-        selected_norms=_build_law_qa_selected_norms(retrieval_result),
-        telemetry_meta=telemetry_meta,
-        budget_status=budget_assessment.status,
-        budget_warnings=list(budget_assessment.warnings),
-        budget_policy=policy_to_meta(budget_assessment.policy),
-        selected_model=model_name,
+        model_name=model_name,
         selection_reason=selection_reason,
         requested_model=requested_model,
+        compaction_level=compaction_level,
+        prompt=prompt,
+        usage=usage,
+        latency_ms=latency_ms,
+        max_answer_chars=payload.max_answer_chars,
+        build_ai_telemetry=build_ai_telemetry,
+        evaluate_budget=evaluate_budget,
+        unique_sources=unique_sources,
+        guard_law_qa_answer=guard_law_qa_answer,
+        telemetry_to_meta=telemetry_to_meta,
+        policy_to_meta=policy_to_meta,
+        strip_law_qa_source_urls=strip_law_qa_source_urls,
+        normalize_law_qa_text_formatting=normalize_law_qa_text_formatting,
+        build_selected_norms=_build_law_qa_selected_norms,
     )
 
 
