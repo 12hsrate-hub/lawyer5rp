@@ -62,6 +62,7 @@ def test_pilot_runtime_adapter_prefers_published_workflow_versions(monkeypatch):
         assert context.template_version["version"] == "6"
         assert "content_item_id" not in context.procedure_version
         assert "status" not in context.template_version
+        assert context.feature_flags == ()
     finally:
         if store is not None:
             store.repository.close()

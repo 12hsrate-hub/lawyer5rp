@@ -629,7 +629,8 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `H.2f` is complete on production commit `5fb1671`
 - `H.3a` is in progress locally: complaint generate skips the legacy snapshot builder when adapter flow is active
 - `H.3b` is in progress locally: pilot runtime adapter no longer depends on legacy server-config lookup for law bundle metadata
-- immediate next step is `Phase H.3 second tightening slice merge + production verification`
+- `H.3c` is in progress locally: complaint adapter snapshots now carry their own `feature_flags` without a route-level legacy server-config read
+- immediate next step is `Phase H.3 third tightening slice merge + production verification`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`

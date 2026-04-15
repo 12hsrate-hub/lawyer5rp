@@ -26,6 +26,7 @@ PILOT_LAWS_CONTENT_KEY = "law_sources_manifest"
 @dataclass(frozen=True)
 class PilotComplaintRuntimeContext:
     server_code: str
+    feature_flags: tuple[str, ...]
     server_config_version: dict[str, Any]
     procedure_version: dict[str, Any]
     form_version: dict[str, Any]
@@ -66,6 +67,7 @@ class PilotComplaintRuntimeContext:
                 "template_version_id": self.template_version.get("id"),
                 "law_set_version_id": self.law_set_version.get("id"),
             },
+            "feature_flags": list(self.feature_flags),
         }
 
 
@@ -129,6 +131,7 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
 
     repository = ContentWorkflowRepository(store.backend)
     server_pack = effective_server_pack(server_code)
+    server_pack_metadata = dict(server_pack.get("metadata") or {}) if isinstance(server_pack, dict) else {}
     bundle_meta = load_law_bundle_meta(server_code)
     procedure_version = _load_published_content_version(
         repository,
@@ -171,6 +174,15 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
 
     return PilotComplaintRuntimeContext(
         server_code=server_code,
+        feature_flags=tuple(
+            sorted(
+                {
+                    str(item).strip()
+                    for item in (server_pack_metadata.get("feature_flags") or [])
+                    if str(item).strip()
+                }
+            )
+        ),
         server_config_version={
             "id": f"server_config:{server_code}:v{server_pack_version}",
             "version": server_pack_version,
