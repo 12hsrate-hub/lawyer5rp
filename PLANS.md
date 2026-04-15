@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.2 snapshot/provenance schema convergence`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded snapshot/provenance convergence slice after I.2r`
+- Current micro-step: `select the next bounded snapshot/provenance convergence slice after I.2u`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -79,7 +79,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.2p` is now complete on production commit `c1fdaa9`: shared admin/user generated-document bundle require helpers now own route-appropriate 404 handling instead of route-local bundle guards.
   - `I.2q` is now complete on production commit `c1fdaa9`: the user generated-document snapshot route now uses a shared snapshot payload wrapper instead of inline `snapshot + provenance` response assembly.
   - `I.2r` is now complete on production commit `c1fdaa9`: complaint/admin generated-document routes now follow one consistent bundle-guard/wrapper pattern across snapshot, provenance, and review-context surfaces.
-  - immediate next step is `select I.2s after the accepted generated-document route-glue convergence block`.
+  - `I.2s` is now complete on production commit `d8dd0d8`: document-version provenance server-access and payload resolution now converge behind a shared `provenance_service` helper instead of route-local target checks plus route-local service wiring.
+  - `I.2t` is now complete on production commit `d8dd0d8`: `GeneratedDocumentTraceBundle` now exposes normalized generated-document/server/version metadata accessors, and review/support builders consume those bundle-backed fields instead of re-decoding raw snapshot/version rows inline.
+  - `I.2u` is now complete on production commit `d8dd0d8`: generated-document snapshot payload assembly now converges behind a shared builder reused by the bundle-backed snapshot wrapper instead of keeping the merge shape inline.
+  - immediate next step is `select I.2v after the accepted document-version/generated-document provenance helper block`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.

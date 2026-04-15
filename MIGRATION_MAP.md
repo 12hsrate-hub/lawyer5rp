@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select I.2s after accepted generated-document route-glue convergence block`
+- Next slice: `select I.2v after accepted document-version/generated-document provenance helper block`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -161,6 +161,12 @@ Date: 2026-04-14
   - the user generated-document snapshot route now uses a shared snapshot payload wrapper instead of inline `snapshot + provenance` assembly
   - `I.2r` deployed on production commit `c1fdaa9`
   - complaint/admin generated-document routes now follow one consistent bundle-guard/wrapper pattern across snapshot, provenance, and review-context surfaces
+  - `I.2s` deployed on production commit `d8dd0d8`
+  - document-version provenance server access checks plus payload resolution now converge behind shared `provenance_service` route helpers
+  - `I.2t` deployed on production commit `d8dd0d8`
+  - generated-document trace bundles now expose normalized generated-document/server/version metadata accessors consumed by review/support builders
+  - `I.2u` deployed on production commit `d8dd0d8`
+  - generated-document snapshot payload assembly now converges behind a shared builder instead of bundle-wrapper inline merging
   - route contracts remain unchanged and the first thirty Phase I convergence slices are accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
