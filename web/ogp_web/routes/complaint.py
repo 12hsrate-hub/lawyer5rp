@@ -43,9 +43,8 @@ from ogp_web.services.feature_flags import FeatureFlagService, RolloutContext
 from ogp_web.services.generation_orchestrator import GenerationOrchestrator
 from ogp_web.services.generated_document_trace_service import (
     list_user_generated_document_history,
-    resolve_generated_document_provenance_payload_from_bundle,
-    resolve_generated_document_provenance_payload,
-    resolve_user_generated_document_trace_bundle,
+    require_user_generated_document_trace_bundle,
+    resolve_generated_document_snapshot_payload_from_bundle,
 )
 from ogp_web.services.pilot_runtime_adapter import (
     resolve_pilot_complaint_runtime_context,
@@ -550,15 +549,14 @@ async def generated_document_snapshot(
     user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ) -> GeneratedDocumentSnapshotResponse:
-    bundle = resolve_user_generated_document_trace_bundle(
+    bundle = require_user_generated_document_trace_bundle(
         store=store,
         username=user.username,
         legacy_generated_document_id=document_id,
     )
-    if bundle is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Документ не найден."])
-    provenance = resolve_generated_document_provenance_payload_from_bundle(store=store, bundle=bundle)
-    return GeneratedDocumentSnapshotResponse(**bundle.snapshot, provenance=provenance)
+    return GeneratedDocumentSnapshotResponse(
+        **resolve_generated_document_snapshot_payload_from_bundle(store=store, bundle=bundle)
+    )
 
 
 @router.post("/api/ai/suggest", response_model=SuggestResponse)

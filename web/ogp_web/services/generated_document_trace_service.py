@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from fastapi import HTTPException, status
+
 from ogp_web.services.generation_snapshot_schema_service import build_snapshot_summary, build_workflow_linkage
 from ogp_web.services.provenance_service import build_store_provenance_service
 from ogp_web.services.validation_service import ValidationService
@@ -78,6 +80,17 @@ def resolve_admin_generated_document_trace_bundle(
     return _resolve_generation_snapshot_version_row(store=store, snapshot=snapshot)
 
 
+def require_admin_generated_document_trace_bundle(
+    *,
+    store: UserStore,
+    document_id: int,
+) -> GeneratedDocumentTraceBundle:
+    bundle = resolve_admin_generated_document_trace_bundle(store=store, document_id=document_id)
+    if bundle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Generated document not found."])
+    return bundle
+
+
 def resolve_user_generated_document_trace_bundle(
     *,
     store: UserStore,
@@ -89,6 +102,22 @@ def resolve_user_generated_document_trace_bundle(
         document_id=legacy_generated_document_id,
     )
     return _resolve_generation_snapshot_version_row(store=store, snapshot=snapshot)
+
+
+def require_user_generated_document_trace_bundle(
+    *,
+    store: UserStore,
+    username: str,
+    legacy_generated_document_id: int,
+) -> GeneratedDocumentTraceBundle:
+    bundle = resolve_user_generated_document_trace_bundle(
+        store=store,
+        username=username,
+        legacy_generated_document_id=legacy_generated_document_id,
+    )
+    if bundle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Документ не найден."])
+    return bundle
 
 
 def list_user_generated_document_history(
@@ -249,3 +278,15 @@ def resolve_generated_document_review_context_payload_from_bundle(
     bundle: GeneratedDocumentTraceBundle,
 ) -> dict[str, Any]:
     return build_generated_document_review_context_payload(store=store, bundle=bundle)
+
+
+def resolve_generated_document_snapshot_payload_from_bundle(
+    *,
+    store: UserStore,
+    bundle: GeneratedDocumentTraceBundle,
+) -> dict[str, Any]:
+    provenance = resolve_generated_document_provenance_payload_from_bundle(store=store, bundle=bundle)
+    return {
+        **dict(bundle.snapshot),
+        "provenance": provenance,
+    }

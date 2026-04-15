@@ -20,7 +20,10 @@ from ogp_web.services.generated_document_trace_service import (
     resolve_generated_document_provenance_payload_from_bundle,
     resolve_generated_document_review_context_payload_from_bundle,
     resolve_generated_document_review_support_data,
+    require_admin_generated_document_trace_bundle,
+    require_user_generated_document_trace_bundle,
     resolve_admin_generated_document_trace_bundle,
+    resolve_generated_document_snapshot_payload_from_bundle,
     resolve_user_generated_document_trace_bundle,
 )
 
@@ -87,6 +90,16 @@ def test_generated_document_trace_bundle_resolves_snapshot_and_latest_version(mo
     assert bundle.version_row["id"] == 77
 
 
+def test_require_admin_generated_document_trace_bundle_raises_not_found():
+    try:
+        require_admin_generated_document_trace_bundle(store=_FakeStore(), document_id=999)
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 404
+        assert getattr(exc, "detail", None) == ["Generated document not found."]
+    else:
+        raise AssertionError("Expected HTTPException for missing admin generated document")
+
+
 def test_parse_document_content_payload_normalizes_non_dict_json():
     payload = parse_document_content_payload({"content_json": "not-a-json-object"})
     assert payload == {}
@@ -115,6 +128,20 @@ def test_generated_document_trace_bundle_resolves_user_snapshot_without_generati
     assert bundle is not None
     assert bundle.generation_snapshot_id == 501
     assert bundle.version_row["id"] == 77
+
+
+def test_require_user_generated_document_trace_bundle_raises_not_found():
+    try:
+        require_user_generated_document_trace_bundle(
+            store=_FakeStore(),
+            username="tester",
+            legacy_generated_document_id=999,
+        )
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 404
+        assert getattr(exc, "detail", None) == ["Документ не найден."]
+    else:
+        raise AssertionError("Expected HTTPException for missing user generated document")
 
 
 def test_list_user_generated_document_history_uses_store_history():
@@ -215,6 +242,28 @@ def test_resolve_generated_document_provenance_payload_from_bundle_reuses_bundle
 
     assert payload == {"document_version_id": 77}
     assert service.calls == [("row", 77)]
+
+
+def test_resolve_generated_document_snapshot_payload_from_bundle_merges_snapshot_and_provenance(monkeypatch):
+    monkeypatch.setattr(
+        "ogp_web.services.generated_document_trace_service.resolve_generated_document_provenance_payload_from_bundle",
+        lambda *, store, bundle: {"document_version_id": 77, "document_kind": "complaint"},
+    )
+
+    payload = resolve_generated_document_snapshot_payload_from_bundle(
+        store=_FakeStore(),
+        bundle=GeneratedDocumentTraceBundle(
+            snapshot={"id": 100, "server_code": "blackberry"},
+            generation_snapshot_id=501,
+            version_row={"id": 77, "generation_snapshot_id": 501},
+        ),
+    )
+
+    assert payload == {
+        "id": 100,
+        "server_code": "blackberry",
+        "provenance": {"document_version_id": 77, "document_kind": "complaint"},
+    }
 
 
 def test_build_generated_document_review_context_payload_returns_normalized_bundle(monkeypatch):
