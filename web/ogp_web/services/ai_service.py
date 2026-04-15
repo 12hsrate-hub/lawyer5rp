@@ -18,7 +18,7 @@ import yaml
 from fastapi import HTTPException, status
 
 from ogp_web.schemas import LawQaPayload, PrincipalScanPayload, PrincipalScanResult, SuggestPayload
-from ogp_web.server_config import DEFAULT_SERVER_CODE, get_server_config
+from ogp_web.server_config import DEFAULT_SERVER_CODE
 from ogp_web.services.ai_budget_service import (
     build_ai_telemetry,
     evaluate_budget,
@@ -39,6 +39,7 @@ from ogp_web.services.legal_pipeline_service import (
     normalize_law_qa_text_formatting,
     strip_law_qa_source_urls,
 )
+from ogp_web.services.server_context_service import resolve_server_config
 from ogp_web.services.point3_pipeline import (
     MODE_FACTUAL_FALLBACK_EXPANDED,
     RemediationOutcome,
@@ -1914,7 +1915,7 @@ def _build_suggest_forced_norms(
     if not _suggest_is_mask_exception_case(query):
         return ()
     try:
-        server_config = get_server_config(server_code)
+        server_config = resolve_server_config(server_code=server_code)
         bundle_path = str(getattr(server_config, "law_qa_bundle_path", "") or "").strip()
         if not bundle_path:
             return ()
@@ -2319,7 +2320,7 @@ def _answer_law_question_details_impl(payload: LawQaPayload) -> LawQaAnswerResul
             ],
         )
 
-    server_config = get_server_config(retrieval_result.server_code)
+    server_config = resolve_server_config(server_code=retrieval_result.server_code)
     selection = _select_law_qa_model(
         question=question,
         retrieval_confidence=retrieval_result.confidence,
@@ -2491,7 +2492,7 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
     generation_id = new_generation_id()
-    server_config = get_server_config(server_code or DEFAULT_SERVER_CODE)
+    server_config = resolve_server_config(server_code=server_code, fallback_server_code=DEFAULT_SERVER_CODE)
     suggest_prompt_mode = str(getattr(server_config, "suggest_prompt_mode", "legacy") or "legacy").strip().lower()
     low_confidence_policy = str(
         getattr(server_config, "suggest_low_confidence_policy", "controlled_fallback") or "controlled_fallback"

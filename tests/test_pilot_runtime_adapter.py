@@ -91,6 +91,39 @@ def test_legacy_generation_context_snapshot_keeps_content_workflow_in_sync():
         tmpdir.cleanup()
 
 
+def test_legacy_generation_context_snapshot_uses_shared_server_context_resolver(monkeypatch):
+    tmpdir = make_temporary_directory()
+    store = None
+    try:
+        root = Path(tmpdir.name)
+        store = UserStore(
+            root / "app.db",
+            root / "users.json",
+            repository=UserRepository(PostgresBackend()),
+        )
+        monkeypatch.setattr(
+            "ogp_web.services.complaint_service.resolve_server_config",
+            lambda **kwargs: type("Cfg", (), {"code": "blackberry", "law_qa_bundle_path": "", "feature_flags": ()})(),
+        )
+        monkeypatch.setattr(
+            "ogp_web.services.complaint_service.effective_server_pack",
+            lambda server_code: {"version": "2"},
+        )
+        monkeypatch.setattr(
+            "ogp_web.services.complaint_service.load_law_bundle_meta",
+            lambda server_code, bundle_path: type("Meta", (), {"fingerprint": "bundle_hash"})(),
+        )
+
+        user = AuthUser(username="tester", email="tester@example.com", server_code="blackberry")
+        snapshot = build_generation_context_snapshot(store, user, document_kind="complaint")
+        assert snapshot["server"]["code"] == "blackberry"
+        assert snapshot["law_version_set"]["hash"] == "bundle_hash"
+    finally:
+        if store is not None:
+            store.repository.close()
+        tmpdir.cleanup()
+
+
 def test_pilot_runtime_adapter_resolves_without_server_config_lookup(monkeypatch):
     tmpdir = make_temporary_directory()
     store = None

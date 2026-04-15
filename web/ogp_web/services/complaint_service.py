@@ -23,8 +23,9 @@ from shared.ogp_core import (
     validate_complaint_input,
     validate_rehab_input,
 )
-from ogp_web.server_config import effective_server_pack, get_server_config
+from ogp_web.server_config import effective_server_pack
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
+from ogp_web.services.server_context_service import resolve_server_config
 
 
 _TEMPLATE_VERSION_IDS = {
@@ -145,7 +146,7 @@ def _effective_generation_config_snapshot(
 
 def build_generation_context_snapshot(store: UserStore, user: AuthUser, *, document_kind: str) -> dict[str, object]:
     server_code = user.server_code or store.get_server_code(user.username)
-    server_config = get_server_config(server_code)
+    server_config = resolve_server_config(server_code=server_code)
     server_pack = effective_server_pack(server_code)
     bundle_meta = load_law_bundle_meta(server_code, server_config.law_qa_bundle_path)
     template_version = {
