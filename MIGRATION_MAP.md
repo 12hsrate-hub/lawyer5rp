@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select I.2m after accepted provenance bundle convergence block`
+- Next slice: `select I.2p after accepted review-context support convergence block`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -149,6 +149,12 @@ Date: 2026-04-14
   - the store-backed provenance service factory is now centralized in `provenance_service`
   - `I.2l` deployed on production commit `ed75805`
   - complaint/admin generated-document provenance routes now reuse bundle-based provenance resolution instead of split `generation_snapshot_id/version_row` wiring
+  - `I.2m` deployed on production commit `ff6884f`
+  - generated-document review-context supporting data now resolves through a shared helper instead of inline service wiring
+  - `I.2n` deployed on production commit `ff6884f`
+  - bbcode preview truncation is now centralized in a dedicated generated-document helper
+  - `I.2o` deployed on production commit `ff6884f`
+  - admin generated-document review-context now uses a bundle-based wrapper helper for naming parity with the provenance path
   - route contracts remain unchanged and the first thirty Phase I convergence slices are accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
