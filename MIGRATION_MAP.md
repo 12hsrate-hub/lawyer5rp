@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase G`
 - Inventory slices completed: `5`
-- Next slice: `remove the next accepted compatibility seam after H.2a/H.2b`
+- Next slice: `remove the next accepted compatibility seam after H.2c`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -33,6 +33,8 @@ Date: 2026-04-14
   - the client-side legacy raw-ref compaction workaround has been removed from `admin.js`
   - `H.2b` deployed on production commit `e0098b3`
   - pilot adapter fallback-only `source_of_truth` visibility metadata has been removed
+  - `H.2c` deployed on production commit `07f302a`
+  - shadow-compare-only complaint metrics plumbing and the pilot snapshot parity helper have been removed
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
