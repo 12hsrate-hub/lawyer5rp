@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select I.1o after the accepted shared complaint/page settings seam`
+- Next slice: `select I.1p after the accepted shared permissions seam`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -100,7 +100,9 @@ Date: 2026-04-14
   - shared page/admin shell context extraction now backs `pages.py` and `admin.py` route rendering paths
   - `I.1n` deployed on production commit `4b64c12`
   - shared complaint/page server settings now back complaint payload validation plus complaint-test and exam-import page rendering
-  - route contracts remain unchanged and the first fourteen Phase I convergence slices are accepted
+  - `I.1o` deployed on production commit `ff9be09`
+  - shared user-permissions resolution now backs admin cross-server law-sources permission checks, and the `complaint_test_page` settings regression is fixed in production
+  - route contracts remain unchanged and the first fifteen Phase I convergence slices are accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
