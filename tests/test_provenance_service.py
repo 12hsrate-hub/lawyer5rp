@@ -13,7 +13,12 @@ from ogp_web.services.provenance_service import ProvenanceService
 
 
 class FakeDocumentRepository:
+    def __init__(self):
+        self.get_document_version_calls = 0
+        self.get_latest_document_version_calls = 0
+
     def get_document_version(self, *, version_id: int):
+        self.get_document_version_calls += 1
         if version_id != 77:
             return None
         return {
@@ -24,6 +29,7 @@ class FakeDocumentRepository:
         }
 
     def get_latest_document_version_by_generation_snapshot_id(self, *, generation_snapshot_id: int):
+        self.get_latest_document_version_calls += 1
         if generation_snapshot_id != 501:
             return None
         return {
@@ -113,8 +119,9 @@ def test_provenance_service_returns_none_for_missing_version():
 
 
 def test_provenance_service_builds_trace_from_generation_snapshot_id():
+    document_repository = FakeDocumentRepository()
     service = ProvenanceService(
-        document_repository=FakeDocumentRepository(),
+        document_repository=document_repository,
         user_store=FakeUserStore(),
         validation_service=FakeValidationService(),
     )
@@ -124,3 +131,5 @@ def test_provenance_service_builds_trace_from_generation_snapshot_id():
     assert payload is not None
     assert payload["document_version_id"] == 77
     assert payload["generation_snapshot_id"] == 501
+    assert document_repository.get_latest_document_version_calls == 1
+    assert document_repository.get_document_version_calls == 0

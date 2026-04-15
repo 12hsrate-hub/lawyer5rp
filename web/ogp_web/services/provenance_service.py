@@ -4,6 +4,18 @@ from ogp_web.services.generation_snapshot_schema_service import (
     extract_provenance_ai,
     extract_provenance_config,
 )
+from ogp_web.services.validation_service import ValidationService
+from ogp_web.storage.document_repository import DocumentRepository
+from ogp_web.storage.validation_repository import ValidationRepository
+
+
+def build_store_provenance_service(*, store):
+    validation_service = ValidationService(ValidationRepository(store.backend))
+    return ProvenanceService(
+        document_repository=DocumentRepository(store.backend),
+        user_store=store,
+        validation_service=validation_service,
+    )
 
 
 class ProvenanceService:
@@ -16,17 +28,20 @@ class ProvenanceService:
         version_row = self.document_repository.get_document_version(version_id=document_version_id)
         if not version_row:
             return None
+        return self.get_document_version_trace_from_row(version_row=version_row)
 
+    def get_document_version_trace_from_row(self, *, version_row) -> dict[str, Any] | None:
         version_payload = dict(version_row)
         snapshot_id = int(version_payload.get("generation_snapshot_id") or 0)
         snapshot = self.user_store.get_generation_snapshot_by_id(snapshot_id) if snapshot_id > 0 else None
+        document_version_id = int(version_payload["id"])
         citations = self.user_store.get_document_version_citations(
             document_version_id=document_version_id,
             server_id=str((snapshot or {}).get("server_code") or "").strip().lower() or None,
         )
         latest_validation = self.validation_service.get_latest_target_validation(
             target_type="document_version",
-            target_id=int(document_version_id),
+            target_id=document_version_id,
         )
 
         snapshot_payload = dict(snapshot or {})
@@ -69,4 +84,4 @@ class ProvenanceService:
         )
         if not version_row:
             return None
-        return self.get_document_version_trace(document_version_id=int(version_row["id"]))
+        return self.get_document_version_trace_from_row(version_row=version_row)

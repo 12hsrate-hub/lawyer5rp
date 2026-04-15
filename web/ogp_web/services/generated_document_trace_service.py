@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ogp_web.services.generation_snapshot_schema_service import build_snapshot_summary, build_workflow_linkage
-from ogp_web.services.provenance_service import ProvenanceService
+from ogp_web.services.provenance_service import build_store_provenance_service
 from ogp_web.services.validation_service import ValidationService
 from ogp_web.storage.artifact_repository import ArtifactRepository
 from ogp_web.storage.document_repository import DocumentRepository
@@ -83,22 +83,29 @@ def list_user_generated_document_history(
     return list(store.list_generation_snapshot_history_for_user(username=username, limit=limit))
 
 
-def build_store_provenance_service(*, store: UserStore) -> ProvenanceService:
-    validation_service = ValidationService(ValidationRepository(store.backend))
-    return ProvenanceService(
-        document_repository=DocumentRepository(store.backend),
-        user_store=store,
-        validation_service=validation_service,
-    )
-
-
 def resolve_generated_document_provenance_payload(
     *,
     store: UserStore,
     generation_snapshot_id: int,
+    version_row: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    return build_store_provenance_service(store=store).get_latest_trace_for_generation_snapshot(
+    service = build_store_provenance_service(store=store)
+    if version_row is not None:
+        return service.get_document_version_trace_from_row(version_row=version_row)
+    return service.get_latest_trace_for_generation_snapshot(
         generation_snapshot_id=generation_snapshot_id,
+    )
+
+
+def resolve_generated_document_provenance_payload_from_bundle(
+    *,
+    store: UserStore,
+    bundle: GeneratedDocumentTraceBundle,
+) -> dict[str, Any] | None:
+    return resolve_generated_document_provenance_payload(
+        store=store,
+        generation_snapshot_id=bundle.generation_snapshot_id,
+        version_row=bundle.version_row,
     )
 
 

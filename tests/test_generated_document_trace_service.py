@@ -10,10 +10,12 @@ for candidate in (ROOT_DIR, WEB_DIR):
         sys.path.insert(0, str(candidate))
 
 from ogp_web.services.generated_document_trace_service import (
+    GeneratedDocumentTraceBundle,
     build_generated_document_review_context_payload,
     list_user_generated_document_history,
     parse_document_content_payload,
     resolve_generated_document_provenance_payload,
+    resolve_generated_document_provenance_payload_from_bundle,
     resolve_admin_generated_document_trace_bundle,
     resolve_user_generated_document_trace_bundle,
 )
@@ -118,17 +120,89 @@ def test_list_user_generated_document_history_uses_store_history():
 
 def test_resolve_generated_document_provenance_payload_uses_shared_service(monkeypatch):
     class _FakeProvenanceService:
+        def __init__(self):
+            self.calls: list[tuple[str, object]] = []
+
         def get_latest_trace_for_generation_snapshot(self, *, generation_snapshot_id: int):
+            self.calls.append(("snapshot", generation_snapshot_id))
             return {"generation_snapshot_id": generation_snapshot_id, "document_kind": "complaint"}
+
+        def get_document_version_trace_from_row(self, *, version_row):
+            self.calls.append(("row", int(version_row["id"])))
+            return {"document_version_id": int(version_row["id"]), "document_kind": "complaint"}
+
+    service = _FakeProvenanceService()
 
     monkeypatch.setattr(
         "ogp_web.services.generated_document_trace_service.build_store_provenance_service",
-        lambda *, store: _FakeProvenanceService(),
+        lambda *, store: service,
     )
 
     payload = resolve_generated_document_provenance_payload(store=_FakeStore(), generation_snapshot_id=501)
 
     assert payload == {"generation_snapshot_id": 501, "document_kind": "complaint"}
+    assert service.calls == [("snapshot", 501)]
+
+
+def test_resolve_generated_document_provenance_payload_prefers_bundle_version_row(monkeypatch):
+    class _FakeProvenanceService:
+        def __init__(self):
+            self.calls: list[tuple[str, object]] = []
+
+        def get_latest_trace_for_generation_snapshot(self, *, generation_snapshot_id: int):
+            self.calls.append(("snapshot", generation_snapshot_id))
+            return {"generation_snapshot_id": generation_snapshot_id, "document_kind": "complaint"}
+
+        def get_document_version_trace_from_row(self, *, version_row):
+            self.calls.append(("row", int(version_row["id"])))
+            return {"document_version_id": int(version_row["id"]), "document_kind": "complaint"}
+
+    service = _FakeProvenanceService()
+    monkeypatch.setattr(
+        "ogp_web.services.generated_document_trace_service.build_store_provenance_service",
+        lambda *, store: service,
+    )
+
+    payload = resolve_generated_document_provenance_payload(
+        store=_FakeStore(),
+        generation_snapshot_id=501,
+        version_row={"id": 77, "generation_snapshot_id": 501},
+    )
+
+    assert payload == {"document_version_id": 77, "document_kind": "complaint"}
+    assert service.calls == [("row", 77)]
+
+
+def test_resolve_generated_document_provenance_payload_from_bundle_reuses_bundle_row(monkeypatch):
+    class _FakeProvenanceService:
+        def __init__(self):
+            self.calls: list[tuple[str, object]] = []
+
+        def get_latest_trace_for_generation_snapshot(self, *, generation_snapshot_id: int):
+            self.calls.append(("snapshot", generation_snapshot_id))
+            return {"generation_snapshot_id": generation_snapshot_id}
+
+        def get_document_version_trace_from_row(self, *, version_row):
+            self.calls.append(("row", int(version_row["id"])))
+            return {"document_version_id": int(version_row["id"])}
+
+    service = _FakeProvenanceService()
+    monkeypatch.setattr(
+        "ogp_web.services.generated_document_trace_service.build_store_provenance_service",
+        lambda *, store: service,
+    )
+
+    payload = resolve_generated_document_provenance_payload_from_bundle(
+        store=_FakeStore(),
+        bundle=GeneratedDocumentTraceBundle(
+            snapshot={"id": 100},
+            generation_snapshot_id=501,
+            version_row={"id": 77, "generation_snapshot_id": 501},
+        ),
+    )
+
+    assert payload == {"document_version_id": 77}
+    assert service.calls == [("row", 77)]
 
 
 def test_build_generated_document_review_context_payload_returns_normalized_bundle(monkeypatch):
