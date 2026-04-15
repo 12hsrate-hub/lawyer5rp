@@ -49,7 +49,7 @@ from ogp_web.services.validation_service import ValidationService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.content_contracts import normalize_content_type
-from ogp_web.services.server_context_service import resolve_user_server_context
+from ogp_web.services.server_context_service import extract_server_shell_context, resolve_user_server_context
 from ogp_web.services.async_job_service import AsyncJobService
 from ogp_web.services.job_status_service import enrich_job_status
 from ogp_web.services.admin_dashboard_service import AdminDashboardService
@@ -918,20 +918,14 @@ def _apply_bulk_action(
 def _admin_template_payload(request: Request, user: AuthUser, *, admin_focus: str) -> dict[str, Any]:
     user_store = request.app.state.user_store
     server_config, permissions = resolve_user_server_context(user_store, user.username)
+    shell_context = extract_server_shell_context(server_config, permissions)
     return page_context(
         username=user.username,
         nav_active="admin",
         is_admin=permissions.is_admin,
         show_test_pages=permissions.can_access_exam_import,
         show_tester_pages=permissions.can_access_court_claims,
-        page_nav_items=[
-            {"key": item.key, "label": item.label, "href": item.href}
-            for item in server_config.page_nav_items
-            if permissions.allows(item.permission)
-        ],
-        server_code=server_config.code,
-        server_name=server_config.name,
-        app_title=server_config.app_title,
+        **shell_context,
         admin_focus=admin_focus,
     )
 

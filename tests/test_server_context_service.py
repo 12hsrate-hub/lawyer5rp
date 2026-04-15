@@ -12,10 +12,12 @@ for candidate in (ROOT_DIR, WEB_DIR):
         sys.path.insert(0, str(candidate))
 
 from ogp_web.services.server_context_service import (
+    build_allowed_nav_items,
     extract_server_ai_context_settings,
     extract_server_feature_flags,
     extract_server_identity_settings,
     extract_server_law_context_settings,
+    extract_server_shell_context,
     resolve_server_config,
     resolve_server_law_bundle_path,
     resolve_server_law_sources,
@@ -33,6 +35,13 @@ class _DummyUserStore:
 
 
 class ServerContextServiceTests(unittest.TestCase):
+    class _DummyPermissions:
+        def __init__(self, allowed: set[str]):
+            self.allowed = allowed
+
+        def allows(self, permission: str) -> bool:
+            return permission in self.allowed
+
     def test_resolve_server_config_uses_fallback_when_server_code_missing(self):
         config = type("Cfg", (), {"code": "blackberry"})()
 
@@ -125,6 +134,49 @@ class ServerContextServiceTests(unittest.TestCase):
 
         self.assertTrue(server_has_feature(config, "law_qa_nano_enabled"))
         self.assertFalse(server_has_feature(config, "suggest_nano_enabled"))
+
+    def test_build_allowed_nav_items_filters_by_permission(self):
+        permissions = self._DummyPermissions({"allowed"})
+        nav_items = (
+            type("Nav", (), {"key": "one", "label": "One", "href": "/one", "permission": "allowed"})(),
+            type("Nav", (), {"key": "two", "label": "Two", "href": "/two", "permission": "blocked"})(),
+        )
+
+        payload = build_allowed_nav_items(nav_items, permissions)
+
+        self.assertEqual(payload, [{"key": "one", "label": "One", "href": "/one"}])
+
+    def test_extract_server_shell_context_includes_filtered_nav_and_form_fields(self):
+        permissions = self._DummyPermissions({"allowed"})
+        server_config = type(
+            "Cfg",
+            (),
+            {
+                "code": "blackberry",
+                "name": "BlackBerry",
+                "app_title": "OGP Builder",
+                "page_nav_items": (
+                    type("Nav", (), {"key": "one", "label": "One", "href": "/one", "permission": "allowed"})(),
+                ),
+                "complaint_nav_items": (
+                    type("Nav", (), {"key": "two", "label": "Two", "href": "/two", "permission": "allowed"})(),
+                ),
+                "complaint_bases": ("basis",),
+                "evidence_fields": ("field",),
+                "complaint_forum_url": "https://forum.example",
+            },
+        )()
+
+        payload = extract_server_shell_context(server_config, permissions)
+
+        self.assertEqual(payload["server_code"], "blackberry")
+        self.assertEqual(payload["server_name"], "BlackBerry")
+        self.assertEqual(payload["app_title"], "OGP Builder")
+        self.assertEqual(payload["page_nav_items"], [{"key": "one", "label": "One", "href": "/one"}])
+        self.assertEqual(payload["complaint_nav_items"], [{"key": "two", "label": "Two", "href": "/two"}])
+        self.assertEqual(payload["complaint_bases"], ("basis",))
+        self.assertEqual(payload["evidence_fields"], ("field",))
+        self.assertEqual(payload["complaint_forum_url"], "https://forum.example")
 
     def test_resolve_user_server_context_uses_store_server_by_default(self):
         store = _DummyUserStore("blackberry")
