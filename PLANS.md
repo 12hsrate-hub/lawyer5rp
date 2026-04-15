@@ -132,7 +132,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - the old positional `get_server_config(...)` retrieval seam in `ai_service.py` is now wrapped through a compatibility adapter so shared server-context resolution still works on the extracted suggest path.
 - immediate next step is `Phase J.3 AI facade tightening`, with the next bounded seam focused on reducing `ai_service.py` to compatibility facades, shared retrieval helpers, and stable metrics adapters without drifting into cosmetic-only movement.
 - `J.3a` is now complete on production commit `63192a4`: suggest runtime-context assembly now converges behind `ai_pipeline.orchestration.resolve_suggest_runtime_context(...)`, leaving `suggest_text_details(...)` with less inline validation, retrieval-shadow, policy, and compaction-setup glue.
-- `J.3b` is now complete locally and ready for production sync: suggest generation/retry plus validation-remediation flow now converges behind `ai_pipeline.orchestration.run_suggest_execution_flow(...)`, leaving `suggest_text_details(...)` closer to a thin facade over runtime-context resolution and result finalization.
+- `J.3b` is now complete on production commit `74ad4d7`: suggest generation/retry plus validation-remediation flow now converges behind `ai_pipeline.orchestration.run_suggest_execution_flow(...)`, leaving `suggest_text_details(...)` closer to a thin facade over runtime-context resolution and result finalization.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
