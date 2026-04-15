@@ -119,6 +119,21 @@ from ogp_web.services.admin_users_service import (
     build_admin_users_csv_content,
     build_admin_users_payload,
 )
+from ogp_web.services.admin_user_mutations_service import (
+    block_admin_user_payload,
+    deactivate_admin_user_payload,
+    grant_gka_payload,
+    grant_tester_payload,
+    reactivate_admin_user_payload,
+    reset_admin_user_password_payload,
+    revoke_gka_payload,
+    revoke_tester_payload,
+    run_admin_user_mutation,
+    set_admin_user_daily_quota_payload,
+    unblock_admin_user_payload,
+    update_admin_user_email_payload,
+    verify_admin_user_email_payload,
+)
 from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
@@ -2734,8 +2749,10 @@ async def admin_verify_email(
     user_store: UserStore = Depends(get_user_store),
 ):
     try:
-        result = user_store.admin_mark_email_verified(username)
-    except AuthError as exc:
+        result = run_admin_user_mutation(
+            lambda: verify_admin_user_email_payload(user_store=user_store, username=username)
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     metrics_store.log_event(
         event_type="admin_verify_email",
@@ -2746,7 +2763,7 @@ async def admin_verify_email(
         status_code=200,
         meta={"target_username": username},
     )
-    return {"ok": True, "user": result}
+    return result
 
 
 @router.post("/api/admin/users/{username}/block")
@@ -2758,8 +2775,10 @@ async def admin_block_user(
     user_store: UserStore = Depends(get_user_store),
 ):
     try:
-        result = user_store.admin_set_access_blocked(username, payload.reason)
-    except AuthError as exc:
+        result = run_admin_user_mutation(
+            lambda: block_admin_user_payload(user_store=user_store, username=username, reason=payload.reason)
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     metrics_store.log_event(
         event_type="admin_block_user",
@@ -2770,7 +2789,7 @@ async def admin_block_user(
         status_code=200,
         meta={"target_username": username, "reason": payload.reason},
     )
-    return {"ok": True, "user": result}
+    return result
 
 
 @router.post("/api/admin/users/{username}/unblock")
@@ -2781,8 +2800,10 @@ async def admin_unblock_user(
     user_store: UserStore = Depends(get_user_store),
 ):
     try:
-        result = user_store.admin_clear_access_blocked(username)
-    except AuthError as exc:
+        result = run_admin_user_mutation(
+            lambda: unblock_admin_user_payload(user_store=user_store, username=username)
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     metrics_store.log_event(
         event_type="admin_unblock_user",
@@ -2793,7 +2814,7 @@ async def admin_unblock_user(
         status_code=200,
         meta={"target_username": username},
     )
-    return {"ok": True, "user": result}
+    return result
 
 
 @router.post("/api/admin/users/{username}/grant-tester")
@@ -2804,8 +2825,10 @@ async def admin_grant_tester(
     user_store: UserStore = Depends(get_user_store),
 ):
     try:
-        result = user_store.admin_set_tester_status(username, True)
-    except AuthError as exc:
+        result = run_admin_user_mutation(
+            lambda: grant_tester_payload(user_store=user_store, username=username)
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     metrics_store.log_event(
         event_type="admin_grant_tester",
@@ -2816,7 +2839,7 @@ async def admin_grant_tester(
         status_code=200,
         meta={"target_username": username},
     )
-    return {"ok": True, "user": result}
+    return result
 
 
 @router.post("/api/admin/users/{username}/revoke-tester")
@@ -2827,8 +2850,10 @@ async def admin_revoke_tester(
     user_store: UserStore = Depends(get_user_store),
 ):
     try:
-        result = user_store.admin_set_tester_status(username, False)
-    except AuthError as exc:
+        result = run_admin_user_mutation(
+            lambda: revoke_tester_payload(user_store=user_store, username=username)
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     metrics_store.log_event(
         event_type="admin_revoke_tester",
@@ -2839,7 +2864,7 @@ async def admin_revoke_tester(
         status_code=200,
         meta={"target_username": username},
     )
-    return {"ok": True, "user": result}
+    return result
 
 
 @router.post("/api/admin/users/{username}/grant-gka")
@@ -2850,8 +2875,10 @@ async def admin_grant_gka(
     user_store: UserStore = Depends(get_user_store),
 ):
     try:
-        result = user_store.admin_set_gka_status(username, True)
-    except AuthError as exc:
+        result = run_admin_user_mutation(
+            lambda: grant_gka_payload(user_store=user_store, username=username)
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     metrics_store.log_event(
         event_type="admin_grant_gka",
@@ -2862,7 +2889,7 @@ async def admin_grant_gka(
         status_code=200,
         meta={"target_username": username},
     )
-    return {"ok": True, "user": result}
+    return result
 
 
 @router.post("/api/admin/users/{username}/revoke-gka")
@@ -2873,8 +2900,10 @@ async def admin_revoke_gka(
     user_store: UserStore = Depends(get_user_store),
 ):
     try:
-        result = user_store.admin_set_gka_status(username, False)
-    except AuthError as exc:
+        result = run_admin_user_mutation(
+            lambda: revoke_gka_payload(user_store=user_store, username=username)
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     metrics_store.log_event(
         event_type="admin_revoke_gka",
@@ -2885,7 +2914,7 @@ async def admin_revoke_gka(
         status_code=200,
         meta={"target_username": username},
     )
-    return {"ok": True, "user": result}
+    return result
 
 
 @router.post("/api/admin/users/{username}/email")
@@ -2897,8 +2926,10 @@ async def admin_update_email(
     user_store: UserStore = Depends(get_user_store),
 ):
     try:
-        result = user_store.admin_update_email(username, payload.email)
-    except AuthError as exc:
+        result = run_admin_user_mutation(
+            lambda: update_admin_user_email_payload(user_store=user_store, username=username, email=payload.email)
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     metrics_store.log_event(
         event_type="admin_update_email",
@@ -2909,7 +2940,7 @@ async def admin_update_email(
         status_code=200,
         meta={"target_username": username, "email": payload.email},
     )
-    return {"ok": True, "user": result}
+    return result
 
 
 @router.post("/api/admin/users/{username}/reset-password")
@@ -2921,8 +2952,10 @@ async def admin_reset_password(
     user_store: UserStore = Depends(get_user_store),
 ):
     try:
-        result = user_store.admin_reset_password(username, payload.password)
-    except AuthError as exc:
+        result = run_admin_user_mutation(
+            lambda: reset_admin_user_password_payload(user_store=user_store, username=username, password=payload.password)
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     metrics_store.log_event(
         event_type="admin_reset_password",
@@ -2933,7 +2966,7 @@ async def admin_reset_password(
         status_code=200,
         meta={"target_username": username},
     )
-    return {"ok": True, "user": result}
+    return result
 
 
 @router.post("/api/admin/users/{username}/deactivate")
@@ -2945,8 +2978,10 @@ async def admin_deactivate_user(
     user_store: UserStore = Depends(get_user_store),
 ):
     try:
-        result = user_store.admin_deactivate_user(username, payload.reason)
-    except AuthError as exc:
+        result = run_admin_user_mutation(
+            lambda: deactivate_admin_user_payload(user_store=user_store, username=username, reason=payload.reason)
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     metrics_store.log_event(
         event_type="admin_deactivate_user",
@@ -2957,7 +2992,7 @@ async def admin_deactivate_user(
         status_code=200,
         meta={"target_username": username, "reason": payload.reason},
     )
-    return {"ok": True, "user": result}
+    return result
 
 
 @router.post("/api/admin/users/{username}/reactivate")
@@ -2968,8 +3003,10 @@ async def admin_reactivate_user(
     user_store: UserStore = Depends(get_user_store),
 ):
     try:
-        result = user_store.admin_reactivate_user(username)
-    except AuthError as exc:
+        result = run_admin_user_mutation(
+            lambda: reactivate_admin_user_payload(user_store=user_store, username=username)
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     metrics_store.log_event(
         event_type="admin_reactivate_user",
@@ -2980,7 +3017,7 @@ async def admin_reactivate_user(
         status_code=200,
         meta={"target_username": username},
     )
-    return {"ok": True, "user": result}
+    return result
 
 
 @router.post("/api/admin/users/{username}/daily-quota")
@@ -2992,8 +3029,14 @@ async def admin_set_daily_quota(
     user_store: UserStore = Depends(get_user_store),
 ):
     try:
-        result = user_store.admin_set_daily_quota(username, payload.daily_limit)
-    except AuthError as exc:
+        result = run_admin_user_mutation(
+            lambda: set_admin_user_daily_quota_payload(
+                user_store=user_store,
+                username=username,
+                daily_limit=payload.daily_limit,
+            )
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
     metrics_store.log_event(
         event_type="admin_set_daily_quota",
@@ -3004,7 +3047,7 @@ async def admin_set_daily_quota(
         status_code=200,
         meta={"target_username": username, "daily_limit": payload.daily_limit},
     )
-    return {"ok": True, "user": result}
+    return result
 
 
 @router.post("/api/admin/exam-import/reset-scores")
