@@ -40,7 +40,7 @@ from ogp_web.services.legal_pipeline_service import (
     strip_law_qa_source_urls,
 )
 from ogp_web.services.server_context_service import (
-    extract_server_ai_context_settings,
+    resolve_server_ai_context_settings,
     server_has_feature,
     resolve_server_config,
     resolve_server_law_bundle_path,
@@ -2326,7 +2326,7 @@ def _answer_law_question_details_impl(payload: LawQaPayload) -> LawQaAnswerResul
         retrieval_confidence=retrieval_result.confidence,
         server_config=server_config,
     )
-    ai_context = extract_server_ai_context_settings(server_config)
+    ai_context = resolve_server_ai_context_settings(server_code=retrieval_result.server_code)
     model_name = selection.model_name
     selection_reason = selection.reason
     low_confidence_model = _get_flow_model("law_qa", "low_confidence_model", "gpt-5.4")
@@ -2494,7 +2494,7 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
     generation_id = new_generation_id()
     server_config = resolve_server_config(server_code=server_code, fallback_server_code=DEFAULT_SERVER_CODE)
-    ai_context = extract_server_ai_context_settings(server_config)
+    ai_context = resolve_server_ai_context_settings(server_code=server_code, fallback_server_code=DEFAULT_SERVER_CODE)
     suggest_prompt_mode = ai_context.suggest_prompt_mode
     low_confidence_policy = ai_context.suggest_low_confidence_policy
     shadow = build_shadow_comparison(enabled=False, profile="", primary_matches=(), shadow_matches=())

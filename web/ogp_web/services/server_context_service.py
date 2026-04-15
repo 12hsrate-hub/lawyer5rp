@@ -165,6 +165,33 @@ def resolve_server_law_sources(*, server_code: str = "", fallback_server_code: s
     return extract_server_law_context_settings(server_config).source_urls
 
 
+def resolve_server_ai_context_settings(
+    *,
+    server_code: str = "",
+    fallback_server_code: str = DEFAULT_SERVER_CODE,
+) -> ServerAiContextSettings:
+    server_config = resolve_server_config(server_code=server_code, fallback_server_code=fallback_server_code)
+    return extract_server_ai_context_settings(server_config)
+
+
+def resolve_server_identity(
+    *,
+    server_code: str = "",
+    fallback_server_code: str = DEFAULT_SERVER_CODE,
+) -> ServerIdentitySettings:
+    server_config = resolve_server_config(server_code=server_code, fallback_server_code=fallback_server_code)
+    return extract_server_identity_settings(server_config, fallback_server_code=fallback_server_code)
+
+
+def resolve_server_feature_flags(
+    *,
+    server_code: str = "",
+    fallback_server_code: str = DEFAULT_SERVER_CODE,
+) -> tuple[str, ...]:
+    server_config = resolve_server_config(server_code=server_code, fallback_server_code=fallback_server_code)
+    return extract_server_feature_flags(server_config)
+
+
 def resolve_user_server_context(
     user_store: UserStore,
     username: str,
