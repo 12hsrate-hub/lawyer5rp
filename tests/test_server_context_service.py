@@ -14,6 +14,7 @@ for candidate in (ROOT_DIR, WEB_DIR):
 from ogp_web.services.server_context_service import (
     build_allowed_nav_items,
     extract_server_ai_context_settings,
+    extract_server_complaint_settings,
     extract_server_feature_flags,
     extract_server_identity_settings,
     extract_server_law_context_settings,
@@ -134,6 +135,28 @@ class ServerContextServiceTests(unittest.TestCase):
 
         self.assertTrue(server_has_feature(config, "law_qa_nano_enabled"))
         self.assertFalse(server_has_feature(config, "suggest_nano_enabled"))
+
+    def test_extract_server_complaint_settings_collects_runtime_values(self):
+        server_config = type(
+            "Cfg",
+            (),
+            {
+                "organizations": (" LSPD ", "", "FIB"),
+                "complaint_bases": (
+                    type("Basis", (), {"code": "wrongful_arrest"})(),
+                    type("Basis", (), {"code": "abuse_of_power"})(),
+                ),
+                "complaint_test_preset": {"org": "LSPD"},
+                "exam_sheet_url": " https://docs.example/sheet ",
+            },
+        )()
+
+        payload = extract_server_complaint_settings(server_config)
+
+        self.assertEqual(payload.organizations, ("LSPD", "FIB"))
+        self.assertEqual(payload.complaint_basis_codes, ("wrongful_arrest", "abuse_of_power"))
+        self.assertEqual(payload.complaint_test_preset, {"org": "LSPD"})
+        self.assertEqual(payload.exam_sheet_url, "https://docs.example/sheet")
 
     def test_build_allowed_nav_items_filters_by_permission(self):
         permissions = self._DummyPermissions({"allowed"})

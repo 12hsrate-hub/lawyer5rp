@@ -28,6 +28,14 @@ class ServerIdentitySettings:
     name: str
 
 
+@dataclass(frozen=True)
+class ServerComplaintSettings:
+    organizations: tuple[str, ...]
+    complaint_basis_codes: tuple[str, ...]
+    complaint_test_preset: dict[str, object]
+    exam_sheet_url: str
+
+
 def resolve_server_config(*, server_code: str = "", fallback_server_code: str = DEFAULT_SERVER_CODE) -> ServerConfig:
     normalized_server_code = str(server_code or "").strip().lower()
     effective_server_code = normalized_server_code or str(fallback_server_code or DEFAULT_SERVER_CODE).strip().lower()
@@ -75,6 +83,28 @@ def extract_server_identity_settings(
     code = str(getattr(server_config, "code", normalized_fallback) or normalized_fallback).strip().lower() or normalized_fallback
     name = str(getattr(server_config, "name", code) or code).strip() or code
     return ServerIdentitySettings(code=code, name=name)
+
+
+def extract_server_complaint_settings(server_config: object) -> ServerComplaintSettings:
+    complaint_bases = tuple(getattr(server_config, "complaint_bases", ()) or ())
+    complaint_basis_codes = tuple(
+        str(getattr(item, "code", "") or "").strip()
+        for item in complaint_bases
+        if str(getattr(item, "code", "") or "").strip()
+    )
+    organizations = tuple(
+        str(item or "").strip()
+        for item in (getattr(server_config, "organizations", ()) or ())
+        if str(item or "").strip()
+    )
+    complaint_test_preset = dict(getattr(server_config, "complaint_test_preset", {}) or {})
+    exam_sheet_url = str(getattr(server_config, "exam_sheet_url", "") or "").strip()
+    return ServerComplaintSettings(
+        organizations=organizations,
+        complaint_basis_codes=complaint_basis_codes,
+        complaint_test_preset=complaint_test_preset,
+        exam_sheet_url=exam_sheet_url,
+    )
 
 
 def extract_server_law_context_settings(server_config: object) -> ServerLawContextSettings:

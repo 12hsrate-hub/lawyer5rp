@@ -14,6 +14,7 @@ from ogp_web.services.auth_service import AuthError, AuthUser, get_current_user
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.law_admin_service import LawAdminService
 from ogp_web.services.server_context_service import (
+    extract_server_complaint_settings,
     extract_server_shell_context,
     extract_server_law_context_settings,
     resolve_server_config,
@@ -130,6 +131,7 @@ async def complaint_page(
     store: UserStore = Depends(get_user_store),
 ):
     server_config, permissions = _server_context(store, user.username)
+    complaint_settings = extract_server_complaint_settings(server_config)
     return templates.TemplateResponse(
         request,
         "complaint.html",
@@ -161,7 +163,7 @@ async def complaint_test_page(
             nav_active="complaint_test",
             complaint_mode="test",
             preset_payload_json=(
-                json.dumps(server_config.complaint_test_preset, ensure_ascii=False)
+                json.dumps(complaint_settings.complaint_test_preset, ensure_ascii=False)
                 if is_test_user(user.username)
                 else ""
             ),
@@ -177,6 +179,7 @@ async def exam_import_page(
     store: ExamAnswersStore = Depends(get_exam_answers_store),
 ):
     server_config, permissions = _server_context(user_store, user.username)
+    complaint_settings = extract_server_complaint_settings(server_config)
     return templates.TemplateResponse(
         request,
         "exam_import.html",
@@ -185,7 +188,7 @@ async def exam_import_page(
             server_config=server_config,
             permissions=permissions,
             nav_active="exam_import",
-            exam_sheet_url=server_config.exam_sheet_url,
+            exam_sheet_url=complaint_settings.exam_sheet_url,
             exam_entries=store.list_entries(limit=20, offset=0),
             exam_total_rows=store.count(),
         ),
