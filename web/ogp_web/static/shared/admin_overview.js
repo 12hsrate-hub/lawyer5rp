@@ -266,17 +266,40 @@ window.OGPAdminOverview = {
       .slice(0, 5)
       .map((item) => {
         if (typeof item === "string") {
-          return item;
+          return { source: "raw", kind: "message", detail: item };
         }
         if (item && typeof item === "object") {
-          return String(item.message || item.error || item.detail || JSON.stringify(item));
+          return {
+            source: String(item.event_type || item.source || "event"),
+            kind: String(item.error_type || item.kind || item.status_code || "signal"),
+            detail: String(item.message || item.error || item.detail || item.meta?.error || JSON.stringify(item)),
+          };
         }
-        return String(item || "");
+        return { source: "raw", kind: "message", detail: String(item || "") };
       })
-      .filter(Boolean);
+      .filter((item) => item.detail);
 
     const failureNotesHtml = failureNotes.length
-      ? `<div class="admin-section-toolbar"><div class="admin-user-cell__secondary admin-ops-wrap admin-ops-log">Recent failures: ${escapeHtml(failureNotes.join(" | "))}</div></div>`
+      ? `
+        <div class="legal-table-shell">
+          <table class="legal-table admin-table admin-table--compact">
+            <thead><tr><th>Source</th><th>Kind</th><th>Detail</th></tr></thead>
+            <tbody>
+              ${failureNotes
+                .map(
+                  (item) => `
+                    <tr>
+                      <td>${escapeHtml(String(item.source || "-"))}</td>
+                      <td>${escapeHtml(String(item.kind || "-"))}</td>
+                      <td>${escapeHtml(String(item.detail || "-"))}</td>
+                    </tr>
+                  `,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      `
       : "";
 
     return `
