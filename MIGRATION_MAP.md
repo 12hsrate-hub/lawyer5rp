@@ -7,11 +7,11 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase K`
-- Active task: `K.1 complaint route orchestration extraction`
+- Active task: `K.2 exam import route orchestration extraction`
 - Status: `in_progress`
 - Last completed phase: `Phase J`
 - Inventory slices completed: `6`
-- Next slice: `inspect whether complaint route decomposition should stop after K.1c instead of sliding into thin-wrapper cleanup`
+- Next slice: `inspect whether exam-import task/sync endpoints still remove a real orchestration layer after K.2a`
 - Last updated: `2026-04-16`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -280,6 +280,14 @@ Date: 2026-04-14
 - `K.1c` deployed on production commit `d346ea5`
 - `law_qa_test` no longer owns selected-norm citation mapping, retrieval persistence, law-qa-run persistence, citations-required warning resolution, or law-qa validation-gate glue
 - those bounded law-qa runtime seams now also live in `web/ogp_web/services/complaint_runtime_service.py`, while route-level imports and monkeypatch targets stay stable for existing API tests
+- complaint seam note: `docs/seams/2026-04/complaint-runtime-boundary-shrink.md`
+- `K.1` is accepted
+- the remaining complaint route code is now mostly transport/auth, metrics logging, response shaping, and narrow endpoint wrappers rather than another high-value orchestration seam
+- `K.2` is opened for bounded exam-import route/runtime extraction work
+- `K.2a` is now complete locally
+- bulk scoring, row scoring, and failed-rescoring wrapper lock/orchestration no longer live inline in `routes/exam_import.py`
+- those bounded exam-import runtime seams now live in `web/ogp_web/services/exam_import_runtime_service.py`, while route-level helper symbols stay stable for current monkeypatch-based API tests
+- exam-import seam note: `docs/seams/2026-04/exam-import-runtime-boundary-shrink.md`
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.

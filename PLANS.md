@@ -7,9 +7,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase K — complaint runtime boundary decomposition wave 1`
-- Current task: `K.1 complaint route orchestration extraction`
+- Current task: `K.2 exam import route orchestration extraction`
 - Active execution phase override: `Phase J is accepted; Phase K is now opened as the next execution phase`
-- Current micro-step: `K.1d complaint route completion gate`
+- Current micro-step: `K.2a exam import scoring wrapper extraction`
 - Overall status: `in_progress`
 - Last updated: `2026-04-16`
 - Execution override update:
@@ -142,7 +142,12 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - `K.1a` is now complete on production commit `3b53e6f`: suggest concurrency limiting, threadpool execution metrics, validation-service construction, server-payload validation, and complaint generation-context bridge helpers now converge behind `complaint_runtime_service.py`, while `routes/complaint.py` keeps only thin compatibility wrappers so existing route contracts and monkeypatch-driven tests remain stable.
 - `K.1b` is now complete on production commit `3b53e6f`: complaint and rehab generation-bridge persistence plus shared post-generation validation-gate handling now converge behind the same complaint runtime service instead of staying duplicated inline inside `routes/complaint.py`.
 - `K.1c` is now complete on production commit `d346ea5`: `law_qa_test` selected-norm citation mapping, retrieval persistence, law-qa-run persistence, citations-required warning resolution, and validation-gate handling now converge behind the same complaint runtime service instead of staying route-local inside `routes/complaint.py`.
-- next step inside `K.1`: stop and inspect whether any remaining complaint-route code still removes a real orchestration layer, or whether `K.1` is already at the point where only thin wrappers and endpoint-specific response shaping remain.
+- compatibility seam note recorded: [docs/seams/2026-04/complaint-runtime-boundary-shrink.md](docs/seams/2026-04/complaint-runtime-boundary-shrink.md)
+- `K.1` is accepted: after `K.1a` through `K.1c`, the remaining complaint route code is mostly transport/auth, metrics logging, response shaping, and narrow endpoint wrappers rather than another high-value orchestration seam.
+- `K.2` target: move bounded exam-import route orchestration into dedicated runtime helpers/services without changing scoring/task contracts.
+- `K.2a` is now complete locally: scoring wrapper lock plus proxy-scoring monkeypatch orchestration for bulk scoring, row scoring, and failed rescoring now converge behind `exam_import_runtime_service.py`, while `routes/exam_import.py` keeps thin compatibility wrappers so existing monkeypatch-based API tests stay stable.
+- compatibility seam note recorded: [docs/seams/2026-04/exam-import-runtime-boundary-shrink.md](docs/seams/2026-04/exam-import-runtime-boundary-shrink.md)
+- next step inside `K.2`: decide whether task-registry orchestration and sync/error wiring in `exam_import.py` still remove a real route-local orchestration layer, or whether the remaining route code is already mostly thin task/read wrappers.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
