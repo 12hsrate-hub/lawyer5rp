@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from ogp_web.services.generation_snapshot_schema_service import (
     extract_provenance_ai,
     extract_provenance_config,
@@ -16,6 +18,20 @@ def build_store_provenance_service(*, store):
         user_store=store,
         validation_service=validation_service,
     )
+
+
+def resolve_document_version_trace_for_server(
+    *,
+    store,
+    version_id: int,
+    server_id: str,
+) -> dict[str, Any] | None:
+    target = ValidationRepository(store.backend).get_document_version_target(version_id=version_id)
+    if not target:
+        return None
+    if str(target.get("server_id") or "") != str(server_id or ""):
+        raise PermissionError("document_version_forbidden")
+    return build_store_provenance_service(store=store).get_document_version_trace(document_version_id=version_id)
 
 
 class ProvenanceService:

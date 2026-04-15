@@ -50,7 +50,7 @@ from ogp_web.services.pilot_runtime_adapter import (
     resolve_pilot_complaint_runtime_context,
     supports_pilot_runtime_adapter,
 )
-from ogp_web.services.provenance_service import build_store_provenance_service
+from ogp_web.services.provenance_service import resolve_document_version_trace_for_server
 from ogp_web.services.regression_metrics import (
     build_rollout_labels,
     record_async_queue_lag,
@@ -921,16 +921,16 @@ async def document_version_provenance(
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ) -> DocumentVersionProvenanceResponse:
-    validation_repository = ValidationRepository(store.backend)
-    target = validation_repository.get_document_version_target(version_id=version_id)
-    if not target:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Document version not found."])
-    if str(target.get("server_id") or "") != user.server_code:
+    try:
+        payload = resolve_document_version_trace_for_server(
+            store=store,
+            version_id=version_id,
+            server_id=user.server_code,
+        )
+    except PermissionError:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Недостаточно прав для документа."])
-
-    payload = build_store_provenance_service(store=store).get_document_version_trace(document_version_id=version_id)
     if not payload:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Provenance trace not found."])
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Document version not found."])
     return DocumentVersionProvenanceResponse(**payload)
 
 
