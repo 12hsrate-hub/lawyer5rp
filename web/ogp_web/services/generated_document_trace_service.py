@@ -21,6 +21,30 @@ class GeneratedDocumentTraceBundle:
     generation_snapshot_id: int
     version_row: dict[str, Any]
 
+    @property
+    def generated_document_id(self) -> int:
+        return int(self.snapshot.get("id") or 0)
+
+    @property
+    def server_code(self) -> str:
+        return str(self.snapshot.get("server_code") or "")
+
+    @property
+    def document_kind(self) -> str:
+        return str(self.snapshot.get("document_kind") or "")
+
+    @property
+    def created_at(self) -> str:
+        return str(self.snapshot.get("created_at") or "")
+
+    @property
+    def version_id(self) -> int:
+        return int(self.version_row.get("id") or 0)
+
+    @property
+    def version_number(self) -> int:
+        return int(self.version_row.get("version_number") or 0)
+
 
 @dataclass(frozen=True)
 class GeneratedDocumentReviewSupportData:
@@ -160,24 +184,22 @@ def resolve_generated_document_review_support_data(
     store: UserStore,
     bundle: GeneratedDocumentTraceBundle,
 ) -> GeneratedDocumentReviewSupportData:
-    snapshot_payload = dict(bundle.snapshot)
     version_row = dict(bundle.version_row)
-    version_id = int(version_row["id"])
     content_payload = parse_document_content_payload(version_row)
     validation_service = ValidationService(ValidationRepository(store.backend))
     latest_validation = validation_service.get_latest_target_validation(
         target_type="document_version",
-        target_id=version_id,
+        target_id=bundle.version_id,
     )
     artifact_repository = ArtifactRepository(store.backend)
     citations = list(
         store.get_document_version_citations(
-            document_version_id=version_id,
-            server_id=str(snapshot_payload.get("server_code") or "").strip().lower() or None,
+            document_version_id=bundle.version_id,
+            server_id=bundle.server_code.strip().lower() or None,
         )
     )
-    exports = list(artifact_repository.list_exports_for_document_version(document_version_id=version_id))
-    attachments = list(artifact_repository.list_attachments_for_document_version(document_version_id=version_id))
+    exports = list(artifact_repository.list_exports_for_document_version(document_version_id=bundle.version_id))
+    attachments = list(artifact_repository.list_attachments_for_document_version(document_version_id=bundle.version_id))
     provenance = build_store_provenance_service(store=store).get_document_version_trace_from_row(version_row=version_row)
     return GeneratedDocumentReviewSupportData(
         content_payload=content_payload,
@@ -195,23 +217,20 @@ def build_generated_document_review_context_payload(
     bundle: GeneratedDocumentTraceBundle,
 ) -> dict[str, Any]:
     snapshot_payload = dict(bundle.snapshot)
-    generation_snapshot_id = int(bundle.generation_snapshot_id)
-    version_row = dict(bundle.version_row)
-    version_id = int(version_row["id"])
     support_data = resolve_generated_document_review_support_data(store=store, bundle=bundle)
 
     return {
         "generated_document": {
-            "id": int(snapshot_payload["id"]),
-            "generation_snapshot_id": generation_snapshot_id,
-            "server_code": str(snapshot_payload.get("server_code") or ""),
-            "document_kind": str(snapshot_payload.get("document_kind") or ""),
-            "created_at": str(snapshot_payload.get("created_at") or ""),
+            "id": bundle.generated_document_id,
+            "generation_snapshot_id": int(bundle.generation_snapshot_id),
+            "server_code": bundle.server_code,
+            "document_kind": bundle.document_kind,
+            "created_at": bundle.created_at,
         },
         "snapshot_summary": build_snapshot_summary(snapshot_payload),
         "document_version": {
-            "id": version_id,
-            "version_number": int(version_row.get("version_number") or 0),
+            "id": bundle.version_id,
+            "version_number": bundle.version_number,
             "bbcode_preview": build_bbcode_preview(support_data.content_payload),
         },
         "validation_summary": {
@@ -230,8 +249,8 @@ def build_generated_document_review_context_payload(
         },
         "workflow_linkage": build_workflow_linkage(
             snapshot_payload,
-            document_version_id=version_id,
-            generation_snapshot_id=generation_snapshot_id,
+            document_version_id=bundle.version_id,
+            generation_snapshot_id=int(bundle.generation_snapshot_id),
             latest_validation_run_id=int((support_data.latest_validation or {}).get("id") or 0) or None,
         ),
         "citations_summary": {
@@ -286,7 +305,15 @@ def resolve_generated_document_snapshot_payload_from_bundle(
     bundle: GeneratedDocumentTraceBundle,
 ) -> dict[str, Any]:
     provenance = resolve_generated_document_provenance_payload_from_bundle(store=store, bundle=bundle)
+    return build_generated_document_snapshot_payload(snapshot_payload=bundle.snapshot, provenance=provenance)
+
+
+def build_generated_document_snapshot_payload(
+    *,
+    snapshot_payload: dict[str, Any],
+    provenance: dict[str, Any] | None,
+) -> dict[str, Any]:
     return {
-        **dict(bundle.snapshot),
+        **dict(snapshot_payload),
         "provenance": provenance,
     }

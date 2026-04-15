@@ -14,6 +14,7 @@ from ogp_web.services.generated_document_trace_service import (
     GeneratedDocumentTraceBundle,
     build_bbcode_preview,
     build_generated_document_review_context_payload,
+    build_generated_document_snapshot_payload,
     list_user_generated_document_history,
     parse_document_content_payload,
     resolve_generated_document_provenance_payload,
@@ -88,6 +89,11 @@ def test_generated_document_trace_bundle_resolves_snapshot_and_latest_version(mo
     assert bundle.generation_snapshot_id == 501
     assert bundle.snapshot["document_kind"] == "complaint"
     assert bundle.version_row["id"] == 77
+    assert bundle.generated_document_id == 100
+    assert bundle.server_code == "blackberry"
+    assert bundle.document_kind == "complaint"
+    assert bundle.version_id == 77
+    assert bundle.version_number == 3
 
 
 def test_require_admin_generated_document_trace_bundle_raises_not_found():
@@ -263,6 +269,19 @@ def test_resolve_generated_document_snapshot_payload_from_bundle_merges_snapshot
         "id": 100,
         "server_code": "blackberry",
         "provenance": {"document_version_id": 77, "document_kind": "complaint"},
+    }
+
+
+def test_build_generated_document_snapshot_payload_merges_snapshot_and_optional_provenance():
+    payload = build_generated_document_snapshot_payload(
+        snapshot_payload={"id": 100, "server_code": "blackberry"},
+        provenance={"document_version_id": 77},
+    )
+
+    assert payload == {
+        "id": 100,
+        "server_code": "blackberry",
+        "provenance": {"document_version_id": 77},
     }
 
 

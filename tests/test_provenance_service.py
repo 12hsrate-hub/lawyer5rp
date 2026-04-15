@@ -9,7 +9,7 @@ for candidate in (ROOT_DIR, WEB_DIR):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-from ogp_web.services.provenance_service import ProvenanceService
+from ogp_web.services.provenance_service import ProvenanceService, resolve_document_version_trace_for_server
 
 
 class FakeDocumentRepository:
@@ -81,6 +81,18 @@ class FakeValidationService:
         return {"id": 3001, "status": "passed"}
 
 
+class FakeTargetValidationRepository:
+    def __init__(self, backend):
+        self.backend = backend
+
+    def get_document_version_target(self, *, version_id: int):
+        if version_id == 77:
+            return {"id": 77, "server_id": "blackberry", "document_type": "complaint"}
+        if version_id == 78:
+            return {"id": 78, "server_id": "grapeseed", "document_type": "complaint"}
+        return None
+
+
 def test_provenance_service_builds_canonical_pilot_trace():
     service = ProvenanceService(
         document_repository=FakeDocumentRepository(),
@@ -133,3 +145,44 @@ def test_provenance_service_builds_trace_from_generation_snapshot_id():
     assert payload["generation_snapshot_id"] == 501
     assert document_repository.get_latest_document_version_calls == 1
     assert document_repository.get_document_version_calls == 0
+
+
+def test_resolve_document_version_trace_for_server_returns_trace_for_matching_server(monkeypatch):
+    monkeypatch.setattr("ogp_web.services.provenance_service.ValidationRepository", FakeTargetValidationRepository)
+    monkeypatch.setattr(
+        "ogp_web.services.provenance_service.build_store_provenance_service",
+        lambda *, store: ProvenanceService(
+            document_repository=FakeDocumentRepository(),
+            user_store=FakeUserStore(),
+            validation_service=FakeValidationService(),
+        ),
+    )
+
+    payload = resolve_document_version_trace_for_server(store=type("Store", (), {"backend": object()})(), version_id=77, server_id="blackberry")
+
+    assert payload is not None
+    assert payload["document_version_id"] == 77
+    assert payload["server_id"] == "blackberry"
+
+
+def test_resolve_document_version_trace_for_server_returns_none_for_missing_target(monkeypatch):
+    monkeypatch.setattr("ogp_web.services.provenance_service.ValidationRepository", FakeTargetValidationRepository)
+
+    payload = resolve_document_version_trace_for_server(store=type("Store", (), {"backend": object()})(), version_id=999, server_id="blackberry")
+
+    assert payload is None
+
+
+def test_resolve_document_version_trace_for_server_rejects_foreign_server(monkeypatch):
+    monkeypatch.setattr("ogp_web.services.provenance_service.ValidationRepository", FakeTargetValidationRepository)
+
+    try:
+        resolve_document_version_trace_for_server(
+            store=type("Store", (), {"backend": object()})(),
+            version_id=78,
+            server_id="blackberry",
+        )
+    except PermissionError as exc:
+        assert str(exc) == "document_version_forbidden"
+    else:
+        raise AssertionError("Expected PermissionError for foreign server access")
