@@ -41,12 +41,15 @@ from ogp_web.services.complaint_service import build_generation_context_snapshot
 from ogp_web.services.citation_service import save_answer_citations
 from ogp_web.services.feature_flags import FeatureFlagService, RolloutContext
 from ogp_web.services.generation_orchestrator import GenerationOrchestrator
-from ogp_web.services.generated_document_trace_service import resolve_user_generated_document_trace_bundle
+from ogp_web.services.generated_document_trace_service import (
+    build_store_provenance_service,
+    resolve_generated_document_provenance_payload,
+    resolve_user_generated_document_trace_bundle,
+)
 from ogp_web.services.pilot_runtime_adapter import (
     resolve_pilot_complaint_runtime_context,
     supports_pilot_runtime_adapter,
 )
-from ogp_web.services.provenance_service import ProvenanceService
 from ogp_web.services.regression_metrics import (
     build_rollout_labels,
     record_async_queue_lag,
@@ -550,12 +553,10 @@ async def generated_document_snapshot(
     )
     if bundle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Документ не найден."])
-    service = ProvenanceService(
-        document_repository=DocumentRepository(store.backend),
-        user_store=store,
-        validation_service=ValidationService(ValidationRepository(store.backend)),
+    provenance = resolve_generated_document_provenance_payload(
+        store=store,
+        generation_snapshot_id=bundle.generation_snapshot_id,
     )
-    provenance = service.get_latest_trace_for_generation_snapshot(generation_snapshot_id=bundle.generation_snapshot_id)
     return GeneratedDocumentSnapshotResponse(**bundle.snapshot, provenance=provenance)
 
 
@@ -928,12 +929,7 @@ async def document_version_provenance(
     if str(target.get("server_id") or "") != user.server_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Недостаточно прав для документа."])
 
-    service = ProvenanceService(
-        document_repository=DocumentRepository(store.backend),
-        user_store=store,
-        validation_service=ValidationService(validation_repository),
-    )
-    payload = service.get_document_version_trace(document_version_id=version_id)
+    payload = build_store_provenance_service(store=store).get_document_version_trace(document_version_id=version_id)
     if not payload:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Provenance trace not found."])
     return DocumentVersionProvenanceResponse(**payload)
