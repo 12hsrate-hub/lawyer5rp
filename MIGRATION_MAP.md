@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `6`
-- Next slice: `select I.3l after accepted admin law-sources decomposition block`
+- Next slice: `select I.3o after accepted admin catalog decomposition block`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -198,6 +198,12 @@ Date: 2026-04-14
   - permission-aware target server resolution for law-sources operations now converges behind the same helper layer instead of route-local cross-server permission checks
   - `I.3k` deployed on production commit `5035570`
   - law-sources task-status guarding and canonical payload shaping now converge behind the same helper layer instead of route-local task validation in `routes/admin.py`
+  - `I.3l` deployed on production commit `d660d7f`
+  - catalog audit/list/get/versions payload assembly now converges behind a shared admin catalog helper layer instead of route-local workflow-service orchestration
+  - `I.3m` deployed on production commit `d660d7f`
+  - catalog workflow action dispatch plus change-request review/validate payload shaping now converge behind the same helper layer instead of route-local action branching
+  - `I.3n` deployed on production commit `d660d7f`
+  - catalog item create/update/rollback payload configuration and active change-request resolution now converge behind the same helper layer instead of route-local config shaping in `routes/admin.py`
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
