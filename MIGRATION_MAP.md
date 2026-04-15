@@ -7,11 +7,11 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase H`
-- Active task: `H.3 Runtime source-of-truth tightening`
-- Status: `in_progress`
-- Last completed phase: `Phase G`
+- Active task: `Phase H accepted; define the next execution phase`
+- Status: `done`
+- Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select the thirteenth accepted H.3 tightening seam`
+- Next slice: `define the next post-H execution brief`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -67,6 +67,9 @@ Date: 2026-04-14
 - complaint adapter snapshot internals now use dedicated effective-config, content-workflow, and server snapshot helpers, with a parity assertion keeping `content_workflow.applied_published_versions` aligned with `effective_config_snapshot`
 - `H.3l` deployed on production commit `1695401`
 - legacy complaint generation snapshots now use the same small helper structure for server/effective-config/content-workflow assembly, with parity coverage keeping legacy content_workflow aligned with effective_config_snapshot
+- `H.3` is accepted
+- no further meaningful complaint-path transitional seams remain that can be removed as small safe slices without inventing artificial refactors
+- `Phase H` is accepted as complete
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
