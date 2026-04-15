@@ -84,9 +84,31 @@ class LawAdminServiceHelpersTests(unittest.TestCase):
         self.assertEqual(payload["items"][0]["id"], 12)
         self.assertEqual(payload["items"][0]["chunk_count"], 345)
 
+    def test_get_effective_sources_uses_shared_server_config_resolver(self):
+        repository = types.SimpleNamespace(
+            get_content_item_by_identity=lambda **_: None,
+        )
+        service = LawAdminService(workflow_service=types.SimpleNamespace(repository=repository))
+
+        with patch(
+            "ogp_web.services.law_admin_service.resolve_server_config",
+            return_value=types.SimpleNamespace(code="blackberry", law_qa_sources=("https://example.com/law/a",), law_qa_bundle_path=""),
+        ) as resolve_server_config_mock, patch(
+            "ogp_web.services.law_admin_service.resolve_active_law_version",
+            return_value=None,
+        ), patch(
+            "ogp_web.services.law_admin_service.load_law_bundle_meta",
+            return_value=None,
+        ):
+            snapshot = service.get_effective_sources(server_code="blackberry")
+
+        self.assertEqual(snapshot.server_code, "blackberry")
+        self.assertEqual(snapshot.source_urls, ("https://example.com/law/a",))
+        resolve_server_config_mock.assert_called_once_with(server_code="blackberry")
+
     def test_rebuild_index_dry_run_skips_snapshot_import(self):
         service = LawAdminService(workflow_service=types.SimpleNamespace(repository=types.SimpleNamespace()))
-        with patch("ogp_web.services.law_admin_service.get_server_config") as fake_config, \
+        with patch("ogp_web.services.law_admin_service.resolve_server_config") as fake_config, \
             patch("ogp_web.services.law_admin_service.build_law_bundle") as fake_bundle, \
             patch("ogp_web.services.law_admin_service.import_law_snapshot") as fake_import:
             fake_config.return_value = types.SimpleNamespace(law_qa_bundle_path="")

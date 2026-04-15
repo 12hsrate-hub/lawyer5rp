@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ogp_web.server_config import get_server_config, list_server_configs
+from ogp_web.server_config import list_server_configs
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.law_bundle_service import (
     build_law_bundle,
@@ -11,6 +11,7 @@ from ogp_web.services.law_bundle_service import (
     resolve_law_bundle_path,
     write_law_bundle,
 )
+from ogp_web.services.server_context_service import resolve_server_config
 from ogp_web.services.law_version_service import (
     import_law_snapshot,
     list_recent_law_versions,
@@ -45,7 +46,7 @@ class LawAdminService:
         self.repository = workflow_service.repository
 
     def get_effective_sources(self, *, server_code: str) -> LawSourcesSnapshot:
-        server_config = get_server_config(server_code)
+        server_config = resolve_server_config(server_code=server_code)
         manifest_item = self.repository.get_content_item_by_identity(
             server_scope="server",
             server_id=server_code,
@@ -93,7 +94,7 @@ class LawAdminService:
         request_id: str,
         safe_rerun: bool = True,
     ) -> dict[str, Any]:
-        source_urls = normalize_source_urls(getattr(get_server_config(server_code), "law_qa_sources", ()))
+        source_urls = normalize_source_urls(getattr(resolve_server_config(server_code=server_code), "law_qa_sources", ()))
         if not source_urls:
             raise ValueError("server_has_no_law_qa_sources")
         snapshot = self.get_effective_sources(server_code=server_code)
@@ -222,7 +223,7 @@ class LawAdminService:
                 comment="law_index_rebuild",
             )
 
-        server_config = get_server_config(server_code)
+        server_config = resolve_server_config(server_code=server_code)
         bundle = build_law_bundle(server_code, effective_urls)
         if dry_run:
             return {
