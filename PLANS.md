@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.2 snapshot/provenance schema convergence`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded snapshot/provenance convergence slice after I.2a`
+- Current micro-step: `select the next bounded snapshot/provenance convergence slice after I.2d`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -62,7 +62,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.1z` is now complete on production commit `c7be298`: verify-email page server selection now reuses a single page-level resolver for request-default and username-bound rendering paths.
   - `I.1` is accepted: no further meaningful runtime/admin shared server-context seams remain that can be removed as small safe slices without inventing artificial helper layers.
   - `I.2a` is now complete on production commit `6844864`: shared generation snapshot schema helpers now back admin review-context summary/linkage shaping and provenance extraction without changing route payloads.
-  - immediate next step is `select I.2b after the accepted snapshot schema helper slice`.
+  - `I.2b` is now complete on production commit `81faa7b`: shared generation-context schema blocks now back legacy complaint snapshots and pilot adapter snapshots for server/effective-config/content-workflow assembly.
+  - `I.2c` is now complete on production commit `81faa7b`: `generation_orchestrator` now reuses the shared persistence-block extractor for `effective_config_snapshot` and `content_workflow` instead of inline schema checks.
+  - `I.2d` is now complete on production commit `81faa7b`: shared provenance lookup by `generation_snapshot_id` now backs generated-document snapshot and admin provenance bridge paths.
+  - immediate next step is `select I.2e after the accepted generation-context/provenance convergence block`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
