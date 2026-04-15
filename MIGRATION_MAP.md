@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase G`
 - Inventory slices completed: `5`
-- Next slice: `select the first accepted H.3 tightening seam`
+- Next slice: `select the sixth accepted H.3 tightening seam`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -43,16 +43,18 @@ Date: 2026-04-14
   - rollout/admin copy is now renamed away from pilot/preflight-only wording while preserving the same rollout-state logic
   - `Phase H.2 wave 1` is accepted as complete
   - next work moves to `H.3 Runtime source-of-truth tightening`
-  - `H.3a` is in progress locally
-  - `/api/generate` no longer needs to build `legacy_context_snapshot` when `pilot_runtime_adapter_v1` is active for `blackberry + complaint`
-  - `H.3b` is in progress locally
+  - `H.3a` deployed on production commit `6d21f72`
+  - `/api/generate` no longer builds `legacy_context_snapshot` when `pilot_runtime_adapter_v1` is active for `blackberry + complaint`
+  - `H.3b` deployed on production commit `b6b5328`
   - `resolve_pilot_complaint_runtime_context` no longer needs legacy `get_server_config(...)` lookup just to resolve law bundle metadata
-  - `H.3c` is in progress locally
+  - `H.3c` deployed on production commit `55a10a7`
   - complaint adapter snapshots now carry `feature_flags` directly, so the route no longer needs a route-level legacy server-config read when adapter flow is active
-  - `H.3d` is in progress locally
-  - complaint adapter snapshots are dropping the unused internal `runtime_adapter` ID block while preserving review/provenance-visible snapshot fields
-  - `H.3e` is in progress locally
+  - `H.3d` deployed on production commit `b7699e7`
+  - complaint adapter snapshots no longer carry the unused internal `runtime_adapter` ID block
+  - `H.3e` deployed on production commit `85078b2`
   - complaint adapter fallback template/validation refs now reuse the shared complaint-service helper logic instead of maintaining a second hash-calculation path
+  - `H.3f` is in progress locally
+  - complaint form fallback refs now reuse the shared draft-schema helper instead of maintaining a second adapter-local hash path
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
