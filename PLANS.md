@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.1 shared server-context seam extraction`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded runtime/admin server-config seam after I.1t`
+- Current micro-step: `select the next bounded runtime/admin server-config seam after I.1v`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -54,7 +54,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.1r` is now complete on production commit `adb09aa`: `law_qa_test_page` now reuses shared server identity for source loading instead of repeated direct `server_config.code` reads.
   - `I.1s` is now complete on production commit `adb09aa`: law-sources dependency reporting no longer re-resolves server identity after the shared law-QA availability helper already supplied it.
   - `I.1t` is now complete on production commit `adb09aa`: dead `resolve_server_config(...)` reads were removed from bounded law-QA admin/AI helper paths without changing runtime contracts.
-  - immediate next step is `I.1u` bounded seam selection after the accepted law-QA cleanup pass.
+  - `I.1u` is now complete on production commit `8395223`: repeated request-default server-config lookup in `pages.py` is centralized behind `_request_server_config(...)` for login, verify-email, and reset-password flows.
+  - `I.1v` is now complete on production commit `8395223`: tiny dead cleanup leftovers were removed from bounded page/law-admin paths, and stale `law_admin_service` tests were aligned with the shared server-context helpers.
+  - immediate next step is `I.1w` bounded seam selection after the accepted request-default cleanup pass.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
