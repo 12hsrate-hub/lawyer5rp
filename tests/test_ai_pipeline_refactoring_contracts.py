@@ -375,6 +375,63 @@ def test_run_law_qa_generation_attempts_contract_compacts_and_switches_model():
     assert warnings == [("Law QA prompt exceeded context window for model %s; retrying with compact context level=%s", "gpt-5.4", 1)]
 
 
+def test_resolve_law_qa_runtime_context_contract_builds_shadow_and_attempts():
+    class _Payload:
+        question = "When must detainee be released?"
+        model = "gpt-5.4-mini"
+        server_code = "blackberry"
+        law_version_id = 12
+
+    retrieval_result = type(
+        "RetrievalResult",
+        (),
+        {
+            "is_configured": True,
+            "indexed_chunk_count": 2,
+            "server_code": "blackberry",
+            "server_name": "BlackBerry",
+            "confidence": "low",
+            "profile": "law_qa",
+            "matches": ("primary",),
+        },
+    )()
+    shadow_result = type("ShadowResult", (), {"matches": ("shadow",)})()
+    calls: list[tuple[str, str]] = []
+
+    def retrieve_law_context(**kwargs):
+        calls.append((kwargs["profile"], kwargs["query"]))
+        return shadow_result if kwargs["profile"] == "shadow_profile" else retrieval_result
+
+    server_config = type("ServerConfig", (), {"feature_flags": frozenset({"legal_pipeline_shadow"})})()
+    ai_context = type("AiContext", (), {"shadow_law_qa_profile": "shadow_profile"})()
+    selection = type("Selection", (), {"model_name": "gpt-5.4", "reason": "law_qa_low_confidence"})()
+
+    result = orchestration.resolve_law_qa_runtime_context(
+        payload=_Payload(),
+        default_server_code="default",
+        retrieve_law_context=retrieve_law_context,
+        resolve_server_config=lambda **kwargs: server_config,
+        resolve_server_ai_context_settings=lambda **kwargs: ai_context,
+        select_law_qa_model=lambda **kwargs: selection,
+        get_flow_model=lambda flow, field, fallback: "gpt-5.4",
+        build_shadow_comparison=lambda **kwargs: {"enabled": kwargs["enabled"], "profile": kwargs["profile"]},
+        server_feature_enabled=lambda cfg, flag: flag in cfg.feature_flags,
+        build_law_qa_context_blocks=lambda retrieval_result: ["ctx-a", "ctx-b"],
+        build_law_qa_context_blocks_limited=lambda retrieval_result, **kwargs: [f"ctx-{kwargs['max_blocks']}"],
+    )
+
+    assert result.question == "When must detainee be released?"
+    assert result.requested_model == "gpt-5.4-mini"
+    assert result.retrieval_result is retrieval_result
+    assert result.model_name == "gpt-5.4"
+    assert result.selection_reason == "law_qa_low_confidence"
+    assert result.low_confidence_model == "gpt-5.4"
+    assert result.shadow == {"enabled": True, "profile": "shadow_profile"}
+    assert result.context_attempts[0] == ["ctx-a", "ctx-b"]
+    assert result.context_attempts[1] == ["ctx-8"]
+    assert calls == [("law_qa", "When must detainee be released?"), ("shadow_profile", "When must detainee be released?")]
+
+
 def test_telemetry_meta_contracts():
     law_result = ai_service.LawQaAnswerResult(
         text="ok",

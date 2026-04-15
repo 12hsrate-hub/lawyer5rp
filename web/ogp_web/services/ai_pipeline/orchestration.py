@@ -52,6 +52,20 @@ class LawQaGenerationAttemptResult:
 
 
 @dataclass(frozen=True)
+class LawQaRuntimeContext:
+    question: str
+    requested_model: str
+    retrieval_result: Any
+    server_config: Any
+    ai_context: Any
+    model_name: str
+    selection_reason: str
+    low_confidence_model: str
+    shadow: dict[str, object]
+    context_attempts: tuple[Sequence[str], ...]
+
+
+@dataclass(frozen=True)
 class SuggestValidationRemediationResult:
     generation_result: Any
     cleaned_text: str
@@ -66,6 +80,104 @@ def run_law_qa(payload: LawQaPayload, deps: LawQaOrchestrationDeps):
 
 def run_suggest(payload: SuggestPayload, *, server_code: str, deps: SuggestOrchestrationDeps):
     return deps.impl(payload, server_code)
+
+
+def resolve_law_qa_runtime_context(
+    *,
+    payload: LawQaPayload,
+    default_server_code: str,
+    retrieve_law_context: Callable[..., Any],
+    resolve_server_config: Callable[..., Any],
+    resolve_server_ai_context_settings: Callable[..., Any],
+    select_law_qa_model: Callable[..., Any],
+    get_flow_model: Callable[[str, str, str], str],
+    build_shadow_comparison: Callable[..., Any],
+    server_feature_enabled: Callable[[Any, str], bool],
+    build_law_qa_context_blocks: Callable[[Any], list[str]],
+    build_law_qa_context_blocks_limited: Callable[..., list[str]],
+) -> LawQaRuntimeContext:
+    question = payload.question.strip()
+    if not question:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=["Введите вопрос для анализа."],
+        )
+
+    requested_model = str(payload.model or "").strip()
+    retrieval_result = retrieve_law_context(
+        server_code=payload.server_code or default_server_code,
+        query=question,
+        excerpt_chars=1800,
+        profile="law_qa",
+        law_version_id=payload.law_version_id,
+    )
+    if not retrieval_result.is_configured:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=[
+                "Для выбранного сервера не настроены источники законов.",
+            ],
+        )
+    if not retrieval_result.indexed_chunk_count:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=[
+                "Не удалось загрузить законы для выбранного сервера. Проверьте настройку law base.",
+            ],
+        )
+
+    server_config = resolve_server_config(server_code=retrieval_result.server_code)
+    selection = select_law_qa_model(
+        question=question,
+        retrieval_confidence=retrieval_result.confidence,
+        server_config=server_config,
+    )
+    ai_context = resolve_server_ai_context_settings(server_code=retrieval_result.server_code)
+    model_name = selection.model_name
+    selection_reason = selection.reason
+    low_confidence_model = get_flow_model("law_qa", "low_confidence_model", "gpt-5.4")
+    shadow = build_shadow_comparison(
+        enabled=False,
+        profile="",
+        primary_matches=retrieval_result.matches,
+        shadow_matches=(),
+    )
+    if server_feature_enabled(server_config, "legal_pipeline_shadow"):
+        shadow_profile = ai_context.shadow_law_qa_profile
+        if shadow_profile and shadow_profile != retrieval_result.profile:
+            shadow_result = retrieve_law_context(
+                server_code=retrieval_result.server_code,
+                query=question,
+                excerpt_chars=1800,
+                profile=shadow_profile,
+                law_version_id=payload.law_version_id,
+            )
+            shadow = build_shadow_comparison(
+                enabled=True,
+                profile=shadow_profile,
+                primary_matches=retrieval_result.matches,
+                shadow_matches=shadow_result.matches,
+            )
+
+    context_attempts = (
+        build_law_qa_context_blocks(retrieval_result),
+        build_law_qa_context_blocks_limited(retrieval_result, max_blocks=8, max_excerpt_chars=900),
+        build_law_qa_context_blocks_limited(retrieval_result, max_blocks=5, max_excerpt_chars=650),
+        build_law_qa_context_blocks_limited(retrieval_result, max_blocks=3, max_excerpt_chars=420),
+        build_law_qa_context_blocks_limited(retrieval_result, max_blocks=2, max_excerpt_chars=280),
+    )
+    return LawQaRuntimeContext(
+        question=question,
+        requested_model=requested_model,
+        retrieval_result=retrieval_result,
+        server_config=server_config,
+        ai_context=ai_context,
+        model_name=model_name,
+        selection_reason=selection_reason,
+        low_confidence_model=low_confidence_model,
+        shadow=shadow,
+        context_attempts=context_attempts,
+    )
 
 
 def run_suggest_generation_attempts(
