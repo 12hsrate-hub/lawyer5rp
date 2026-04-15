@@ -42,6 +42,7 @@ from ogp_web.services.law_admin_service import LawAdminService
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
 from ogp_web.services.law_rebuild_tasks import find_active_law_rebuild_task
 from ogp_web.services.law_version_service import resolve_active_law_version
+from ogp_web.services.admin_overview_service import build_exam_import_overview_payload
 from ogp_web.services.auth_service import AuthError, AuthUser, require_admin_user
 from ogp_web.services.generated_document_trace_service import (
     list_admin_recent_generated_documents,
@@ -1448,46 +1449,15 @@ async def admin_exam_import_overview(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     _ = user
-    pending_scores = 0
-    summary: dict[str, Any] = {
-        "pending_scores": 0,
-        "last_sync": None,
-        "last_score": None,
-        "recent_failures": [],
-        "recent_row_failures": [],
-    }
-    failed_entries: list[dict[str, Any]] = []
-    try:
-        pending_scores = int(exam_store.count_entries_needing_scores() or 0)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("admin_exam_import_overview_pending_scores_failed error=%s", exc)
-    try:
-        summary = metrics_store.get_exam_import_summary(pending_scores=pending_scores)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("admin_exam_import_overview_summary_failed error=%s", exc)
-        summary["pending_scores"] = pending_scores
-    try:
-        failed_entries = exam_store.list_entries_with_failed_scores(limit=5)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("admin_exam_import_overview_failed_entries_failed error=%s", exc)
-        failed_entries = []
-
-    recent_failures = list(summary.get("recent_failures") or [])
-    recent_row_failures = list(summary.get("recent_row_failures") or [])
+    payload = build_exam_import_overview_payload(exam_store=exam_store, metrics_store=metrics_store)
     return {
         "ok": True,
-        "summary": {
-            "pending_scores": int(summary.get("pending_scores") or pending_scores or 0),
-            "failed_entries": len(failed_entries),
-            "recent_failures": len(recent_failures),
-            "recent_row_failures": len(recent_row_failures),
-            "problem_signals": len(failed_entries) + len(recent_failures) + len(recent_row_failures),
-        },
-        "last_sync": summary.get("last_sync"),
-        "last_score": summary.get("last_score"),
-        "recent_failures": recent_failures[:5],
-        "recent_row_failures": recent_row_failures[:5],
-        "failed_entries": failed_entries[:5],
+        "summary": payload["summary"],
+        "last_sync": payload.get("last_sync"),
+        "last_score": payload.get("last_score"),
+        "recent_failures": list(payload.get("recent_failures") or [])[:5],
+        "recent_row_failures": list(payload.get("recent_row_failures") or [])[:5],
+        "failed_entries": list(payload.get("failed_entries") or [])[:5],
     }
 
 
@@ -2879,37 +2849,12 @@ async def admin_overview(
     else:
         payload["totals"] = {"users_total": 0}
 
-    exam_import: dict[str, Any] = {
-        "pending_scores": 0,
-        "last_sync": None,
-        "last_score": None,
-        "recent_failures": [],
-        "recent_row_failures": [],
-        "recent_entries": [],
-        "failed_entries": [],
-    }
-    pending_scores = 0
-    try:
-        pending_scores = int(exam_store.count_entries_needing_scores() or 0)
-    except Exception as exc:  # noqa: BLE001
-        partial_errors.append(_normalize_api_error(exc, source="exam_pending_scores"))
-    try:
-        exam_import = metrics_store.get_exam_import_summary(pending_scores=pending_scores)
-    except Exception as exc:  # noqa: BLE001
-        partial_errors.append(_normalize_api_error(exc, source="exam_summary"))
-        exam_import["pending_scores"] = pending_scores
-    try:
-        exam_import["recent_entries"] = exam_store.list_entries(limit=8)
-    except Exception as exc:  # noqa: BLE001
-        partial_errors.append(_normalize_api_error(exc, source="exam_recent_entries"))
-    try:
-        exam_import["failed_entries"] = exam_store.list_entries_with_failed_scores(limit=5)
-    except Exception as exc:  # noqa: BLE001
-        partial_errors.append(_normalize_api_error(exc, source="exam_failed_entries"))
-    exam_import.setdefault("recent_entries", [])
-    exam_import.setdefault("failed_entries", [])
-
-    payload["exam_import"] = exam_import
+    payload["exam_import"] = build_exam_import_overview_payload(
+        exam_store=exam_store,
+        metrics_store=metrics_store,
+        include_recent_entries=True,
+        on_error=lambda source, exc: partial_errors.append(_normalize_api_error(exc, source=source)),
+    )
     try:
         ai_summary = metrics_store.summarize_ai_generation_logs(limit=300)
         totals = payload.setdefault("totals", {})
