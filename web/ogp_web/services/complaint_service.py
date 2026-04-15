@@ -25,7 +25,12 @@ from shared.ogp_core import (
 )
 from ogp_web.server_config import effective_server_pack
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
-from ogp_web.services.server_context_service import resolve_server_config, resolve_server_law_bundle_path
+from ogp_web.services.server_context_service import (
+    extract_server_feature_flags,
+    extract_server_identity_settings,
+    resolve_server_config,
+    resolve_server_law_bundle_path,
+)
 
 
 _TEMPLATE_VERSION_IDS = {
@@ -147,6 +152,7 @@ def _effective_generation_config_snapshot(
 def build_generation_context_snapshot(store: UserStore, user: AuthUser, *, document_kind: str) -> dict[str, object]:
     server_code = user.server_code or store.get_server_code(user.username)
     server_config = resolve_server_config(server_code=server_code)
+    server_identity = extract_server_identity_settings(server_config, fallback_server_code=server_code)
     server_pack = effective_server_pack(server_code)
     bundle_meta = load_law_bundle_meta(server_code, resolve_server_law_bundle_path(server_code=server_code))
     template_version = {
@@ -164,11 +170,11 @@ def build_generation_context_snapshot(store: UserStore, user: AuthUser, *, docum
         validation_rules_version=str(validation_rules_version or "unknown"),
     )
     return {
-        "server": _generation_server_snapshot(server_code=server_config.code),
+        "server": _generation_server_snapshot(server_code=server_identity.code),
         "template_version": template_version,
         "law_version_set": law_version_set,
         "validation_rules_version": validation_rules_version,
         "effective_config_snapshot": effective_config_snapshot,
         "content_workflow": _content_workflow_snapshot(effective_config_snapshot),
-        "feature_flags": sorted(server_config.feature_flags),
+        "feature_flags": list(extract_server_feature_flags(server_config)),
     }

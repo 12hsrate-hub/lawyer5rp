@@ -41,6 +41,7 @@ from ogp_web.services.legal_pipeline_service import (
 )
 from ogp_web.services.server_context_service import (
     extract_server_ai_context_settings,
+    server_has_feature,
     resolve_server_config,
     resolve_server_law_bundle_path,
 )
@@ -1479,14 +1480,7 @@ def _build_law_qa_selected_norms(retrieval_result, *, max_excerpt_chars: int = 2
 
 
 def _server_feature_enabled(server_config: object, feature_name: str) -> bool:
-    checker = getattr(server_config, "has_feature", None)
-    if callable(checker):
-        try:
-            return bool(checker(feature_name))
-        except Exception:
-            return False
-    feature_flags = getattr(server_config, "feature_flags", ()) or ()
-    return str(feature_name or "").strip() in set(feature_flags)
+    return server_has_feature(server_config, feature_name)
 
 
 def _shadow_to_dict(shadow: ShadowComparison) -> dict[str, object]:

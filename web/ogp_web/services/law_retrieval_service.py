@@ -8,7 +8,7 @@ from typing import Any
 from ogp_web.server_config import DEFAULT_SERVER_CODE
 from ogp_web.services.law_bundle_service import LawChunk, load_law_bundle_meta
 from ogp_web.services.legal_pipeline_service import BundleHealth, build_bundle_health
-from ogp_web.services.server_context_service import extract_server_law_context_settings
+from ogp_web.services.server_context_service import extract_server_identity_settings, extract_server_law_context_settings
 
 
 @dataclass(frozen=True)
@@ -63,6 +63,7 @@ def retrieve_law_context(
     normalized_server_code = str(server_code or default_server_code).strip() or default_server_code
     retrieval_query = str(query or "").strip()
     server_config = get_server_config_func(normalized_server_code)
+    server_identity = extract_server_identity_settings(server_config, fallback_server_code=normalized_server_code)
     law_context = extract_server_law_context_settings(server_config)
     configured_sources = law_context.source_urls
     bundle_path = law_context.bundle_path
@@ -113,8 +114,8 @@ def retrieve_law_context(
     )
 
     return LawRetrievalResult(
-        server_code=str(getattr(server_config, "code", normalized_server_code) or normalized_server_code),
-        server_name=str(getattr(server_config, "name", normalized_server_code) or normalized_server_code),
+        server_code=server_identity.code,
+        server_name=server_identity.name,
         profile=profile,
         query=retrieval_query,
         confidence=confidence,
