@@ -8,10 +8,10 @@ Date: 2026-04-14
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase H`
 - Active task: `H.2 Legacy cleanup wave 1`
-- Status: `phase_checkpoint_complete`
+- Status: `in_progress`
 - Last completed phase: `Phase G`
 - Inventory slices completed: `5`
-- Next slice: `remove first accepted compatibility seam after H.1 acceptance`
+- Next slice: `remove the next accepted compatibility seam after H.2a/H.2b`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -28,6 +28,11 @@ Date: 2026-04-14
   - `/api/generate-rehab` now mirrors complaint post-generation validation behavior for `document_version`
   - API coverage confirms rehab-generated documents are visible through admin provenance and review context with non-empty validation summary
   - `Phase H.1` is accepted; next work moves to `H.2`
+  - `H.2a` deployed on production commit `55accd1`
+  - admin generated-document review context now emits normalized string refs instead of legacy-shaped raw refs
+  - the client-side legacy raw-ref compaction workaround has been removed from `admin.js`
+  - `H.2b` deployed on production commit `e0098b3`
+  - pilot adapter fallback-only `source_of_truth` visibility metadata has been removed
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.

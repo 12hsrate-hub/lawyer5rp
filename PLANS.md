@@ -7,10 +7,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase H — Post-pilot scale-out and legacy reduction`
-- Current task: `H.1 complete`
-- Active execution phase override: `Phase H.1 accepted; next start is H.2 legacy cleanup wave 1`
-- Current micro-step: `prepare first accepted H.2 cleanup slice`
-- Overall status: `phase_checkpoint_complete`
+- Current task: `H.2 legacy cleanup wave 1`
+- Active execution phase override: `Phase H.1 accepted; H.2 wave 1 is now in progress`
+- Current micro-step: `select the third accepted H.2 cleanup slice`
+- Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
   - `Phase G` is accepted.
@@ -22,6 +22,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - Production verifier now returns `PASS` for rehab catalog coverage.
   - `H.1d` is now complete: rehab remains on the bounded transitional runtime path, and admin review/provenance parity is covered by runtime code plus API tests.
   - `Phase H.1` is accepted as the first post-pilot bounded candidate checkpoint.
+  - `H.2` wave 1 has started with two accepted cleanup slices already deployed on production.
+  - review-context refs are now normalized on the server side and the client-side legacy raw-ref compaction path has been removed.
+  - pilot adapter fallback-only `source_of_truth` visibility metadata has been removed without changing adapter behavior.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -427,6 +430,10 @@ Execution status: `in_progress`
 ### H.2 Legacy cleanup wave 1
 - Remove only those compatibility seams that are already listed in the rollout backlog and have a satisfied removal gate.
 - Keep rollback visibility and provenance/admin explainability intact after each cleanup slice.
+- Completed H.2 slices:
+  - `H.2a` server-side normalization of admin review-context refs plus removal of the client-side legacy raw-ref compaction workaround (`55accd1`)
+  - `H.2b` removal of pilot adapter fallback-only `source_of_truth` visibility metadata (`e0098b3`)
+- Current H.2 executable slice: `pick the next already-gated cleanup candidate from the rollout backlog`
 
 ### H.3 Runtime source-of-truth tightening
 - Reduce transitional reads and legacy fallback assumptions only after the second candidate stabilizes.
@@ -603,9 +610,11 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `Phase H.1` selects one bounded post-pilot candidate and records its rollout gate before any broader scale-out
 - initial H.1 recommendation is `blackberry + rehab`, not `strawberry + complaint`
 - `H.1a` output is `REHAB_ROLLOUT_GAP_MAP.md`
-- `H.1d` is now complete on production commit `f7c0bb5`
+- `H.1d` is complete on production commit `f7c0bb5`
 - `Phase H.1` is accepted
-- immediate next step is `Phase H.2 legacy cleanup wave 1`
+- `H.2a` is complete on production commit `55accd1`
+- `H.2b` is complete on production commit `e0098b3`
+- immediate next step is `Phase H.2 wave 1 next cleanup candidate`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`
