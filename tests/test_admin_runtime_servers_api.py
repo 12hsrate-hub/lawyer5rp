@@ -23,6 +23,7 @@ from ogp_web.app import create_app
 from ogp_web.dependencies import get_content_workflow_service, get_runtime_law_sets_store, get_runtime_servers_store
 import ogp_web.routes.admin as admin_route
 from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
+import ogp_web.services.admin_runtime_servers_service as admin_runtime_servers_service
 from ogp_web.services.law_version_service import ResolvedLawVersion
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
@@ -324,7 +325,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(deactivated.status_code, 200)
 
         with patch.object(
-            admin_route,
+            admin_runtime_servers_service,
             "resolve_active_law_version",
             return_value=ResolvedLawVersion(
                 id=77,

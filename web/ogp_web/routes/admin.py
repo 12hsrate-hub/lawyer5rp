@@ -66,6 +66,13 @@ from ogp_web.services.server_context_service import (
 from ogp_web.services.async_job_service import AsyncJobService
 from ogp_web.services.job_status_service import enrich_job_status
 from ogp_web.services.admin_dashboard_service import AdminDashboardService
+from ogp_web.services.admin_runtime_servers_service import (
+    build_runtime_server_health_payload,
+    create_runtime_server_payload,
+    list_runtime_servers_payload,
+    set_runtime_server_active_payload,
+    update_runtime_server_payload,
+)
 from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
@@ -1000,8 +1007,7 @@ async def admin_runtime_servers_list(
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
 ):
     _ = user
-    items = [store.to_payload(record) for record in store.list_servers()]
-    return {"items": items, "count": len(items)}
+    return list_runtime_servers_payload(store=store)
 
 
 @router.post("/api/admin/runtime-servers")
@@ -1012,9 +1018,10 @@ async def admin_runtime_servers_create(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     try:
-        row = store.create_server(code=payload.code, title=payload.title)
+        result = create_runtime_server_payload(store=store, code=payload.code, title=payload.title)
     except ValueError as exc:
         _raise_bad_request(exc)
+    row = result["item"]
     metrics_store.log_event(
         event_type="admin_runtime_server_create",
         username=user.username,
@@ -1022,9 +1029,9 @@ async def admin_runtime_servers_create(
         path="/api/admin/runtime-servers",
         method="POST",
         status_code=200,
-        meta={"code": row.code},
+        meta={"code": row["code"]},
     )
-    return _admin_ok(item=store.to_payload(row))
+    return _admin_ok(**result)
 
 
 @router.put("/api/admin/runtime-servers/{server_code}")
@@ -1039,11 +1046,12 @@ async def admin_runtime_servers_update(
     if normalized_code != payload.code:
         _raise_bad_request("server_code_mismatch")
     try:
-        row = store.update_server(code=normalized_code, title=payload.title)
+        result = update_runtime_server_payload(store=store, code=normalized_code, title=payload.title)
     except ValueError as exc:
         _raise_bad_request(exc)
     except KeyError as exc:
         _raise_not_found(exc)
+    row = result["item"]
     metrics_store.log_event(
         event_type="admin_runtime_server_update",
         username=user.username,
@@ -1051,9 +1059,9 @@ async def admin_runtime_servers_update(
         path=f"/api/admin/runtime-servers/{normalized_code}",
         method="PUT",
         status_code=200,
-        meta={"code": row.code},
+        meta={"code": row["code"]},
     )
-    return _admin_ok(item=store.to_payload(row))
+    return _admin_ok(**result)
 
 
 @router.post("/api/admin/runtime-servers/{server_code}/activate")
@@ -1065,11 +1073,12 @@ async def admin_runtime_servers_activate(
 ):
     normalized_code = _normalize_code(server_code)
     try:
-        row = store.set_active(code=normalized_code, is_active=True)
+        result = set_runtime_server_active_payload(store=store, code=normalized_code, is_active=True)
     except ValueError as exc:
         _raise_bad_request(exc)
     except KeyError as exc:
         _raise_not_found(exc)
+    row = result["item"]
     metrics_store.log_event(
         event_type="admin_runtime_server_activate",
         username=user.username,
@@ -1077,9 +1086,9 @@ async def admin_runtime_servers_activate(
         path=f"/api/admin/runtime-servers/{normalized_code}/activate",
         method="POST",
         status_code=200,
-        meta={"code": row.code},
+        meta={"code": row["code"]},
     )
-    return _admin_ok(item=store.to_payload(row))
+    return _admin_ok(**result)
 
 
 @router.get("/api/admin/runtime-servers/{server_code}/health")
@@ -1092,14 +1101,13 @@ async def admin_runtime_server_health(
 ):
     _ = user
     normalized_code = _normalize_code(server_code)
-    server = store.get_server(code=normalized_code)
-    if server is None:
-        _raise_not_found("server_not_found")
-    payload = _build_runtime_server_health_payload(
+    payload = build_runtime_server_health_payload(
         server_code=normalized_code,
-        server=server,
+        runtime_servers_store=store,
         law_sets_store=law_sets_store,
     )
+    if not payload["checks"]["server"]["ok"]:
+        _raise_not_found("server_not_found")
     metrics_store.log_event(
         event_type="admin_runtime_server_health",
         username=user.username,
@@ -1121,11 +1129,12 @@ async def admin_runtime_servers_deactivate(
 ):
     normalized_code = _normalize_code(server_code)
     try:
-        row = store.set_active(code=normalized_code, is_active=False)
+        result = set_runtime_server_active_payload(store=store, code=normalized_code, is_active=False)
     except ValueError as exc:
         _raise_bad_request(exc)
     except KeyError as exc:
         _raise_not_found(exc)
+    row = result["item"]
     metrics_store.log_event(
         event_type="admin_runtime_server_deactivate",
         username=user.username,
@@ -1133,9 +1142,9 @@ async def admin_runtime_servers_deactivate(
         path=f"/api/admin/runtime-servers/{normalized_code}/deactivate",
         method="POST",
         status_code=200,
-        meta={"code": row.code},
+        meta={"code": row["code"]},
     )
-    return _admin_ok(item=store.to_payload(row))
+    return _admin_ok(**result)
 
 
 @router.get("/api/admin/runtime-servers/{server_code}/law-sets")
@@ -1539,67 +1548,6 @@ def _resolve_active_change_request(item: dict[str, Any], change_requests: list[d
             continue
     return None
 
-
-def _build_runtime_server_health_payload(
-    *,
-    server_code: str,
-    server: RuntimeServerRecord | None,
-    law_sets_store: RuntimeLawSetsStore,
-) -> dict[str, Any]:
-    normalized_code = _normalize_code(server_code)
-    law_sets = law_sets_store.list_law_sets(server_code=normalized_code)
-    active_law_set = next((item for item in law_sets if item.get("is_published")), None)
-    if active_law_set is None:
-        active_law_set = next((item for item in law_sets if item.get("is_active")), None)
-    bindings = law_sets_store.list_server_law_bindings(server_code=normalized_code)
-    active_law_version = resolve_active_law_version(server_code=normalized_code)
-    bundle_meta = load_law_bundle_meta(normalized_code)
-    chunk_count = int(
-        (bundle_meta.chunk_count if bundle_meta and bundle_meta.chunk_count is not None else None)
-        or (active_law_version.chunk_count if active_law_version and active_law_version.chunk_count is not None else 0)
-        or 0
-    )
-
-    checks = {
-        "server": {
-            "ok": bool(server),
-            "detail": f"server:{normalized_code}" if server else "server_missing",
-        },
-        "law_set": {
-            "ok": bool(active_law_set),
-            "detail": str(active_law_set.get("name") or "") if active_law_set else "law_set_missing",
-            "law_set_id": int(active_law_set.get("id")) if active_law_set and active_law_set.get("id") is not None else None,
-        },
-        "bindings": {
-            "ok": bool(bindings),
-            "detail": f"bindings:{len(bindings)}",
-            "count": len(bindings),
-        },
-        "activation": {
-            "ok": bool(server and server.is_active),
-            "detail": "active" if server and server.is_active else "inactive",
-        },
-        "health": {
-            "ok": bool(active_law_version and chunk_count > 0),
-            "detail": (
-                f"active_law_version:{active_law_version.id}, chunks:{chunk_count}"
-                if active_law_version and chunk_count > 0
-                else "active_law_version_missing"
-            ),
-            "active_law_version_id": int(active_law_version.id) if active_law_version else None,
-            "chunk_count": chunk_count,
-        },
-    }
-    ready_count = sum(1 for item in checks.values() if item.get("ok"))
-    return {
-        "server_code": normalized_code,
-        "checks": checks,
-        "summary": {
-            "ready_count": ready_count,
-            "total_count": len(checks),
-            "is_ready": ready_count == len(checks),
-        },
-    }
 
 def _build_catalog_payload_config(payload: AdminCatalogItemPayload) -> dict[str, Any]:
     typed_fields: dict[str, Any] = {
