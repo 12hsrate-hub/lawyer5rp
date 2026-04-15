@@ -7,11 +7,11 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase H`
-- Active task: `H.2 Legacy cleanup wave 1`
+- Active task: `H.3 Runtime source-of-truth tightening`
 - Status: `in_progress`
 - Last completed phase: `Phase G`
 - Inventory slices completed: `5`
-- Next slice: `complete the remaining admin rollout copy cleanup and then close H.2 wave 1`
+- Next slice: `select the first accepted H.3 tightening seam`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -39,8 +39,12 @@ Date: 2026-04-14
   - compare-only pilot drift helper scripts were removed because no runtime path emits `pilot_runtime_shadow_compare` anymore
   - `H.2e` deployed on production commit `751d0a0`
   - pilot adapter runtime snapshots no longer expose fallback-only visibility fields (`status`, `content_item_id`) while keeping published-read resolution intact
-  - `H.2f` is in progress locally
-  - rollout/admin copy is being renamed away from pilot/preflight-only wording while preserving the same rollout-state logic
+  - `H.2f` deployed on production commit `5fb1671`
+  - rollout/admin copy is now renamed away from pilot/preflight-only wording while preserving the same rollout-state logic
+  - `Phase H.2 wave 1` is accepted as complete
+  - next work moves to `H.3 Runtime source-of-truth tightening`
+  - `H.3a` is in progress locally
+  - `/api/generate` no longer needs to build `legacy_context_snapshot` when `pilot_runtime_adapter_v1` is active for `blackberry + complaint`
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.

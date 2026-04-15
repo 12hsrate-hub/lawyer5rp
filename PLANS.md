@@ -7,9 +7,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase H — Post-pilot scale-out and legacy reduction`
-- Current task: `H.2 legacy cleanup wave 1`
-- Active execution phase override: `Phase H.1 accepted; H.2 wave 1 is now in progress`
-- Current micro-step: `finalize the remaining H.2 admin rollout copy cleanup`
+- Current task: `H.3 runtime source-of-truth tightening`
+- Active execution phase override: `Phase H.2 wave 1 accepted; H.3 is now in progress`
+- Current micro-step: `select the first accepted H.3 tightening slice`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -28,7 +28,8 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - shadow-compare-only telemetry plumbing has now been removed from complaint generation and pilot adapter support code.
   - compare-only pilot drift helper scripts have been removed and archived as historical observation tooling.
   - pilot adapter runtime snapshots no longer expose fallback-only `seeded/published` visibility markers or `content_item_id` noise.
-  - the rollout workspace is now being renamed away from pilot/preflight-only wording where the underlying state machine already stays the same.
+  - the rollout workspace is now renamed away from pilot/preflight-only wording where the underlying state machine already stays the same.
+  - `Phase H.2 wave 1` is accepted as complete.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -440,7 +441,8 @@ Execution status: `in_progress`
   - `H.2c` removal of shadow-compare-only metrics plumbing and snapshot parity helper code (`07f302a`)
   - `H.2d` removal of compare-only pilot drift helper scripts and promotion of their docs to historical status (`c40d859`)
   - `H.2e` removal of fallback-only adapter snapshot visibility fields (`751d0a0`)
-- Current H.2 executable slice: `complete the remaining admin rollout copy cleanup and then close wave 1`
+  - `H.2f` rollout/admin copy cleanup and remaining backlog tightening (`5fb1671`)
+- Current H.2 executable slice: `complete`
 
 ### H.3 Runtime source-of-truth tightening
 - Reduce transitional reads and legacy fallback assumptions only after the second candidate stabilizes.
@@ -624,7 +626,9 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `H.2c` is complete on production commit `07f302a`
 - `H.2d` is complete on production commit `c40d859`
 - `H.2e` is complete on production commit `751d0a0`
-- immediate next step is `Phase H.2 wave 1 admin rollout copy cleanup`
+- `H.2f` is complete on production commit `5fb1671`
+- `H.3a` is in progress locally: complaint generate skips the legacy snapshot builder when adapter flow is active
+- immediate next step is `Phase H.3 first tightening slice merge + production verification`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`

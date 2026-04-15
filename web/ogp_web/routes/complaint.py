@@ -368,15 +368,15 @@ async def generate(
         context=RolloutContext(username=user.username, server_id=user.server_code),
     )
     _validate_server_payload(store, user, org=payload.org)
-    legacy_context_snapshot = build_generation_context_snapshot(store, user, document_kind="complaint")
-    context_snapshot = dict(legacy_context_snapshot)
-    if supports_pilot_runtime_adapter(server_code=user.server_code, document_kind="complaint"):
-        if adapter_flag.use_new_flow:
-            adapter_snapshot = resolve_pilot_complaint_runtime_context(store, user).to_generation_context_snapshot()
-            context_snapshot = {
-                **adapter_snapshot,
-                "feature_flags": sorted(_server_config_for_user(store, user).feature_flags),
-            }
+    if supports_pilot_runtime_adapter(server_code=user.server_code, document_kind="complaint") and adapter_flag.use_new_flow:
+        adapter_snapshot = resolve_pilot_complaint_runtime_context(store, user).to_generation_context_snapshot()
+        context_snapshot = {
+            **adapter_snapshot,
+            "feature_flags": sorted(_server_config_for_user(store, user).feature_flags),
+        }
+    else:
+        legacy_context_snapshot = build_generation_context_snapshot(store, user, document_kind="complaint")
+        context_snapshot = dict(legacy_context_snapshot)
     context_snapshot["citations_policy_gate"] = {"mode": "shadow", "status": "flagged_no_citations"}
     bbcode = generate_bbcode_text(store, payload, user)
     orchestrator = GenerationOrchestrator(store)
