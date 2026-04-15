@@ -9,7 +9,11 @@ for candidate in (ROOT_DIR, WEB_DIR):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-from ogp_web.services.admin_overview_service import build_exam_import_overview_payload
+from ogp_web.services.admin_overview_service import (
+    build_async_jobs_overview_payload,
+    build_exam_import_overview_payload,
+    build_law_jobs_overview_payload,
+)
 
 
 class _FakeExamStore:
@@ -85,3 +89,44 @@ def test_build_exam_import_overview_payload_reports_partial_errors_and_defaults(
         ("exam_failed_entries", "broken_failed"),
         ("exam_recent_entries", "broken_entries"),
     ]
+
+
+def test_build_law_jobs_overview_payload_filters_scope_and_builds_alerts():
+    payload = build_law_jobs_overview_payload(
+        tasks=[
+            {"task_id": "a", "scope": "law_sources_rebuild", "server_code": "blackberry", "status": "failed", "error": "boom"},
+            {"task_id": "b", "scope": "law_sources_rebuild", "server_code": "blackberry", "status": "queued"},
+            {"task_id": "c", "scope": "other", "server_code": "blackberry", "status": "failed"},
+        ]
+    )
+
+    assert payload["summary"] == {
+        "total_tasks": 2,
+        "running_tasks": 1,
+        "failed_tasks": 1,
+        "alerts_count": 1,
+    }
+    assert payload["alerts"] == [
+        {"kind": "failed_rebuild", "task_id": "a", "server_code": "blackberry", "error": "boom"}
+    ]
+    assert payload["running"] == [{"task_id": "b", "scope": "law_sources_rebuild", "server_code": "blackberry", "status": "queued"}]
+
+
+def test_build_async_jobs_overview_payload_groups_problem_jobs_by_type():
+    payload = build_async_jobs_overview_payload(
+        items=[
+            {"id": 1, "job_type": "content_reindex", "canonical_status": "retry_scheduled", "raw_status": "retry_scheduled"},
+            {"id": 2, "job_type": "content_reindex", "canonical_status": "failed", "raw_status": "dead_lettered"},
+            {"id": 3, "job_type": "document_export", "canonical_status": "running", "raw_status": "processing"},
+        ]
+    )
+
+    assert payload["summary"] == {
+        "total_jobs": 3,
+        "problem_jobs": 2,
+        "failed_jobs": 1,
+        "retry_scheduled_jobs": 1,
+        "running_jobs": 1,
+    }
+    assert len(payload["problem_jobs"]) == 2
+    assert payload["by_job_type"] == [{"job_type": "content_reindex", "count": 2}]

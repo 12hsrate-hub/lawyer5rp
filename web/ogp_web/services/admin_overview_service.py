@@ -7,6 +7,62 @@ from typing import Any, Callable
 LOGGER = logging.getLogger(__name__)
 
 
+def build_law_jobs_overview_payload(*, tasks: list[dict[str, Any]]) -> dict[str, Any]:
+    law_tasks = [dict(task) for task in tasks if str(task.get("scope") or "") == "law_sources_rebuild"]
+    failed = [task for task in law_tasks if str(task.get("status") or "") == "failed"]
+    running = [task for task in law_tasks if str(task.get("status") or "") in {"queued", "running"}]
+    alerts = [
+        {
+            "kind": "failed_rebuild",
+            "task_id": task.get("task_id"),
+            "server_code": task.get("server_code"),
+            "error": task.get("error"),
+        }
+        for task in failed[:20]
+    ]
+    return {
+        "ok": True,
+        "summary": {
+            "total_tasks": len(law_tasks),
+            "running_tasks": len(running),
+            "failed_tasks": len(failed),
+            "alerts_count": len(alerts),
+        },
+        "alerts": alerts,
+        "running": running[:20],
+    }
+
+
+def build_async_jobs_overview_payload(*, items: list[dict[str, Any]]) -> dict[str, Any]:
+    normalized_items = [dict(item) for item in items]
+    problem_statuses = {"failed", "retry_scheduled"}
+    problem_items = [item for item in normalized_items if str(item.get("canonical_status") or "") in problem_statuses]
+    failed_items = [item for item in normalized_items if str(item.get("canonical_status") or "") == "failed"]
+    retry_items = [item for item in normalized_items if str(item.get("canonical_status") or "") == "retry_scheduled"]
+    running_items = [item for item in normalized_items if str(item.get("canonical_status") or "") == "running"]
+
+    by_type: dict[str, int] = {}
+    for item in problem_items:
+        job_type = str(item.get("job_type") or "unknown")
+        by_type[job_type] = by_type.get(job_type, 0) + 1
+
+    return {
+        "ok": True,
+        "summary": {
+            "total_jobs": len(normalized_items),
+            "problem_jobs": len(problem_items),
+            "failed_jobs": len(failed_items),
+            "retry_scheduled_jobs": len(retry_items),
+            "running_jobs": len(running_items),
+        },
+        "problem_jobs": problem_items[:20],
+        "by_job_type": [
+            {"job_type": key, "count": value}
+            for key, value in sorted(by_type.items(), key=lambda pair: (-pair[1], pair[0]))
+        ],
+    }
+
+
 def build_exam_import_overview_payload(
     *,
     exam_store,

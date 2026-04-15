@@ -42,7 +42,11 @@ from ogp_web.services.law_admin_service import LawAdminService
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
 from ogp_web.services.law_rebuild_tasks import find_active_law_rebuild_task
 from ogp_web.services.law_version_service import resolve_active_law_version
-from ogp_web.services.admin_overview_service import build_exam_import_overview_payload
+from ogp_web.services.admin_overview_service import (
+    build_async_jobs_overview_payload,
+    build_exam_import_overview_payload,
+    build_law_jobs_overview_payload,
+)
 from ogp_web.services.auth_service import AuthError, AuthUser, require_admin_user
 from ogp_web.services.generated_document_trace_service import (
     list_admin_recent_generated_documents,
@@ -1376,30 +1380,7 @@ async def admin_law_jobs_overview(
     user: AuthUser = Depends(requires_permission("manage_law_sets")),
 ):
     _ = user
-    tasks = _load_admin_tasks()
-    law_tasks = [task for task in tasks if str(task.get("scope") or "") == "law_sources_rebuild"]
-    failed = [task for task in law_tasks if str(task.get("status") or "") == "failed"]
-    running = [task for task in law_tasks if str(task.get("status") or "") in {"queued", "running"}]
-    alerts = [
-        {
-            "kind": "failed_rebuild",
-            "task_id": task.get("task_id"),
-            "server_code": task.get("server_code"),
-            "error": task.get("error"),
-        }
-        for task in failed[:20]
-    ]
-    return {
-        "ok": True,
-        "summary": {
-            "total_tasks": len(law_tasks),
-            "running_tasks": len(running),
-            "failed_tasks": len(failed),
-            "alerts_count": len(alerts),
-        },
-        "alerts": alerts,
-        "running": running[:20],
-    }
+    return build_law_jobs_overview_payload(tasks=_load_admin_tasks())
 
 
 @router.get("/api/admin/async-jobs/overview")
@@ -1414,32 +1395,7 @@ async def admin_async_jobs_overview(
         enrich_job_status(item, subsystem="async_job")
         for item in service.list_jobs(server_id=user.server_code, limit=100)
     ]
-    problem_statuses = {"failed", "retry_scheduled"}
-    problem_items = [item for item in items if str(item.get("canonical_status") or "") in problem_statuses]
-    failed_items = [item for item in items if str(item.get("canonical_status") or "") == "failed"]
-    retry_items = [item for item in items if str(item.get("canonical_status") or "") == "retry_scheduled"]
-    running_items = [item for item in items if str(item.get("canonical_status") or "") == "running"]
-
-    by_type: dict[str, int] = {}
-    for item in problem_items:
-        job_type = str(item.get("job_type") or "unknown")
-        by_type[job_type] = by_type.get(job_type, 0) + 1
-
-    return {
-        "ok": True,
-        "summary": {
-            "total_jobs": len(items),
-            "problem_jobs": len(problem_items),
-            "failed_jobs": len(failed_items),
-            "retry_scheduled_jobs": len(retry_items),
-            "running_jobs": len(running_items),
-        },
-        "problem_jobs": problem_items[:20],
-        "by_job_type": [
-            {"job_type": key, "count": value}
-            for key, value in sorted(by_type.items(), key=lambda pair: (-pair[1], pair[0]))
-        ],
-    }
+    return build_async_jobs_overview_payload(items=items)
 
 
 @router.get("/api/admin/exam-import/overview")
