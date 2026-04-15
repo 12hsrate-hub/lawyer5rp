@@ -7,9 +7,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase H — Post-pilot scale-out and legacy reduction`
-- Current task: `H.1 Next candidate rollout planning`
+- Current task: `H.1 runtime gap closure`
 - Active execution phase override: `Phase G accepted; start post-pilot planning from H.1`
-- Current micro-step: `run H.1b runtime catalog verification`
+- Current micro-step: `resolve H.1b runtime gaps: rehab template binding + validation coverage`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -17,6 +17,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `Phase A` through `Phase G` are now complete.
   - The pilot rollout workspace, provenance review, and post-pilot cleanup backlog are live.
   - Next work should start from `Phase H.1`, not by reopening earlier phases.
+  - `H.1b` runtime catalog verification has now been executed on production for `blackberry + rehab`.
+  - Verification result is not rollout-ready yet: the active pack binds `rehab_v1`, while the seeded published template is `rehab_template_v1`.
+  - Verification also confirmed that no published rehab-specific validation rule/profile is currently present.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -413,8 +416,9 @@ Execution status: `in_progress`
 - Record candidate-specific gates before any activation change.
 - Current H.1 recommendation: `blackberry + rehab` as the first same-server / second-procedure candidate.
 - `H.1a` complete: code/seed-level rehab inventory verification is documented in `REHAB_ROLLOUT_GAP_MAP.md`.
-- Current H.1 executable slice: `H.1b Rehab runtime catalog verification`.
+- `H.1b` complete: runtime verification executed on production and recorded in `REHAB_ROLLOUT_GAP_MAP.md`.
 - Runtime verification script: `scripts/verify_rehab_runtime_catalog.py` (DB-backed catalog checks for `blackberry + rehab`).
+- Current H.1 executable slice: `close runtime gaps surfaced by H.1b`.
 
 ### H.2 Legacy cleanup wave 1
 - Remove only those compatibility seams that are already listed in the rollout backlog and have a satisfied removal gate.
@@ -595,7 +599,8 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `Phase H.1` selects one bounded post-pilot candidate and records its rollout gate before any broader scale-out
 - initial H.1 recommendation is `blackberry + rehab`, not `strawberry + complaint`
 - `H.1a` output is `REHAB_ROLLOUT_GAP_MAP.md`
-- immediate next step is `H.1b Rehab runtime catalog verification`
+- `H.1b` is now executed on production and remains `fail` until the rehab template binding and validation coverage are aligned
+- immediate next step is `H.1c rehab template/validation gap closure`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`
