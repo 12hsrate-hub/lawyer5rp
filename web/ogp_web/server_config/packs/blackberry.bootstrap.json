@@ -54,6 +54,12 @@
           "victim",
           "evidence"
         ]
+      },
+      "rehab": {
+        "required_sections": [
+          "incident",
+          "evidence"
+        ]
       }
     },
     "template_bindings": {
@@ -62,7 +68,7 @@
         "document_type": "complaint"
       },
       "rehab": {
-        "template_key": "rehab_v1",
+        "template_key": "rehab_template_v1",
         "document_type": "rehab"
       }
     },

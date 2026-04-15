@@ -148,6 +148,20 @@ SEED_ITEMS: dict[str, list[dict[str, object]]] = {
                 "notes": "Starter governance rules for catalog changes.",
             },
         },
+        {
+            "key": "rehab_default",
+            "title": "Rehabilitation default validation",
+            "config": {
+                "rule_code": "rehab_default",
+                "title": "Rehabilitation default validation",
+                "ruleset": {
+                    "profile": "rehab",
+                    "required_sections": ["incident", "evidence"],
+                    "document_type": "rehab"
+                },
+                "notes": "Starter validation profile for rehabilitation documents.",
+            },
+        },
     ],
 }
 

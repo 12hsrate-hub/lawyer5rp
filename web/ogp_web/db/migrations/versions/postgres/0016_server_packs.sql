@@ -37,10 +37,13 @@ WITH blackberry_seed AS (
                 jsonb_build_object('code', 'no_video_or_no_evidence', 'label', 'Нет видео или доказательств', 'description', 'Отсутствуют видеоматериалы или надлежащая доказательная база.')
             ),
             'form_schema', jsonb_build_object('complaint', jsonb_build_object('version', 'v1', 'sections', jsonb_build_array('incident', 'victim', 'representative', 'evidence'))),
-            'validation_profiles', jsonb_build_object('complaint_default', jsonb_build_object('required_sections', jsonb_build_array('incident', 'victim', 'evidence'))),
+            'validation_profiles', jsonb_build_object(
+                'complaint_default', jsonb_build_object('required_sections', jsonb_build_array('incident', 'victim', 'evidence')),
+                'rehab', jsonb_build_object('required_sections', jsonb_build_array('incident', 'evidence'))
+            ),
             'template_bindings', jsonb_build_object(
                 'complaint', jsonb_build_object('template_key', 'complaint_v1', 'document_type', 'complaint'),
-                'rehab', jsonb_build_object('template_key', 'rehab_v1', 'document_type', 'rehab')
+                'rehab', jsonb_build_object('template_key', 'rehab_template_v1', 'document_type', 'rehab')
             ),
             'terminology', jsonb_build_object('complaint', 'Жалоба', 'rehab', 'Реабилитация', 'court_claim', 'Исковое заявление')
         ) AS metadata_json
