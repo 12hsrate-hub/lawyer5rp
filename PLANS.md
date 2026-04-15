@@ -7,7 +7,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase J — AI pipeline decomposition wave 1`
-- Current task: `J.1 suggest orchestration extraction`
+- Current task: `J.2 law-qa extraction follow-up`
 - Active execution phase override: `Phase I is accepted; Phase J is now opened as the next execution phase`
 - Current micro-step: `select the first bounded ai_service -> ai_pipeline extraction seam without changing route contracts`
 - Overall status: `in_progress`
@@ -125,8 +125,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - `J.1b` is now complete on production commit `dbeacc2`: bounded suggest validation/retry/fallback remediation orchestration now converges behind the same `ai_pipeline.orchestration` layer while keeping `suggest_text_details(...)` contract-stable.
 - `J.1c` is now complete on production commit `3114c63`: suggest warning aggregation and `SuggestTextResult` payload assembly now converge behind the same orchestration layer, leaving `ai_service.suggest_text_details(...)` closer to a thin facade.
 - `J.1d` is now complete on production commit `c5ad780`: suggest telemetry/result finalization now converges behind the same orchestration layer, and the old local suggest/law-qa metrics helper duplicates were removed from `ai_service.py`.
+- `J.2a` is now complete on production commit `00bcafe`: law-QA telemetry/result finalization now converges behind `ai_pipeline.orchestration`, leaving `answer_law_question_details(...)` thinner without changing the public contract.
+- `J.2b` is now complete on production commit `872bc05`: law-QA context-compaction retry orchestration now converges behind the same `ai_pipeline.orchestration` layer, leaving `ai_service.py` with less inline retry/control-flow logic.
 - the old positional `get_server_config(...)` retrieval seam in `ai_service.py` is now wrapped through a compatibility adapter so shared server-context resolution still works on the extracted suggest path.
-- immediate next step is `Phase J.1 suggest orchestration extraction` with the next bounded seam focused on the remaining suggest request-assembly/persistence wiring, unless the next pass shows that `J.1` has reached diminishing returns and `J.2 law_qa` is the better seam.
+- immediate next step is `Phase J.2 law-qa extraction follow-up`, with the next bounded seam focused on the remaining law-QA request assembly / retrieval wiring before deciding whether `Phase J` is ready to move into facade tightening.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -621,6 +623,10 @@ Execution status: `ready_to_start`
 ### J.2 Law-QA extraction follow-up
 - After the suggest path is stable, mirror the same extraction approach for `answer_law_question_details(...)`.
 - Reuse the same bounded rule: internal orchestration moves, route/service contracts stay stable.
+- `J.2a` complete on production commit `00bcafe`: law-QA telemetry/result finalization now lives behind shared `ai_pipeline.orchestration` helpers while the route/service contract remains stable.
+- `J.2b` complete on production commit `872bc05`: law-QA context-compaction retry orchestration now lives behind the same shared layer, with existing law-QA service and API tests remaining green.
+- Next candidate slice:
+  - move the remaining law-QA request assembly / retrieval control seam out of `ai_service.py`, or stop and switch to `J.3` once the remaining block is mostly thin facade glue.
 
 ### J.3 AI facade tightening
 - Once suggest and law-QA internals are extracted, reduce `ai_service.py` to compatibility facades, shared retrieval helpers, and stable metrics adapters.
