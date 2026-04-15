@@ -33,6 +33,7 @@ from ogp_web.schemas import (
     SuggestResponse,
 )
 from ogp_web.services import ai_service
+from ogp_web.services.ai_pipeline.telemetry_meta import build_law_qa_metrics_meta, build_suggest_metrics_meta
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
 from ogp_web.services.complaint_draft_schema import normalize_complaint_draft
@@ -616,7 +617,13 @@ async def suggest(
         flow="suggest",
         generation_id=result.generation_id,
         path="/api/ai/suggest",
-        meta=ai_service.build_suggest_metrics_meta(payload=payload, result=result, server_code=user.server_code),
+        meta=build_suggest_metrics_meta(
+            payload=payload,
+            result=result,
+            server_code=user.server_code,
+            short_text_hash=ai_service.short_text_hash,
+            mask_text_preview=ai_service.mask_text_preview,
+        ),
     )
     return SuggestResponse(
         text=result.text,
@@ -798,7 +805,13 @@ async def law_qa_test(
             flow="law_qa",
             generation_id=result.generation_id,
             path="/api/ai/law-qa-test",
-            meta=ai_service.build_law_qa_metrics_meta(payload=payload, result=result, used_sources=result.used_sources),
+            meta=build_law_qa_metrics_meta(
+                payload=payload,
+                result=result,
+                used_sources=result.used_sources,
+                short_text_hash=ai_service.short_text_hash,
+                mask_text_preview=ai_service.mask_text_preview,
+            ),
         )
         try:
             validation_flag = flag_service.evaluate(

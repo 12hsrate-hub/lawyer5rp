@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase J — AI pipeline decomposition wave 1`
 - Current task: `J.3 AI facade tightening`
 - Active execution phase override: `Phase I is accepted; Phase J is now opened as the next execution phase`
-- Current micro-step: `select the first bounded ai_service -> ai_pipeline extraction seam without changing route contracts`
+- Current micro-step: `reduce ai_service.py to thin suggest/law-qa facades by moving runtime-context assembly and remaining transport glue into ai_pipeline`
 - Overall status: `in_progress`
 - Last updated: `2026-04-16`
 - Execution override update:
@@ -131,6 +131,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - `J.2` is accepted: after runtime-context, retry, and finalization extraction, the remaining law-QA block is mostly facade glue rather than another high-value orchestration seam.
 - the old positional `get_server_config(...)` retrieval seam in `ai_service.py` is now wrapped through a compatibility adapter so shared server-context resolution still works on the extracted suggest path.
 - immediate next step is `Phase J.3 AI facade tightening`, with the next bounded seam focused on reducing `ai_service.py` to compatibility facades, shared retrieval helpers, and stable metrics adapters without drifting into cosmetic-only movement.
+- `J.3a` is now complete locally and ready for production sync: suggest runtime-context assembly now converges behind `ai_pipeline.orchestration.resolve_suggest_runtime_context(...)`, leaving `suggest_text_details(...)` with less inline validation, retrieval-shadow, policy, and compaction-setup glue.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.

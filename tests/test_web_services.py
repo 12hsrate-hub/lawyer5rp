@@ -22,6 +22,7 @@ from fastapi import HTTPException
 
 from ogp_web.schemas import ComplaintPayload, LawQaPayload, PrincipalScanPayload, RehabPayload, SuggestPayload, VictimPayload
 from ogp_web.services import ai_service, auth_service, complaint_service, email_service, exam_import_service, exam_sheet_service
+from ogp_web.services.ai_pipeline.telemetry_meta import build_suggest_metrics_meta
 from ogp_web.services.auth_service import AuthUser
 from ogp_web.services.legal_pipeline_service import normalize_law_qa_text_formatting
 from ogp_web.storage.user_repository import UserRepository
@@ -469,7 +470,13 @@ class WebServiceTests(unittest.TestCase):
             ai_service._build_suggest_law_context = original_build_context
             ai_service.monotonic = original_monotonic
 
-        meta = ai_service.build_suggest_metrics_meta(payload=payload, result=result, server_code="blackberry")
+        meta = build_suggest_metrics_meta(
+            payload=payload,
+            result=result,
+            server_code="blackberry",
+            short_text_hash=ai_service.short_text_hash,
+            mask_text_preview=ai_service.mask_text_preview,
+        )
         self.assertEqual(result.retrieval_ms, 125)
         self.assertEqual(result.openai_ms, 250)
         self.assertEqual(result.total_suggest_ms, 1000)
@@ -537,7 +544,13 @@ class WebServiceTests(unittest.TestCase):
             ai_service._build_suggest_law_context = original_build_context
             ai_service.suggest_description_with_proxy_fallback_result = original_suggest
 
-        meta = ai_service.build_suggest_metrics_meta(payload=payload, result=result, server_code="blackberry")
+        meta = build_suggest_metrics_meta(
+            payload=payload,
+            result=result,
+            server_code="blackberry",
+            short_text_hash=ai_service.short_text_hash,
+            mask_text_preview=ai_service.mask_text_preview,
+        )
         self.assertEqual(captured["model_name"], "gpt-5.4")
         self.assertEqual(result.selected_model, "gpt-5.4")
         self.assertEqual(result.selection_reason, "suggest_low_confidence_context")

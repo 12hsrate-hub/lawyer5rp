@@ -7,11 +7,11 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase J`
-- Active task: `J.1 suggest orchestration extraction`
+- Active task: `J.3 AI facade tightening`
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `6`
-- Next slice: `extract the first bounded ai_service -> ai_pipeline suggest seam without changing route contracts`
+- Next slice: `move remaining suggest runtime-context and transport glue out of ai_service.py without changing route contracts`
 - Last updated: `2026-04-16`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -259,6 +259,8 @@ Date: 2026-04-14
   - law-QA runtime-context assembly now converges behind the same shared layer instead of staying inline in `ai_service.py`
   - `J.2` is accepted
   - after runtime-context, retry, and finalization extraction, the remaining law-QA block is mostly thin facade glue rather than another high-value orchestration seam
+  - `J.3a` is ready locally
+  - suggest runtime-context assembly now converges behind `ai_pipeline.orchestration.resolve_suggest_runtime_context(...)`, so `suggest_text_details(...)` no longer keeps inline validation, retrieval-shadow, low-confidence policy, and compaction-attempt assembly
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.

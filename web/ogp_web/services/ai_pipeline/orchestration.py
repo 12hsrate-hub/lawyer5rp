@@ -66,6 +66,32 @@ class LawQaRuntimeContext:
 
 
 @dataclass(frozen=True)
+class SuggestRuntimeContext:
+    generation_id: str
+    server_config: Any
+    ai_context: Any
+    suggest_context: Any
+    shadow: dict[str, object]
+    victim_name: str
+    org: str
+    subject: str
+    event_dt: str
+    complaint_basis: str
+    main_focus: str
+    raw_desc: str
+    suggest_prompt_mode: str
+    low_confidence_policy: str
+    selected_model: str
+    selection_reason: str
+    low_confidence_model: str
+    point3_context: Any
+    pipeline_context_payload: dict[str, Any]
+    prompt_law_context: str
+    suggest_attempts: tuple[SuggestGenerationAttempt, ...]
+    retrieval_ms: int
+
+
+@dataclass(frozen=True)
 class SuggestValidationRemediationResult:
     generation_result: Any
     cleaned_text: str
@@ -80,6 +106,189 @@ def run_law_qa(payload: LawQaPayload, deps: LawQaOrchestrationDeps):
 
 def run_suggest(payload: SuggestPayload, *, server_code: str, deps: SuggestOrchestrationDeps):
     return deps.impl(payload, server_code)
+
+
+def resolve_suggest_runtime_context(
+    *,
+    payload: SuggestPayload,
+    server_code: str,
+    default_server_code: str,
+    clock: Callable[[], float],
+    new_generation_id: Callable[[], str],
+    resolve_server_config: Callable[..., Any],
+    resolve_server_ai_context_settings: Callable[..., Any],
+    build_shadow_comparison: Callable[..., Any],
+    build_suggest_retrieval_query: Callable[[SuggestPayload], str],
+    build_suggest_law_context: Callable[..., Any],
+    suggest_context_factory: Callable[..., Any],
+    server_feature_enabled: Callable[[Any, str], bool],
+    retrieve_law_context: Callable[..., Any],
+    select_suggest_model: Callable[..., Any],
+    get_flow_model: Callable[[str, str, str], str],
+    build_point3_pipeline_context: Callable[..., Any],
+    build_filtered_prompt_law_context: Callable[..., str],
+    truncate_suggest_value: Callable[[str, int], str],
+) -> SuggestRuntimeContext:
+    if not payload.victim_name.strip() or not payload.org.strip() or not payload.subject.strip() or not payload.event_dt.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=["Заполните: доверитель, дата/время, организация, объект заявления."],
+        )
+    if not payload.raw_desc.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=["Сначала заполните черновик описания событий."],
+        )
+
+    generation_id = new_generation_id()
+    server_config = resolve_server_config(server_code=server_code, fallback_server_code=default_server_code)
+    ai_context = resolve_server_ai_context_settings(server_code=server_code, fallback_server_code=default_server_code)
+    suggest_prompt_mode = ai_context.suggest_prompt_mode
+    low_confidence_policy = ai_context.suggest_low_confidence_policy
+    shadow = build_shadow_comparison(enabled=False, profile="", primary_matches=(), shadow_matches=())
+
+    suggest_query = build_suggest_retrieval_query(payload)
+    retrieval_started_at = clock()
+    suggest_context_raw = build_suggest_law_context(
+        server_code=server_code,
+        question=suggest_query,
+        law_version_id=payload.law_version_id,
+    )
+    if hasattr(suggest_context_raw, "context_text"):
+        suggest_context = suggest_context_raw
+    else:
+        suggest_context = suggest_context_factory(
+            context_text=str(suggest_context_raw or "").strip(),
+            retrieval_confidence="medium",
+            retrieval_context_mode="normal_context" if str(suggest_context_raw or "").strip() else "no_context",
+            retrieval_profile="suggest",
+            bundle_status="unknown",
+            bundle_generated_at="",
+            bundle_fingerprint="",
+            selected_norms_count=0,
+            applicability_mode="",
+            applicability_notes="",
+            allowed_article_numbers=(),
+            selected_norms=(),
+        )
+    retrieval_ms = int((clock() - retrieval_started_at) * 1000)
+    law_context = suggest_context.context_text
+    if suggest_context.retrieval_context_mode == "low_confidence_context" and low_confidence_policy == "controlled_fallback":
+        law_context = "\n".join(
+            (
+                "Статус retrieval: low_confidence_context",
+                "Важно: используй только явно подтвержденные нормы из блока ниже. Если прямой нормы нет, не выдумывай ее.",
+                law_context,
+            )
+        ).strip()
+    if suggest_context.retrieval_context_mode == "no_context" and low_confidence_policy == "controlled_fallback":
+        law_context = "\n".join(
+            (
+                "Статус retrieval: no_context",
+                "Важно: надежный правовой контекст не найден. Пиши только факты из черновика и не выдумывай нормы.",
+            )
+        )
+    if server_feature_enabled(server_config, "legal_pipeline_shadow"):
+        shadow_profile = ai_context.shadow_suggest_profile
+        if shadow_profile and shadow_profile != "suggest":
+            primary_result = retrieve_law_context(
+                server_code=server_code,
+                query=suggest_query,
+                excerpt_chars=900,
+                profile="suggest",
+                law_version_id=payload.law_version_id,
+            )
+            shadow_result = retrieve_law_context(
+                server_code=server_code,
+                query=suggest_query,
+                excerpt_chars=900,
+                profile=shadow_profile,
+                law_version_id=payload.law_version_id,
+            )
+            shadow = build_shadow_comparison(
+                enabled=True,
+                profile=shadow_profile,
+                primary_matches=primary_result.matches,
+                shadow_matches=shadow_result.matches,
+            )
+
+    victim_name = payload.victim_name.strip()
+    org = payload.org.strip()
+    subject = payload.subject.strip()
+    event_dt = payload.event_dt.strip()
+    complaint_basis = payload.complaint_basis.strip()
+    main_focus = payload.main_focus.strip()
+    raw_desc = payload.raw_desc.strip()
+    selection = select_suggest_model(
+        payload=payload,
+        retrieval_context_mode=suggest_context.retrieval_context_mode,
+        server_config=server_config,
+    )
+    selected_model = selection.model_name
+    selection_reason = selection.reason
+    low_confidence_model = get_flow_model("suggest", "low_confidence_model", "gpt-5.4")
+    if low_confidence_policy == "soft_fail" and suggest_context.retrieval_context_mode in {"low_confidence_context", "no_context"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[
+                "Недостаточно надежного правового контекста для генерации. Уточните факты и повторите запрос.",
+            ],
+        )
+    point3_context = build_point3_pipeline_context(
+        complainant=victim_name,
+        organization=org,
+        target_person=subject,
+        event_datetime=event_dt,
+        draft_text=raw_desc,
+        complaint_basis=complaint_basis,
+        main_focus=main_focus,
+        retrieval_status=suggest_context.retrieval_context_mode,
+        retrieval_confidence=suggest_context.retrieval_confidence,
+        retrieved_law_context=law_context,
+        selected_norms=suggest_context.selected_norms,
+    )
+    prompt_law_context = build_filtered_prompt_law_context(
+        point3_context=point3_context,
+        suggest_context=suggest_context,
+        fallback_law_context=law_context,
+    )
+    suggest_attempts = (
+        SuggestGenerationAttempt(raw_desc=raw_desc, law_context=prompt_law_context),
+        SuggestGenerationAttempt(raw_desc=raw_desc, law_context=truncate_suggest_value(prompt_law_context, max_chars=2600)),
+        SuggestGenerationAttempt(raw_desc=raw_desc, law_context=truncate_suggest_value(prompt_law_context, max_chars=1500)),
+        SuggestGenerationAttempt(
+            raw_desc=truncate_suggest_value(raw_desc, max_chars=8000),
+            law_context=truncate_suggest_value(prompt_law_context, max_chars=1200),
+        ),
+        SuggestGenerationAttempt(
+            raw_desc=truncate_suggest_value(raw_desc, max_chars=5000),
+            law_context=truncate_suggest_value(prompt_law_context, max_chars=700),
+        ),
+    )
+    return SuggestRuntimeContext(
+        generation_id=generation_id,
+        server_config=server_config,
+        ai_context=ai_context,
+        suggest_context=suggest_context,
+        shadow=shadow,
+        victim_name=victim_name,
+        org=org,
+        subject=subject,
+        event_dt=event_dt,
+        complaint_basis=complaint_basis,
+        main_focus=main_focus,
+        raw_desc=raw_desc,
+        suggest_prompt_mode=suggest_prompt_mode,
+        low_confidence_policy=low_confidence_policy,
+        selected_model=selected_model,
+        selection_reason=selection_reason,
+        low_confidence_model=low_confidence_model,
+        point3_context=point3_context,
+        pipeline_context_payload=point3_context.prompt_context_json(),
+        prompt_law_context=prompt_law_context,
+        suggest_attempts=suggest_attempts,
+        retrieval_ms=retrieval_ms,
+    )
 
 
 def resolve_law_qa_runtime_context(
