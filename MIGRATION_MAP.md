@@ -7,11 +7,11 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase I`
-- Active task: `select the next Phase I task after accepted I.3`
+- Active task: `Phase I.4 admin analytics convergence wave 1`
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `6`
-- Next slice: `select the next non-wrapper Phase I convergence target after accepted I.3`
+- Next slice: `I.4d ai-pipeline analytics convergence review after accepted dashboard/overview/performance block`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -220,6 +220,12 @@ Date: 2026-04-14
   - bulk user-mutation dispatch now converges behind the same shared admin user-mutations helper layer instead of route-local action branching and duplicated metrics meta
   - `I.3` is accepted
   - no further meaningful admin route decomposition seams remain that remove a real second orchestration layer without slipping into task-boundary or wrapper-only reshuffling
+  - `I.4a` deployed on production commit `c3fcf8c`
+  - `/api/admin/dashboard` KPI, alerts, quick-links, and recent-event aggregation now converge behind a shared admin analytics helper instead of route-local assembly
+  - `I.4b` deployed on production commit `c3fcf8c`
+  - `/api/admin/overview` metrics, model-policy, error-explorer, synthetic summary, and partial-error orchestration now converge behind the same shared analytics helper instead of route-local glue
+  - `I.4c` deployed on production commit `c3fcf8c`
+  - `/api/admin/performance` caching, latency/rates/totals shaping, and snapshot metadata now converge behind the same shared analytics helper instead of route-local cache and formatting helpers
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.

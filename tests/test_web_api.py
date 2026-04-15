@@ -753,6 +753,21 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(payload["model_policy"]["recommended_defaults"]["default_tier"], "gpt-5.4-mini")
         self.assertIn("law_qa", payload["model_policy"]["model_routing"])
 
+    def test_admin_dashboard_returns_kpis_alerts_and_links(self):
+        self._register_verify_and_login("12345", "admin-dashboard@example.com")
+
+        response = self.client.get("/api/admin/dashboard")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        self.assertIn("kpis", payload)
+        self.assertIn("alerts", payload)
+        self.assertIn("quick_links", payload)
+        self.assertIn("recent_events", payload)
+        self.assertIn("top_endpoints", payload)
+        self.assertTrue(any(item["id"] == "users_total" for item in payload["kpis"]))
+        self.assertTrue(any(item["label"] == "Пользователи" for item in payload["quick_links"]))
+
     def test_admin_overview_supports_user_sort_and_csv_exports(self):
         self._register_verify_and_login("alpha", "alpha@example.com")
         self.client.post("/api/auth/logout")
