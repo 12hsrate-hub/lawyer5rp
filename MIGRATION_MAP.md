@@ -251,6 +251,10 @@ Date: 2026-04-14
   - suggest warning aggregation and `SuggestTextResult` payload assembly now converge behind the same orchestration layer instead of staying inline in `ai_service.py`
   - `J.1d` deployed on production commit `c5ad780`
   - suggest telemetry/result finalization now converges behind the same orchestration layer, and the dead local suggest/law-qa metrics helper duplicates were removed from `ai_service.py`
+  - `J.2a` deployed on production commit `00bcafe`
+  - law-QA telemetry/result finalization now converges behind `ai_pipeline.orchestration` instead of staying inline in `ai_service.py`
+  - `J.2b` deployed on production commit `872bc05`
+  - law-QA context-compaction retry orchestration now converges behind the same shared layer instead of staying inline in `ai_service.py`
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
