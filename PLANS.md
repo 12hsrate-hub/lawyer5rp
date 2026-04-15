@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.3 admin route decomposition wave 1`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded admin route decomposition seam after I.3a`
+- Current micro-step: `select the next bounded admin route decomposition seam after I.3c`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -87,7 +87,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.2x` is now complete on production commit `62c2d5d`: the admin recent generated-documents route now reuses the same shared generated-document list helper layer with normalized `generation_snapshot_id` and `username` shaping.
   - `I.2` is accepted: no further meaningful snapshot/provenance convergence seams remain that remove real duplicated logic without drifting into wrapper-only reshuffling.
   - `I.3a` is now complete on production commit `2b70af8`: `exam_import` overview payload assembly is now centralized behind a shared admin overview helper reused by both the standalone `/api/admin/exam-import/overview` route and the main admin dashboard assembly.
-  - immediate next step is `select I.3b after the accepted exam-import overview decomposition seam`.
+  - `I.3b` is now complete on production commit `e83b789`: `law-jobs` overview payload assembly is now centralized behind a shared admin overview helper instead of remaining route-local inside `routes/admin.py`.
+  - `I.3c` is now complete on production commit `e83b789`: `async-jobs` overview payload assembly is now centralized behind the same shared admin overview helper layer instead of route-local status bucketing and grouping logic.
+  - immediate next step is `select I.3d after the accepted jobs overview decomposition seam`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -553,7 +555,7 @@ Execution status: `ready_to_start`
 - Continue shrinking `routes/admin.py` by extracting one bounded server-backed subsection at a time into service/helper seams.
 - Prioritize surfaces that already have clear service boundaries underneath them.
 - Do not mix UI copy work, route splitting, and domain behavior changes in one slice.
-- Current I.3 executable slice: `select I.3b after the accepted exam-import overview decomposition seam`.
+- Current I.3 executable slice: `select I.3d after the accepted jobs overview decomposition seam`.
 
 ### Deliverables
 - `Phase I` execution brief with the first accepted bounded seam
