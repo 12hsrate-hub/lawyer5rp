@@ -89,6 +89,163 @@ class ComplaintRuntimeService:
     def build_validation_service(self, store: UserStore) -> ValidationService:
         return ValidationService(ValidationRepository(store.backend))
 
+    def law_qa_selected_norms_to_citations(
+        self,
+        *,
+        store: UserStore,
+        server_id: str,
+        law_version_id: int | None,
+        selected_norms: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        if law_version_id is None:
+            return []
+        citations: list[dict[str, object]] = []
+        for norm in selected_norms:
+            source_url = str(norm.get("source_url") or "").strip()
+            document_title = str(norm.get("document_title") or "").strip()
+            article_label = str(norm.get("article_label") or "").strip()
+            excerpt = str(norm.get("excerpt") or norm.get("excerpt_preview") or "").strip()
+            if not source_url or not document_title or not article_label:
+                continue
+            source = store.resolve_law_article_source(
+                server_id=server_id,
+                law_version_id=law_version_id,
+                article_label=article_label,
+                document_title=document_title,
+                source_url=source_url,
+            )
+            if source is None:
+                continue
+            citations.append(
+                {
+                    "citation_type": "norm",
+                    "source_type": "law_article",
+                    "source_id": int(source["source_id"]),
+                    "source_version_id": int(source["source_version_id"]),
+                    "canonical_ref": f"{document_title} {article_label}",
+                    "quoted_text": excerpt,
+                    "usage_type": "supporting",
+                }
+            )
+        return citations
+
+    def resolve_law_qa_response_warnings(
+        self,
+        *,
+        warnings: list[str],
+        citations_flag: FlagDecision,
+        raw_citations: list[dict[str, object]],
+    ) -> list[str]:
+        response_warnings = list(warnings or [])
+        if citations_flag.use_new_flow and not raw_citations:
+            if citations_flag.enforcement.value == "hard":
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=["citations_required policy blocked the response due to missing citations."],
+                )
+            response_warnings.append("citations_required_warn:missing_citations")
+        return response_warnings
+
+    def persist_law_qa_artifacts(
+        self,
+        *,
+        store: UserStore,
+        user: AuthUser,
+        effective_server_code: str,
+        question: str,
+        law_version_id: int | None,
+        answer_text: str,
+        used_sources: list[str],
+        raw_citations: list[dict[str, object]],
+        retrieval_runner: Callable[..., Any],
+        citation_saver: Callable[..., list[dict[str, object]]],
+    ) -> tuple[Any, int, list[dict[str, object]]]:
+        retrieval = retrieval_runner(
+            store=store,
+            actor_username=user.username,
+            server_id=effective_server_code,
+            run_type="law_qa",
+            query_text=question,
+            effective_versions={"law_version_id": law_version_id},
+            retrieved_sources=[{"url": item} for item in (used_sources or [])],
+            candidates=raw_citations,
+            policy_status="pass" if raw_citations else "blocked_missing_citations",
+        )
+        actor_id = store.get_user_id(user.username)
+        if actor_id is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Пользователь не найден."])
+        law_qa_run_id = store.create_law_qa_run(
+            server_id=effective_server_code,
+            user_id=int(actor_id),
+            question=question,
+            answer_text=answer_text,
+            retrieval_run_id=retrieval.retrieval_run_id,
+            snapshot_id=str(law_version_id or ""),
+        )
+        citations = (
+            citation_saver(
+                store=store,
+                server_id=effective_server_code,
+                law_qa_run_id=law_qa_run_id,
+                retrieval_run_id=retrieval.retrieval_run_id,
+                citations=raw_citations,
+            )
+            if raw_citations
+            else []
+        )
+        return retrieval, int(law_qa_run_id), citations
+
+    def maybe_validate_law_qa_result(
+        self,
+        *,
+        store: UserStore,
+        metrics_store: AdminMetricsStore,
+        user: AuthUser,
+        effective_server_code: str,
+        question: str,
+        result: Any,
+        validation_flag: FlagDecision,
+        path: str = "/api/ai/law-qa-test",
+    ) -> None:
+        try:
+            validation_repo = ValidationRepository(store.backend)
+            conn = store.backend.connect()
+            user_row = conn.execute("SELECT id FROM users WHERE username = %s", (user.username,)).fetchone()
+            conn.close()
+            if user_row is not None:
+                qa_run = validation_repo.create_law_qa_run(
+                    server_id=effective_server_code,
+                    user_id=int(user_row["id"]),
+                    question=question,
+                    answer_text=result.text,
+                    used_sources=list(getattr(result, "used_sources", []) or []),
+                    selected_norms=list(getattr(result, "selected_norms", []) or []),
+                    metadata={"generation_id": result.generation_id, "legacy_endpoint": path},
+                )
+                if validation_flag.use_new_flow:
+                    validation_result = ValidationService(validation_repo).run_validation(
+                        target_type="law_qa_run",
+                        target_id=int(qa_run["id"]),
+                    )
+                    record_validation_fail_rate(
+                        metrics_store,
+                        username=user.username,
+                        path=path,
+                        method="POST",
+                        labels=build_rollout_labels(
+                            flag="validation_gate_v1",
+                            rollout_mode=validation_flag.mode.value,
+                            cohort=validation_flag.cohort.value,
+                            server_id=effective_server_code,
+                            flow_type="law_qa",
+                            status="fail" if validation_result.run.get("status") == "fail" else "success",
+                        ),
+                        failed=validation_result.run.get("status") == "fail",
+                    )
+        except Exception:
+            if str(os.getenv("OGP_VALIDATION_LAW_QA_STRICT", "0") or "").strip() in {"1", "true", "yes", "on"}:
+                raise
+
     def persist_generation_result(
         self,
         *,
