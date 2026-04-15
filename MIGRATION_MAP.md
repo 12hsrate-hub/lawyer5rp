@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select I.1w after the accepted request-default cleanup pass`
+- Next slice: `select I.1y after the accepted shared resolve-helper pass`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -116,7 +116,11 @@ Date: 2026-04-14
   - repeated request-default server-config lookup in `pages.py` is now centralized behind `_request_server_config(...)` for login, verify-email, and reset-password rendering
   - `I.1v` deployed on production commit `8395223`
   - tiny dead cleanup leftovers were removed from bounded page/law-admin paths, and stale `law_admin_service` tests now follow the shared server-context helpers
-  - route contracts remain unchanged and the first twenty-two Phase I convergence slices are accepted
+  - `I.1w` deployed on production commit `304d9d6`
+  - shared `resolve_server_ai_context_settings(...)` now backs bounded AI law-QA and suggest call sites instead of local extract-only seams
+  - `I.1x` deployed on production commit `304d9d6`
+  - shared `resolve_server_identity(...)` and `resolve_server_feature_flags(...)` now back bounded complaint generation snapshot assembly and related server-context tests
+  - route contracts remain unchanged and the first twenty-four Phase I convergence slices are accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
