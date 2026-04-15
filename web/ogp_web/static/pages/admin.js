@@ -1721,13 +1721,14 @@ function derivePilotRolloutState(featureFlags) {
 function describePilotWarningSignal(eventType) {
   const key = String(eventType || "").trim();
   const catalog = {
-    rollout_generation_latency: ["Generation latency", "info", "Compare recent generation timings with the pre-pilot baseline."],
-    rollout_async_queue_lag: ["Async queue lag", "info", "Inspect queue backlog and confirm no retry storm is forming."],
-    rollout_validation_fail_rate: ["Validation fail rate", "info", "Review recent validation failures before any rollout change."],
-    rollout_error_rate: ["Rollout error rate", "danger-soft", "Investigate error spikes first; do not expand rollout while active."],
+    rollout_generation_latency: ["Generation latency", "review", "runtime", "Compare recent generation timings with the pre-pilot baseline."],
+    rollout_async_queue_lag: ["Async queue lag", "review", "async ops", "Inspect queue backlog and confirm no retry storm is forming."],
+    rollout_validation_fail_rate: ["Validation fail rate", "review", "quality", "Review recent validation failures before any rollout change."],
+    rollout_error_rate: ["Rollout error rate", "critical", "runtime", "Investigate error spikes first; do not expand rollout while active."],
   };
-  const [label, tone, action] = catalog[key] || [key || "Unknown signal", "info", "Classify this signal before changing rollout state."];
-  return { label, tone, action };
+  const [label, severity, owner, action] = catalog[key] || [key || "Unknown signal", "review", "triage", "Classify this signal before changing rollout state."];
+  const tone = severity === "critical" ? "danger-soft" : "info";
+  return { label, severity, owner, tone, action };
 }
 
 function renderPilotRolloutMarkup(payload) {
@@ -1836,14 +1837,15 @@ function renderPilotRolloutMarkup(payload) {
             ? `
               <div class="legal-table-shell">
                 <table class="legal-table admin-table admin-table--compact">
-                  <thead><tr><th>Signal</th><th>Status</th><th>Total</th><th>Next action</th></tr></thead>
+                  <thead><tr><th>Signal</th><th>Status</th><th>Total</th><th>Owner</th><th>Next action</th></tr></thead>
                   <tbody>
                     ${warningRows
                       .map((item) => `
                         <tr>
                           <td>${escapeHtml(String(item.label || item.event_type || "-"))}</td>
-                          <td>${renderBadge(item.tone === "danger-soft" ? "critical" : "review", item.tone)}</td>
+                          <td>${renderBadge(String(item.severity || "review"), item.tone)}</td>
                           <td>${escapeHtml(String(item.total || 0))}</td>
+                          <td>${escapeHtml(String(item.owner || "triage"))}</td>
                           <td>${escapeHtml(String(item.action || "-"))}</td>
                         </tr>
                       `)

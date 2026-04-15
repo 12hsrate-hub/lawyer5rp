@@ -1,6 +1,32 @@
+function normalizeUtf8MojibakeText(value) {
+  const text = String(value ?? "");
+  if (!text) {
+    return "";
+  }
+  if (!/[^\x00-\x7f]/.test(text)) {
+    return text;
+  }
+  try {
+    const decoded = decodeURIComponent(escape(text));
+    if (decoded && decoded !== text) {
+      return decoded;
+    }
+  } catch {
+    // keep original when value is already valid UTF-8.
+  }
+  return text;
+}
+
+function createAdminSafeEscaper(escapeHtml) {
+  const safeEscapeHtml =
+    typeof escapeHtml === "function" ? escapeHtml : (value) => String(value ?? "");
+
+  return (value) => safeEscapeHtml(normalizeUtf8MojibakeText(value));
+}
+
 window.OGPAdminOverview = {
   renderTotalsMarkup(totals, helpers = {}) {
-    const escapeHtml = helpers.escapeHtml || ((value) => String(value ?? ""));
+    const escapeHtml = createAdminSafeEscaper(helpers.escapeHtml);
     const formatNumber = helpers.formatNumber || ((value) => String(Number(value || 0)));
     const formatUsd = helpers.formatUsd || ((value) => String(Number(value || 0)));
     const items = [
@@ -41,7 +67,7 @@ window.OGPAdminOverview = {
   },
 
   renderPerformanceMarkup(payload, helpers = {}) {
-    const escapeHtml = helpers.escapeHtml || ((value) => String(value ?? ""));
+    const escapeHtml = createAdminSafeEscaper(helpers.escapeHtml);
     const renderBadge = helpers.renderBadge || ((text) => String(text ?? ""));
     const isCached = Boolean(payload?.cached);
     const totals = {
@@ -90,7 +116,7 @@ window.OGPAdminOverview = {
   },
 
   renderAsyncJobsMarkup(payload, helpers = {}) {
-    const escapeHtml = helpers.escapeHtml || ((value) => String(value ?? ""));
+    const escapeHtml = createAdminSafeEscaper(helpers.escapeHtml);
     const renderAsyncJobActions = helpers.renderAsyncJobActions || (() => "");
     const summary = payload?.summary || {};
     const problemJobs = Array.isArray(payload?.problem_jobs) ? payload.problem_jobs : [];
@@ -154,7 +180,7 @@ window.OGPAdminOverview = {
   },
 
   renderLawJobsMarkup(payload, helpers = {}) {
-    const escapeHtml = helpers.escapeHtml || ((value) => String(value ?? ""));
+    const escapeHtml = createAdminSafeEscaper(helpers.escapeHtml);
     const summary = payload?.summary || {};
     const alerts = Array.isArray(payload?.alerts) ? payload.alerts : [];
     const running = Array.isArray(payload?.running) ? payload.running : [];
@@ -213,7 +239,7 @@ window.OGPAdminOverview = {
   },
 
   renderExamImportOpsMarkup(payload, helpers = {}) {
-    const escapeHtml = helpers.escapeHtml || ((value) => String(value ?? ""));
+    const escapeHtml = createAdminSafeEscaper(helpers.escapeHtml);
     const summary = payload?.summary || {};
     const failedEntries = Array.isArray(payload?.failed_entries) ? payload.failed_entries : [];
     const recentFailures = Array.isArray(payload?.recent_failures) ? payload.recent_failures : [];
@@ -310,7 +336,7 @@ window.OGPAdminOverview = {
   },
 
   renderSyntheticMarkup(summary, helpers = {}) {
-    const escapeHtml = helpers.escapeHtml || ((value) => String(value ?? ""));
+    const escapeHtml = createAdminSafeEscaper(helpers.escapeHtml);
     const renderBadge = helpers.renderBadge || ((text) => String(text ?? ""));
     const activeSyntheticSuite = String(helpers.activeSyntheticSuite || "");
     const bySuite = summary?.by_suite || {};
@@ -356,7 +382,7 @@ window.OGPAdminOverview = {
   },
 
   renderCostSummaryMarkup(totals, helpers = {}) {
-    const escapeHtml = helpers.escapeHtml || ((value) => String(value ?? ""));
+    const escapeHtml = createAdminSafeEscaper(helpers.escapeHtml);
     const formatNumber = helpers.formatNumber || ((value) => String(Number(value || 0)));
     const formatUsd = helpers.formatUsd || ((value) => String(Number(value || 0)));
     const samples = Number(totals?.ai_estimated_cost_samples || 0);
@@ -376,7 +402,7 @@ window.OGPAdminOverview = {
   },
 
   renderAiPipelineMarkup(payload, helpers = {}) {
-    const escapeHtml = helpers.escapeHtml || ((value) => String(value ?? ""));
+    const escapeHtml = createAdminSafeEscaper(helpers.escapeHtml);
     const renderBandBadge = helpers.renderBandBadge || ((value) => String(value ?? ""));
     const formatUsd = helpers.formatUsd || ((value) => String(Number(value || 0)));
     const formatNumber = helpers.formatNumber || ((value) => String(Number(value || 0)));
@@ -609,7 +635,7 @@ window.OGPAdminOverview = {
   },
 
   renderRoleHistoryMarkup(payload, helpers = {}) {
-    const escapeHtml = helpers.escapeHtml || ((value) => String(value ?? ""));
+    const escapeHtml = createAdminSafeEscaper(helpers.escapeHtml);
     const items = Array.isArray(payload?.items) ? payload.items : [];
     if (!items.length) {
       return '<p class="legal-section__description">Изменений ролей пока нет.</p>';
@@ -640,7 +666,7 @@ window.OGPAdminOverview = {
   },
 
   renderTopEndpointsMarkup(items, helpers = {}) {
-    const escapeHtml = helpers.escapeHtml || ((value) => String(value ?? ""));
+    const escapeHtml = createAdminSafeEscaper(helpers.escapeHtml);
     const describeApiPath = helpers.describeApiPath || ((path) => String(path ?? ""));
     if (!items.length) {
       return '<p class="legal-section__description">Пока нет данных по API-запросам.</p>';
