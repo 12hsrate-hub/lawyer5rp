@@ -150,3 +150,20 @@ def test_smoke_extract_principal_scan(monkeypatch):
     )
     result = ai_service.extract_principal_scan(PrincipalScanPayload(image_data_url="data:image/png;base64,AAAA"))
     assert result.principal_name == "A"
+
+
+def test_suggest_forced_norms_uses_shared_server_context_resolver(monkeypatch):
+    monkeypatch.setattr(ai_service, "_suggest_is_mask_exception_case", lambda query: True)
+    monkeypatch.setattr(
+        ai_service,
+        "resolve_server_config",
+        lambda **kwargs: type("Cfg", (), {"law_qa_bundle_path": "/tmp/bundle.json"})(),
+    )
+    monkeypatch.setattr(
+        ai_service,
+        "load_law_bundle_chunks",
+        lambda server_code, bundle_path, law_version_id=None: (),
+    )
+
+    result = ai_service._build_suggest_forced_norms(server_code="blackberry", query="mask exception")
+    assert result == ()
