@@ -8,6 +8,11 @@ from ogp_web.services.auth_service import AuthUser
 from ogp_web.services.complaint_draft_schema import form_version_hash
 from ogp_web.services.complaint_service import _template_hash as complaint_template_hash
 from ogp_web.services.complaint_service import _validation_rules_version as complaint_validation_rules_version
+from ogp_web.services.generation_snapshot_schema_service import (
+    build_content_workflow_snapshot,
+    build_effective_generation_config_snapshot,
+    build_generation_server_snapshot,
+)
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
 from ogp_web.storage.content_workflow_repository import ContentWorkflowRepository
 from ogp_web.storage.user_store import UserStore
@@ -40,39 +45,24 @@ class PilotComplaintRuntimeContext:
     template_version: dict[str, Any]
     law_set_version: dict[str, Any]
 
-    def _effective_config_snapshot(self) -> dict[str, str]:
-        return {
-            "server_pack_version": str(self.server_config_version.get("version") or "0"),
-            "procedure_version": str(self.procedure_version.get("version") or "1"),
-            "form_version": str(self.form_version.get("version") or "1"),
-            "law_set_version": str(self.law_set_version.get("hash") or "unknown"),
-            "template_version": str(self.template_version.get("id") or "unknown"),
-            "validation_version": str(self.validation_rule_version.get("hash") or "unknown"),
-        }
-
-    def _content_workflow_snapshot(self, effective_config_snapshot: dict[str, str]) -> dict[str, Any]:
-        return {
-            "applied_published_versions": dict(effective_config_snapshot),
-            "rollback_safe": True,
-        }
-
-    def _server_snapshot(self) -> dict[str, str]:
-        return {
-            "id": self.server_code,
-            "code": self.server_code,
-        }
-
     def to_generation_context_snapshot(self) -> dict[str, Any]:
-        effective_config_snapshot = self._effective_config_snapshot()
+        effective_config_snapshot = build_effective_generation_config_snapshot(
+            server_pack_version=str(self.server_config_version.get("version") or "0"),
+            procedure_version=str(self.procedure_version.get("version") or "1"),
+            form_version=str(self.form_version.get("version") or "1"),
+            law_set_hash=str(self.law_set_version.get("hash") or "unknown"),
+            template_version_id=str(self.template_version.get("id") or "unknown"),
+            validation_rules_version=str(self.validation_rule_version.get("hash") or "unknown"),
+        )
         return {
-            "server": self._server_snapshot(),
+            "server": build_generation_server_snapshot(server_code=self.server_code),
             "procedure_version": dict(self.procedure_version),
             "form_version": dict(self.form_version),
             "template_version": dict(self.template_version),
             "law_version_set": dict(self.law_set_version),
             "validation_rules_version": dict(self.validation_rule_version),
             "effective_config_snapshot": effective_config_snapshot,
-            "content_workflow": self._content_workflow_snapshot(effective_config_snapshot),
+            "content_workflow": build_content_workflow_snapshot(effective_config_snapshot),
             "feature_flags": list(self.feature_flags),
         }
 

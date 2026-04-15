@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+from ogp_web.services.generation_snapshot_schema_service import extract_generation_persistence_blocks
 from ogp_web.storage.user_store import UserStore
 
 
@@ -107,12 +108,7 @@ class GenerationOrchestrator:
         context_snapshot: dict[str, Any],
         legacy_generated_document_id: int | None,
     ) -> tuple[int, int]:
-        effective_config_snapshot = context_snapshot.get("effective_config_snapshot") if isinstance(context_snapshot, dict) else None
-        if not isinstance(effective_config_snapshot, dict):
-            raise RuntimeError("effective_config_snapshot is required in generation context snapshot.")
-        content_workflow_ref = context_snapshot.get("content_workflow") if isinstance(context_snapshot, dict) else None
-        if not isinstance(content_workflow_ref, dict):
-            raise RuntimeError("content_workflow is required in generation context snapshot.")
+        effective_config_snapshot, content_workflow_ref = extract_generation_persistence_blocks(context_snapshot or {})
         row = self._fetchone(
             conn,
             """
