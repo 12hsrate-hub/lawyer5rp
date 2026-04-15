@@ -33,7 +33,6 @@ from ogp_web.schemas import (
     SuggestPayload,
     SuggestResponse,
 )
-from ogp_web.server_config import get_server_config
 from ogp_web.services import ai_service
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
@@ -54,6 +53,7 @@ from ogp_web.services.regression_metrics import (
     record_validation_fail_rate,
     start_timer,
 )
+from ogp_web.services.server_context_service import resolve_user_server_context
 from ogp_web.services.validation_service import ValidationService
 from ogp_web.services.retrieval_service import run_retrieval
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -223,7 +223,8 @@ async def _run_ai_task(
 
 
 def _server_config_for_user(store: UserStore, user: AuthUser):
-    return get_server_config(user.server_code or store.get_server_code(user.username))
+    server_config, _ = resolve_user_server_context(store, user.username, server_code=user.server_code)
+    return server_config
 
 
 def _validation_service(store: UserStore) -> ValidationService:
