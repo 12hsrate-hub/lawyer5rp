@@ -310,8 +310,9 @@ class AdminDashboardRepository:
             no_snapshot = conn.execute(
                 """
                 SELECT COUNT(*) AS total
-                FROM document_versions
-                WHERE server_id = %s
+                FROM document_versions dv
+                JOIN case_documents d ON d.id = dv.document_id
+                WHERE d.server_id = %s
                   AND generation_snapshot_id IS NULL
                 """,
                 (server_id,),
