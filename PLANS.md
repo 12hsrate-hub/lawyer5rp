@@ -6,17 +6,17 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 
 ## Current Execution State
 
-- Current phase: `Phase E — Async/jobs stabilization`
-- Current task: `Phase E complete`
-- Active execution phase override: `Phase E accepted; next recommended start is Phase F.1`
-- Current micro-step: `Phase E checkpoint prepared for git push`
-- Overall status: `in_progress`
+- Current phase: `Phase G — Pilot cutover and measured scale-out`
+- Current task: `Phase G complete`
+- Active execution phase override: `Phase G accepted; ready for post-pilot follow-up planning`
+- Current micro-step: `Phase G final checkpoint accepted in docs and production`
+- Overall status: `phase_checkpoint_complete`
 - Last updated: `2026-04-15`
 - Execution override update:
-  - `Phase E` is accepted.
-  - Active start is now `Phase F`.
-  - Active task is `F.1 Provenance schema`.
-  - Active micro-step is the provenance baseline in `PROVENANCE_SCHEMA.md`.
+  - `Phase G` is accepted.
+  - `Phase A` through `Phase G` are now complete.
+  - The pilot rollout workspace, provenance review, and post-pilot cleanup backlog are live.
+  - Next work should start as a fresh post-Phase-G planning slice, not by reopening earlier phases.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -373,6 +373,8 @@ Dependencies: Phase B and Phase E.
 ---
 
 ## Phase G — Pilot cutover and measured scale-out (1 sprint + observation window)
+
+Execution status: `done`
 
 ### G.1 Pilot activation
 - Enable `new_runtime_active` only for reference pilot scenario.
