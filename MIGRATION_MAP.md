@@ -263,7 +263,7 @@ Date: 2026-04-14
   - suggest runtime-context assembly now converges behind `ai_pipeline.orchestration.resolve_suggest_runtime_context(...)`, so `suggest_text_details(...)` no longer keeps inline validation, retrieval-shadow, low-confidence policy, and compaction-attempt assembly
   - `J.3b` deployed on production commit `74ad4d7`
   - suggest generation/retry plus validation-remediation flow now converges behind `ai_pipeline.orchestration.run_suggest_execution_flow(...)`, so `suggest_text_details(...)` no longer keeps the remaining inline prompt/transport/retry/remediation glue
-  - `J.3c` is ready locally
+  - `J.3c` deployed on production commit `eed8971`
   - law-QA generation/client/retry flow now converges behind `ai_pipeline.orchestration.run_law_qa_execution_flow(...)`, so `answer_law_question_details(...)` no longer keeps the remaining inline client/request/retry glue
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
