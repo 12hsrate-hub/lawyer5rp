@@ -43,6 +43,7 @@ from ogp_web.services.law_bundle_service import load_law_bundle_meta
 from ogp_web.services.law_rebuild_tasks import find_active_law_rebuild_task
 from ogp_web.services.law_version_service import resolve_active_law_version
 from ogp_web.services.auth_service import AuthError, AuthUser, require_admin_user
+from ogp_web.services.generation_snapshot_schema_service import build_snapshot_summary, build_workflow_linkage
 from ogp_web.services.provenance_service import ProvenanceService
 from ogp_web.services.point3_policy_service import load_point3_eval_thresholds
 from ogp_web.services.validation_service import ValidationService
@@ -231,26 +232,6 @@ def _safe_float(value: Any, default: float = 0.0, *, generation_id: str = "", fi
             value,
         )
         return default
-
-
-def _normalized_snapshot_ref(value: Any, *, preferred_keys: tuple[str, ...] = ()) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, (int, float)):
-        return str(value)
-    if isinstance(value, str):
-        return value.strip()
-    if isinstance(value, dict):
-        for key in preferred_keys:
-            candidate = str(value.get(key) or "").strip()
-            if candidate:
-                return candidate
-        for key in ("template_code", "rule_set_key", "procedure_code", "form_key", "law_set_key", "id", "version", "hash"):
-            candidate = str(value.get(key) or "").strip()
-            if candidate:
-                return candidate
-        return ""
-    return str(value).strip()
 
 
 def _band_from_thresholds(value: float | None, *, green_max: float, yellow_max: float) -> str:
@@ -1597,9 +1578,7 @@ async def admin_generated_document_review_context(
     )
     provenance = service.get_document_version_trace(document_version_id=int(version_row["id"]))
 
-    context_snapshot = dict(snapshot.get("context_snapshot") or {})
-    effective_config = dict(snapshot.get("effective_config_snapshot") or {})
-    workflow_ref = dict(snapshot.get("content_workflow_ref") or {})
+    snapshot_payload = dict(snapshot)
     bbcode_preview = str(content_payload.get("bbcode") or "").strip()
     if len(bbcode_preview) > 600:
         bbcode_preview = f"{bbcode_preview[:600].rstrip()}..."
@@ -1612,25 +1591,7 @@ async def admin_generated_document_review_context(
             "document_kind": str(snapshot.get("document_kind") or ""),
             "created_at": str(snapshot.get("created_at") or ""),
         },
-        "snapshot_summary": {
-            "template_version": _normalized_snapshot_ref(
-                context_snapshot.get("template_version") or workflow_ref.get("template"),
-                preferred_keys=("template_code", "id"),
-            ),
-            "law_version_set": _normalized_snapshot_ref(
-                context_snapshot.get("law_version_set") or effective_config.get("law_set_version"),
-                preferred_keys=("law_set_key", "hash", "id"),
-            ),
-            "validation_rules_version": _normalized_snapshot_ref(
-                context_snapshot.get("validation_rules_version"),
-                preferred_keys=("rule_set_key", "hash", "id"),
-            ),
-            "procedure": _normalized_snapshot_ref(
-                workflow_ref.get("procedure"),
-                preferred_keys=("procedure_code", "id"),
-            ),
-            "prompt_version": _normalized_snapshot_ref(workflow_ref.get("prompt_version")),
-        },
+        "snapshot_summary": build_snapshot_summary(snapshot_payload),
         "document_version": {
             "id": int(version_row["id"]),
             "version_number": int(version_row.get("version_number") or 0),
@@ -1650,27 +1611,12 @@ async def admin_generated_document_review_context(
                 for item in ((latest_validation or {}).get("issues") or [])[:5]
             ],
         },
-        "workflow_linkage": {
-            "direct_catalog_mapping_available": False,
-            "linkage_mode": "snapshot_refs_only",
-            "procedure_ref": _normalized_snapshot_ref(
-                workflow_ref.get("procedure"),
-                preferred_keys=("procedure_code", "id"),
-            ),
-            "template_ref": _normalized_snapshot_ref(
-                workflow_ref.get("template"),
-                preferred_keys=("template_code", "id"),
-            ),
-            "prompt_version": _normalized_snapshot_ref(workflow_ref.get("prompt_version")),
-            "server_config_version": _normalized_snapshot_ref(effective_config.get("server_config_version")),
-            "law_set_version": _normalized_snapshot_ref(
-                effective_config.get("law_set_version"),
-                preferred_keys=("law_set_key", "hash", "id"),
-            ),
-            "document_version_id": int(version_row["id"]),
-            "generation_snapshot_id": generation_snapshot_id,
-            "latest_validation_run_id": int((latest_validation or {}).get("id") or 0) or None,
-        },
+        "workflow_linkage": build_workflow_linkage(
+            snapshot_payload,
+            document_version_id=int(version_row["id"]),
+            generation_snapshot_id=generation_snapshot_id,
+            latest_validation_run_id=int((latest_validation or {}).get("id") or 0) or None,
+        ),
         "citations_summary": {
             "count": len(citations),
             "items": [
