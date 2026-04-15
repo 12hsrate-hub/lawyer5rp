@@ -58,15 +58,6 @@ class PilotComplaintRuntimeContext:
                 "applied_published_versions": dict(effective_config_snapshot),
                 "rollback_safe": True,
             },
-            "runtime_adapter": {
-                "mode": "pilot_runtime_adapter_v1",
-                "server_config_version_id": self.server_config_version.get("id"),
-                "procedure_version_id": self.procedure_version.get("id"),
-                "form_version_id": self.form_version.get("id"),
-                "validation_rule_version_id": self.validation_rule_version.get("id"),
-                "template_version_id": self.template_version.get("id"),
-                "law_set_version_id": self.law_set_version.get("id"),
-            },
             "feature_flags": list(self.feature_flags),
         }
 
