@@ -369,11 +369,7 @@ async def generate(
     )
     _validate_server_payload(store, user, org=payload.org)
     if supports_pilot_runtime_adapter(server_code=user.server_code, document_kind="complaint") and adapter_flag.use_new_flow:
-        adapter_snapshot = resolve_pilot_complaint_runtime_context(store, user).to_generation_context_snapshot()
-        context_snapshot = {
-            **adapter_snapshot,
-            "feature_flags": sorted(_server_config_for_user(store, user).feature_flags),
-        }
+        context_snapshot = resolve_pilot_complaint_runtime_context(store, user).to_generation_context_snapshot()
     else:
         legacy_context_snapshot = build_generation_context_snapshot(store, user, document_kind="complaint")
         context_snapshot = dict(legacy_context_snapshot)

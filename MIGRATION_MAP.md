@@ -47,6 +47,8 @@ Date: 2026-04-14
   - `/api/generate` no longer needs to build `legacy_context_snapshot` when `pilot_runtime_adapter_v1` is active for `blackberry + complaint`
   - `H.3b` is in progress locally
   - `resolve_pilot_complaint_runtime_context` no longer needs legacy `get_server_config(...)` lookup just to resolve law bundle metadata
+  - `H.3c` is in progress locally
+  - complaint adapter snapshots now carry `feature_flags` directly, so the route no longer needs a route-level legacy server-config read when adapter flow is active
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
