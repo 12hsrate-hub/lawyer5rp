@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.3 admin route decomposition wave 1`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded admin route decomposition seam after I.3n`
+- Current micro-step: `select the next bounded admin route decomposition seam after I.3q`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -100,7 +100,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.3l` is now complete on production commit `d660d7f`: catalog audit/list/get/versions payload assembly now converges behind a shared admin catalog helper layer instead of route-local workflow-service orchestration in `routes/admin.py`.
   - `I.3m` is now complete on production commit `d660d7f`: catalog workflow action dispatch and change-request review/validate payload shaping now converge behind the same helper layer instead of route-local action branching.
   - `I.3n` is now complete on production commit `d660d7f`: catalog item create/update/rollback payload configuration and active change-request resolution now converge behind the same helper layer instead of route-local config shaping in `routes/admin.py`.
-  - immediate next step is `select I.3o after the accepted admin catalog decomposition block`, prioritizing the `users read/reporting` cluster so the next release can combine multiple user-admin read paths.
+  - `I.3o` is now complete on production commit `2bed351`: admin users list payload assembly now converges behind a shared admin users helper layer instead of route-local metrics/user overview shaping in `routes/admin.py`.
+  - `I.3p` is now complete on production commit `2bed351`: admin user details payload assembly now converges behind the same helper layer instead of route-local permission snapshot and activity summary shaping.
+  - `I.3q` is now complete on production commit `2bed351`: role-history and users.csv reporting now converge behind the same helper layer instead of route-local overview/export wiring.
+  - immediate next step is `select I.3r after the accepted admin users read/reporting block`, prioritizing the user mutation cluster so multiple admin write paths can move in one release.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -566,7 +569,7 @@ Execution status: `ready_to_start`
 - Continue shrinking `routes/admin.py` by extracting one bounded server-backed subsection at a time into service/helper seams.
 - Prioritize surfaces that already have clear service boundaries underneath them.
 - Do not mix UI copy work, route splitting, and domain behavior changes in one slice.
-- Current I.3 executable slice: `select I.3o after the accepted admin catalog decomposition block`, prioritizing the `users read/reporting` cluster.
+- Current I.3 executable slice: `select I.3r after the accepted admin users read/reporting block`, prioritizing the user mutation cluster.
 
 ### Deliverables
 - `Phase I` execution brief with the first accepted bounded seam
