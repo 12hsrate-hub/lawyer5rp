@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase K — complaint runtime boundary decomposition wave 1`
 - Current task: `K.1 complaint route orchestration extraction`
 - Active execution phase override: `Phase J is accepted; Phase K is now opened as the next execution phase`
-- Current micro-step: `K.1c complaint ai/law-qa route glue selection`
+- Current micro-step: `K.1d complaint route completion gate`
 - Overall status: `in_progress`
 - Last updated: `2026-04-16`
 - Execution override update:
@@ -141,7 +141,8 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - `K.1` target: move bounded complaint-route orchestration into dedicated complaint runtime helpers/services without changing request/response contracts.
 - `K.1a` is now complete on production commit `3b53e6f`: suggest concurrency limiting, threadpool execution metrics, validation-service construction, server-payload validation, and complaint generation-context bridge helpers now converge behind `complaint_runtime_service.py`, while `routes/complaint.py` keeps only thin compatibility wrappers so existing route contracts and monkeypatch-driven tests remain stable.
 - `K.1b` is now complete on production commit `3b53e6f`: complaint and rehab generation-bridge persistence plus shared post-generation validation-gate handling now converge behind the same complaint runtime service instead of staying duplicated inline inside `routes/complaint.py`.
-- next step inside `K.1`: select the next real complaint-route seam only if it removes another bounded orchestration layer such as AI/law-QA route glue, not thin wrappers or endpoint-only payload formatting.
+- `K.1c` is now complete on production commit `d346ea5`: `law_qa_test` selected-norm citation mapping, retrieval persistence, law-qa-run persistence, citations-required warning resolution, and validation-gate handling now converge behind the same complaint runtime service instead of staying route-local inside `routes/complaint.py`.
+- next step inside `K.1`: stop and inspect whether any remaining complaint-route code still removes a real orchestration layer, or whether `K.1` is already at the point where only thin wrappers and endpoint-specific response shaping remain.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.

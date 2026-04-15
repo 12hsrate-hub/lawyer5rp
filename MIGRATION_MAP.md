@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase J`
 - Inventory slices completed: `6`
-- Next slice: `select the next bounded complaint ai/law-qa route seam only if it removes real orchestration instead of thin wrappers`
+- Next slice: `inspect whether complaint route decomposition should stop after K.1c instead of sliding into thin-wrapper cleanup`
 - Last updated: `2026-04-16`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -277,6 +277,9 @@ Date: 2026-04-14
 - compatibility aliases remain in the route module so existing API tests can still monkeypatch route-level limiter and adapter resolver symbols while the real logic stays in the service layer
 - `K.1b` deployed on production commit `3b53e6f`
 - complaint and rehab generation-bridge persistence plus shared post-generation validation-gate handling now also converge behind `complaint_runtime_service.py`, leaving less duplicated generation-boundary glue inside `routes/complaint.py`
+- `K.1c` deployed on production commit `d346ea5`
+- `law_qa_test` no longer owns selected-norm citation mapping, retrieval persistence, law-qa-run persistence, citations-required warning resolution, or law-qa validation-gate glue
+- those bounded law-qa runtime seams now also live in `web/ogp_web/services/complaint_runtime_service.py`, while route-level imports and monkeypatch targets stay stable for existing API tests
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
