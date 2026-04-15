@@ -61,6 +61,7 @@ from ogp_web.services.ai_pipeline.orchestration import (
     finalize_law_qa_result,
     LawQaOrchestrationDeps,
     PrincipalScanDeps,
+    run_law_qa_generation_attempts,
     SuggestGenerationAttempt,
     SuggestOrchestrationDeps,
     finalize_suggest_result,
@@ -2248,53 +2249,41 @@ def _answer_law_question_details_impl(payload: LawQaPayload) -> LawQaAnswerResul
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
     request_started_at = monotonic()
-    prompt = ""
-    text = ""
-    usage = AiUsageSummary()
-    compaction_level = 0
-    try:
-        client = create_openai_client(api_key=api_key, proxy_url=proxy_url)
-        for attempt_index, context_blocks in enumerate(context_attempts):
-            if not context_blocks:
-                continue
-            prompt = _build_law_qa_prompt(
-                server_name=retrieval_result.server_name,
-                server_code=retrieval_result.server_code,
-                model_name=model_name,
-                question=question,
-                max_answer_chars=payload.max_answer_chars,
-                context_blocks=context_blocks,
-                retrieval_confidence=retrieval_result.confidence,
-            )
-            try:
-                text, usage = _request_law_qa_text(
-                    client=client,
-                    model_name=model_name,
-                    prompt=prompt,
-                    max_output_tokens=800,
-                )
-                compaction_level = attempt_index
-                break
-            except HTTPException:
-                raise
-            except Exception as exc:
-                if _is_context_window_error(exc) and attempt_index < len(context_attempts) - 1:
-                    if low_confidence_model and model_name != low_confidence_model:
-                        model_name = low_confidence_model
-                        selection_reason = "law_qa_context_compacted"
-                    LOGGER.warning(
-                        "Law QA prompt exceeded context window for model %s; retrying with compact context level=%s",
-                        model_name,
-                        attempt_index + 1,
-                    )
-                    continue
-                raise
-        if not text:
-            raise RuntimeError("Law QA generation failed without response text after context retries.")
-    except Exception as exc:
-        if isinstance(exc, HTTPException):
-            raise
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
+    client = create_openai_client(api_key=api_key, proxy_url=proxy_url)
+    generation_attempt = run_law_qa_generation_attempts(
+        context_attempts=context_attempts,
+        prompt_builder=lambda context_blocks, attempt_model_name: _build_law_qa_prompt(
+            server_name=retrieval_result.server_name,
+            server_code=retrieval_result.server_code,
+            model_name=attempt_model_name,
+            question=question,
+            max_answer_chars=payload.max_answer_chars,
+            context_blocks=context_blocks,
+            retrieval_confidence=retrieval_result.confidence,
+        ),
+        request_generator=lambda attempt_prompt, attempt_model_name: _request_law_qa_text(
+            client=client,
+            model_name=attempt_model_name,
+            prompt=attempt_prompt,
+            max_output_tokens=800,
+        ),
+        is_context_window_error=_is_context_window_error,
+        ai_exception_details=_ai_exception_details,
+        logger_warning=lambda message, attempt_model_name, attempt_level: LOGGER.warning(
+            message,
+            attempt_model_name,
+            attempt_level,
+        ),
+        selected_model=model_name,
+        selection_reason=selection_reason,
+        low_confidence_model=low_confidence_model,
+    )
+    text = generation_attempt.text
+    usage = generation_attempt.usage or AiUsageSummary()
+    prompt = generation_attempt.prompt
+    model_name = generation_attempt.model_name
+    selection_reason = generation_attempt.selection_reason
+    compaction_level = generation_attempt.compaction_level
 
     latency_ms = int((monotonic() - request_started_at) * 1000)
     return finalize_law_qa_result(

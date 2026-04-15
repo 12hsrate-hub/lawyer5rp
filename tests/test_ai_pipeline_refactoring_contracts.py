@@ -345,6 +345,36 @@ def test_finalize_law_qa_result_contract_builds_metrics_and_payload():
     assert "law_qa_context_compacted" in result.warnings
 
 
+def test_run_law_qa_generation_attempts_contract_compacts_and_switches_model():
+    attempts = (("ctx-1",), ("ctx-2",))
+    warnings: list[tuple[str, str, int]] = []
+
+    def request_generator(prompt, model_name):
+        if prompt == "prompt:ctx-1":
+            raise RuntimeError("maximum context length exceeded")
+        return "answer", {"total_tokens": 12}
+
+    result = orchestration.run_law_qa_generation_attempts(
+        context_attempts=attempts,
+        prompt_builder=lambda context_blocks, model_name: f"prompt:{context_blocks[0]}",
+        request_generator=request_generator,
+        is_context_window_error=lambda exc: "context length" in str(exc),
+        ai_exception_details=lambda exc: [str(exc)],
+        logger_warning=lambda message, model_name, attempt_level: warnings.append((message, model_name, attempt_level)),
+        selected_model="gpt-5.4-mini",
+        selection_reason="law_qa_default",
+        low_confidence_model="gpt-5.4",
+    )
+
+    assert result.text == "answer"
+    assert result.usage == {"total_tokens": 12}
+    assert result.prompt == "prompt:ctx-2"
+    assert result.model_name == "gpt-5.4"
+    assert result.selection_reason == "law_qa_context_compacted"
+    assert result.compaction_level == 1
+    assert warnings == [("Law QA prompt exceeded context window for model %s; retrying with compact context level=%s", "gpt-5.4", 1)]
+
+
 def test_telemetry_meta_contracts():
     law_result = ai_service.LawQaAnswerResult(
         text="ok",

@@ -42,6 +42,16 @@ class SuggestGenerationAttemptResult:
 
 
 @dataclass(frozen=True)
+class LawQaGenerationAttemptResult:
+    text: str
+    usage: Any
+    prompt: str
+    model_name: str
+    selection_reason: str
+    compaction_level: int
+
+
+@dataclass(frozen=True)
 class SuggestValidationRemediationResult:
     generation_result: Any
     cleaned_text: str
@@ -174,6 +184,65 @@ def run_suggest_validation_remediation(
         remediation=remediation,
         validation_retry_count=validation_retry_count,
         validation_errors=validation_errors,
+    )
+
+
+def run_law_qa_generation_attempts(
+    *,
+    context_attempts: Sequence[Sequence[str]],
+    prompt_builder: Callable[[Sequence[str], str], str],
+    request_generator: Callable[[str, str], tuple[str, Any]],
+    is_context_window_error: Callable[[Exception], bool],
+    ai_exception_details: Callable[[Exception], list[str]],
+    logger_warning: Callable[[str, str, int], None] | None,
+    selected_model: str,
+    selection_reason: str,
+    low_confidence_model: str,
+) -> LawQaGenerationAttemptResult:
+    current_model = selected_model
+    current_selection_reason = selection_reason
+    prompt = ""
+    text = ""
+    usage: Any = None
+    compaction_level = 0
+    try:
+        for attempt_index, context_blocks in enumerate(context_attempts):
+            if not context_blocks:
+                continue
+            prompt = prompt_builder(context_blocks, current_model)
+            try:
+                text, usage = request_generator(prompt, current_model)
+                compaction_level = attempt_index
+                break
+            except HTTPException:
+                raise
+            except Exception as exc:
+                if is_context_window_error(exc) and attempt_index < len(context_attempts) - 1:
+                    if low_confidence_model and current_model != low_confidence_model:
+                        current_model = low_confidence_model
+                        current_selection_reason = "law_qa_context_compacted"
+                    if logger_warning is not None:
+                        logger_warning(
+                            "Law QA prompt exceeded context window for model %s; retrying with compact context level=%s",
+                            current_model,
+                            attempt_index + 1,
+                        )
+                    continue
+                raise
+        if not text:
+            raise RuntimeError("Law QA generation failed without response text after context retries.")
+    except Exception as exc:
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=ai_exception_details(exc)) from exc
+
+    return LawQaGenerationAttemptResult(
+        text=text,
+        usage=usage,
+        prompt=prompt,
+        model_name=current_model,
+        selection_reason=current_selection_reason,
+        compaction_level=compaction_level,
     )
 
 
