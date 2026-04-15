@@ -219,38 +219,3 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
         },
     )
 
-
-def compare_generation_context_snapshots(*, legacy_snapshot: dict[str, Any], adapter_snapshot: dict[str, Any]) -> dict[str, Any]:
-    comparisons = {
-        "server_id": (
-            str(((legacy_snapshot.get("server") or {}).get("id") or "")),
-            str(((adapter_snapshot.get("server") or {}).get("id") or "")),
-        ),
-        "template_version": (
-            str(((legacy_snapshot.get("template_version") or {}).get("id") or "")),
-            str(((adapter_snapshot.get("template_version") or {}).get("id") or "")),
-        ),
-        "law_set_version": (
-            str(((legacy_snapshot.get("law_version_set") or {}).get("hash") or "")),
-            str(((adapter_snapshot.get("law_version_set") or {}).get("hash") or "")),
-        ),
-        "validation_version": (
-            str(legacy_snapshot.get("validation_rules_version") or ""),
-            str(
-                ((adapter_snapshot.get("validation_rules_version") or {}).get("hash") or "")
-                if isinstance(adapter_snapshot.get("validation_rules_version"), dict)
-                else adapter_snapshot.get("validation_rules_version") or ""
-            ),
-        ),
-    }
-    mismatches = {
-        key: {"legacy": pair[0], "adapter": pair[1]}
-        for key, pair in comparisons.items()
-        if pair[0] != pair[1]
-    }
-    return {
-        "enabled": True,
-        "matched_keys": [key for key, pair in comparisons.items() if pair[0] == pair[1]],
-        "mismatch_count": len(mismatches),
-        "mismatches": mismatches,
-    }
