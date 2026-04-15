@@ -8,10 +8,11 @@ from typing import Any
 from ogp_web.server_config import effective_server_pack
 from ogp_web.services.auth_service import AuthUser
 from ogp_web.services.complaint_draft_schema import normalize_complaint_draft
+from ogp_web.services.complaint_service import _template_hash as complaint_template_hash
+from ogp_web.services.complaint_service import _validation_rules_version as complaint_validation_rules_version
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
 from ogp_web.storage.content_workflow_repository import ContentWorkflowRepository
 from ogp_web.storage.user_store import UserStore
-from shared.ogp_core import build_bbcode, validate_complaint_input
 
 
 PILOT_SERVER_CODE = "blackberry"
@@ -67,14 +68,6 @@ def _short_hash(value: str) -> str:
     if not normalized:
         return ""
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
-
-
-def _template_hash() -> str:
-    return _short_hash(inspect.getsource(build_bbcode))
-
-
-def _validation_hash() -> str:
-    return _short_hash(inspect.getsource(validate_complaint_input))
 
 
 def _form_hash() -> str:
@@ -191,16 +184,16 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
             "hash": _form_hash(),
         },
         validation_rule_version={
-            "id": (validation_version or {}).get("id") or f"validation:{server_code}:{PILOT_PROCEDURE_CODE}:{_validation_hash()}",
+            "id": (validation_version or {}).get("id") or f"validation:{server_code}:{PILOT_PROCEDURE_CODE}:{complaint_validation_rules_version(PILOT_PROCEDURE_CODE)}",
             "rule_set_key": str(validation_payload.get("rule_code") or PILOT_VALIDATION_CONTENT_KEY),
             "version": str((validation_version or {}).get("version_number") or "1"),
-            "hash": _validation_hash(),
+            "hash": complaint_validation_rules_version(PILOT_PROCEDURE_CODE),
         },
         template_version={
             "id": (template_version or {}).get("id") or "complaint_bbcode_v1",
             "template_code": str(template_payload.get("template_code") or PILOT_TEMPLATE_CONTENT_KEY),
             "version": str((template_version or {}).get("version_number") or "1"),
-            "hash": _template_hash(),
+            "hash": complaint_template_hash(PILOT_PROCEDURE_CODE),
         },
         law_set_version={
             "id": (law_version or {}).get("id") or f"law_set:{server_code}:{bundle_hash or 'unknown'}",

@@ -51,6 +51,8 @@ Date: 2026-04-14
   - complaint adapter snapshots now carry `feature_flags` directly, so the route no longer needs a route-level legacy server-config read when adapter flow is active
   - `H.3d` is in progress locally
   - complaint adapter snapshots are dropping the unused internal `runtime_adapter` ID block while preserving review/provenance-visible snapshot fields
+  - `H.3e` is in progress locally
+  - complaint adapter fallback template/validation refs now reuse the shared complaint-service helper logic instead of maintaining a second hash-calculation path
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
