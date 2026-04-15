@@ -261,6 +261,8 @@ Date: 2026-04-14
   - after runtime-context, retry, and finalization extraction, the remaining law-QA block is mostly thin facade glue rather than another high-value orchestration seam
   - `J.3a` deployed on production commit `63192a4`
   - suggest runtime-context assembly now converges behind `ai_pipeline.orchestration.resolve_suggest_runtime_context(...)`, so `suggest_text_details(...)` no longer keeps inline validation, retrieval-shadow, low-confidence policy, and compaction-attempt assembly
+  - `J.3b` is ready locally
+  - suggest generation/retry plus validation-remediation flow now converges behind `ai_pipeline.orchestration.run_suggest_execution_flow(...)`, so `suggest_text_details(...)` no longer keeps the remaining inline prompt/transport/retry/remediation glue
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.

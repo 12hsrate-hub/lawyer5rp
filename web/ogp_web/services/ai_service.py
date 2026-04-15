@@ -63,6 +63,7 @@ from ogp_web.services.ai_pipeline.orchestration import (
     PrincipalScanDeps,
     resolve_law_qa_runtime_context,
     resolve_suggest_runtime_context,
+    run_suggest_execution_flow,
     run_law_qa_generation_attempts,
     SuggestOrchestrationDeps,
     finalize_suggest_result,
@@ -2275,23 +2276,10 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
     )
     policy_mode = runtime_context.point3_context.policy_decision.mode
 
-    generation_attempt = run_suggest_generation_attempts(
-        attempts=runtime_context.suggest_attempts,
-        prompt_builder=lambda attempt: build_suggest_prompt(
-            victim_name=runtime_context.victim_name,
-            org=runtime_context.org,
-            subject=runtime_context.subject,
-            event_dt=runtime_context.event_dt,
-            raw_desc=attempt.raw_desc,
-            complaint_basis=runtime_context.complaint_basis,
-            main_focus=runtime_context.main_focus,
-            law_context=attempt.law_context,
-            prompt_mode=runtime_context.suggest_prompt_mode,
-            policy_mode=policy_mode,
-            pipeline_context=runtime_context.pipeline_context_payload,
-            retrieval_context_mode=runtime_context.suggest_context.retrieval_context_mode,
-        ),
-        generator=lambda attempt, model_name: suggest_description_with_proxy_fallback_result(
+    execution_flow = run_suggest_execution_flow(
+        runtime_context=runtime_context,
+        policy_mode=policy_mode,
+        transport_call=lambda model_name, raw_desc, law_context, validation_error="": suggest_description_with_proxy_fallback_result(
             api_key=api_key,
             proxy_url=proxy_url,
             model_name=model_name,
@@ -2299,53 +2287,10 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
             org=runtime_context.org,
             subject=runtime_context.subject,
             event_dt=runtime_context.event_dt,
-            raw_desc=attempt.raw_desc,
+            raw_desc=raw_desc,
             complaint_basis=runtime_context.complaint_basis,
             main_focus=runtime_context.main_focus,
-            law_context=attempt.law_context,
-            prompt_mode=runtime_context.suggest_prompt_mode,
-            policy_mode=policy_mode,
-            pipeline_context=runtime_context.pipeline_context_payload,
-            retrieval_context_mode=runtime_context.suggest_context.retrieval_context_mode,
-            bundle_fingerprint=runtime_context.suggest_context.bundle_fingerprint,
-            retrieval_profile=runtime_context.suggest_context.retrieval_profile,
-        ),
-        is_context_window_error=_is_context_window_error,
-        ai_exception_details=_ai_exception_details,
-        clock=monotonic,
-        selected_model=runtime_context.selected_model,
-        selection_reason=runtime_context.selection_reason,
-        low_confidence_model=runtime_context.low_confidence_model,
-        on_context_compaction=lambda level: LOGGER.warning(
-            "Suggest prompt exceeded context window; retrying with compact context level=%s",
-            level,
-        ),
-    )
-    generation_result = generation_attempt.generation_result
-    prompt_text = generation_attempt.prompt_text
-    selected_model = generation_attempt.selected_model
-    selection_reason = generation_attempt.selection_reason
-    suggest_compaction_level = generation_attempt.compaction_level
-    openai_ms = generation_attempt.openai_ms
-
-    validation_flow = run_suggest_validation_remediation(
-        generation_result=generation_result,
-        point3_context=runtime_context.point3_context,
-        clean_text=_clean_suggest_text,
-        validate_generated_paragraph=validate_generated_paragraph,
-        legacy_validation_error_codes=_legacy_validation_error_codes,
-        retry_generator=lambda validation_error: suggest_description_with_proxy_fallback_result(
-            api_key=api_key,
-            proxy_url=proxy_url,
-            model_name=selected_model,
-            victim_name=runtime_context.victim_name,
-            org=runtime_context.org,
-            subject=runtime_context.subject,
-            event_dt=runtime_context.event_dt,
-            raw_desc=runtime_context.raw_desc,
-            complaint_basis=runtime_context.complaint_basis,
-            main_focus=runtime_context.main_focus,
-            law_context=runtime_context.prompt_law_context,
+            law_context=law_context,
             prompt_mode=runtime_context.suggest_prompt_mode,
             policy_mode=policy_mode,
             pipeline_context=runtime_context.pipeline_context_payload,
@@ -2354,7 +2299,16 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
             retrieval_profile=runtime_context.suggest_context.retrieval_profile,
             validation_error=validation_error,
         ),
+        build_suggest_prompt=build_suggest_prompt,
+        run_suggest_generation_attempts=run_suggest_generation_attempts,
+        run_suggest_validation_remediation=run_suggest_validation_remediation,
+        is_context_window_error=_is_context_window_error,
         ai_exception_details=_ai_exception_details,
+        clock=monotonic,
+        logger_warning=lambda message, level: LOGGER.warning(message, level),
+        clean_text=_clean_suggest_text,
+        validate_generated_paragraph=validate_generated_paragraph,
+        legacy_validation_error_codes=_legacy_validation_error_codes,
         build_safe_fallback_paragraph=build_safe_fallback_paragraph,
         apply_validation_remediation=apply_validation_remediation,
         remediation_factory=lambda text, validation, retries_used, safe_fallback_used: RemediationOutcome(
@@ -2364,35 +2318,25 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
             safe_fallback_used=safe_fallback_used,
         ),
     )
-    generation_result = validation_flow.generation_result
-    remediation = validation_flow.remediation
-    validation_retry_count = validation_flow.validation_retry_count
-    validation_errors = validation_flow.validation_errors
-    final_text = remediation.text
-    if not final_text:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=["РњРѕРґРµР»СЊ РІРµСЂРЅСѓР»Р° РїСѓСЃС‚РѕР№ РёР»Рё РЅРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ С‚РµРєСЃС‚ РїРѕСЃР»Рµ РІР°Р»РёРґР°С†РёРё."],
-        )
     total_suggest_ms = int((monotonic() - total_started_at) * 1000)
     return finalize_suggest_result(
         generation_id=runtime_context.generation_id,
         contract_version=LEGAL_PIPELINE_CONTRACT_VERSION,
         shadow=_shadow_to_dict(runtime_context.shadow),
-        generation_result=generation_result,
-        remediation=remediation,
-        validation_retry_count=validation_retry_count,
-        validation_errors=validation_errors,
-        selected_model=selected_model,
-        selection_reason=selection_reason,
-        suggest_compaction_level=suggest_compaction_level,
+        generation_result=execution_flow.generation_result,
+        remediation=execution_flow.remediation,
+        validation_retry_count=execution_flow.validation_retry_count,
+        validation_errors=execution_flow.validation_errors,
+        selected_model=execution_flow.selected_model,
+        selection_reason=execution_flow.selection_reason,
+        suggest_compaction_level=execution_flow.suggest_compaction_level,
         suggest_prompt_mode=runtime_context.suggest_prompt_mode,
         suggest_context=runtime_context.suggest_context,
         point3_context=runtime_context.point3_context,
-        prompt_text=prompt_text,
-        final_text=final_text,
+        prompt_text=execution_flow.prompt_text,
+        final_text=execution_flow.final_text,
         retrieval_ms=runtime_context.retrieval_ms,
-        openai_ms=openai_ms,
+        openai_ms=execution_flow.openai_ms,
         total_suggest_ms=total_suggest_ms,
         build_ai_telemetry=build_ai_telemetry,
         evaluate_budget=evaluate_budget,
