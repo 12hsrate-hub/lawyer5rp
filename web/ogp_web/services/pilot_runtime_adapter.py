@@ -20,6 +20,13 @@ PILOT_FORM_CONTENT_KEY = "complaint_form"
 PILOT_VALIDATION_CONTENT_KEY = "complaint_default"
 PILOT_TEMPLATE_CONTENT_KEY = "complaint_v1"
 PILOT_LAWS_CONTENT_KEY = "law_sources_manifest"
+PILOT_CONTENT_VERSION_SPECS = {
+    "procedure": ("procedures", PILOT_PROCEDURE_CONTENT_KEY),
+    "form": ("forms", PILOT_FORM_CONTENT_KEY),
+    "validation": ("validation_rules", PILOT_VALIDATION_CONTENT_KEY),
+    "template": ("templates", PILOT_TEMPLATE_CONTENT_KEY),
+    "laws": ("laws", PILOT_LAWS_CONTENT_KEY),
+}
 
 
 @dataclass(frozen=True)
@@ -95,6 +102,26 @@ def _load_published_content_version(
     return version
 
 
+def _load_published_content_versions(
+    repository: ContentWorkflowRepository,
+    *,
+    server_code: str,
+) -> dict[str, dict[str, Any] | None]:
+    return {
+        entry_name: _load_published_content_version(
+            repository,
+            server_code=server_code,
+            content_type=content_type,
+            content_key=content_key,
+        )
+        for entry_name, (content_type, content_key) in PILOT_CONTENT_VERSION_SPECS.items()
+    }
+
+
+def _payload_json(version: dict[str, Any] | None) -> dict[str, Any]:
+    return dict((version or {}).get("payload_json") or {})
+
+
 def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) -> PilotComplaintRuntimeContext:
     server_code = str(user.server_code or store.get_server_code(user.username) or "").strip().lower()
     if not supports_pilot_runtime_adapter(server_code=server_code, document_kind=PILOT_PROCEDURE_CODE):
@@ -104,44 +131,20 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
     server_pack = effective_server_pack(server_code)
     server_pack_metadata = dict(server_pack.get("metadata") or {}) if isinstance(server_pack, dict) else {}
     bundle_meta = load_law_bundle_meta(server_code)
-    procedure_version = _load_published_content_version(
-        repository,
-        server_code=server_code,
-        content_type="procedures",
-        content_key=PILOT_PROCEDURE_CONTENT_KEY,
-    )
-    form_version = _load_published_content_version(
-        repository,
-        server_code=server_code,
-        content_type="forms",
-        content_key=PILOT_FORM_CONTENT_KEY,
-    )
-    validation_version = _load_published_content_version(
-        repository,
-        server_code=server_code,
-        content_type="validation_rules",
-        content_key=PILOT_VALIDATION_CONTENT_KEY,
-    )
-    template_version = _load_published_content_version(
-        repository,
-        server_code=server_code,
-        content_type="templates",
-        content_key=PILOT_TEMPLATE_CONTENT_KEY,
-    )
-    law_version = _load_published_content_version(
-        repository,
-        server_code=server_code,
-        content_type="laws",
-        content_key=PILOT_LAWS_CONTENT_KEY,
-    )
+    published_versions = _load_published_content_versions(repository, server_code=server_code)
+    procedure_version = published_versions["procedure"]
+    form_version = published_versions["form"]
+    validation_version = published_versions["validation"]
+    template_version = published_versions["template"]
+    law_version = published_versions["laws"]
 
     server_pack_version = str(server_pack.get("version") or "1")
     bundle_hash = str(getattr(bundle_meta, "fingerprint", "") or "").strip()
-    procedure_payload = dict((procedure_version or {}).get("payload_json") or {})
-    form_payload = dict((form_version or {}).get("payload_json") or {})
-    validation_payload = dict((validation_version or {}).get("payload_json") or {})
-    template_payload = dict((template_version or {}).get("payload_json") or {})
-    law_payload = dict((law_version or {}).get("payload_json") or {})
+    procedure_payload = _payload_json(procedure_version)
+    form_payload = _payload_json(form_version)
+    validation_payload = _payload_json(validation_version)
+    template_payload = _payload_json(template_version)
+    law_payload = _payload_json(law_version)
 
     return PilotComplaintRuntimeContext(
         server_code=server_code,
