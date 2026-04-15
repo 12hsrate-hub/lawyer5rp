@@ -7,9 +7,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
-- Current task: `select the next Phase I task after accepted I.3`
+- Current task: `Phase I.4 admin analytics convergence wave 1`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `pick the next non-wrapper Phase I convergence target after accepted I.3`
+- Current micro-step: `I.4d ai-pipeline analytics convergence review after accepted dashboard/overview/performance block`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -107,8 +107,11 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.3s` is now complete on production commit `024c3e2`: tester/gka role toggles and email/password update payload assembly now converge behind the same helper layer instead of route-local per-endpoint mutation shaping.
   - `I.3t` is now complete on production commit `024c3e2`: deactivate/reactivate and daily-quota payload assembly now converge behind the same helper layer instead of route-local write-path handling.
   - `I.3u` is now complete on production commit `f9d34a8`: bulk user-mutation dispatch now converges behind the same shared admin user-mutations helper layer instead of route-local action branching and duplicated metrics meta in `routes/admin.py`.
-  - `I.3` is accepted: the remaining admin endpoints are now mostly task boundaries, dashboard/performance contracts, or thin wrappers rather than another high-value route decomposition seam.
-  - immediate next step is `select the next non-wrapper Phase I convergence target outside accepted I.3`.
+  - `I.3` is accepted: the remaining admin endpoints are now mostly task boundaries or larger analytics contracts rather than another high-value route decomposition seam inside the old admin decomposition wave.
+  - `I.4a` is now complete on production commit `c3fcf8c`: `/api/admin/dashboard` KPI, alerts, quick-links, and recent-event aggregation now converge behind a shared admin analytics service instead of route-local assembly in `routes/admin.py`.
+  - `I.4b` is now complete on production commit `c3fcf8c`: `/api/admin/overview` metrics, model-policy, error-explorer, synthetic summary, and partial-error orchestration now converge behind the same shared analytics service instead of route-local glue.
+  - `I.4c` is now complete on production commit `c3fcf8c`: `/api/admin/performance` caching, latency/rates/totals shaping, and snapshot metadata now converge behind the same shared analytics service instead of route-local cache and formatting helpers.
+  - immediate next step is `I.4d ai-pipeline analytics convergence review after accepted dashboard/overview/performance block`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
