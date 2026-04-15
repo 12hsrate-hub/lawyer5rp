@@ -259,6 +259,80 @@ class WebApiTests(unittest.TestCase):
         bridged_versions = list(backend_state["document_versions"].values())
         self.assertIsNotNone(bridged_versions[-1].get("generation_snapshot_id"))
 
+    def test_generate_uses_adapter_snapshot_without_legacy_context_build_when_adapter_active(self):
+        previous_adapter_mode = os.environ.get("OGP_FEATURE_FLAG_PILOT_RUNTIME_ADAPTER_V1_MODE")
+        original_builder = complaint_route.build_generation_context_snapshot
+        original_resolver = complaint_route.resolve_pilot_complaint_runtime_context
+        try:
+            os.environ["OGP_FEATURE_FLAG_PILOT_RUNTIME_ADAPTER_V1_MODE"] = "all"
+            self._register_verify_and_login("adapter_snapshot_user", "adapter_snapshot_user@example.com")
+            response = self.client.put(
+                "/api/profile",
+                json={
+                    "name": "Rep",
+                    "passport": "AA",
+                    "address": "Addr",
+                    "phone": "1234567",
+                    "discord": "disc",
+                    "passport_scan_url": "https://example.com/rep",
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+
+            def fail_legacy_snapshot(*args, **kwargs):
+                raise AssertionError("legacy snapshot builder should not be called when adapter flow is active")
+
+            class FakeAdapterContext:
+                def to_generation_context_snapshot(self):
+                    return {
+                        "server": {"id": "blackberry", "code": "blackberry"},
+                        "template_version": {"id": "adapter_template"},
+                        "law_version_set": {"hash": "adapter_law_hash"},
+                        "validation_rules_version": {"hash": "adapter_validation_hash"},
+                        "effective_config_snapshot": {"template_version": "adapter_template"},
+                        "content_workflow": {"applied_published_versions": {"template_version": "adapter_template"}},
+                    }
+
+            complaint_route.build_generation_context_snapshot = fail_legacy_snapshot
+            complaint_route.resolve_pilot_complaint_runtime_context = lambda store, user: FakeAdapterContext()
+
+            response = self.client.post(
+                "/api/generate",
+                json={
+                    "appeal_no": "1234",
+                    "org": "LSPD",
+                    "subject_names": "John Doe",
+                    "situation_description": "Описание",
+                    "violation_short": "Нарушение",
+                    "event_dt": "08.04.2026 14:30",
+                    "today_date": "08.04.2026",
+                    "victim": {
+                        "name": "Victim",
+                        "passport": "BB",
+                        "address": "Addr",
+                        "phone": "7654321",
+                        "discord": "victim",
+                        "passport_scan_url": "https://example.com/victim",
+                    },
+                    "contract_url": "https://example.com/contract",
+                    "bar_request_url": "",
+                    "official_answer_url": "",
+                    "mail_notice_url": "",
+                    "arrest_record_url": "",
+                    "personnel_file_url": "",
+                    "video_fix_urls": [],
+                    "provided_video_urls": [],
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+        finally:
+            complaint_route.build_generation_context_snapshot = original_builder
+            complaint_route.resolve_pilot_complaint_runtime_context = original_resolver
+            if previous_adapter_mode is None:
+                os.environ.pop("OGP_FEATURE_FLAG_PILOT_RUNTIME_ADAPTER_V1_MODE", None)
+            else:
+                os.environ["OGP_FEATURE_FLAG_PILOT_RUNTIME_ADAPTER_V1_MODE"] = previous_adapter_mode
+
     def test_document_builder_bundle_endpoint(self):
         self._register_verify_and_login("tester", "bundle_tester@example.com")
         response = self.client.get("/api/document-builder/bundle", params={"server_id": "blackberry", "document_type": "court_claim"})
