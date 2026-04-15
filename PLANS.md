@@ -545,6 +545,9 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
   - `PILOT_OBSERVATION_LOG_TEMPLATE.md` added for repeated observation-window checkpoints during `G.2`
   - the dashboard rollout block now includes `Observation guidance` for warning signals, fallback usage, rollback readiness, and review journaling
   - rollout warning signals now expose `severity`, `owner`, and `next action` directly in the dashboard so the observation window has an explicit triage surface
+  - the dashboard rollout block now includes a `go / hold / rollback` cutover summary so operators can record an observation-window decision without re-reading every subsection
+  - the dashboard rollout block now includes a `scale-out readiness` summary so reuse of the pilot template is gated before the next server or procedure candidate is selected
+  - the dashboard rollout block now includes an `observation sign-off` table so cutover approval criteria are visible as `met / not met` checks
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`
