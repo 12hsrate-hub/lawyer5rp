@@ -8,14 +8,19 @@ import uuid
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from time import monotonic
-import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, Response
 from datetime import datetime, timezone
 
 from ogp_web.dependencies import get_content_workflow_service
-from ogp_web.dependencies import get_admin_dashboard_service, get_admin_metrics_store, get_exam_answers_store, get_user_store, requires_permission
+from ogp_web.dependencies import (
+    get_admin_analytics_service,
+    get_admin_dashboard_service,
+    get_admin_metrics_store,
+    get_exam_answers_store,
+    get_user_store,
+    requires_permission,
+)
 from ogp_web.dependencies import get_runtime_law_sets_store, get_runtime_servers_store
 from ogp_web.server_config import get_server_config
 from ogp_web.schemas import (
@@ -64,6 +69,7 @@ from ogp_web.services.server_context_service import (
     resolve_user_server_permissions,
 )
 from ogp_web.services.async_job_service import AsyncJobService
+from ogp_web.services.admin_analytics_service import AdminAnalyticsService
 from ogp_web.services.job_status_service import enrich_job_status
 from ogp_web.services.admin_dashboard_service import AdminDashboardService
 from ogp_web.services.admin_runtime_servers_service import (
@@ -145,13 +151,9 @@ from ogp_web.web import page_context, templates
 
 router = APIRouter(tags=["admin"])
 logger = logging.getLogger(__name__)
-_PERFORMANCE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
-_PERFORMANCE_CACHE_TTL_SECONDS = 10
-_PERFORMANCE_CACHE_LOCK = threading.Lock()
 _ADMIN_TASKS: dict[str, dict[str, Any]] = {}
 _ADMIN_TASKS_LOCK = threading.Lock()
 _ADMIN_TASKS_PATH = Path(__file__).resolve().parents[3] / "web" / "data" / "admin_tasks.json"
-_MODEL_POLICY_PATH = Path(__file__).resolve().parents[3] / "config" / "model_policy.yaml"
 
 _BLUEPRINT_STAGE_LABELS: dict[str, str] = {
     "phase_a_foundation": "Phase A — Stabilize foundation",
@@ -179,29 +181,6 @@ def _point3_monitoring_threshold(level: str, metric: str, fallback: float) -> fl
     except (TypeError, ValueError, AttributeError):
         value = fallback
     return value * 100.0
-
-
-def _cache_key(*, window_minutes: int, top_endpoints: int) -> str:
-    return f"{window_minutes}:{top_endpoints}"
-
-
-def _load_cached_performance_payload(cache_key: str) -> dict[str, Any] | None:
-    with _PERFORMANCE_CACHE_LOCK:
-        now = monotonic()
-        cached = _PERFORMANCE_CACHE.get(cache_key)
-        if not cached:
-            return None
-        cached_at, payload = cached
-        if now - cached_at > _PERFORMANCE_CACHE_TTL_SECONDS:
-            _PERFORMANCE_CACHE.pop(cache_key, None)
-            return None
-        payload["cached"] = True
-        return deepcopy(payload)
-
-
-def _store_performance_payload(cache_key: str, payload: dict[str, Any]) -> None:
-    with _PERFORMANCE_CACHE_LOCK:
-        _PERFORMANCE_CACHE[cache_key] = (monotonic(), deepcopy(payload))
 
 
 def _raise_admin_http_error(*, status_code: int, code: str, message: str) -> None:
@@ -247,16 +226,6 @@ def _admin_ok(**payload: Any) -> dict[str, Any]:
 def _get_async_job_service(request: Request, user_store: UserStore) -> AsyncJobService:
     queue_provider = getattr(request.app.state, "queue_provider", None)
     return AsyncJobService(user_store.backend, queue_provider=queue_provider)
-
-
-def _load_model_policy() -> dict[str, Any]:
-    if not _MODEL_POLICY_PATH.exists():
-        return {}
-    try:
-        payload = yaml.safe_load(_MODEL_POLICY_PATH.read_text(encoding="utf-8")) or {}
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"failed_to_load_model_policy: {exc}") from exc
-    return payload if isinstance(payload, dict) else {}
 
 
 def _parse_metric_event_timestamp(value: Any) -> datetime | None:
@@ -325,49 +294,6 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
-
-
-def _build_synthetic_summary(recent_events: list[dict[str, Any]]) -> dict[str, Any]:
-    run_events: list[dict[str, Any]] = []
-    for event in recent_events:
-        if str(event.get("event_type") or "") != "synthetic_run":
-            continue
-        raw_meta = event.get("meta_json") or event.get("meta") or {}
-        if isinstance(raw_meta, str):
-            try:
-                raw_meta = json.loads(raw_meta)
-            except Exception:  # noqa: BLE001
-                raw_meta = {}
-        if not isinstance(raw_meta, dict):
-            raw_meta = {}
-        run_events.append(
-            {
-                "run_id": str(raw_meta.get("run_id") or ""),
-                "suite": str(raw_meta.get("suite") or ""),
-                "status": str(raw_meta.get("run_status") or ""),
-                "trigger": str(raw_meta.get("trigger") or ""),
-                "created_at": event.get("created_at"),
-                "steps_total": int(raw_meta.get("steps_total") or 0),
-                "steps_failed": int(raw_meta.get("steps_failed") or 0),
-            }
-        )
-    runs_by_suite: dict[str, dict[str, Any]] = {}
-    for run in run_events:
-        suite = run.get("suite") or "unknown"
-        runs_by_suite.setdefault(suite, {"latest_status": "unknown", "last_run_at": None, "runs_total": 0, "failed_total": 0})
-        bucket = runs_by_suite[suite]
-        bucket["runs_total"] += 1
-        if run.get("status") != "pass":
-            bucket["failed_total"] += 1
-        if bucket["last_run_at"] is None:
-            bucket["last_run_at"] = run.get("created_at")
-            bucket["latest_status"] = run.get("status") or "unknown"
-    return {
-        "runs": run_events[:20],
-        "by_suite": runs_by_suite,
-        "total_runs": len(run_events),
-        "failed_runs": sum(1 for item in run_events if item.get("status") != "pass"),
-    }
 
 
 def _is_generation_fallback(meta: dict[str, Any]) -> bool:
@@ -2082,120 +2008,14 @@ async def admin_dashboard_data(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     exam_store: ExamAnswersStore = Depends(get_exam_answers_store),
     user_store: UserStore = Depends(get_user_store),
+    analytics_service: AdminAnalyticsService = Depends(get_admin_analytics_service),
 ):
     _ = user
-    users = user_store.list_users()
-    overview = metrics_store.get_overview(users=users)
-    performance = metrics_store.get_performance_overview(window_minutes=30, top_endpoints=5)
-    exam_import = metrics_store.get_exam_import_summary(pending_scores=exam_store.count_entries_needing_scores())
-    totals = overview.get("totals", {})
-    users_with_metrics = overview.get("users", [])
-    blocked_count = sum(1 for row in users_with_metrics if row.get("access_blocked"))
-    unverified_count = sum(1 for row in users_with_metrics if not row.get("email_verified"))
-
-    kpis = [
-        {
-            "id": "users_total",
-            "label": "Всего аккаунтов",
-            "value": int(totals.get("users_total") or 0),
-            "period": "за все время",
-            "status": "neutral",
-        },
-        {
-            "id": "events_last_24h",
-            "label": "Активность за сутки",
-            "value": int(totals.get("events_last_24h") or 0),
-            "period": "24 часа",
-            "status": "neutral",
-        },
-        {
-            "id": "complaints_total",
-            "label": "Подготовлено жалоб",
-            "value": int(totals.get("complaints_total") or 0),
-            "period": "за все время",
-            "status": "success-soft",
-        },
-        {
-            "id": "rehabs_total",
-            "label": "Подготовлено реабилитаций",
-            "value": int(totals.get("rehabs_total") or 0),
-            "period": "за все время",
-            "status": "success-soft",
-        },
-        {
-            "id": "pending_scores",
-            "label": "Ожидают проверки экзамена",
-            "value": int(exam_import.get("pending_scores") or 0),
-            "period": "текущее состояние",
-            "status": "warn",
-        },
-        {
-            "id": "error_rate",
-            "label": "Доля ошибок API",
-            "value": f"{round(float(performance.get('error_rate') or 0) * 100, 2)}%",
-            "period": "30 минут",
-            "status": "danger" if float(performance.get("error_rate") or 0) >= 0.05 else "neutral",
-        },
-        {
-            "id": "blocked_accounts",
-            "label": "Заблокированные аккаунты",
-            "value": blocked_count,
-            "period": "текущее состояние",
-            "status": "danger" if blocked_count else "neutral",
-        },
-        {
-            "id": "unverified_accounts",
-            "label": "Неподтвержденные email",
-            "value": unverified_count,
-            "period": "текущее состояние",
-            "status": "warn" if unverified_count else "neutral",
-        },
-    ]
-
-    alerts: list[dict[str, Any]] = []
-    if float(performance.get("error_rate") or 0) >= 0.05:
-        alerts.append(
-            {
-                "severity": "danger",
-                "title": "Высокая доля ошибок API",
-                "description": "Проверьте журнал событий и проблемные endpoint'ы.",
-                "action_url": "/admin#admin-section-events",
-            }
-        )
-    if int(exam_import.get("pending_scores") or 0) > 0:
-        alerts.append(
-            {
-                "severity": "warn",
-                "title": "Есть очередь проверки экзаменов",
-                "description": "Запустите проверку импортированных строк.",
-                "action_url": "/exam-import-test",
-            }
-        )
-    if blocked_count:
-        alerts.append(
-            {
-                "severity": "warn",
-                "title": "Есть заблокированные аккаунты",
-                "description": "Проверьте причины блокировки и актуальность ограничений.",
-                "action_url": "/admin#admin-section-users",
-            }
-        )
-
-    quick_links = [
-        {"label": "Пользователи", "url": "/admin#admin-section-users"},
-        {"label": "Импорт экзаменов", "url": "/admin#admin-section-import"},
-        {"label": "События и ошибки", "url": "/admin#admin-section-events"},
-        {"label": "Профиль", "url": "/profile"},
-    ]
-
-    return {
-        "kpis": kpis,
-        "alerts": alerts,
-        "quick_links": quick_links,
-        "recent_events": overview.get("recent_events", [])[:10],
-        "top_endpoints": performance.get("endpoint_overview", []),
-        "generated_at": performance.get("generated_at"),
-    }
+    return analytics_service.build_dashboard_payload(
+        metrics_store=metrics_store,
+        exam_store=exam_store,
+        user_store=user_store,
+    )
 
 
 @router.get("/api/admin/dashboard/sections/{section}")
@@ -2425,6 +2245,7 @@ async def admin_overview(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     exam_store: ExamAnswersStore = Depends(get_exam_answers_store),
     user_store: UserStore = Depends(get_user_store),
+    analytics_service: AdminAnalyticsService = Depends(get_admin_analytics_service),
     search: str = "",
     blocked_only: bool = False,
     tester_only: bool = False,
@@ -2437,111 +2258,21 @@ async def admin_overview(
     user_sort: str = "complaints",
 ):
     _ = user
-    partial_errors: list[dict[str, str]] = []
-    safe_user_limit = None
-    try:
-        safe_user_limit = int(users_limit)
-        if safe_user_limit <= 0:
-            safe_user_limit = None
-    except (TypeError, ValueError):
-        safe_user_limit = None
-    payload: dict[str, Any] = {
-        "totals": {},
-        "users": [],
-        "users_filtered_total": 0,
-        "top_endpoints": [],
-        "recent_events": [],
-        "recent_events_filtered_total": 0,
-        "filters": {"user_sort": user_sort},
-        "error_explorer": {
-            "items": [],
-            "total": 0,
-            "by_event_type": [],
-            "by_path": [],
-        },
-    }
-
-    users: list[dict[str, Any]] = []
-    try:
-        users = user_store.list_users(limit=safe_user_limit)
-    except Exception as exc:  # noqa: BLE001
-        partial_errors.append(_normalize_api_error(exc, source="users"))
-
-    if users:
-        try:
-            payload = metrics_store.get_overview(
-                users=users,
-                search=search,
-                blocked_only=blocked_only,
-                tester_only=tester_only,
-                gka_only=gka_only,
-                unverified_only=unverified_only,
-                event_search=event_search,
-                event_type=event_type,
-                failed_events_only=failed_events_only,
-                user_sort=user_sort,
-            )
-        except Exception as exc:  # noqa: BLE001
-            partial_errors.append(_normalize_api_error(exc, source="overview"))
-            payload["totals"] = {"users_total": len(users)}
-    else:
-        payload["totals"] = {"users_total": 0}
-
-    payload["exam_import"] = build_exam_import_overview_payload(
-        exam_store=exam_store,
+    return analytics_service.build_overview_payload(
         metrics_store=metrics_store,
-        include_recent_entries=True,
-        on_error=lambda source, exc: partial_errors.append(_normalize_api_error(exc, source=source)),
+        exam_store=exam_store,
+        user_store=user_store,
+        search=search,
+        blocked_only=blocked_only,
+        tester_only=tester_only,
+        gka_only=gka_only,
+        unverified_only=unverified_only,
+        event_search=event_search,
+        event_type=event_type,
+        failed_events_only=failed_events_only,
+        users_limit=users_limit,
+        user_sort=user_sort,
     )
-    try:
-        ai_summary = metrics_store.summarize_ai_generation_logs(limit=300)
-        totals = payload.setdefault("totals", {})
-        totals["ai_generation_total"] = int(ai_summary.get("total_generations") or 0)
-        totals["ai_input_tokens_total"] = int(ai_summary.get("input_tokens_total") or 0)
-        totals["ai_output_tokens_total"] = int(ai_summary.get("output_tokens_total") or 0)
-        totals["ai_total_tokens_total"] = int(ai_summary.get("total_tokens_total") or 0)
-        totals["ai_estimated_cost_total_usd"] = round(float(ai_summary.get("estimated_cost_total_usd") or 0.0), 6)
-        totals["ai_estimated_cost_samples"] = int(ai_summary.get("estimated_cost_samples") or 0)
-    except Exception as exc:  # noqa: BLE001
-        partial_errors.append(_normalize_api_error(exc, source="ai_costs"))
-
-    try:
-        payload["model_policy"] = _load_model_policy()
-    except Exception as exc:  # noqa: BLE001
-        partial_errors.append(_normalize_api_error(exc, source="model_policy"))
-        payload["model_policy"] = {}
-
-    try:
-        error_items = metrics_store.list_error_events(
-            event_search=event_search,
-            event_type=event_type,
-            limit=120,
-        )
-        by_event_type: dict[str, int] = {}
-        by_path: dict[str, int] = {}
-        for item in error_items:
-            event_key = str(item.get("event_type") or "unknown")
-            path_key = str(item.get("path") or "-")
-            by_event_type[event_key] = by_event_type.get(event_key, 0) + 1
-            by_path[path_key] = by_path.get(path_key, 0) + 1
-        payload["error_explorer"] = {
-            "items": error_items,
-            "total": len(error_items),
-            "by_event_type": [
-                {"event_type": key, "count": value}
-                for key, value in sorted(by_event_type.items(), key=lambda pair: (-pair[1], pair[0]))[:10]
-            ],
-            "by_path": [
-                {"path": key, "count": value}
-                for key, value in sorted(by_path.items(), key=lambda pair: (-pair[1], pair[0]))[:10]
-            ],
-        }
-    except Exception as exc:  # noqa: BLE001
-        partial_errors.append(_normalize_api_error(exc, source="error_explorer"))
-
-    payload["synthetic"] = _build_synthetic_summary(payload.get("recent_events", []))
-    payload["partial_errors"] = partial_errors
-    return payload
 
 
 @router.post("/api/admin/synthetic/run")
@@ -2565,48 +2296,16 @@ async def run_synthetic_suite(
 async def admin_performance(
     user: AuthUser = Depends(requires_permission("view_analytics")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    analytics_service: AdminAnalyticsService = Depends(get_admin_analytics_service),
     window_minutes: int = 15,
     top_endpoints: int = 10,
 ):
     _ = user
-    safe_window = max(1, min(int(window_minutes or 1), 60 * 24))
-    safe_endpoints = max(1, min(int(top_endpoints or 10), 50))
-    cache_key = _cache_key(window_minutes=safe_window, top_endpoints=safe_endpoints)
-    cached_payload = _load_cached_performance_payload(cache_key)
-    if cached_payload is not None:
-        return cached_payload
-
-    payload = metrics_store.get_performance_overview(
-        window_minutes=safe_window,
-        top_endpoints=safe_endpoints,
+    return analytics_service.build_performance_payload(
+        metrics_store=metrics_store,
+        window_minutes=window_minutes,
+        top_endpoints=top_endpoints,
     )
-    total_requests = int(payload.get("total_api_requests") or 0)
-    failed_requests = int(payload.get("error_count") or 0)
-    throughput_rps = float(payload.get("throughput_rps") or 0.0)
-    p50_ms = payload.get("p50_ms")
-    p95_ms = payload.get("p95_ms")
-    avg_ms = payload.get("avg_ms")
-    payload["latency"] = {
-        "p50_ms": p50_ms,
-        "p95_ms": p95_ms,
-        "avg_ms": avg_ms,
-    }
-    payload["rates"] = {
-        "requests_per_second": round(throughput_rps, 4),
-        "error_rate": float(payload.get("error_rate") or 0.0),
-    }
-    payload["top_endpoints"] = list(payload.get("endpoint_overview") or [])
-    payload["totals"] = {
-        **dict(payload.get("totals") or {}),
-        "total_requests": total_requests,
-        "failed_requests": failed_requests,
-    }
-    payload["window_minutes"] = safe_window
-    payload["top_endpoints_limit"] = safe_endpoints
-    payload["snapshot_at"] = datetime.now(timezone.utc).isoformat()
-    payload["cached"] = False
-    _store_performance_payload(cache_key, payload)
-    return payload
 
 
 @router.get("/api/admin/users.csv")

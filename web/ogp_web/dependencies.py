@@ -11,6 +11,7 @@ from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
 from ogp_web.services.feature_flags import FeatureFlagService
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.admin_dashboard_service import AdminDashboardService
+from ogp_web.services.admin_analytics_service import AdminAnalyticsService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore, get_default_exam_answers_store
 from ogp_web.storage.user_store import UserStore, get_default_user_store
 from ogp_web.storage.content_workflow_repository import ContentWorkflowRepository
@@ -77,6 +78,13 @@ def get_admin_dashboard_service(
     if service is not None:
         return service
     return AdminDashboardService(repository)
+
+
+def get_admin_analytics_service(request: Request) -> AdminAnalyticsService:
+    service = getattr(request.app.state, "admin_analytics_service", None)
+    if service is not None:
+        return service
+    return AdminAnalyticsService()
 
 
 def get_runtime_servers_store(_: Request) -> RuntimeServersStore:
