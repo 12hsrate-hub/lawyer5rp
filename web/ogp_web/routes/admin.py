@@ -45,6 +45,10 @@ from ogp_web.services.law_version_service import resolve_active_law_version
 from ogp_web.services.auth_service import AuthError, AuthUser, require_admin_user
 from ogp_web.services.generation_snapshot_schema_service import build_snapshot_summary, build_workflow_linkage
 from ogp_web.services.provenance_service import ProvenanceService
+from ogp_web.services.generated_document_trace_service import (
+    parse_document_content_payload,
+    resolve_admin_generated_document_trace_bundle,
+)
 from ogp_web.services.point3_policy_service import load_point3_eval_thresholds
 from ogp_web.services.validation_service import ValidationService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -1497,24 +1501,15 @@ async def admin_generated_document_provenance(
     _: AuthUser = Depends(requires_permission("view_analytics")),
     store: UserStore = Depends(get_user_store),
 ) -> DocumentVersionProvenanceResponse:
-    snapshot = store.get_generation_snapshot_by_generated_document_id(document_id=document_id)
-    if snapshot is None:
+    bundle = resolve_admin_generated_document_trace_bundle(store=store, document_id=document_id)
+    if bundle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Generated document not found."])
-    generation_snapshot_id = int(snapshot.get("generation_snapshot_id") or 0)
-    if generation_snapshot_id <= 0:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Generation snapshot not found."])
-    document_repository = DocumentRepository(store.backend)
-    version_row = document_repository.get_latest_document_version_by_generation_snapshot_id(
-        generation_snapshot_id=generation_snapshot_id,
-    )
-    if version_row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Document version not found."])
     service = ProvenanceService(
-        document_repository=document_repository,
+        document_repository=DocumentRepository(store.backend),
         user_store=store,
         validation_service=ValidationService(ValidationRepository(store.backend)),
     )
-    payload = service.get_latest_trace_for_generation_snapshot(generation_snapshot_id=generation_snapshot_id)
+    payload = service.get_latest_trace_for_generation_snapshot(generation_snapshot_id=bundle.generation_snapshot_id)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Provenance trace not found."])
     return DocumentVersionProvenanceResponse(**payload)
@@ -1537,27 +1532,14 @@ async def admin_generated_document_review_context(
     _: AuthUser = Depends(requires_permission("view_analytics")),
     store: UserStore = Depends(get_user_store),
 ):
-    snapshot = store.get_generation_snapshot_by_generated_document_id(document_id=document_id)
-    if snapshot is None:
+    bundle = resolve_admin_generated_document_trace_bundle(store=store, document_id=document_id)
+    if bundle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Generated document not found."])
-    generation_snapshot_id = int(snapshot.get("generation_snapshot_id") or 0)
-    if generation_snapshot_id <= 0:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Generation snapshot not found."])
+    snapshot = bundle.snapshot
+    generation_snapshot_id = bundle.generation_snapshot_id
+    version_row = bundle.version_row
 
-    document_repository = DocumentRepository(store.backend)
-    version_row = document_repository.get_latest_document_version_by_generation_snapshot_id(
-        generation_snapshot_id=generation_snapshot_id,
-    )
-    if version_row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Document version not found."])
-
-    content_payload = {}
-    try:
-        content_payload = json.loads(str(version_row.get("content_json") or "{}"))
-    except json.JSONDecodeError:
-        content_payload = {}
-    if not isinstance(content_payload, dict):
-        content_payload = {}
+    content_payload = parse_document_content_payload(version_row)
 
     validation_service = ValidationService(ValidationRepository(store.backend))
     latest_validation = validation_service.get_latest_target_validation(
@@ -1572,7 +1554,7 @@ async def admin_generated_document_review_context(
     exports = artifact_repository.list_exports_for_document_version(document_version_id=int(version_row["id"]))
     attachments = artifact_repository.list_attachments_for_document_version(document_version_id=int(version_row["id"]))
     service = ProvenanceService(
-        document_repository=document_repository,
+        document_repository=DocumentRepository(store.backend),
         user_store=store,
         validation_service=validation_service,
     )
