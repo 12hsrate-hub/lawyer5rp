@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase K — complaint runtime boundary decomposition wave 1`
 - Current task: `K.1 complaint route orchestration extraction`
 - Active execution phase override: `Phase J is accepted; Phase K is now opened as the next execution phase`
-- Current micro-step: `reduce ai_service.py to thin suggest/law-qa facades by moving runtime-context assembly and remaining transport glue into ai_pipeline`
+- Current micro-step: `K.1a complaint execution/concurrency extraction`
 - Overall status: `in_progress`
 - Last updated: `2026-04-16`
 - Execution override update:
@@ -139,6 +139,8 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - `Phase K` is opened as the next execution phase.
 - first focus area is `web/ogp_web/routes/complaint.py`, where route-local concurrency limiting, threadpool execution, and generation-boundary orchestration still sit above already-extracted service layers.
 - `K.1` target: move bounded complaint-route orchestration into dedicated complaint runtime helpers/services without changing request/response contracts.
+- `K.1a` is now complete locally: suggest concurrency limiting, threadpool execution metrics, validation-service construction, server-payload validation, and complaint generation-context bridge helpers now converge behind `complaint_runtime_service.py`, while `routes/complaint.py` keeps only thin compatibility wrappers so existing route contracts and monkeypatch-driven tests remain stable.
+- next step inside `K.1`: move post-generation bridge/validation orchestration for complaint and rehab into the same complaint runtime service layer if it removes real route-local glue instead of only reshuffling wrappers.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.

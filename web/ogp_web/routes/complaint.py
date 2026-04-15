@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from threading import BoundedSemaphore, Lock
-from time import monotonic
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
@@ -35,6 +32,12 @@ from ogp_web.schemas import (
 from ogp_web.services import ai_service
 from ogp_web.services.ai_pipeline.telemetry_meta import build_law_qa_metrics_meta, build_suggest_metrics_meta
 from ogp_web.services.auth_service import AuthUser, require_user
+from ogp_web.services.complaint_runtime_service import (
+    ComplaintRuntimeService,
+    SuggestConcurrencyLimiter,
+    build_heavy_ai_executor,
+    env_positive_int,
+)
 from ogp_web.services.complaint_service import generate_bbcode_text, generate_rehab_bbcode_text
 from ogp_web.services.complaint_draft_schema import normalize_complaint_draft
 from ogp_web.services.complaint_service import build_generation_context_snapshot
@@ -53,14 +56,11 @@ from ogp_web.services.pilot_runtime_adapter import (
 from ogp_web.services.provenance_service import resolve_document_version_trace_for_server
 from ogp_web.services.regression_metrics import (
     build_rollout_labels,
-    record_async_queue_lag,
     record_generation_latency,
     record_validation_fail_rate,
     start_timer,
 )
 from ogp_web.services.server_context_service import (
-    resolve_user_server_complaint_settings,
-    resolve_user_server_identity,
     resolve_user_server_config,
 )
 from ogp_web.services.validation_service import ValidationService
@@ -87,42 +87,7 @@ def _flatten_complaint_draft(payload: object) -> dict[str, object]:
 
 
 def _env_positive_int(name: str, default: int) -> int:
-    raw = str(os.getenv(name, "") or "").strip()
-    if not raw:
-        return default
-    try:
-        value = int(raw)
-    except ValueError:
-        return default
-    return value if value > 0 else default
-
-
-class SuggestConcurrencyLimiter:
-    def __init__(self, *, max_concurrency: int, retry_after_seconds: int = 3) -> None:
-        self.max_concurrency = max(1, int(max_concurrency or 1))
-        self.retry_after_seconds = max(1, int(retry_after_seconds or 1))
-        self._semaphore = BoundedSemaphore(self.max_concurrency)
-        self._lock = Lock()
-        self._inflight = 0
-
-    def try_acquire(self) -> bool:
-        if not self._semaphore.acquire(blocking=False):
-            return False
-        with self._lock:
-            self._inflight += 1
-        return True
-
-    def release(self) -> None:
-        with self._lock:
-            if self._inflight <= 0:
-                return
-            self._inflight -= 1
-        self._semaphore.release()
-
-    @property
-    def inflight(self) -> int:
-        with self._lock:
-            return self._inflight
+    return env_positive_int(name, default)
 
 
 SUGGEST_CONCURRENCY_LIMITER = SuggestConcurrencyLimiter(
@@ -132,13 +97,20 @@ SUGGEST_CONCURRENCY_LIMITER = SuggestConcurrencyLimiter(
 
 
 def _build_heavy_ai_executor() -> ThreadPoolExecutor | None:
-    max_workers = _env_positive_int("OGP_AI_HEAVY_MAX_WORKERS", 0)
-    if max_workers <= 0:
-        return None
-    return ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ogp-ai-heavy")
+    return build_heavy_ai_executor()
 
 
 HEAVY_AI_EXECUTOR = _build_heavy_ai_executor()
+COMPLAINT_RUNTIME_SERVICE = ComplaintRuntimeService(
+    suggest_concurrency_limiter=SUGGEST_CONCURRENCY_LIMITER,
+    heavy_ai_executor=HEAVY_AI_EXECUTOR,
+)
+
+
+def _runtime_service() -> ComplaintRuntimeService:
+    COMPLAINT_RUNTIME_SERVICE.suggest_concurrency_limiter = SUGGEST_CONCURRENCY_LIMITER
+    COMPLAINT_RUNTIME_SERVICE.heavy_ai_executor = HEAVY_AI_EXECUTOR
+    return COMPLAINT_RUNTIME_SERVICE
 
 
 async def _run_sync_io(func, /, *args, **kwargs):
@@ -155,77 +127,24 @@ async def _run_ai_task(
     use_heavy_executor: bool = False,
     **kwargs,
 ):
-    enqueued_at = monotonic()
-    executor = HEAVY_AI_EXECUTOR if use_heavy_executor else None
-    queue_size = -1
-    if executor is not None:
-        queue = getattr(executor, "_work_queue", None)
-        if queue is not None and hasattr(queue, "qsize"):
-            try:
-                queue_size = int(queue.qsize())
-            except Exception:  # noqa: BLE001
-                queue_size = -1
-
-    def _invoke() -> tuple[object, float, float]:
-        started_at = monotonic()
-        wait_ms = (started_at - enqueued_at) * 1000.0
-        result = func(**kwargs)
-        finished_at = monotonic()
-        run_ms = (finished_at - started_at) * 1000.0
-        return result, wait_ms, run_ms
-
-    loop = asyncio.get_running_loop()
-    if executor is None:
-        started_at = monotonic()
-        result = await run_in_threadpool(func, **kwargs)
-        finished_at = monotonic()
-        wait_ms = 0.0
-        run_ms = (finished_at - started_at) * 1000.0
-    else:
-        result, wait_ms, run_ms = await loop.run_in_executor(executor, _invoke)
-
-    metrics_store.log_event(
-        event_type="threadpool_wait",
-        username=user.username,
-        server_code=user.server_code,
+    return await _runtime_service().run_ai_task(
+        metrics_store=metrics_store,
+        user=user,
         path=path,
-        method="POST",
-        status_code=200,
-        meta={
-            "server_code": user.server_code,
-            "operation": operation,
-            "executor": "ai_heavy" if executor is not None else "default",
-            "queue_size": queue_size,
-            "wait_ms": round(wait_ms, 2),
-            "run_ms": round(run_ms, 2),
-        },
+        operation=operation,
+        func=func,
+        use_heavy_executor=use_heavy_executor,
+        threadpool_runner=run_in_threadpool,
+        **kwargs,
     )
-    record_async_queue_lag(
-        metrics_store,
-        username=user.username,
-        path=path,
-        method="POST",
-        labels=build_rollout_labels(
-            flag="async_jobs_v1",
-            rollout_mode="all" if executor is not None else "off",
-            cohort="default",
-            server_id=user.server_code,
-            flow_type=operation,
-            status="success",
-        ),
-        lag_ms=int(wait_ms),
-    )
-    return result
 
 
 def _validation_service(store: UserStore) -> ValidationService:
-    return ValidationService(ValidationRepository(store.backend))
+    return _runtime_service().build_validation_service(store)
 
 
 def _with_shadow_citations_policy(context_snapshot: dict[str, object]) -> dict[str, object]:
-    snapshot = dict(context_snapshot)
-    snapshot["citations_policy_gate"] = {"mode": "shadow", "status": "flagged_no_citations"}
-    return snapshot
+    return _runtime_service().with_shadow_citations_policy(context_snapshot)
 
 
 def _build_complaint_generation_context_snapshot(
@@ -234,27 +153,26 @@ def _build_complaint_generation_context_snapshot(
     user: AuthUser,
     adapter_flag,
 ) -> dict[str, object]:
-    if supports_pilot_runtime_adapter(server_code=user.server_code, document_kind="complaint") and adapter_flag.use_new_flow:
-        return resolve_pilot_complaint_runtime_context(store, user).to_generation_context_snapshot()
-    return dict(build_generation_context_snapshot(store, user, document_kind="complaint"))
+    return _runtime_service().build_complaint_generation_context_snapshot(
+        store=store,
+        user=user,
+        adapter_flag=adapter_flag,
+        legacy_snapshot_builder=lambda: dict(build_generation_context_snapshot(store, user, document_kind="complaint")),
+        adapter_supported=lambda server_code, document_kind: supports_pilot_runtime_adapter(
+            server_code=server_code,
+            document_kind=document_kind,
+        ),
+        adapter_snapshot_resolver=resolve_pilot_complaint_runtime_context,
+    )
 
 
 def _validate_server_payload(store: UserStore, user: AuthUser, *, org: str = "", complaint_basis: str = "") -> None:
-    complaint_settings = resolve_user_server_complaint_settings(store, user.username, server_code=user.server_code)
-    server_identity = resolve_user_server_identity(store, user.username, server_code=user.server_code)
-    normalized_org = str(org or "").strip()
-    normalized_basis = str(complaint_basis or "").strip()
-    if normalized_org and complaint_settings.organizations and normalized_org not in complaint_settings.organizations:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=[f"Организация {normalized_org!r} не относится к серверу {server_identity.name}."],
-        )
-    allowed_bases = set(complaint_settings.complaint_basis_codes)
-    if normalized_basis and allowed_bases and normalized_basis not in allowed_bases:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=[f"Основание жалобы {normalized_basis!r} не поддерживается для сервера {server_identity.name}."],
-        )
+    _runtime_service().validate_server_payload(
+        store,
+        user,
+        org=org,
+        complaint_basis=complaint_basis,
+    )
 
 
 @router.get("/api/complaint-draft", response_model=ComplaintDraftResponse)
@@ -552,30 +470,12 @@ async def suggest(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> SuggestResponse:
     _validate_server_payload(store, user, org=payload.org, complaint_basis=payload.complaint_basis)
-    acquired = SUGGEST_CONCURRENCY_LIMITER.try_acquire()
-    if not acquired:
-        retry_after = str(SUGGEST_CONCURRENCY_LIMITER.retry_after_seconds)
-        metrics_store.log_event(
-            event_type="ai_suggest_overload",
-            username=user.username,
-            server_code=user.server_code,
-            path="/api/ai/suggest",
-            method="POST",
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            meta={
-                "server_code": user.server_code,
-                "complaint_basis": payload.complaint_basis,
-                "main_focus": payload.main_focus,
-                "retry_after_seconds": SUGGEST_CONCURRENCY_LIMITER.retry_after_seconds,
-                "inflight": SUGGEST_CONCURRENCY_LIMITER.inflight,
-                "max_concurrency": SUGGEST_CONCURRENCY_LIMITER.max_concurrency,
-            },
-        )
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=["Сервис AI suggest временно перегружен. Повторите попытку через несколько секунд."],
-            headers={"Retry-After": retry_after},
-        )
+    _runtime_service().ensure_suggest_capacity(
+        metrics_store=metrics_store,
+        user=user,
+        complaint_basis=payload.complaint_basis,
+        main_focus=payload.main_focus,
+    )
     try:
         result = await _run_ai_task(
             metrics_store=metrics_store,
