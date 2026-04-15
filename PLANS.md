@@ -6,17 +6,17 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 
 ## Current Execution State
 
-- Current phase: `Phase G — Pilot cutover and measured scale-out`
-- Current task: `Phase G complete`
-- Active execution phase override: `Phase G accepted; ready for post-pilot follow-up planning`
-- Current micro-step: `Phase G final checkpoint accepted in docs and production`
-- Overall status: `phase_checkpoint_complete`
+- Current phase: `Phase H — Post-pilot scale-out and legacy reduction`
+- Current task: `H.1 Next candidate rollout planning`
+- Active execution phase override: `Phase G accepted; start post-pilot planning from H.1`
+- Current micro-step: `run H.1b runtime catalog verification`
+- Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
   - `Phase G` is accepted.
   - `Phase A` through `Phase G` are now complete.
   - The pilot rollout workspace, provenance review, and post-pilot cleanup backlog are live.
-  - Next work should start as a fresh post-Phase-G planning slice, not by reopening earlier phases.
+  - Next work should start from `Phase H.1`, not by reopening earlier phases.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -403,6 +403,45 @@ Dependencies: Phases B-F.
 
 ---
 
+## Phase H — Post-pilot scale-out and legacy reduction (staged follow-up)
+
+Execution status: `in_progress`
+
+### H.1 Next candidate rollout planning
+- Select exactly one bounded next server or procedure candidate.
+- Reuse the pilot rollout template instead of inventing a parallel migration path.
+- Record candidate-specific gates before any activation change.
+- Current H.1 recommendation: `blackberry + rehab` as the first same-server / second-procedure candidate.
+- `H.1a` complete: code/seed-level rehab inventory verification is documented in `REHAB_ROLLOUT_GAP_MAP.md`.
+- Current H.1 executable slice: `H.1b Rehab runtime catalog verification`.
+- Runtime verification script: `scripts/verify_rehab_runtime_catalog.py` (DB-backed catalog checks for `blackberry + rehab`).
+
+### H.2 Legacy cleanup wave 1
+- Remove only those compatibility seams that are already listed in the rollout backlog and have a satisfied removal gate.
+- Keep rollback visibility and provenance/admin explainability intact after each cleanup slice.
+
+### H.3 Runtime source-of-truth tightening
+- Reduce transitional reads and legacy fallback assumptions only after the second candidate stabilizes.
+- Keep route contracts stable while shrinking adapter-only compatibility paths.
+
+### Deliverables
+- next candidate brief and rollout gate
+- rehab gap map and inventory verification note
+- first accepted legacy cleanup wave
+- updated removal checklist for remaining compatibility seams
+
+### Acceptance
+- One next candidate is selected with explicit scope, evidence, and rollback gate.
+- First cleanup wave removes legacy logic without losing rollback safety or admin visibility.
+
+### Rollback/containment
+- Keep all non-selected scenarios on the current stable path.
+- Revert the chosen candidate to legacy/shadow mode if rollout evidence regresses.
+
+Dependencies: Phase G.
+
+---
+
 ## 3) What to do first
 
 1. Finish Phase A inventory and lock pilot scenario.
@@ -531,8 +570,8 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 
 ## Execution override update
 
-- Current active phase: `Phase G`
-- Last completed phase: `Phase F`
+- Current active phase: `Phase H`
+- Last completed phase: `Phase G`
 - Phase G progress:
   - pilot rollout visibility is now exposed in `admin/dashboard`
   - the ops workspace now includes a `Pilot rollout` block backed by `/api/admin/dashboard/sections/release`
@@ -552,6 +591,11 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
   - the dashboard rollout block now includes an `observation sign-off` table so cutover approval criteria are visible as `met / not met` checks
   - the dashboard rollout block now includes a human-readable `next candidate recommendation` summary so post-pilot reuse stays blocked or approved with an explicit reason
   - the dashboard rollout block now includes a `legacy cleanup backlog` table so post-pilot removal candidates are visible before any compatibility seam is deleted
+- Next phase:
+- `Phase H.1` selects one bounded post-pilot candidate and records its rollout gate before any broader scale-out
+- initial H.1 recommendation is `blackberry + rehab`, not `strawberry + complaint`
+- `H.1a` output is `REHAB_ROLLOUT_GAP_MAP.md`
+- immediate next step is `H.1b Rehab runtime catalog verification`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`
