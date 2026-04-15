@@ -7,12 +7,12 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase I`
-- Active task: `select the next Phase I task after accepted I.4`
+- Active task: `select the next Phase I task after accepted I.5`
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `6`
-- Next slice: `pick the next non-wrapper Phase I convergence target after accepted I.4`
-- Last updated: `2026-04-15`
+- Next slice: `pick the next non-wrapper Phase I convergence target after accepted I.5`
+- Last updated: `2026-04-16`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`
@@ -232,6 +232,13 @@ Date: 2026-04-14
   - ai-pipeline recent-window filtering, quality summary, cost tables, top inaccurate generations, and policy-action shaping now converge behind the same shared service instead of route-local helper sprawl
   - `I.4f` deployed on production commit `6d93cc7`
   - the remaining ai-pipeline helper leftovers were removed from `routes/admin.py`, helper tests now target the service layer directly, and the admin analytics wave is accepted
+  - `I.5a` deployed on production commit `6ad4359`
+  - shared admin task persistence, task claiming, and canonical task-status loading now converge behind `AdminTaskOpsService` instead of route-local globals in `routes/admin.py`
+  - `I.5b` deployed on production commit `6ad4359`
+  - `law-jobs` overview and `law-sources/rebuild-async` now reuse the same task ops service instead of keeping route-local queue/orchestration logic
+  - `I.5c` deployed on production commit `6ad4359`
+  - async `users/bulk-actions` dispatch and generic `/api/admin/tasks/{task_id}` status now reuse the same service, and API tests now override the dependency-backed task service instead of patching route globals
+  - `I.5` is accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.

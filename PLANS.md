@@ -7,11 +7,11 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
-- Current task: `select the next Phase I task after accepted I.4`
+- Current task: `select the next Phase I task after accepted I.5`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `pick the next non-wrapper Phase I convergence target after accepted I.4`
+- Current micro-step: `pick the next non-wrapper Phase I convergence target after accepted I.5`
 - Overall status: `in_progress`
-- Last updated: `2026-04-15`
+- Last updated: `2026-04-16`
 - Execution override update:
   - `Phase G` is accepted.
   - `Phase A` through `Phase G` are now complete.
@@ -115,7 +115,11 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.4e` is now complete on production commit `6d93cc7`: ai-pipeline recent-window filtering, quality summary, cost tables, top inaccurate generations, and policy-action shaping now converge behind the same shared service instead of route-local helper sprawl.
   - `I.4f` is now complete on production commit `6d93cc7`: the remaining ai-pipeline helper leftovers were removed from `routes/admin.py`, helper tests now target the service layer directly, and API coverage remains green.
   - `I.4` is accepted: no further meaningful admin analytics convergence seams remain that remove a real orchestration layer without drifting into thin ops wrappers or task-boundary reshuffling.
-  - immediate next step is `pick the next non-wrapper Phase I convergence target after accepted I.4`.
+  - `I.5a` is now complete on production commit `6ad4359`: shared admin task persistence, task claiming, and canonical task-status loading now converge behind `AdminTaskOpsService` instead of route-local globals in `routes/admin.py`.
+  - `I.5b` is now complete on production commit `6ad4359`: `law-jobs` overview and `law-sources/rebuild-async` now reuse the same task ops service instead of keeping route-local task queue/orchestration logic.
+  - `I.5c` is now complete on production commit `6ad4359`: async `users/bulk-actions` dispatch and generic `/api/admin/tasks/{task_id}` status now reuse the same service, and API tests now override the dependency-backed task service instead of patching route globals.
+  - `I.5` is accepted: the remaining admin ops surfaces are thin wrappers or single-purpose execution boundaries, not another high-value convergence seam.
+  - immediate next step is `pick the next non-wrapper Phase I convergence target after accepted I.5`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -582,6 +586,19 @@ Execution status: `ready_to_start`
 - Prioritize surfaces that already have clear service boundaries underneath them.
 - Do not mix UI copy work, route splitting, and domain behavior changes in one slice.
 - `I.3` accepted on production through `I.3u`.
+
+### I.4 Admin analytics convergence
+- Align the remaining route-local analytics payload assembly behind service-level helpers where the route contract is already stable.
+- Keep caching, partial-error reporting, and summary shaping inside dedicated services, not `routes/admin.py`.
+- `I.4` accepted on production through `I.4f`.
+
+### I.5 Admin task/ops lifecycle convergence
+- Move shared admin task persistence, async dispatch, and task-status shaping behind a dedicated service instead of route-local globals.
+- Keep route contracts stable across `law_jobs`, `law_sources/rebuild-async`, bulk user actions, and generic admin task status.
+- `I.5a` complete on production commit `6ad4359`: shared admin task persistence, claim/load helpers, and canonical status shaping now live behind `AdminTaskOpsService`.
+- `I.5b` complete on production commit `6ad4359`: `law-jobs` overview and `law-sources/rebuild-async` now reuse the same service-backed task registry instead of route-local queue helpers.
+- `I.5c` complete on production commit `6ad4359`: async `users/bulk-actions` and `/api/admin/tasks/{task_id}` now reuse the same service-backed task execution/status path, and API coverage now targets dependency overrides instead of route globals.
+- `I.5` accepted: no further meaningful admin task/ops lifecycle seams remain that remove a real orchestration layer without drifting into thin wrappers.
 
 ### Deliverables
 - `Phase I` execution brief with the first accepted bounded seam
