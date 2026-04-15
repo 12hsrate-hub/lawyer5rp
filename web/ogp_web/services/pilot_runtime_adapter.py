@@ -32,7 +32,6 @@ class PilotComplaintRuntimeContext:
     validation_rule_version: dict[str, Any]
     template_version: dict[str, Any]
     law_set_version: dict[str, Any]
-    source_of_truth: str
 
     def to_generation_context_snapshot(self) -> dict[str, Any]:
         effective_config_snapshot = {
@@ -60,7 +59,6 @@ class PilotComplaintRuntimeContext:
             },
             "runtime_adapter": {
                 "mode": "pilot_runtime_adapter_v1",
-                "source_of_truth": self.source_of_truth,
                 "server_config_version_id": self.server_config_version.get("id"),
                 "procedure_version_id": self.procedure_version.get("id"),
                 "form_version_id": self.form_version.get("id"),
@@ -172,12 +170,6 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
     template_payload = dict((template_version or {}).get("payload_json") or {})
     law_payload = dict((law_version or {}).get("payload_json") or {})
 
-    source_of_truth = "legacy_adapter_seed"
-    if all((procedure_version, form_version, validation_version, template_version)):
-        source_of_truth = "content_workflow_published"
-    elif any((procedure_version, form_version, validation_version, template_version, law_version)):
-        source_of_truth = "hybrid_workflow_seed"
-
     return PilotComplaintRuntimeContext(
         server_code=server_code,
         server_config_version={
@@ -225,7 +217,6 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
             "status": "published" if law_version else "seeded",
             "content_item_id": (law_item or {}).get("id"),
         },
-        source_of_truth=source_of_truth,
     )
 
 
@@ -262,5 +253,4 @@ def compare_generation_context_snapshots(*, legacy_snapshot: dict[str, Any], ada
         "matched_keys": [key for key, pair in comparisons.items() if pair[0] == pair[1]],
         "mismatch_count": len(mismatches),
         "mismatches": mismatches,
-        "source_of_truth": str(((adapter_snapshot.get("runtime_adapter") or {}).get("source_of_truth") or "legacy_adapter_seed")),
     }
