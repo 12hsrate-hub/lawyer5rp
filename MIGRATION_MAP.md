@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select I.1y after the accepted shared resolve-helper pass`
+- Next slice: `select Phase I.2 after accepted I.1 convergence`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -120,7 +120,12 @@ Date: 2026-04-14
   - shared `resolve_server_ai_context_settings(...)` now backs bounded AI law-QA and suggest call sites instead of local extract-only seams
   - `I.1x` deployed on production commit `304d9d6`
   - shared `resolve_server_identity(...)` and `resolve_server_feature_flags(...)` now back bounded complaint generation snapshot assembly and related server-context tests
-  - route contracts remain unchanged and the first twenty-four Phase I convergence slices are accepted
+  - `I.1y` deployed on production commit `c7be298`
+  - shared user-level resolvers now back complaint route identity/settings checks and remove the last local `_server_config_for_user(...)` wrapper
+  - `I.1z` deployed on production commit `c7be298`
+  - verify-email page server selection now reuses a single page-level resolver for request-default and username-bound rendering paths
+  - `I.1` is accepted
+  - route contracts remain unchanged and the first twenty-six Phase I convergence slices are accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
