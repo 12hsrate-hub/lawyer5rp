@@ -56,7 +56,6 @@ from ogp_web.services.provenance_service import resolve_document_version_trace_f
 from ogp_web.services.regression_metrics import (
     build_rollout_labels,
     record_generation_latency,
-    record_validation_fail_rate,
     start_timer,
 )
 from ogp_web.services.server_context_service import (
@@ -520,42 +519,6 @@ async def extract_principal(
         },
     )
     return result
-
-
-def _law_qa_selected_norms_to_citations(*, store: UserStore, server_id: str, law_version_id: int | None, selected_norms: list[dict[str, object]]) -> list[dict[str, object]]:
-    if law_version_id is None:
-        return []
-    citations: list[dict[str, object]] = []
-    for norm in selected_norms:
-        source_url = str(norm.get("source_url") or "").strip()
-        document_title = str(norm.get("document_title") or "").strip()
-        article_label = str(norm.get("article_label") or "").strip()
-        excerpt = str(norm.get("excerpt") or norm.get("excerpt_preview") or "").strip()
-        if not source_url or not document_title or not article_label:
-            continue
-        source = store.resolve_law_article_source(
-            server_id=server_id,
-            law_version_id=law_version_id,
-            article_label=article_label,
-            document_title=document_title,
-            source_url=source_url,
-        )
-        if source is None:
-            continue
-        citations.append(
-            {
-                "citation_type": "norm",
-                "source_type": "law_article",
-                "source_id": int(source["source_id"]),
-                "source_version_id": int(source["source_version_id"]),
-                "canonical_ref": f"{document_title} {article_label}",
-                "quoted_text": excerpt,
-                "usage_type": "supporting",
-            }
-        )
-    return citations
-
-
 @router.post("/api/ai/law-qa-test", response_model=LawQaResponse)
 async def law_qa_test(
     payload: LawQaPayload,
@@ -583,7 +546,7 @@ async def law_qa_test(
         result_selection_reason = str(getattr(result, "selection_reason", "") or "").strip()
         result_requested_model = str(getattr(result, "requested_model", "") or payload.model or "").strip()
         selected_norms = list(getattr(result, "selected_norms", []) or [])
-        raw_citations = _law_qa_selected_norms_to_citations(
+        raw_citations = _runtime_service().law_qa_selected_norms_to_citations(
             store=store,
             server_id=effective_server_code,
             law_version_id=payload.law_version_id,
@@ -593,46 +556,22 @@ async def law_qa_test(
             flag="citations_required",
             context=RolloutContext(username=user.username, server_id=effective_server_code),
         )
-        response_warnings = list(getattr(result, "warnings", []) or [])
-        if citations_flag.use_new_flow and not raw_citations:
-            if citations_flag.enforcement.value == "hard":
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=["citations_required policy blocked the response due to missing citations."],
-                )
-            response_warnings.append("citations_required_warn:missing_citations")
-        retrieval = run_retrieval(
+        response_warnings = _runtime_service().resolve_law_qa_response_warnings(
+            warnings=list(getattr(result, "warnings", []) or []),
+            citations_flag=citations_flag,
+            raw_citations=raw_citations,
+        )
+        retrieval, law_qa_run_id, citations = _runtime_service().persist_law_qa_artifacts(
             store=store,
-            actor_username=user.username,
-            server_id=effective_server_code,
-            run_type="law_qa",
-            query_text=payload.question,
-            effective_versions={"law_version_id": payload.law_version_id},
-            retrieved_sources=[{"url": item} for item in (getattr(result, "used_sources", []) or [])],
-            candidates=raw_citations,
-            policy_status="pass" if raw_citations else "blocked_missing_citations",
-        )
-        actor_id = store.get_user_id(user.username)
-        if actor_id is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Пользователь не найден."])
-        law_qa_run_id = store.create_law_qa_run(
-            server_id=effective_server_code,
-            user_id=int(actor_id),
+            user=user,
+            effective_server_code=effective_server_code,
             question=payload.question,
+            law_version_id=payload.law_version_id,
             answer_text=result.text,
-            retrieval_run_id=retrieval.retrieval_run_id,
-            snapshot_id=str(payload.law_version_id or ""),
-        )
-        citations = (
-            save_answer_citations(
-                store=store,
-                server_id=effective_server_code,
-                law_qa_run_id=law_qa_run_id,
-                retrieval_run_id=retrieval.retrieval_run_id,
-                citations=raw_citations,
-            )
-            if raw_citations
-            else []
+            used_sources=list(getattr(result, "used_sources", []) or []),
+            raw_citations=raw_citations,
+            retrieval_runner=run_retrieval,
+            citation_saver=save_answer_citations,
         )
         metrics_store.log_event(
             event_type="ai_law_qa_test",
@@ -674,40 +613,15 @@ async def law_qa_test(
                 flag="validation_gate_v1",
                 context=RolloutContext(username=user.username, server_id=effective_server_code),
             )
-            validation_repo = ValidationRepository(store.backend)
-            conn = store.backend.connect()
-            user_row = conn.execute("SELECT id FROM users WHERE username = %s", (user.username,)).fetchone()
-            conn.close()
-            if user_row is not None:
-                qa_run = validation_repo.create_law_qa_run(
-                    server_id=effective_server_code,
-                    user_id=int(user_row["id"]),
-                    question=payload.question,
-                    answer_text=result.text,
-                    used_sources=list(result.used_sources),
-                    selected_norms=list(result.selected_norms),
-                    metadata={"generation_id": result.generation_id, "legacy_endpoint": "/api/ai/law-qa-test"},
-                )
-                if validation_flag.use_new_flow:
-                    validation_result = ValidationService(validation_repo).run_validation(
-                        target_type="law_qa_run",
-                        target_id=int(qa_run["id"]),
-                    )
-                    record_validation_fail_rate(
-                        metrics_store,
-                        username=user.username,
-                        path="/api/ai/law-qa-test",
-                        method="POST",
-                        labels=build_rollout_labels(
-                            flag="validation_gate_v1",
-                            rollout_mode=validation_flag.mode.value,
-                            cohort=validation_flag.cohort.value,
-                            server_id=effective_server_code,
-                            flow_type="law_qa",
-                            status="fail" if validation_result.run.get("status") == "fail" else "success",
-                        ),
-                        failed=validation_result.run.get("status") == "fail",
-                    )
+            _runtime_service().maybe_validate_law_qa_result(
+                store=store,
+                metrics_store=metrics_store,
+                user=user,
+                effective_server_code=effective_server_code,
+                question=payload.question,
+                result=result,
+                validation_flag=validation_flag,
+            )
         except Exception:
             if str(os.getenv("OGP_VALIDATION_LAW_QA_STRICT", "0") or "").strip() in {"1", "true", "yes", "on"}:
                 raise
