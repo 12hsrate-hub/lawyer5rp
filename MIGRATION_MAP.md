@@ -220,11 +220,11 @@ Date: 2026-04-14
   - bulk user-mutation dispatch now converges behind the same shared admin user-mutations helper layer instead of route-local action branching and duplicated metrics meta
   - `I.3` is accepted
   - no further meaningful admin route decomposition seams remain that remove a real second orchestration layer without slipping into task-boundary or wrapper-only reshuffling
-  - `I.4a` deployed on production commit `c3fcf8c`
+  - `I.4a` deployed on production commit `c9ad609`
   - `/api/admin/dashboard` KPI, alerts, quick-links, and recent-event aggregation now converge behind a shared admin analytics helper instead of route-local assembly
-  - `I.4b` deployed on production commit `c3fcf8c`
+  - `I.4b` deployed on production commit `c9ad609`
   - `/api/admin/overview` metrics, model-policy, error-explorer, synthetic summary, and partial-error orchestration now converge behind the same shared analytics helper instead of route-local glue
-  - `I.4c` deployed on production commit `c3fcf8c`
+  - `I.4c` deployed on production commit `c9ad609`
   - `/api/admin/performance` caching, latency/rates/totals shaping, and snapshot metadata now converge behind the same shared analytics helper instead of route-local cache and formatting helpers
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.

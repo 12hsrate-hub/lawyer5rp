@@ -108,9 +108,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.3t` is now complete on production commit `024c3e2`: deactivate/reactivate and daily-quota payload assembly now converge behind the same helper layer instead of route-local write-path handling.
   - `I.3u` is now complete on production commit `f9d34a8`: bulk user-mutation dispatch now converges behind the same shared admin user-mutations helper layer instead of route-local action branching and duplicated metrics meta in `routes/admin.py`.
   - `I.3` is accepted: the remaining admin endpoints are now mostly task boundaries or larger analytics contracts rather than another high-value route decomposition seam inside the old admin decomposition wave.
-  - `I.4a` is now complete on production commit `c3fcf8c`: `/api/admin/dashboard` KPI, alerts, quick-links, and recent-event aggregation now converge behind a shared admin analytics service instead of route-local assembly in `routes/admin.py`.
-  - `I.4b` is now complete on production commit `c3fcf8c`: `/api/admin/overview` metrics, model-policy, error-explorer, synthetic summary, and partial-error orchestration now converge behind the same shared analytics service instead of route-local glue.
-  - `I.4c` is now complete on production commit `c3fcf8c`: `/api/admin/performance` caching, latency/rates/totals shaping, and snapshot metadata now converge behind the same shared analytics service instead of route-local cache and formatting helpers.
+  - `I.4a` is now complete on production commit `c9ad609`: `/api/admin/dashboard` KPI, alerts, quick-links, and recent-event aggregation now converge behind a shared admin analytics service instead of route-local assembly in `routes/admin.py`.
+  - `I.4b` is now complete on production commit `c9ad609`: `/api/admin/overview` metrics, model-policy, error-explorer, synthetic summary, and partial-error orchestration now converge behind the same shared analytics service instead of route-local glue.
+  - `I.4c` is now complete on production commit `c9ad609`: `/api/admin/performance` caching, latency/rates/totals shaping, and snapshot metadata now converge behind the same shared analytics service instead of route-local cache and formatting helpers.
   - immediate next step is `I.4d ai-pipeline analytics convergence review after accepted dashboard/overview/performance block`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
