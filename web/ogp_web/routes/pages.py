@@ -8,12 +8,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from ogp_web.db.factory import get_database_backend
 from ogp_web.dependencies import get_exam_answers_store, get_user_store, requires_permission
 from ogp_web.env import is_test_user
-from ogp_web.server_config import PermissionSet, ServerConfig, get_server_config, list_server_configs
+from ogp_web.server_config import PermissionSet, ServerConfig, list_server_configs
 from ogp_web.services.ai_service import get_default_law_qa_model
 from ogp_web.services.auth_service import AuthError, AuthUser, get_current_user
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.law_admin_service import LawAdminService
-from ogp_web.services.server_context_service import resolve_user_server_context
+from ogp_web.services.server_context_service import resolve_server_config, resolve_user_server_context
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.content_workflow_repository import ContentWorkflowRepository
 from ogp_web.storage.user_store import UserStore
@@ -82,7 +82,7 @@ async def login_page(request: Request):
     if user:
         return RedirectResponse(url="/complaint", status_code=status.HTTP_302_FOUND)
     default_server = getattr(request.app.state, "server_config", None)
-    server_config = get_server_config(getattr(default_server, "code", "blackberry"))
+    server_config = resolve_server_config(server_code=getattr(default_server, "code", "blackberry"))
     return templates.TemplateResponse(
         request,
         "login.html",
@@ -116,7 +116,7 @@ async def verify_email_page(
         if username
         else getattr(request.app.state.server_config, "code", "blackberry")
     )
-    server_config = get_server_config(server_code)
+    server_config = resolve_server_config(server_code=server_code)
     return templates.TemplateResponse(
         request,
         "verify_email.html",
@@ -133,7 +133,7 @@ async def verify_email_page(
 
 @router.get("/reset-password", response_class=HTMLResponse)
 async def reset_password_page(request: Request, token: str = ""):
-    server_config = get_server_config(getattr(request.app.state.server_config, "code", "blackberry"))
+    server_config = resolve_server_config(server_code=getattr(request.app.state.server_config, "code", "blackberry"))
     return templates.TemplateResponse(
         request,
         "reset_password.html",
