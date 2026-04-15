@@ -14,6 +14,7 @@ from ogp_web.services.auth_service import AuthError, AuthUser, get_current_user
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.law_admin_service import LawAdminService
 from ogp_web.services.server_context_service import (
+    extract_server_shell_context,
     extract_server_law_context_settings,
     resolve_server_config,
     resolve_server_law_sources,
@@ -27,23 +28,6 @@ from ogp_web.web import page_context, templates
 
 router = APIRouter()
 
-
-def _page_nav_items(server_config: ServerConfig, permissions: PermissionSet) -> list[dict[str, str]]:
-    return [
-        {"key": item.key, "label": item.label, "href": item.href}
-        for item in server_config.page_nav_items
-        if permissions.allows(item.permission)
-    ]
-
-
-def _complaint_nav_items(server_config: ServerConfig, permissions: PermissionSet) -> list[dict[str, str]]:
-    return [
-        {"key": item.key, "label": item.label, "href": item.href}
-        for item in server_config.complaint_nav_items
-        if permissions.allows(item.permission)
-    ]
-
-
 def _server_context(store: UserStore, username: str) -> tuple[ServerConfig, PermissionSet]:
     return resolve_user_server_context(store, username)
 
@@ -56,20 +40,14 @@ def _build_page_context(
     nav_active: str,
     **extra: object,
 ) -> dict[str, object]:
+    shell_context = extract_server_shell_context(server_config, permissions)
     return page_context(
         username=user.username,
         nav_active=nav_active,
         is_admin=permissions.is_admin,
         show_test_pages=permissions.can_access_exam_import,
         show_tester_pages=permissions.can_access_court_claims,
-        page_nav_items=_page_nav_items(server_config, permissions),
-        complaint_nav_items=_complaint_nav_items(server_config, permissions),
-        complaint_bases=server_config.complaint_bases,
-        evidence_fields=server_config.evidence_fields,
-        complaint_forum_url=server_config.complaint_forum_url,
-        server_code=server_config.code,
-        server_name=server_config.name,
-        app_title=server_config.app_title,
+        **shell_context,
         **extra,
     )
 
@@ -92,9 +70,7 @@ async def login_page(request: Request):
         request,
         "login.html",
         page_context(
-            server_code=server_config.code,
-            server_name=server_config.name,
-            app_title=server_config.app_title,
+            **extract_server_shell_context(server_config),
         ),
     )
 
@@ -129,9 +105,7 @@ async def verify_email_page(
             verification_success=success,
             verification_message=message,
             username=username,
-            server_code=server_config.code,
-            server_name=server_config.name,
-            app_title=server_config.app_title,
+            **extract_server_shell_context(server_config),
         ),
     )
 
@@ -144,9 +118,7 @@ async def reset_password_page(request: Request, token: str = ""):
         "reset_password.html",
         page_context(
             reset_token=token,
-            server_code=server_config.code,
-            server_name=server_config.name,
-            app_title=server_config.app_title,
+            **extract_server_shell_context(server_config),
         ),
     )
 

@@ -34,6 +34,38 @@ def resolve_server_config(*, server_code: str = "", fallback_server_code: str = 
     return get_server_config(effective_server_code)
 
 
+def build_allowed_nav_items(items: object, permissions: PermissionSet) -> list[dict[str, str]]:
+    return [
+        {
+            "key": str(getattr(item, "key", "") or "").strip(),
+            "label": str(getattr(item, "label", "") or "").strip(),
+            "href": str(getattr(item, "href", "") or "").strip(),
+        }
+        for item in (items or ())
+        if permissions.allows(str(getattr(item, "permission", "") or "").strip())
+    ]
+
+
+def extract_server_shell_context(server_config: ServerConfig, permissions: PermissionSet | None = None) -> dict[str, object]:
+    shell_context: dict[str, object] = {
+        "server_code": server_config.code,
+        "server_name": server_config.name,
+        "app_title": server_config.app_title,
+    }
+    if permissions is None:
+        return shell_context
+    shell_context.update(
+        {
+            "page_nav_items": build_allowed_nav_items(server_config.page_nav_items, permissions),
+            "complaint_nav_items": build_allowed_nav_items(server_config.complaint_nav_items, permissions),
+            "complaint_bases": server_config.complaint_bases,
+            "evidence_fields": server_config.evidence_fields,
+            "complaint_forum_url": server_config.complaint_forum_url,
+        }
+    )
+    return shell_context
+
+
 def extract_server_identity_settings(
     server_config: object,
     *,
