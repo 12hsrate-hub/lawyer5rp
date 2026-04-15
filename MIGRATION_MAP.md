@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase J`
 - Inventory slices completed: `6`
-- Next slice: `move complaint post-generation bridge/validation orchestration out of routes/complaint.py without changing route contracts`
+- Next slice: `select the next bounded complaint ai/law-qa route seam only if it removes real orchestration instead of thin wrappers`
 - Last updated: `2026-04-16`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -271,10 +271,12 @@ Date: 2026-04-14
 - the next real seam is no longer inside `ai_service.py`; it is `routes/complaint.py`, where route-local concurrency/threadpool/generation orchestration still wraps already-extracted service and pipeline layers
 - `Phase K` is opened for bounded complaint route/runtime boundary extraction work
 - first target: move complaint route execution helpers, concurrency limiting, and generation-boundary glue behind dedicated complaint runtime services without changing route contracts
-- `K.1a` is now complete locally
+- `K.1a` deployed on production commit `3b53e6f`
 - `routes/complaint.py` no longer owns the main suggest concurrency limiter, heavy-executor queue telemetry, validation-service construction, server-payload validation, or complaint generation-context branching logic
 - those bounded complaint runtime seams now live in `web/ogp_web/services/complaint_runtime_service.py`
 - compatibility aliases remain in the route module so existing API tests can still monkeypatch route-level limiter and adapter resolver symbols while the real logic stays in the service layer
+- `K.1b` deployed on production commit `3b53e6f`
+- complaint and rehab generation-bridge persistence plus shared post-generation validation-gate handling now also converge behind `complaint_runtime_service.py`, leaving less duplicated generation-boundary glue inside `routes/complaint.py`
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
