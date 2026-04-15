@@ -14,6 +14,14 @@ class ServerLawContextSettings:
     bundle_max_age_hours: int
 
 
+@dataclass(frozen=True)
+class ServerAiContextSettings:
+    shadow_law_qa_profile: str
+    shadow_suggest_profile: str
+    suggest_prompt_mode: str
+    suggest_low_confidence_policy: str
+
+
 def resolve_server_config(*, server_code: str = "", fallback_server_code: str = DEFAULT_SERVER_CODE) -> ServerConfig:
     normalized_server_code = str(server_code or "").strip().lower()
     effective_server_code = normalized_server_code or str(fallback_server_code or DEFAULT_SERVER_CODE).strip().lower()
@@ -25,6 +33,19 @@ def extract_server_law_context_settings(server_config: object) -> ServerLawConte
         source_urls=normalize_source_urls(getattr(server_config, "law_qa_sources", ())),
         bundle_path=str(getattr(server_config, "law_qa_bundle_path", "") or "").strip(),
         bundle_max_age_hours=int(getattr(server_config, "law_qa_bundle_max_age_hours", 168) or 168),
+    )
+
+
+def extract_server_ai_context_settings(server_config: object) -> ServerAiContextSettings:
+    return ServerAiContextSettings(
+        shadow_law_qa_profile=str(getattr(server_config, "shadow_law_qa_profile", "") or "").strip(),
+        shadow_suggest_profile=str(getattr(server_config, "shadow_suggest_profile", "") or "").strip(),
+        suggest_prompt_mode=str(getattr(server_config, "suggest_prompt_mode", "legacy") or "legacy").strip().lower(),
+        suggest_low_confidence_policy=str(
+            getattr(server_config, "suggest_low_confidence_policy", "controlled_fallback") or "controlled_fallback"
+        )
+        .strip()
+        .lower(),
     )
 
 

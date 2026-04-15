@@ -12,6 +12,7 @@ for candidate in (ROOT_DIR, WEB_DIR):
         sys.path.insert(0, str(candidate))
 
 from ogp_web.services.server_context_service import (
+    extract_server_ai_context_settings,
     extract_server_law_context_settings,
     resolve_server_config,
     resolve_server_law_bundle_path,
@@ -81,6 +82,25 @@ class ServerContextServiceTests(unittest.TestCase):
         self.assertEqual(settings.source_urls, ("https://example.com/a", "https://example.com/b"))
         self.assertEqual(settings.bundle_path, "/tmp/law-bundle.json")
         self.assertEqual(settings.bundle_max_age_hours, 72)
+
+    def test_extract_server_ai_context_settings_normalizes_modes_and_profiles(self):
+        config = type(
+            "Cfg",
+            (),
+            {
+                "shadow_law_qa_profile": " law_shadow ",
+                "shadow_suggest_profile": " suggest_shadow ",
+                "suggest_prompt_mode": " Data_Driven ",
+                "suggest_low_confidence_policy": " Soft_Fail ",
+            },
+        )()
+
+        settings = extract_server_ai_context_settings(config)
+
+        self.assertEqual(settings.shadow_law_qa_profile, "law_shadow")
+        self.assertEqual(settings.shadow_suggest_profile, "suggest_shadow")
+        self.assertEqual(settings.suggest_prompt_mode, "data_driven")
+        self.assertEqual(settings.suggest_low_confidence_policy, "soft_fail")
 
     def test_resolve_user_server_context_uses_store_server_by_default(self):
         store = _DummyUserStore("blackberry")

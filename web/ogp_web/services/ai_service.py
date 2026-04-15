@@ -39,7 +39,11 @@ from ogp_web.services.legal_pipeline_service import (
     normalize_law_qa_text_formatting,
     strip_law_qa_source_urls,
 )
-from ogp_web.services.server_context_service import resolve_server_config, resolve_server_law_bundle_path
+from ogp_web.services.server_context_service import (
+    extract_server_ai_context_settings,
+    resolve_server_config,
+    resolve_server_law_bundle_path,
+)
 from ogp_web.services.point3_pipeline import (
     MODE_FACTUAL_FALLBACK_EXPANDED,
     RemediationOutcome,
@@ -97,6 +101,9 @@ _SUGGEST_EDITORIAL_MARKERS = (
 
 
 _LawChunk = LawChunk
+
+# Keep a local name for retrieval/test seams while resolving through the shared server-context helper.
+get_server_config = resolve_server_config
 
 
 @dataclass(frozen=True)
@@ -2326,12 +2333,13 @@ def _answer_law_question_details_impl(payload: LawQaPayload) -> LawQaAnswerResul
         retrieval_confidence=retrieval_result.confidence,
         server_config=server_config,
     )
+    ai_context = extract_server_ai_context_settings(server_config)
     model_name = selection.model_name
     selection_reason = selection.reason
     low_confidence_model = _get_flow_model("law_qa", "low_confidence_model", "gpt-5.4")
     shadow = build_shadow_comparison(enabled=False, profile="", primary_matches=retrieval_result.matches, shadow_matches=())
     if _server_feature_enabled(server_config, "legal_pipeline_shadow"):
-        shadow_profile = str(getattr(server_config, "shadow_law_qa_profile", "") or "").strip()
+        shadow_profile = ai_context.shadow_law_qa_profile
         if shadow_profile and shadow_profile != retrieval_result.profile:
             shadow_result = _retrieve_law_context(
                 server_code=retrieval_result.server_code,
@@ -2493,10 +2501,9 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
     generation_id = new_generation_id()
     server_config = resolve_server_config(server_code=server_code, fallback_server_code=DEFAULT_SERVER_CODE)
-    suggest_prompt_mode = str(getattr(server_config, "suggest_prompt_mode", "legacy") or "legacy").strip().lower()
-    low_confidence_policy = str(
-        getattr(server_config, "suggest_low_confidence_policy", "controlled_fallback") or "controlled_fallback"
-    ).strip().lower()
+    ai_context = extract_server_ai_context_settings(server_config)
+    suggest_prompt_mode = ai_context.suggest_prompt_mode
+    low_confidence_policy = ai_context.suggest_low_confidence_policy
     shadow = build_shadow_comparison(enabled=False, profile="", primary_matches=(), shadow_matches=())
     suggest_query = build_suggest_retrieval_query_light(payload)
     retrieval_started_at = monotonic()
@@ -2540,7 +2547,7 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
             )
         )
     if _server_feature_enabled(server_config, "legal_pipeline_shadow"):
-        shadow_profile = str(getattr(server_config, "shadow_suggest_profile", "") or "").strip()
+        shadow_profile = ai_context.shadow_suggest_profile
         if shadow_profile and shadow_profile != "suggest":
             primary_result = _retrieve_law_context(
                 server_code=server_code,
