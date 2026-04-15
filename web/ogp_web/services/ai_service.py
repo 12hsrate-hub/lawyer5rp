@@ -1916,7 +1916,6 @@ def _build_suggest_forced_norms(
     if not _suggest_is_mask_exception_case(query):
         return ()
     try:
-        server_config = resolve_server_config(server_code=server_code)
         bundle_path = resolve_server_law_bundle_path(server_code=server_code)
         if not bundle_path:
             return ()
