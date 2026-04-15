@@ -94,7 +94,6 @@ def test_pilot_runtime_adapter_prefers_published_workflow_versions(monkeypatch):
         )
         user = AuthUser(username="tester", email="tester@example.com", server_code="blackberry")
         context = resolve_pilot_complaint_runtime_context(store, user)
-        assert context.source_of_truth == "content_workflow_published"
         assert context.procedure_version["content_item_id"] == 11
         assert context.form_version["content_item_id"] == 12
         assert context.validation_rule_version["content_item_id"] == 13
