@@ -109,6 +109,11 @@ if [[ -f "${APP_ROOT}/scripts/seed_admin_catalog_workflow.py" ]]; then
   "${PYTHON_BIN}" "${APP_ROOT}/scripts/seed_admin_catalog_workflow.py"
 fi
 
+if [[ -f "${APP_ROOT}/scripts/sync_server_bootstrap_pack.py" ]]; then
+  echo "Syncing published server bootstrap pack..."
+  "${PYTHON_BIN}" "${APP_ROOT}/scripts/sync_server_bootstrap_pack.py" --server blackberry
+fi
+
 systemctl stop "${SERVICE_NAME}" || true
 pkill -f "${APP_ROOT}/web/server.py" || true
 
