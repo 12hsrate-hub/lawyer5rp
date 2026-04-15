@@ -228,6 +228,26 @@ def _safe_float(value: Any, default: float = 0.0, *, generation_id: str = "", fi
         return default
 
 
+def _normalized_snapshot_ref(value: Any, *, preferred_keys: tuple[str, ...] = ()) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in preferred_keys:
+            candidate = str(value.get(key) or "").strip()
+            if candidate:
+                return candidate
+        for key in ("template_code", "rule_set_key", "procedure_code", "form_key", "law_set_key", "id", "version", "hash"):
+            candidate = str(value.get(key) or "").strip()
+            if candidate:
+                return candidate
+        return ""
+    return str(value).strip()
+
+
 def _band_from_thresholds(value: float | None, *, green_max: float, yellow_max: float) -> str:
     if value is None:
         return "unknown"
@@ -1595,11 +1615,23 @@ async def admin_generated_document_review_context(
             "created_at": str(snapshot.get("created_at") or ""),
         },
         "snapshot_summary": {
-            "template_version": str(context_snapshot.get("template_version") or workflow_ref.get("template") or ""),
-            "law_version_set": str(context_snapshot.get("law_version_set") or effective_config.get("law_set_version") or ""),
-            "validation_rules_version": str(context_snapshot.get("validation_rules_version") or ""),
-            "procedure": str(workflow_ref.get("procedure") or ""),
-            "prompt_version": str(workflow_ref.get("prompt_version") or ""),
+            "template_version": _normalized_snapshot_ref(
+                context_snapshot.get("template_version") or workflow_ref.get("template"),
+                preferred_keys=("template_code", "id"),
+            ),
+            "law_version_set": _normalized_snapshot_ref(
+                context_snapshot.get("law_version_set") or effective_config.get("law_set_version"),
+                preferred_keys=("law_set_key", "hash", "id"),
+            ),
+            "validation_rules_version": _normalized_snapshot_ref(
+                context_snapshot.get("validation_rules_version"),
+                preferred_keys=("rule_set_key", "hash", "id"),
+            ),
+            "procedure": _normalized_snapshot_ref(
+                workflow_ref.get("procedure"),
+                preferred_keys=("procedure_code", "id"),
+            ),
+            "prompt_version": _normalized_snapshot_ref(workflow_ref.get("prompt_version")),
         },
         "document_version": {
             "id": int(version_row["id"]),
@@ -1623,11 +1655,20 @@ async def admin_generated_document_review_context(
         "workflow_linkage": {
             "direct_catalog_mapping_available": False,
             "linkage_mode": "snapshot_refs_only",
-            "procedure_ref": str(workflow_ref.get("procedure") or ""),
-            "template_ref": str(workflow_ref.get("template") or ""),
-            "prompt_version": str(workflow_ref.get("prompt_version") or ""),
-            "server_config_version": str(effective_config.get("server_config_version") or ""),
-            "law_set_version": str(effective_config.get("law_set_version") or ""),
+            "procedure_ref": _normalized_snapshot_ref(
+                workflow_ref.get("procedure"),
+                preferred_keys=("procedure_code", "id"),
+            ),
+            "template_ref": _normalized_snapshot_ref(
+                workflow_ref.get("template"),
+                preferred_keys=("template_code", "id"),
+            ),
+            "prompt_version": _normalized_snapshot_ref(workflow_ref.get("prompt_version")),
+            "server_config_version": _normalized_snapshot_ref(effective_config.get("server_config_version")),
+            "law_set_version": _normalized_snapshot_ref(
+                effective_config.get("law_set_version"),
+                preferred_keys=("law_set_key", "hash", "id"),
+            ),
             "document_version_id": int(version_row["id"]),
             "generation_snapshot_id": generation_snapshot_id,
             "latest_validation_run_id": int((latest_validation or {}).get("id") or 0) or None,

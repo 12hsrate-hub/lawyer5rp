@@ -1653,54 +1653,8 @@ function renderKeyValueField(label, value) {
   `;
 }
 
-function compactLegacyRefValue(value) {
-  const safeDash = "-";
-  if (value === null || value === undefined || value === "") {
-    return safeDash;
-  }
-  if (Array.isArray(value)) {
-    const parts = value.map((item) => compactLegacyRefValue(item)).filter((item) => item && item !== safeDash);
-    return parts.length ? parts.join(", ") : safeDash;
-  }
-  if (typeof value === "object") {
-    const summaryParts = [];
-    if (value.id) summaryParts.push(`id=${String(value.id)}`);
-    if (value.version) summaryParts.push(`version=${String(value.version)}`);
-    if (value.version_number) summaryParts.push(`version=${String(value.version_number)}`);
-    if (value.hash) summaryParts.push(`hash=${String(value.hash)}`);
-    if (value.code) summaryParts.push(`code=${String(value.code)}`);
-    if (value.name) summaryParts.push(`name=${String(value.name)}`);
-    if (value.title) summaryParts.push(`title=${String(value.title)}`);
-    return summaryParts.length ? summaryParts.join(", ") : safeDash;
-  }
-
-  const normalized = String(value || "").trim();
-  if (!normalized) {
-    return safeDash;
-  }
-  if (!(normalized.startsWith("{") && normalized.endsWith("}"))) {
-    return normalized;
-  }
-
-  const matches = [
-    [/['"]id['"]:\s*['"]([^'"]+)['"]/i, "id"],
-    [/['"]version(?:_number)?['"]:\s*['"]?([^,'"}\]]+)['"]?/i, "version"],
-    [/['"]hash['"]:\s*['"]([^'"]+)['"]/i, "hash"],
-    [/['"]code['"]:\s*['"]([^'"]+)['"]/i, "code"],
-    [/['"]name['"]:\s*['"]([^'"]+)['"]/i, "name"],
-    [/['"]title['"]:\s*['"]([^'"]+)['"]/i, "title"],
-  ];
-  const extracted = matches
-    .map(([pattern, key]) => {
-      const match = normalized.match(pattern);
-      return match?.[1] ? `${key}=${match[1]}` : "";
-    })
-    .filter(Boolean);
-  return extracted.length ? extracted.join(", ") : normalized;
-}
-
 function renderNormalizedKeyValueField(label, value) {
-  return renderKeyValueField(label, compactLegacyRefValue(value));
+  return renderKeyValueField(label, value);
 }
 
 function derivePilotRolloutState(featureFlags) {
