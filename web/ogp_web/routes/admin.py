@@ -43,14 +43,12 @@ from ogp_web.services.law_bundle_service import load_law_bundle_meta
 from ogp_web.services.law_rebuild_tasks import find_active_law_rebuild_task
 from ogp_web.services.law_version_service import resolve_active_law_version
 from ogp_web.services.auth_service import AuthError, AuthUser, require_admin_user
-from ogp_web.services.generation_snapshot_schema_service import build_snapshot_summary, build_workflow_linkage
-from ogp_web.services.provenance_service import ProvenanceService
 from ogp_web.services.generated_document_trace_service import (
-    parse_document_content_payload,
+    build_generated_document_review_context_payload,
+    resolve_generated_document_provenance_payload,
     resolve_admin_generated_document_trace_bundle,
 )
 from ogp_web.services.point3_policy_service import load_point3_eval_thresholds
-from ogp_web.services.validation_service import ValidationService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.content_contracts import normalize_content_type
@@ -64,9 +62,6 @@ from ogp_web.services.job_status_service import enrich_job_status
 from ogp_web.services.admin_dashboard_service import AdminDashboardService
 from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
-from ogp_web.storage.document_repository import DocumentRepository
-from ogp_web.storage.artifact_repository import ArtifactRepository
-from ogp_web.storage.validation_repository import ValidationRepository
 from ogp_web.storage.user_store import UserStore
 from ogp_web.storage.runtime_servers_store import RuntimeServerRecord, RuntimeServersStore
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
@@ -1504,12 +1499,10 @@ async def admin_generated_document_provenance(
     bundle = resolve_admin_generated_document_trace_bundle(store=store, document_id=document_id)
     if bundle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Generated document not found."])
-    service = ProvenanceService(
-        document_repository=DocumentRepository(store.backend),
-        user_store=store,
-        validation_service=ValidationService(ValidationRepository(store.backend)),
+    payload = resolve_generated_document_provenance_payload(
+        store=store,
+        generation_snapshot_id=bundle.generation_snapshot_id,
     )
-    payload = service.get_latest_trace_for_generation_snapshot(generation_snapshot_id=bundle.generation_snapshot_id)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Provenance trace not found."])
     return DocumentVersionProvenanceResponse(**payload)
@@ -1535,106 +1528,7 @@ async def admin_generated_document_review_context(
     bundle = resolve_admin_generated_document_trace_bundle(store=store, document_id=document_id)
     if bundle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Generated document not found."])
-    snapshot = bundle.snapshot
-    generation_snapshot_id = bundle.generation_snapshot_id
-    version_row = bundle.version_row
-
-    content_payload = parse_document_content_payload(version_row)
-
-    validation_service = ValidationService(ValidationRepository(store.backend))
-    latest_validation = validation_service.get_latest_target_validation(
-        target_type="document_version",
-        target_id=int(version_row["id"]),
-    )
-    artifact_repository = ArtifactRepository(store.backend)
-    citations = store.get_document_version_citations(
-        document_version_id=int(version_row["id"]),
-        server_id=str(snapshot.get("server_code") or "").strip().lower() or None,
-    )
-    exports = artifact_repository.list_exports_for_document_version(document_version_id=int(version_row["id"]))
-    attachments = artifact_repository.list_attachments_for_document_version(document_version_id=int(version_row["id"]))
-    service = ProvenanceService(
-        document_repository=DocumentRepository(store.backend),
-        user_store=store,
-        validation_service=validation_service,
-    )
-    provenance = service.get_document_version_trace(document_version_id=int(version_row["id"]))
-
-    snapshot_payload = dict(snapshot)
-    bbcode_preview = str(content_payload.get("bbcode") or "").strip()
-    if len(bbcode_preview) > 600:
-        bbcode_preview = f"{bbcode_preview[:600].rstrip()}..."
-
-    return {
-        "generated_document": {
-            "id": int(snapshot["id"]),
-            "generation_snapshot_id": generation_snapshot_id,
-            "server_code": str(snapshot.get("server_code") or ""),
-            "document_kind": str(snapshot.get("document_kind") or ""),
-            "created_at": str(snapshot.get("created_at") or ""),
-        },
-        "snapshot_summary": build_snapshot_summary(snapshot_payload),
-        "document_version": {
-            "id": int(version_row["id"]),
-            "version_number": int(version_row.get("version_number") or 0),
-            "bbcode_preview": bbcode_preview,
-        },
-        "validation_summary": {
-            "latest_run_id": int((latest_validation or {}).get("id") or 0) or None,
-            "latest_status": str((latest_validation or {}).get("status") or ""),
-            "issues_count": len((latest_validation or {}).get("issues") or []),
-            "issues": [
-                {
-                    "issue_code": str(item.get("issue_code") or ""),
-                    "severity": str(item.get("severity") or ""),
-                    "message": str(item.get("message") or ""),
-                    "field_ref": str(item.get("field_ref") or ""),
-                }
-                for item in ((latest_validation or {}).get("issues") or [])[:5]
-            ],
-        },
-        "workflow_linkage": build_workflow_linkage(
-            snapshot_payload,
-            document_version_id=int(version_row["id"]),
-            generation_snapshot_id=generation_snapshot_id,
-            latest_validation_run_id=int((latest_validation or {}).get("id") or 0) or None,
-        ),
-        "citations_summary": {
-            "count": len(citations),
-            "items": [
-                {
-                    "id": int(item.get("id") or 0),
-                    "canonical_ref": str(item.get("canonical_ref") or ""),
-                    "usage_type": str(item.get("usage_type") or ""),
-                    "quoted_text": str(item.get("quoted_text") or ""),
-                }
-                for item in citations[:5]
-            ],
-        },
-        "artifact_summary": {
-            "exports_count": len(exports),
-            "attachments_count": len(attachments),
-            "exports": [
-                {
-                    "id": int(item.get("id") or 0),
-                    "format": str(item.get("format") or ""),
-                    "status": str(item.get("status") or ""),
-                    "created_at": str(item.get("created_at") or ""),
-                }
-                for item in exports[:5]
-            ],
-            "attachments": [
-                {
-                    "id": int(item.get("id") or 0),
-                    "filename": str(item.get("filename") or ""),
-                    "upload_status": str(item.get("upload_status") or ""),
-                    "link_type": str(item.get("link_type") or ""),
-                }
-                for item in attachments[:5]
-            ],
-        },
-        "provenance": provenance,
-    }
+    return build_generated_document_review_context_payload(store=store, bundle=bundle)
 
 
 @router.put("/api/admin/law-source-registry/{source_id}")
