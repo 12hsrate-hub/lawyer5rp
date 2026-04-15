@@ -2624,6 +2624,55 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("Rep", bbcode)
         self.assertIn("Victim", bbcode)
 
+    def test_rehab_generation_exposes_admin_review_and_provenance_parity(self):
+        self._register_verify_and_login("rehab_review_user", "rehab_review_user@example.com")
+
+        profile_response = self.client.put(
+            "/api/profile",
+            json={
+                "name": "Rep",
+                "passport": "AA",
+                "address": "Addr",
+                "phone": "1234567",
+                "discord": "disc",
+                "passport_scan_url": "https://example.com/rep",
+            },
+        )
+        self.assertEqual(profile_response.status_code, 200)
+
+        generate_response = self.client.post(
+            "/api/generate-rehab",
+            json={
+                "principal_name": "Victim",
+                "principal_passport": "BB",
+                "principal_passport_scan_url": "https://example.com/principal",
+                "served_seven_days": True,
+                "contract_url": "https://example.com/contract",
+                "today_date": "08.04.2026",
+            },
+        )
+        self.assertEqual(generate_response.status_code, 200)
+        generated_document_id = int(generate_response.json()["generated_document_id"])
+
+        self.client.post("/api/auth/logout")
+        self._register_verify_and_login("12345", "rehab_review_admin@example.com")
+
+        provenance_response = self.client.get(f"/api/admin/generated-documents/{generated_document_id}/provenance")
+        self.assertEqual(provenance_response.status_code, 200)
+        provenance_payload = provenance_response.json()
+        self.assertEqual(provenance_payload["document_kind"], "rehab")
+        self.assertIsInstance(provenance_payload["document_version_id"], int)
+
+        review_response = self.client.get(f"/api/admin/generated-documents/{generated_document_id}/review-context")
+        self.assertEqual(review_response.status_code, 200)
+        review_payload = review_response.json()
+        self.assertEqual(review_payload["generated_document"]["document_kind"], "rehab")
+        self.assertIsInstance(review_payload["document_version"]["id"], int)
+        self.assertIn("latest_status", review_payload["validation_summary"])
+        self.assertTrue(str(review_payload["validation_summary"]["latest_status"] or "").strip())
+        self.assertIn("provenance", review_payload)
+        self.assertEqual(review_payload["provenance"]["document_kind"], "rehab")
+
     def test_profile_get_returns_saved_data(self):
         self._register_verify_and_login("tester", "tester11@example.com")
 

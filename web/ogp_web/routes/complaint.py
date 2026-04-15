@@ -483,8 +483,14 @@ async def generate_rehab(
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    feature_flag_service: FeatureFlagService = Depends(get_feature_flag_service),
 ) -> GenerateResponse:
+    validation_flag = feature_flag_service.evaluate(
+        flag="validation_gate_v1",
+        context=RolloutContext(username=user.username, server_id=user.server_code),
+    )
     context_snapshot = build_generation_context_snapshot(store, user, document_kind="rehab")
+    context_snapshot["citations_policy_gate"] = {"mode": "shadow", "status": "flagged_no_citations"}
     bbcode = generate_rehab_bbcode_text(store, payload, user)
     bridge_result = GenerationOrchestrator(store).write_generation_bridge(
         username=user.username,
@@ -496,6 +502,31 @@ async def generate_rehab(
         legacy_generated_document_id=None,
     )
     document_id = int(bridge_result.generated_document_id)
+    if bridge_result is not None:
+        try:
+            if validation_flag.use_new_flow:
+                result = _validation_service(store).run_validation(
+                    target_type="document_version",
+                    target_id=int(bridge_result.document_version_id),
+                )
+                record_validation_fail_rate(
+                    metrics_store,
+                    username=user.username,
+                    path="/api/generate-rehab",
+                    method="POST",
+                    labels=build_rollout_labels(
+                        flag="validation_gate_v1",
+                        rollout_mode=validation_flag.mode.value,
+                        cohort=validation_flag.cohort.value,
+                        server_id=user.server_code,
+                        flow_type="generate",
+                        status="fail" if result.run.get("status") == "fail" else "success",
+                    ),
+                    failed=result.run.get("status") == "fail",
+                )
+        except Exception:
+            if str(os.getenv("OGP_VALIDATION_GENERATION_STRICT", "0") or "").strip() in {"1", "true", "yes", "on"}:
+                raise
     metrics_store.log_event(
         event_type="rehab_generated",
         username=user.username,
