@@ -60,7 +60,10 @@ from ogp_web.services.ai_pipeline.interfaces import LawQaAnswerResult, SuggestCo
 from ogp_web.services.ai_pipeline.orchestration import (
     LawQaOrchestrationDeps,
     PrincipalScanDeps,
+    SuggestGenerationAttempt,
     SuggestOrchestrationDeps,
+    run_suggest_generation_attempts,
+    run_suggest_validation_remediation,
     run_law_qa,
     run_principal_scan,
     run_suggest,
@@ -103,8 +106,10 @@ _SUGGEST_EDITORIAL_MARKERS = (
 
 _LawChunk = LawChunk
 
-# Keep a local name for retrieval/test seams while resolving through the shared server-context helper.
-get_server_config = resolve_server_config
+# Keep a local compatibility wrapper for retrieval/test seams while resolving
+# through the shared server-context helper.
+def get_server_config(server_code: str = DEFAULT_SERVER_CODE):
+    return resolve_server_config(server_code=server_code, fallback_server_code=DEFAULT_SERVER_CODE)
 
 
 @dataclass(frozen=True)
@@ -2606,133 +2611,112 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
         fallback_law_context=law_context,
     )
     suggest_attempts = (
-        (raw_desc, prompt_law_context),
-        (raw_desc, _truncate_suggest_value(prompt_law_context, max_chars=2600)),
-        (raw_desc, _truncate_suggest_value(prompt_law_context, max_chars=1500)),
-        (_truncate_suggest_value(raw_desc, max_chars=8000), _truncate_suggest_value(prompt_law_context, max_chars=1200)),
-        (_truncate_suggest_value(raw_desc, max_chars=5000), _truncate_suggest_value(prompt_law_context, max_chars=700)),
+        SuggestGenerationAttempt(raw_desc=raw_desc, law_context=prompt_law_context),
+        SuggestGenerationAttempt(raw_desc=raw_desc, law_context=_truncate_suggest_value(prompt_law_context, max_chars=2600)),
+        SuggestGenerationAttempt(raw_desc=raw_desc, law_context=_truncate_suggest_value(prompt_law_context, max_chars=1500)),
+        SuggestGenerationAttempt(
+            raw_desc=_truncate_suggest_value(raw_desc, max_chars=8000),
+            law_context=_truncate_suggest_value(prompt_law_context, max_chars=1200),
+        ),
+        SuggestGenerationAttempt(
+            raw_desc=_truncate_suggest_value(raw_desc, max_chars=5000),
+            law_context=_truncate_suggest_value(prompt_law_context, max_chars=700),
+        ),
     )
 
-    prompt_text = ""
-    generation_result: TextGenerationResult | None = None
-    openai_ms = 0
-    suggest_compaction_level = 0
-    validation_retry_count = 0
-    validation_errors: tuple[str, ...] = ()
-    request_started_at = monotonic()
-    try:
-        for attempt_index, (attempt_raw_desc, attempt_law_context) in enumerate(suggest_attempts):
-            prompt_text = build_suggest_prompt(
-                victim_name=victim_name,
-                org=org,
-                subject=subject,
-                event_dt=event_dt,
-                raw_desc=attempt_raw_desc,
-                complaint_basis=complaint_basis,
-                main_focus=main_focus,
-                law_context=attempt_law_context,
-                prompt_mode=suggest_prompt_mode,
-                policy_mode=policy_mode,
-                pipeline_context=pipeline_context_payload,
-                retrieval_context_mode=suggest_context.retrieval_context_mode,
-            )
-            try:
-                generation_result = suggest_description_with_proxy_fallback_result(
-                    api_key=api_key,
-                    proxy_url=proxy_url,
-                    model_name=selected_model,
-                    victim_name=victim_name,
-                    org=org,
-                    subject=subject,
-                    event_dt=event_dt,
-                    raw_desc=attempt_raw_desc,
-                    complaint_basis=complaint_basis,
-                    main_focus=main_focus,
-                    law_context=attempt_law_context,
-                    prompt_mode=suggest_prompt_mode,
-                    policy_mode=policy_mode,
-                    pipeline_context=pipeline_context_payload,
-                    retrieval_context_mode=suggest_context.retrieval_context_mode,
-                    bundle_fingerprint=suggest_context.bundle_fingerprint,
-                    retrieval_profile=suggest_context.retrieval_profile,
-                )
-                suggest_compaction_level = attempt_index
-                break
-            except Exception as exc:
-                if _is_context_window_error(exc) and attempt_index < len(suggest_attempts) - 1:
-                    if low_confidence_model and selected_model != low_confidence_model:
-                        selected_model = low_confidence_model
-                        selection_reason = "suggest_context_compacted"
-                    LOGGER.warning(
-                        "Suggest prompt exceeded context window; retrying with compact context level=%s",
-                        attempt_index + 1,
-                    )
-                    continue
-                raise
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
-    openai_ms = int((monotonic() - request_started_at) * 1000)
-    if generation_result is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=["Не удалось получить ответ модели после повторных попыток."],
-        )
+    generation_attempt = run_suggest_generation_attempts(
+        attempts=suggest_attempts,
+        prompt_builder=lambda attempt: build_suggest_prompt(
+            victim_name=victim_name,
+            org=org,
+            subject=subject,
+            event_dt=event_dt,
+            raw_desc=attempt.raw_desc,
+            complaint_basis=complaint_basis,
+            main_focus=main_focus,
+            law_context=attempt.law_context,
+            prompt_mode=suggest_prompt_mode,
+            policy_mode=policy_mode,
+            pipeline_context=pipeline_context_payload,
+            retrieval_context_mode=suggest_context.retrieval_context_mode,
+        ),
+        generator=lambda attempt, model_name: suggest_description_with_proxy_fallback_result(
+            api_key=api_key,
+            proxy_url=proxy_url,
+            model_name=model_name,
+            victim_name=victim_name,
+            org=org,
+            subject=subject,
+            event_dt=event_dt,
+            raw_desc=attempt.raw_desc,
+            complaint_basis=complaint_basis,
+            main_focus=main_focus,
+            law_context=attempt.law_context,
+            prompt_mode=suggest_prompt_mode,
+            policy_mode=policy_mode,
+            pipeline_context=pipeline_context_payload,
+            retrieval_context_mode=suggest_context.retrieval_context_mode,
+            bundle_fingerprint=suggest_context.bundle_fingerprint,
+            retrieval_profile=suggest_context.retrieval_profile,
+        ),
+        is_context_window_error=_is_context_window_error,
+        ai_exception_details=_ai_exception_details,
+        clock=monotonic,
+        selected_model=selected_model,
+        selection_reason=selection_reason,
+        low_confidence_model=low_confidence_model,
+        on_context_compaction=lambda level: LOGGER.warning(
+            "Suggest prompt exceeded context window; retrying with compact context level=%s",
+            level,
+        ),
+    )
+    generation_result = generation_attempt.generation_result
+    prompt_text = generation_attempt.prompt_text
+    selected_model = generation_attempt.selected_model
+    selection_reason = generation_attempt.selection_reason
+    suggest_compaction_level = generation_attempt.compaction_level
+    openai_ms = generation_attempt.openai_ms
 
-    text = generation_result.text
-    if not text:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=["Модель вернула пустой ответ. Попробуйте еще раз."],
-        )
-    cleaned = _clean_suggest_text(text)
-    if not cleaned:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=["Модель вернула некорректный формат ответа. Попробуйте еще раз."],
-        )
-    initial_validation = validate_generated_paragraph(cleaned, point3_context)
-    if initial_validation.blocker_codes:
-        validation_errors = _legacy_validation_error_codes(tuple(initial_validation.blocker_codes))
-        try:
-            retry_generation = suggest_description_with_proxy_fallback_result(
-                api_key=api_key,
-                proxy_url=proxy_url,
-                model_name=selected_model,
-                victim_name=victim_name,
-                org=org,
-                subject=subject,
-                event_dt=event_dt,
-                raw_desc=raw_desc,
-                complaint_basis=complaint_basis,
-                main_focus=main_focus,
-                law_context=prompt_law_context,
-                prompt_mode=suggest_prompt_mode,
-                policy_mode=policy_mode,
-                pipeline_context=pipeline_context_payload,
-                retrieval_context_mode=suggest_context.retrieval_context_mode,
-                bundle_fingerprint=suggest_context.bundle_fingerprint,
-                retrieval_profile=suggest_context.retrieval_profile,
-                validation_error=", ".join(validation_errors),
-            )
-        except Exception as exc:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ai_exception_details(exc)) from exc
-        retry_text = _clean_suggest_text(retry_generation.text)
-        if retry_text:
-            generation_result = retry_generation
-            cleaned = retry_text
-            validation_retry_count = 1
-    post_retry_validation = validate_generated_paragraph(cleaned, point3_context)
-    if validation_retry_count > 0 and post_retry_validation.blocker_codes:
-        fallback_text = build_safe_fallback_paragraph(point3_context)
-        fallback_validation = validate_generated_paragraph(fallback_text, point3_context)
-        remediation = RemediationOutcome(
-            text=fallback_text,
-            validation=fallback_validation,
-            retries_used=0,
-            safe_fallback_used=True,
-        )
-    else:
-        remediation = apply_validation_remediation(cleaned, point3_context)
+    validation_flow = run_suggest_validation_remediation(
+        generation_result=generation_result,
+        point3_context=point3_context,
+        clean_text=_clean_suggest_text,
+        validate_generated_paragraph=validate_generated_paragraph,
+        legacy_validation_error_codes=_legacy_validation_error_codes,
+        retry_generator=lambda validation_error: suggest_description_with_proxy_fallback_result(
+            api_key=api_key,
+            proxy_url=proxy_url,
+            model_name=selected_model,
+            victim_name=victim_name,
+            org=org,
+            subject=subject,
+            event_dt=event_dt,
+            raw_desc=raw_desc,
+            complaint_basis=complaint_basis,
+            main_focus=main_focus,
+            law_context=prompt_law_context,
+            prompt_mode=suggest_prompt_mode,
+            policy_mode=policy_mode,
+            pipeline_context=pipeline_context_payload,
+            retrieval_context_mode=suggest_context.retrieval_context_mode,
+            bundle_fingerprint=suggest_context.bundle_fingerprint,
+            retrieval_profile=suggest_context.retrieval_profile,
+            validation_error=validation_error,
+        ),
+        ai_exception_details=_ai_exception_details,
+        build_safe_fallback_paragraph=build_safe_fallback_paragraph,
+        apply_validation_remediation=apply_validation_remediation,
+        remediation_factory=lambda text, validation, retries_used, safe_fallback_used: RemediationOutcome(
+            text=text,
+            validation=validation,
+            retries_used=retries_used,
+            safe_fallback_used=safe_fallback_used,
+        ),
+    )
+    generation_result = validation_flow.generation_result
+    remediation = validation_flow.remediation
+    validation_retry_count = validation_flow.validation_retry_count
+    validation_errors = validation_flow.validation_errors
     final_text = remediation.text
     if not final_text:
         raise HTTPException(

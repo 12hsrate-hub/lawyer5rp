@@ -49,6 +49,88 @@ def test_principal_scan_contract_rejects_bad_image_prefix():
     assert exc.value.status_code == 400
 
 
+def test_suggest_generation_attempts_contract_compacts_and_switches_model():
+    attempts = (
+        orchestration.SuggestGenerationAttempt(raw_desc="a", law_context="ctx-1"),
+        orchestration.SuggestGenerationAttempt(raw_desc="a", law_context="ctx-2"),
+    )
+    compaction_levels: list[int] = []
+
+    def generator(attempt, model_name):
+        if attempt.law_context == "ctx-1":
+            raise RuntimeError("maximum context length exceeded")
+        return {"model": model_name, "law_context": attempt.law_context}
+
+    result = orchestration.run_suggest_generation_attempts(
+        attempts=attempts,
+        prompt_builder=lambda attempt: f"prompt:{attempt.law_context}",
+        generator=generator,
+        is_context_window_error=lambda exc: "context length" in str(exc),
+        ai_exception_details=lambda exc: [str(exc)],
+        clock=lambda: 10.0,
+        selected_model="gpt-5.4-mini",
+        selection_reason="suggest_default",
+        low_confidence_model="gpt-5.4",
+        on_context_compaction=lambda level: compaction_levels.append(level),
+    )
+
+    assert result.generation_result == {"model": "gpt-5.4", "law_context": "ctx-2"}
+    assert result.prompt_text == "prompt:ctx-2"
+    assert result.selected_model == "gpt-5.4"
+    assert result.selection_reason == "suggest_context_compacted"
+    assert result.compaction_level == 1
+    assert compaction_levels == [1]
+
+
+def test_suggest_validation_remediation_contract_retries_then_falls_back():
+    class _Validation:
+        def __init__(self, blocker_codes=(), warning_codes=(), info_codes=(), blockers=()):
+            self.blocker_codes = tuple(blocker_codes)
+            self.warning_codes = tuple(warning_codes)
+            self.info_codes = tuple(info_codes)
+            self.blockers = tuple(blockers)
+            self.status = "fail" if blocker_codes else "pass"
+
+    class _Remediation:
+        def __init__(self, text, validation, retries_used, safe_fallback_used):
+            self.text = text
+            self.validation = validation
+            self.retries_used = retries_used
+            self.safe_fallback_used = safe_fallback_used
+
+    validation_calls: list[str] = []
+
+    def validate(text, context):
+        _ = context
+        validation_calls.append(text)
+        if "retry" in text:
+            return _Validation(blocker_codes=("new_fact_detected",), blockers=("b",))
+        if "fallback" in text:
+            return _Validation()
+        return _Validation(blocker_codes=("new_fact_detected",), blockers=("a",))
+
+    result = orchestration.run_suggest_validation_remediation(
+        generation_result=type("Gen", (), {"text": "bad-initial"})(),
+        point3_context=object(),
+        clean_text=lambda text: text,
+        validate_generated_paragraph=validate,
+        legacy_validation_error_codes=lambda codes: tuple(codes),
+        retry_generator=lambda validation_error: type("Gen", (), {"text": f"retry:{validation_error}"})(),
+        ai_exception_details=lambda exc: [str(exc)],
+        build_safe_fallback_paragraph=lambda context: "fallback-text",
+        apply_validation_remediation=lambda text, context: _Remediation(text, _Validation(), 2, False),
+        remediation_factory=lambda text, validation, retries_used, safe_fallback_used: _Remediation(
+            text, validation, retries_used, safe_fallback_used
+        ),
+    )
+
+    assert result.validation_retry_count == 1
+    assert result.validation_errors == ("new_fact_detected",)
+    assert result.generation_result.text.startswith("retry:")
+    assert result.remediation.text == "fallback-text"
+    assert result.remediation.safe_fallback_used is True
+
+
 def test_telemetry_meta_contracts():
     law_result = ai_service.LawQaAnswerResult(
         text="ok",
