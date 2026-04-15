@@ -1949,6 +1949,32 @@ function renderPilotRolloutMarkup(payload) {
     scaleOut,
     warningRows,
   });
+  const legacyCleanupCandidates = [
+    {
+      label: "Legacy provenance/raw-ref presentation workarounds",
+      area: "admin.js review surface",
+      reason: "Some review fields still normalize legacy-shaped snapshot refs on the client side.",
+      gate: "Only after normalized provenance payloads stay stable in active pilot mode.",
+    },
+    {
+      label: "Pilot adapter fallback-only visibility paths",
+      area: "pilot_runtime_adapter.py",
+      reason: "Fallback-only branches should stay visible until pilot cutover remains explainable and low-drift.",
+      gate: "Only after pilot cutover is accepted and fallback pressure stays at zero.",
+    },
+    {
+      label: "Shadow-compare-only metrics plumbing",
+      area: "drift reports and compare metrics",
+      reason: "Observation tooling is still needed while pilot comparison remains part of acceptance.",
+      gate: "Only after active pilot observation is signed off and compare-only signals move to targeted regression checks.",
+    },
+    {
+      label: "Legacy-only rollout assumptions in admin copy",
+      area: "dashboard rollout messaging",
+      reason: "Operator copy is intentionally cautious while rollout state is still hold/legacy-first.",
+      gate: "Only after cutover summary, scale-out readiness, and observation sign-off all stay green.",
+    },
+  ];
   const checklist = [
     {
       label: "Shadow compare enabled before cutover",
@@ -2182,6 +2208,27 @@ function renderPilotRolloutMarkup(payload) {
         </table>
       </div>
       <div class="admin-user-cell__secondary">These playbooks stay read-only here; rollout changes still require explicit operator action.</div>
+    </div>
+    <div class="legal-field">
+      <span class="legal-field__label">Legacy cleanup backlog</span>
+      <div class="legal-table-shell">
+        <table class="legal-table admin-table admin-table--compact">
+          <thead><tr><th>Candidate</th><th>Area</th><th>Why it stays</th><th>Removal gate</th></tr></thead>
+          <tbody>
+            ${legacyCleanupCandidates
+              .map((item) => `
+                <tr>
+                  <td>${escapeHtml(String(item.label || "-"))}</td>
+                  <td>${escapeHtml(String(item.area || "-"))}</td>
+                  <td>${escapeHtml(String(item.reason || "-"))}</td>
+                  <td>${escapeHtml(String(item.gate || "-"))}</td>
+                </tr>
+              `)
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+      <div class="admin-user-cell__secondary">These cleanup candidates remain blocked until pilot observation is accepted and rollback safety stays visible.</div>
     </div>
     <div class="legal-field">
       <span class="legal-field__label">Observation guidance</span>
