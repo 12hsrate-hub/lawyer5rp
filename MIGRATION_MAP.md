@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select I.1r after the accepted shared user-config and law-QA availability seam`
+- Next slice: `select I.1u after the accepted law-QA cleanup pass`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -106,7 +106,13 @@ Date: 2026-04-14
   - shared user-server config resolution now backs `profile.py` selected-server switching and complaint route config reads
   - `I.1q` deployed on production commit `9c83be7`
   - shared law-QA server availability/identity helpers now back `pages.py` and law-sources dependency reporting
-  - route contracts remain unchanged and the first seventeen Phase I convergence slices are accepted
+  - `I.1r` deployed on production commit `adb09aa`
+  - `law_qa_test_page` now reuses shared server identity for source loading instead of repeated direct `server_config.code` reads
+  - `I.1s` deployed on production commit `adb09aa`
+  - law-sources dependency reporting no longer re-resolves server identity after the shared law-QA availability helper already supplied it
+  - `I.1t` deployed on production commit `adb09aa`
+  - dead `resolve_server_config(...)` reads were removed from bounded law-QA admin/AI helper paths without changing runtime contracts
+  - route contracts remain unchanged and the first twenty Phase I convergence slices are accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
