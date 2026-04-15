@@ -42,8 +42,8 @@ from ogp_web.services.citation_service import save_answer_citations
 from ogp_web.services.feature_flags import FeatureFlagService, RolloutContext
 from ogp_web.services.generation_orchestrator import GenerationOrchestrator
 from ogp_web.services.generated_document_trace_service import (
-    build_store_provenance_service,
     list_user_generated_document_history,
+    resolve_generated_document_provenance_payload_from_bundle,
     resolve_generated_document_provenance_payload,
     resolve_user_generated_document_trace_bundle,
 )
@@ -51,6 +51,7 @@ from ogp_web.services.pilot_runtime_adapter import (
     resolve_pilot_complaint_runtime_context,
     supports_pilot_runtime_adapter,
 )
+from ogp_web.services.provenance_service import build_store_provenance_service
 from ogp_web.services.regression_metrics import (
     build_rollout_labels,
     record_async_queue_lag,
@@ -556,10 +557,7 @@ async def generated_document_snapshot(
     )
     if bundle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Документ не найден."])
-    provenance = resolve_generated_document_provenance_payload(
-        store=store,
-        generation_snapshot_id=bundle.generation_snapshot_id,
-    )
+    provenance = resolve_generated_document_provenance_payload_from_bundle(store=store, bundle=bundle)
     return GeneratedDocumentSnapshotResponse(**bundle.snapshot, provenance=provenance)
 
 
