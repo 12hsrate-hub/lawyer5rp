@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
-import threading
-import uuid
-from copy import deepcopy
-from pathlib import Path
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, Response
@@ -18,12 +13,12 @@ from ogp_web.dependencies import (
     get_admin_ai_pipeline_service,
     get_admin_dashboard_service,
     get_admin_metrics_store,
+    get_admin_task_ops_service,
     get_exam_answers_store,
     get_user_store,
     requires_permission,
 )
 from ogp_web.dependencies import get_runtime_law_sets_store, get_runtime_servers_store
-from ogp_web.server_config import get_server_config
 from ogp_web.schemas import (
     AdminBlockPayload,
     AdminBulkActionPayload,
@@ -46,7 +41,6 @@ from ogp_web.schemas import (
 )
 from ogp_web.services.law_admin_service import LawAdminService
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
-from ogp_web.services.law_rebuild_tasks import find_active_law_rebuild_task
 from ogp_web.services.law_version_service import resolve_active_law_version
 from ogp_web.services.admin_overview_service import (
     build_async_jobs_overview_payload,
@@ -72,7 +66,7 @@ from ogp_web.services.server_context_service import (
 from ogp_web.services.async_job_service import AsyncJobService
 from ogp_web.services.admin_analytics_service import AdminAnalyticsService
 from ogp_web.services.admin_ai_pipeline_service import AdminAiPipelineService
-from ogp_web.services.job_status_service import enrich_job_status
+from ogp_web.services.admin_task_ops_service import AdminTaskOpsService
 from ogp_web.services.admin_dashboard_service import AdminDashboardService
 from ogp_web.services.admin_runtime_servers_service import (
     build_runtime_server_health_payload,
@@ -130,7 +124,6 @@ from ogp_web.services.admin_users_service import (
 from ogp_web.services.admin_user_mutations_service import (
     block_admin_user_payload,
     deactivate_admin_user_payload,
-    execute_bulk_user_mutation_action,
     grant_gka_payload,
     grant_tester_payload,
     reactivate_admin_user_payload,
@@ -153,9 +146,6 @@ from ogp_web.web import page_context, templates
 
 router = APIRouter(tags=["admin"])
 logger = logging.getLogger(__name__)
-_ADMIN_TASKS: dict[str, dict[str, Any]] = {}
-_ADMIN_TASKS_LOCK = threading.Lock()
-_ADMIN_TASKS_PATH = Path(__file__).resolve().parents[3] / "web" / "data" / "admin_tasks.json"
 
 _BLUEPRINT_STAGE_LABELS: dict[str, str] = {
     "phase_a_foundation": "Phase A — Stabilize foundation",
@@ -230,103 +220,6 @@ def _get_async_job_service(request: Request, user_store: UserStore) -> AsyncJobS
     return AsyncJobService(user_store.backend, queue_provider=queue_provider)
 
 
-def _safe_int(value: Any, default: int = 0) -> int:
-    try:
-        if value in (None, ""):
-            return default
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _save_admin_tasks_to_disk() -> None:
-    try:
-        _ADMIN_TASKS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _ADMIN_TASKS_PATH.write_text(
-            json.dumps(_ADMIN_TASKS, ensure_ascii=False),
-            encoding="utf-8",
-        )
-    except Exception:
-        pass
-
-
-def _load_admin_tasks_from_disk() -> None:
-    try:
-        raw = _ADMIN_TASKS_PATH.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return
-    except Exception:
-        return
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return
-    if isinstance(parsed, dict):
-        _ADMIN_TASKS.clear()
-        for key, value in parsed.items():
-            if isinstance(value, dict):
-                _ADMIN_TASKS[str(key)] = value
-
-
-def _put_admin_task(task: dict[str, Any]) -> None:
-    with _ADMIN_TASKS_LOCK:
-        _ADMIN_TASKS[str(task["task_id"])] = deepcopy(task)
-        _save_admin_tasks_to_disk()
-
-
-def _patch_admin_task(task_id: str, **changes: Any) -> None:
-    with _ADMIN_TASKS_LOCK:
-        current = _ADMIN_TASKS.get(task_id)
-        if not current:
-            return
-        current.update(changes)
-        _ADMIN_TASKS[task_id] = current
-        _save_admin_tasks_to_disk()
-
-
-def _load_admin_task(task_id: str) -> dict[str, Any] | None:
-    with _ADMIN_TASKS_LOCK:
-        if task_id not in _ADMIN_TASKS:
-            _load_admin_tasks_from_disk()
-        item = _ADMIN_TASKS.get(task_id)
-        return deepcopy(item) if item else None
-
-
-def _load_admin_tasks() -> list[dict[str, Any]]:
-    with _ADMIN_TASKS_LOCK:
-        _load_admin_tasks_from_disk()
-        return [deepcopy(item) for item in _ADMIN_TASKS.values() if isinstance(item, dict)]
-
-
-def _find_active_law_rebuild_task(*, server_code: str) -> dict[str, Any] | None:
-    with _ADMIN_TASKS_LOCK:
-        _load_admin_tasks_from_disk()
-        return find_active_law_rebuild_task(tasks=_ADMIN_TASKS, server_code=server_code)
-
-
-def _claim_law_rebuild_task(*, server_code: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    with _ADMIN_TASKS_LOCK:
-        _load_admin_tasks_from_disk()
-        active_task = find_active_law_rebuild_task(tasks=_ADMIN_TASKS, server_code=server_code)
-        if active_task:
-            return active_task, None
-        task = {
-            "task_id": f"law-rebuild-{uuid.uuid4().hex}",
-            "scope": "law_sources_rebuild",
-            "server_code": server_code,
-            "status": "queued",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "started_at": "",
-            "finished_at": "",
-            "progress": {"done": 0, "total": 1},
-            "result": None,
-            "error": "",
-        }
-        _ADMIN_TASKS[str(task["task_id"])] = deepcopy(task)
-        _save_admin_tasks_to_disk()
-        return None, deepcopy(task)
-
-
 def _get_content_workflow_service_for_request(request: Request) -> ContentWorkflowService:
     override = getattr(request.app, "dependency_overrides", {}).get(get_content_workflow_service)
     if override is None:
@@ -335,26 +228,6 @@ def _get_content_workflow_service_for_request(request: Request) -> ContentWorkfl
         return override()
     except TypeError:
         return override(request)
-
-
-_load_admin_tasks_from_disk()
-
-
-def _apply_bulk_action(
-    *,
-    payload: AdminBulkActionPayload,
-    user: AuthUser,
-    metrics_store: AdminMetricsStore,
-    user_store: UserStore,
-    task_id: str | None = None,
-) -> dict[str, Any]:
-    return execute_bulk_user_mutation_action(
-        payload=payload,
-        user=user,
-        metrics_store=metrics_store,
-        user_store=user_store,
-        progress_callback=(lambda done, total: _patch_admin_task(task_id, progress={"done": done, "total": total})) if task_id else None,
-    )
 
 
 def _admin_template_payload(request: Request, user: AuthUser, *, admin_focus: str) -> dict[str, Any]:
@@ -848,9 +721,10 @@ async def admin_law_source_registry_create(
 @router.get("/api/admin/law-jobs/overview")
 async def admin_law_jobs_overview(
     user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    admin_task_ops_service: AdminTaskOpsService = Depends(get_admin_task_ops_service),
 ):
     _ = user
-    return build_law_jobs_overview_payload(tasks=_load_admin_tasks())
+    return build_law_jobs_overview_payload(tasks=admin_task_ops_service.load_tasks())
 
 
 @router.get("/api/admin/async-jobs/overview")
@@ -1331,84 +1205,24 @@ async def admin_law_sources_rebuild_async(
     user: AuthUser = Depends(requires_permission("manage_laws")),
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    admin_task_ops_service: AdminTaskOpsService = Depends(get_admin_task_ops_service),
 ):
     target_server_code = _resolve_law_sources_server_code(user, user_store, payload.server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     request_id = getattr(request.state, "request_id", "")
-    active_task, queued_task = _claim_law_rebuild_task(server_code=target_server_code)
-    if active_task:
-        metrics_store.log_event(
-            event_type="admin_law_sources_rebuild_async_conflict",
-            username=user.username,
-            server_code=target_server_code,
-            path="/api/admin/law-sources/rebuild-async",
-            method="POST",
-            status_code=409,
-            meta={"active_task_id": active_task.get("task_id"), "active_status": active_task.get("status")},
-        )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=[f"law_rebuild_already_in_progress:{active_task.get('task_id')}"],
-        )
-    assert queued_task is not None
-    task_id = str(queued_task["task_id"])
-
-    def _runner() -> None:
-        _patch_admin_task(task_id, status="running", started_at=datetime.now(timezone.utc).isoformat())
-        try:
-            workflow_service = _get_content_workflow_service_for_request(request)
-            result = rebuild_law_sources_payload(
-                workflow_service=workflow_service,
-                server_code=target_server_code,
-                source_urls=payload.source_urls,
-                actor_user_id=actor_user_id,
-                request_id=request_id,
-                persist_sources=bool(payload.persist_sources),
-            )
-            _patch_admin_task(
-                task_id,
-                status="finished",
-                finished_at=datetime.now(timezone.utc).isoformat(),
-                progress={"done": 1, "total": 1},
-                result=result,
-            )
-            metrics_store.log_event(
-                event_type="admin_law_sources_rebuild_async_finished",
-                username=user.username,
-                server_code=target_server_code,
-                path="/api/admin/law-sources/rebuild-async",
-                method="POST",
-                status_code=200,
-                meta={"task_id": task_id, "law_version_id": result.get("law_version_id")},
-            )
-        except Exception as exc:  # noqa: BLE001
-            _patch_admin_task(
-                task_id,
-                status="failed",
-                finished_at=datetime.now(timezone.utc).isoformat(),
-                error=str(exc),
-            )
-            metrics_store.log_event(
-                event_type="admin_law_sources_rebuild_async_failed",
-                username=user.username,
-                server_code=target_server_code,
-                path="/api/admin/law-sources/rebuild-async",
-                method="POST",
-                status_code=500,
-                meta={"task_id": task_id, "error": str(exc)},
-            )
-
-    threading.Thread(target=_runner, daemon=True).start()
-    metrics_store.log_event(
-        event_type="admin_law_sources_rebuild_async_queued",
-        username=user.username,
+    return admin_task_ops_service.start_law_sources_rebuild_task(
         server_code=target_server_code,
-        path="/api/admin/law-sources/rebuild-async",
-        method="POST",
-        status_code=200,
-        meta={"task_id": task_id},
+        user=user,
+        metrics_store=metrics_store,
+        rebuild_callback=lambda: rebuild_law_sources_payload(
+            workflow_service=_get_content_workflow_service_for_request(request),
+            server_code=target_server_code,
+            source_urls=payload.source_urls,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            persist_sources=bool(payload.persist_sources),
+        ),
     )
-    return {"ok": True, "task_id": task_id, "status": "queued"}
 
 
 @router.post("/api/admin/law-sources/save")
@@ -1524,12 +1338,13 @@ async def admin_law_sources_task_status(
     user: AuthUser = Depends(requires_permission("manage_laws")),
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    admin_task_ops_service: AdminTaskOpsService = Depends(get_admin_task_ops_service),
 ):
     target_server_code = _resolve_law_sources_server_code(user, user_store, server_code)
     payload = require_law_sources_task_status_payload(
         task_id=task_id,
         target_server_code=target_server_code,
-        task_loader=_load_admin_task,
+        task_loader=admin_task_ops_service.load_task,
     )
     metrics_store.log_event(
         event_type="admin_law_sources_task_status",
@@ -2139,57 +1954,29 @@ async def admin_bulk_actions(
     user: AuthUser = Depends(requires_permission("manage_servers")),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     user_store: UserStore = Depends(get_user_store),
+    admin_task_ops_service: AdminTaskOpsService = Depends(get_admin_task_ops_service),
 ):
     if payload.run_async:
-        task_id = f"admin-bulk-{uuid.uuid4().hex}"
-        created_at = datetime.now(timezone.utc).isoformat()
-        _put_admin_task(
-            {
-                "task_id": task_id,
-                "status": "queued",
-                "created_at": created_at,
-                "started_at": "",
-                "finished_at": "",
-                "progress": {"done": 0, "total": len(payload.usernames)},
-                "result": None,
-                "error": "",
-            }
+        return admin_task_ops_service.start_bulk_action_task(
+            payload=payload,
+            user=user,
+            metrics_store=metrics_store,
+            user_store=user_store,
         )
 
-        def _runner() -> None:
-            _patch_admin_task(task_id, status="running", started_at=datetime.now(timezone.utc).isoformat())
-            try:
-                result = _apply_bulk_action(
-                    payload=payload,
-                    user=user,
-                    metrics_store=metrics_store,
-                    user_store=user_store,
-                    task_id=task_id,
-                )
-                _patch_admin_task(
-                    task_id,
-                    status="finished",
-                    finished_at=datetime.now(timezone.utc).isoformat(),
-                    result=result,
-                )
-            except Exception as exc:  # noqa: BLE001
-                _patch_admin_task(
-                    task_id,
-                    status="failed",
-                    finished_at=datetime.now(timezone.utc).isoformat(),
-                    error=str(exc),
-                )
-
-        threading.Thread(target=_runner, daemon=True).start()
-        return {"ok": True, "task_id": task_id, "status": "queued"}
-
-    result = _apply_bulk_action(payload=payload, user=user, metrics_store=metrics_store, user_store=user_store)
+    result = admin_task_ops_service.execute_bulk_action(
+        payload=payload,
+        user=user,
+        metrics_store=metrics_store,
+        user_store=user_store,
+    )
     return {"ok": True, "status": "finished", "result": result}
 
 
 @router.get("/api/admin/tasks/{task_id}")
-async def admin_task_status(task_id: str, _: AuthUser = Depends(requires_permission("manage_servers"))):
-    task = _load_admin_task(task_id)
-    if not task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Задача не найдена."])
-    return enrich_job_status(task, subsystem="admin_task")
+async def admin_task_status(
+    task_id: str,
+    _: AuthUser = Depends(requires_permission("manage_servers")),
+    admin_task_ops_service: AdminTaskOpsService = Depends(get_admin_task_ops_service),
+):
+    return admin_task_ops_service.require_task_status_payload(task_id=task_id)

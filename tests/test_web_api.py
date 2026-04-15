@@ -31,6 +31,7 @@ from ogp_web.routes import admin as admin_route
 from ogp_web.routes import exam_import as exam_import_route
 from ogp_web.services import ai_service
 from ogp_web.services import admin_ai_pipeline_service
+from ogp_web.services.admin_task_ops_service import AdminTaskOpsService
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
 from ogp_web.services.generation_orchestrator import GenerationOrchestrator
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -954,72 +955,88 @@ class WebApiTests(unittest.TestCase):
 
     def test_admin_law_sources_rebuild_async_returns_conflict_when_task_already_active(self):
         self._register_verify_and_login("12345", "admin-law-conflict@example.com")
-        with patch("ogp_web.routes.admin._load_admin_tasks_from_disk", lambda: None):
-            with admin_route._ADMIN_TASKS_LOCK:
-                backup = dict(admin_route._ADMIN_TASKS)
-                admin_route._ADMIN_TASKS.clear()
-                admin_route._ADMIN_TASKS["law-rebuild-active"] = {
-                    "task_id": "law-rebuild-active",
-                    "scope": "law_sources_rebuild",
-                    "server_code": "blackberry",
-                    "status": "running",
-                }
-            try:
-                response = self.client.post(
-                    "/api/admin/law-sources/rebuild-async",
-                    json={"source_urls": ["https://example.com/law/1"], "persist_sources": True},
-                )
-                self.assertEqual(response.status_code, 409)
-                detail = response.json().get("detail", [])
-                self.assertTrue(any("law_rebuild_already_in_progress:law-rebuild-active" in str(item) for item in detail))
-            finally:
-                with admin_route._ADMIN_TASKS_LOCK:
-                    admin_route._ADMIN_TASKS.clear()
-                    admin_route._ADMIN_TASKS.update(backup)
+        task_service = AdminTaskOpsService(tasks_path=Path(self.tmpdir.name) / "admin_tasks_test_conflict.json")
+        task_service.put_task(
+            {
+                "task_id": "law-rebuild-active",
+                "scope": "law_sources_rebuild",
+                "server_code": "blackberry",
+                "status": "running",
+            }
+        )
+        self.client.app.dependency_overrides[admin_route.get_admin_task_ops_service] = lambda: task_service
+        try:
+            response = self.client.post(
+                "/api/admin/law-sources/rebuild-async",
+                json={"source_urls": ["https://example.com/law/1"], "persist_sources": True},
+            )
+            self.assertEqual(response.status_code, 409)
+            detail = response.json().get("detail", [])
+            self.assertTrue(any("law_rebuild_already_in_progress:law-rebuild-active" in str(item) for item in detail))
+        finally:
+            self.client.app.dependency_overrides.pop(admin_route.get_admin_task_ops_service, None)
 
     def test_admin_law_sources_task_status_forbidden_for_other_server_task(self):
         self._register_verify_and_login("12345", "admin-law-task@example.com")
-        with patch("ogp_web.routes.admin._load_admin_tasks_from_disk", lambda: None):
-            with admin_route._ADMIN_TASKS_LOCK:
-                backup = dict(admin_route._ADMIN_TASKS)
-                admin_route._ADMIN_TASKS.clear()
-                admin_route._ADMIN_TASKS["law-rebuild-foreign"] = {
-                    "task_id": "law-rebuild-foreign",
-                    "scope": "law_sources_rebuild",
-                    "server_code": "orange",
-                    "status": "running",
-                }
-            try:
-                response = self.client.get("/api/admin/law-sources/tasks/law-rebuild-foreign")
-                self.assertEqual(response.status_code, 403)
-            finally:
-                with admin_route._ADMIN_TASKS_LOCK:
-                    admin_route._ADMIN_TASKS.clear()
-                    admin_route._ADMIN_TASKS.update(backup)
+        task_service = AdminTaskOpsService(tasks_path=Path(self.tmpdir.name) / "admin_tasks_test_foreign.json")
+        task_service.put_task(
+            {
+                "task_id": "law-rebuild-foreign",
+                "scope": "law_sources_rebuild",
+                "server_code": "orange",
+                "status": "running",
+            }
+        )
+        self.client.app.dependency_overrides[admin_route.get_admin_task_ops_service] = lambda: task_service
+        try:
+            response = self.client.get("/api/admin/law-sources/tasks/law-rebuild-foreign")
+            self.assertEqual(response.status_code, 403)
+        finally:
+            self.client.app.dependency_overrides.pop(admin_route.get_admin_task_ops_service, None)
 
     def test_admin_law_sources_task_status_exposes_canonical_status(self):
         self._register_verify_and_login("12345", "admin-law-task-ok@example.com")
-        with patch("ogp_web.routes.admin._load_admin_tasks_from_disk", lambda: None):
-            with admin_route._ADMIN_TASKS_LOCK:
-                backup = dict(admin_route._ADMIN_TASKS)
-                admin_route._ADMIN_TASKS.clear()
-                admin_route._ADMIN_TASKS["law-rebuild-ok"] = {
-                    "task_id": "law-rebuild-ok",
-                    "scope": "law_sources_rebuild",
-                    "server_code": "blackberry",
-                    "status": "finished",
-                }
-            try:
-                response = self.client.get("/api/admin/law-sources/tasks/law-rebuild-ok")
-                self.assertEqual(response.status_code, 200)
-                payload = response.json()
-                self.assertEqual(payload["status"], "finished")
-                self.assertEqual(payload["raw_status"], "finished")
-                self.assertEqual(payload["canonical_status"], "succeeded")
-            finally:
-                with admin_route._ADMIN_TASKS_LOCK:
-                    admin_route._ADMIN_TASKS.clear()
-                    admin_route._ADMIN_TASKS.update(backup)
+        task_service = AdminTaskOpsService(tasks_path=Path(self.tmpdir.name) / "admin_tasks_test_ok.json")
+        task_service.put_task(
+            {
+                "task_id": "law-rebuild-ok",
+                "scope": "law_sources_rebuild",
+                "server_code": "blackberry",
+                "status": "finished",
+            }
+        )
+        self.client.app.dependency_overrides[admin_route.get_admin_task_ops_service] = lambda: task_service
+        try:
+            response = self.client.get("/api/admin/law-sources/tasks/law-rebuild-ok")
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["status"], "finished")
+            self.assertEqual(payload["raw_status"], "finished")
+            self.assertEqual(payload["canonical_status"], "succeeded")
+        finally:
+            self.client.app.dependency_overrides.pop(admin_route.get_admin_task_ops_service, None)
+
+    def test_admin_task_status_exposes_canonical_status(self):
+        self._register_verify_and_login("12345", "admin-task-status@example.com")
+        task_service = AdminTaskOpsService(tasks_path=Path(self.tmpdir.name) / "admin_tasks_status.json")
+        task_service.put_task(
+            {
+                "task_id": "admin-bulk-ok",
+                "scope": "bulk_user_mutation",
+                "server_code": "blackberry",
+                "status": "finished",
+            }
+        )
+        self.client.app.dependency_overrides[admin_route.get_admin_task_ops_service] = lambda: task_service
+        try:
+            response = self.client.get("/api/admin/tasks/admin-bulk-ok")
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["status"], "finished")
+            self.assertEqual(payload["raw_status"], "finished")
+            self.assertEqual(payload["canonical_status"], "succeeded")
+        finally:
+            self.client.app.dependency_overrides.pop(admin_route.get_admin_task_ops_service, None)
 
     def test_admin_async_jobs_overview_exposes_problem_summary(self):
         self._register_verify_and_login("12345", "admin-async-overview@example.com")
