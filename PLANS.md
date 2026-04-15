@@ -418,7 +418,7 @@ Dependencies: Phases B-F.
 
 ## Phase H — Post-pilot scale-out and legacy reduction (staged follow-up)
 
-Execution status: `in_progress`
+Execution status: `done`
 
 ### H.1 Next candidate rollout planning
 - Select exactly one bounded next server or procedure candidate.
