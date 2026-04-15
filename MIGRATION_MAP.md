@@ -467,6 +467,9 @@ Fallback criteria:
   - `PILOT_OBSERVATION_LOG_TEMPLATE.md` added for repeated observation-window reviews before sign-off
   - the `Pilot rollout` block now includes `Observation guidance` so warning signals, fallback counts, rollback readiness, and review journaling stay visible in one place
   - rollout warning signals now include `severity`, `owner`, and `next action` in the dashboard to support observation-window triage
+  - the `Pilot rollout` block now includes an explicit `go / hold / rollback` cutover summary derived from rollout state, warning severity, fallback usage, and rollback history
+  - the `Pilot rollout` block now includes a `scale-out readiness` summary so the next migration candidate stays blocked until pilot observation is accepted
+  - the `Pilot rollout` block now includes an `observation sign-off` table so pilot cutover criteria are visible as explicit `met / not met` checks
 - Phase F outcome:
   - provenance baseline mapped in `PROVENANCE_SCHEMA.md` for `blackberry + complaint`
   - read-only provenance assembler and API added for `document_version_id`

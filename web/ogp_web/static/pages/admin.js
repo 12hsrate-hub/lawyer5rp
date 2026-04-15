@@ -1731,6 +1731,142 @@ function describePilotWarningSignal(eventType) {
   return { label, severity, owner, tone, action };
 }
 
+function derivePilotRolloutDecisionContext({ rolloutState, warningRows, fallbackToLegacyUsage, rollbackHistory }) {
+  const criticalSignals = warningRows.filter((item) => String(item?.severity || "") === "critical");
+  const reviewSignals = warningRows.filter((item) => String(item?.severity || "") === "review");
+  const fallbackCount = Number(fallbackToLegacyUsage || 0);
+  const rollbackCount = Array.isArray(rollbackHistory) ? rollbackHistory.length : 0;
+
+  if (criticalSignals.length || fallbackCount > 0 || rollbackCount > 0) {
+    return {
+      decision: "rollback",
+      tone: "danger-soft",
+      note:
+        criticalSignals.length
+          ? `Critical warning signals: ${criticalSignals.map((item) => item.label).join(", ")}.`
+          : fallbackCount > 0
+            ? `Fallback-to-legacy recorded: ${String(fallbackCount)} event(s).`
+            : `Rollback history contains ${String(rollbackCount)} recorded batch(es).`,
+      nextStep: "Keep the pilot on legacy mode and review runtime errors before any further rollout change.",
+    };
+  }
+
+  if (rolloutState === "legacy_only" || reviewSignals.length) {
+    return {
+      decision: "hold",
+      tone: "info",
+      note:
+        rolloutState === "legacy_only"
+          ? "Pilot is still legacy-only and has not passed shadow-compare observation yet."
+          : `${reviewSignals.length} review signal(s) still need owner follow-up.`,
+      nextStep: "Keep the pilot in legacy or shadow mode until the observation checklist is clean.",
+    };
+  }
+
+  return {
+    decision: "go",
+    tone: "success-soft",
+    note: `No blocking signals, fallback events, or rollback batches detected (${String(rollbackCount)} rollback entries).`,
+    nextStep: "Cutover can be considered if rollout owners sign off the observation window.",
+  };
+}
+
+function derivePilotScaleOutContext({ decision, warningRows, rollbackHistory, signOffStatus }) {
+  const reviewSignals = warningRows.filter((item) => String(item?.severity || "") === "review");
+  const rollbackCount = Array.isArray(rollbackHistory) ? rollbackHistory.length : 0;
+
+  if (decision === "rollback") {
+    return {
+      status: "blocked",
+      tone: "danger-soft",
+      note: "Scale-out is blocked while the pilot is in rollback mode.",
+      nextStep: "Resolve pilot rollback causes before selecting the next server or procedure.",
+    };
+  }
+
+  if (decision === "hold") {
+    return {
+      status: "not ready",
+      tone: "info",
+      note:
+        reviewSignals.length
+          ? `${reviewSignals.length} review signal(s) still need closure before reuse starts.`
+          : "Pilot observation is still incomplete.",
+      nextStep: "Keep the next migration candidate on hold until the observation checklist is fully clean.",
+    };
+  }
+
+  if (signOffStatus !== "ready") {
+    return {
+      status: "not ready",
+      tone: "info",
+      note: "Pilot observation sign-off is still incomplete.",
+      nextStep: "Keep the next migration candidate on hold until the observation sign-off table is fully green.",
+    };
+  }
+
+  return {
+    status: "ready",
+    tone: "success-soft",
+    note: `Pilot is stable enough to evaluate reuse. Rollback history entries: ${String(rollbackCount)}.`,
+    nextStep: "Use SCALE_OUT_CHECKLIST_TEMPLATE.md to approve the next server or procedure candidate.",
+  };
+}
+
+function derivePilotObservationSignOff({ rolloutState, warningRows, fallbackToLegacyUsage, rollbackHistory }) {
+  const fallbackCount = Number(fallbackToLegacyUsage || 0);
+  const rollbackCount = Array.isArray(rollbackHistory) ? rollbackHistory.length : 0;
+  const criticalSignals = warningRows.filter((item) => String(item?.severity || "") === "critical");
+  const reviewSignals = warningRows.filter((item) => String(item?.severity || "") === "review");
+
+  const criteria = [
+    {
+      label: "Shadow compare or active pilot mode observed",
+      status: rolloutState === "shadow_compare" || rolloutState === "new_runtime_active" ? "met" : "not met",
+      note:
+        rolloutState === "legacy_only"
+          ? "Pilot has not entered shadow or active mode yet."
+          : "Pilot has already entered an observable rollout mode.",
+    },
+    {
+      label: "No critical warning signals",
+      status: criticalSignals.length === 0 ? "met" : "not met",
+      note:
+        criticalSignals.length === 0
+          ? "No blocking warning signals recorded."
+          : `Critical signals present: ${criticalSignals.map((item) => item.label).join(", ")}.`,
+    },
+    {
+      label: "No unexplained fallback pressure",
+      status: fallbackCount === 0 ? "met" : "not met",
+      note: `Fallback-to-legacy events: ${String(fallbackCount)}.`,
+    },
+    {
+      label: "Rollback history remains clear",
+      status: rollbackCount === 0 ? "met" : "not met",
+      note: `Rollback entries recorded: ${String(rollbackCount)}.`,
+    },
+    {
+      label: "Review signals are fully triaged",
+      status: reviewSignals.length === 0 ? "met" : "not met",
+      note:
+        reviewSignals.length === 0
+          ? "No remaining review-only warning signals."
+          : `${reviewSignals.length} review signal(s) still need owner confirmation.`,
+    },
+  ];
+
+  const allMet = criteria.every((item) => item.status === "met");
+  return {
+    status: allMet ? "ready" : "not ready",
+    tone: allMet ? "success-soft" : "info",
+    criteria,
+    nextStep: allMet
+      ? "Observation sign-off can be recorded and the pilot can move toward active cutover."
+      : "Keep observing the pilot and close the unmet criteria before approving cutover.",
+  };
+}
+
 function renderPilotRolloutMarkup(payload) {
   const data = payload?.data || payload || {};
   const featureFlags = Array.isArray(data.feature_flags) ? data.feature_flags : [];
@@ -1749,6 +1885,24 @@ function renderPilotRolloutMarkup(payload) {
     ...describePilotWarningSignal(item?.event_type),
   }));
   const rollbackHistory = Array.isArray(data.rollback_history) ? data.rollback_history : [];
+  const decision = derivePilotRolloutDecisionContext({
+    rolloutState,
+    warningRows,
+    fallbackToLegacyUsage: data.fallback_to_legacy_usage,
+    rollbackHistory,
+  });
+  const signOff = derivePilotObservationSignOff({
+    rolloutState,
+    warningRows,
+    fallbackToLegacyUsage: data.fallback_to_legacy_usage,
+    rollbackHistory,
+  });
+  const scaleOut = derivePilotScaleOutContext({
+    decision: decision.decision,
+    warningRows,
+    rollbackHistory,
+    signOffStatus: signOff.status,
+  });
   const checklist = [
     {
       label: "Shadow compare enabled before cutover",
@@ -1780,9 +1934,7 @@ function renderPilotRolloutMarkup(payload) {
       note: "Generated document review and provenance trace are visible in the same dashboard workspace.",
     },
   ];
-  const actionHint = checklist.some((item) => item.status !== "pass")
-    ? "Preflight gate is not clean yet: keep the pilot on legacy or shadow mode."
-    : "Preflight gate looks clean: pilot activation can be considered if rollout owners agree.";
+  const actionHint = decision.nextStep;
 
   return `
     <div class="admin-performance-grid">
@@ -1806,6 +1958,61 @@ function renderPilotRolloutMarkup(payload) {
         <strong class="legal-status-card__value legal-status-card__value--small">${escapeHtml(String(data.fallback_to_legacy_usage || 0))} / ${escapeHtml(String(rollbackHistory.length || 0))}</strong>
         <span class="admin-user-cell__secondary">fallback events / rollback batches</span>
       </article>
+      <article class="legal-status-card">
+        <span class="legal-status-card__label">Cutover decision</span>
+        <strong class="legal-status-card__value legal-status-card__value--small">${renderBadge(decision.decision, decision.tone)}</strong>
+        <span class="admin-user-cell__secondary">${escapeHtml(String(decision.note || "-"))}</span>
+      </article>
+    </div>
+    <div class="legal-field">
+      <span class="legal-field__label">Cutover summary</span>
+      <div class="legal-table-shell">
+        <table class="legal-table admin-table admin-table--compact">
+          <thead><tr><th>Decision</th><th>Reason</th><th>Next step</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>${renderBadge(decision.decision, decision.tone)}</td>
+              <td>${escapeHtml(String(decision.note || "-"))}</td>
+              <td>${escapeHtml(String(decision.nextStep || "-"))}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="legal-field">
+      <span class="legal-field__label">Scale-out readiness</span>
+      <div class="legal-table-shell">
+        <table class="legal-table admin-table admin-table--compact">
+          <thead><tr><th>Status</th><th>Reason</th><th>Next step</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>${renderBadge(scaleOut.status, scaleOut.tone)}</td>
+              <td>${escapeHtml(String(scaleOut.note || "-"))}</td>
+              <td>${escapeHtml(String(scaleOut.nextStep || "-"))}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="legal-field">
+      <span class="legal-field__label">Observation sign-off</span>
+      <div class="legal-table-shell">
+        <table class="legal-table admin-table admin-table--compact">
+          <thead><tr><th>Criterion</th><th>Status</th><th>Note</th></tr></thead>
+          <tbody>
+            ${signOff.criteria
+              .map((item) => `
+                <tr>
+                  <td>${escapeHtml(String(item.label || "-"))}</td>
+                  <td>${renderBadge(String(item.status || "not met"), item.status === "met" ? "success-soft" : "info")}</td>
+                  <td>${escapeHtml(String(item.note || "-"))}</td>
+                </tr>
+              `)
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+      <div class="admin-user-cell__secondary">${escapeHtml(String(signOff.nextStep || "-"))}</div>
     </div>
     <div class="legal-field-grid legal-field-grid--two">
       <div class="legal-field">
