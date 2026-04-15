@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select I.2e after accepted generation-context/provenance convergence block`
+- Next slice: `select I.2g after accepted generated-document trace convergence block`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -133,6 +133,10 @@ Date: 2026-04-14
   - `generation_orchestrator` now reuses the shared persistence-block extractor for `effective_config_snapshot` and `content_workflow` instead of inline schema checks
   - `I.2d` deployed on production commit `81faa7b`
   - shared provenance lookup by `generation_snapshot_id` now backs generated-document snapshot and admin provenance bridge paths
+  - `I.2e` deployed on production commit `33533e0`
+  - shared generated-document trace bundle resolution now backs user snapshot, admin provenance, and admin review-context routes
+  - `I.2f` deployed on production commit `33533e0`
+  - shared generated-document provenance/review-context builders now own the remaining route-local generated-document trace payload assembly without changing external contracts
   - route contracts remain unchanged and the first thirty Phase I convergence slices are accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
