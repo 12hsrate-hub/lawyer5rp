@@ -113,6 +113,12 @@ from ogp_web.services.admin_catalog_service import (
     validate_catalog_change_request_payload,
     update_catalog_item_payload,
 )
+from ogp_web.services.admin_users_service import (
+    build_admin_role_history_payload,
+    build_admin_user_details_payload,
+    build_admin_users_csv_content,
+    build_admin_users_payload,
+)
 from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
@@ -2433,32 +2439,18 @@ async def admin_users_data(
     offset: int = Query(default=0, ge=0),
 ):
     _ = user
-    overview = metrics_store.get_overview(
-        users=user_store.list_users(),
+    return build_admin_users_payload(
+        metrics_store=metrics_store,
+        user_store=user_store,
         search=search,
         blocked_only=blocked_only,
         tester_only=tester_only,
         gka_only=gka_only,
         unverified_only=unverified_only,
         user_sort=user_sort,
+        limit=limit,
+        offset=offset,
     )
-    users = overview.get("users", [])
-    total = len(users)
-    paged = users[offset : offset + limit]
-    return {
-        "items": paged,
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "filters": {
-            "search": search,
-            "blocked_only": blocked_only,
-            "tester_only": tester_only,
-            "gka_only": gka_only,
-            "unverified_only": unverified_only,
-            "user_sort": user_sort,
-        },
-    }
 
 
 @router.get("/api/admin/users/{username}")
@@ -2469,53 +2461,11 @@ async def admin_user_details(
     user_store: UserStore = Depends(get_user_store),
 ):
     _ = user
-    normalized = str(username or "").strip().lower()
-    overview = metrics_store.get_overview(users=user_store.list_users(), search=normalized)
-    users = overview.get("users", [])
-    target = next((item for item in users if str(item.get("username", "")).strip().lower() == normalized), None)
-    if target is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Пользователь не найден."])
-
-    recent_actions = [
-        event
-        for event in overview.get("recent_events", [])
-        if str(event.get("username", "")).strip().lower() == normalized
-        or str((event.get("meta") or {}).get("target_username", "")).strip().lower() == normalized
-    ][:20]
-
-    permission_codes = user_store.get_permission_codes(normalized, server_code=target.get("server_code"))
-    effective_permissions = {
-        "manage_servers": "manage_servers" in permission_codes,
-        "manage_laws": "manage_laws" in permission_codes,
-        "view_analytics": "view_analytics" in permission_codes,
-        "exam_import": "exam_import" in permission_codes,
-        "court_claims": "court_claims" in permission_codes,
-        "complaint_presets": "complaint_presets" in permission_codes,
-    }
-
-    recent_events = [event for event in overview.get("recent_events", []) if str(event.get("username", "")).strip().lower() == normalized][:20]
-    failed_events = [event for event in recent_events if int(event.get("status_code") or 0) >= 400]
-    activity_snapshot = {
-        "api_requests": int(target.get("api_requests") or 0),
-        "failed_api_requests": int(target.get("failed_api_requests") or 0),
-        "complaints": int(target.get("complaints") or 0),
-        "rehabs": int(target.get("rehabs") or 0),
-        "ai_suggestions": int(target.get("ai_suggestions") or 0),
-        "ai_ocr_requests": int(target.get("ai_ocr_requests") or 0),
-        "resource_units": int(target.get("resource_units") or 0),
-        "risk_score": int(target.get("risk_score") or 0),
-        "risk_flags": list(target.get("risk_flags") or []),
-        "recent_events_count": len(recent_events),
-        "recent_errors_count": len(failed_events),
-    }
-
-    return {
-        "user": target,
-        "effective_permissions": effective_permissions,
-        "recent_admin_actions": recent_actions,
-        "recent_events": recent_events,
-        "activity_snapshot": activity_snapshot,
-    }
+    return build_admin_user_details_payload(
+        metrics_store=metrics_store,
+        user_store=user_store,
+        username=username,
+    )
 
 
 @router.get("/api/admin/role-history")
@@ -2526,18 +2476,11 @@ async def admin_role_history(
     limit: int = Query(default=100, ge=1, le=1000),
 ):
     _ = user
-    overview = metrics_store.get_overview(users=user_store.list_users())
-    role_events = {
-        "admin_grant_tester",
-        "admin_revoke_tester",
-        "admin_grant_gka",
-        "admin_revoke_gka",
-    }
-    items = [event for event in overview.get("recent_events", []) if str(event.get("event_type", "")) in role_events]
-    return {
-        "items": items[:limit],
-        "total": len(items),
-    }
+    return build_admin_role_history_payload(
+        metrics_store=metrics_store,
+        user_store=user_store,
+        limit=limit,
+    )
 
 
 @router.get("/api/admin/overview")
@@ -2744,20 +2687,15 @@ async def admin_users_csv(
     user_sort: str = "complaints",
 ) -> Response:
     _ = user
-    safe_user_limit = None
-    try:
-        safe_user_limit = int(users_limit)
-        if safe_user_limit <= 0:
-            safe_user_limit = None
-    except (TypeError, ValueError):
-        safe_user_limit = None
-    content = metrics_store.export_users_csv(
-        users=user_store.list_users(limit=safe_user_limit),
+    content = build_admin_users_csv_content(
+        metrics_store=metrics_store,
+        user_store=user_store,
         search=search,
         blocked_only=blocked_only,
         tester_only=tester_only,
         gka_only=gka_only,
         unverified_only=unverified_only,
+        users_limit=users_limit,
         user_sort=user_sort,
     )
     return Response(
