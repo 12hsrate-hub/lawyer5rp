@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from ogp_web.services.generation_snapshot_schema_service import build_snapshot_summary, build_workflow_linkage
-from ogp_web.services.generation_orchestrator import GenerationOrchestrator
 from ogp_web.services.provenance_service import ProvenanceService
 from ogp_web.services.validation_service import ValidationService
 from ogp_web.storage.artifact_repository import ArtifactRepository
@@ -68,11 +67,20 @@ def resolve_user_generated_document_trace_bundle(
     username: str,
     legacy_generated_document_id: int,
 ) -> GeneratedDocumentTraceBundle | None:
-    snapshot = GenerationOrchestrator(store).get_snapshot_by_legacy_id(
+    snapshot = store.get_generation_snapshot_by_generated_document_id_for_user(
         username=username,
-        legacy_generated_document_id=legacy_generated_document_id,
+        document_id=legacy_generated_document_id,
     )
     return _resolve_generation_snapshot_version_row(store=store, snapshot=snapshot)
+
+
+def list_user_generated_document_history(
+    *,
+    store: UserStore,
+    username: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    return list(store.list_generation_snapshot_history_for_user(username=username, limit=limit))
 
 
 def build_store_provenance_service(*, store: UserStore) -> ProvenanceService:

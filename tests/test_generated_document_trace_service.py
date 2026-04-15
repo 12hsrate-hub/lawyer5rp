@@ -11,9 +11,11 @@ for candidate in (ROOT_DIR, WEB_DIR):
 
 from ogp_web.services.generated_document_trace_service import (
     build_generated_document_review_context_payload,
+    list_user_generated_document_history,
     parse_document_content_payload,
     resolve_generated_document_provenance_payload,
     resolve_admin_generated_document_trace_bundle,
+    resolve_user_generated_document_trace_bundle,
 )
 
 
@@ -48,6 +50,23 @@ class _FakeStore:
             "context_snapshot": {"server": {"code": "blackberry"}},
         }
 
+    def get_generation_snapshot_by_generated_document_id_for_user(self, *, username: str, document_id: int):
+        if username != "tester":
+            return None
+        return self.get_generation_snapshot_by_generated_document_id(document_id=document_id)
+
+    def list_generation_snapshot_history_for_user(self, *, username: str, limit: int):
+        if username != "tester":
+            return []
+        return [
+            {
+                "id": 100,
+                "server_code": "blackberry",
+                "document_kind": "complaint",
+                "created_at": "2026-04-15T00:00:00+00:00",
+            }
+        ][:limit]
+
 
 def test_generated_document_trace_bundle_resolves_snapshot_and_latest_version(monkeypatch):
     monkeypatch.setattr(
@@ -65,6 +84,36 @@ def test_generated_document_trace_bundle_resolves_snapshot_and_latest_version(mo
 def test_parse_document_content_payload_normalizes_non_dict_json():
     payload = parse_document_content_payload({"content_json": "not-a-json-object"})
     assert payload == {}
+
+
+def test_generated_document_trace_bundle_resolves_user_snapshot_without_generation_orchestrator(monkeypatch):
+    monkeypatch.setattr(
+        "ogp_web.services.generated_document_trace_service.DocumentRepository",
+        _FakeDocumentRepository,
+    )
+
+    bundle = resolve_user_generated_document_trace_bundle(
+        store=_FakeStore(),
+        username="tester",
+        legacy_generated_document_id=100,
+    )
+
+    assert bundle is not None
+    assert bundle.generation_snapshot_id == 501
+    assert bundle.version_row["id"] == 77
+
+
+def test_list_user_generated_document_history_uses_store_history():
+    items = list_user_generated_document_history(store=_FakeStore(), username="tester", limit=10)
+
+    assert items == [
+        {
+            "id": 100,
+            "server_code": "blackberry",
+            "document_kind": "complaint",
+            "created_at": "2026-04-15T00:00:00+00:00",
+        }
+    ]
 
 
 def test_resolve_generated_document_provenance_payload_uses_shared_service(monkeypatch):
