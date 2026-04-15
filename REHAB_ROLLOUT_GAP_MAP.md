@@ -1,6 +1,6 @@
 # REHAB_ROLLOUT_GAP_MAP.md
 
-Status: `H.1 draft`  
+Status: `H.1b executed; rollout still gated`  
 Date: `2026-04-15`
 
 ## Scope
@@ -100,28 +100,44 @@ Gate implication:
   - to extend the current pilot adapter to rehab
   - or to create a second bounded adapter path with the same rollout discipline
 
-### Gap 2. Runtime-effective rehab published state is not yet verified
+### Gap 2. Runtime-effective rehab published state is verified, but not yet rollout-ready
 
 Current state:
 - bootstrap metadata contains `rehab_v1`
 - seed workflow contains published rehab procedure/template items
-- but H.1 has not yet runtime-verified the effective DB-backed state for:
-  - procedure
-  - template
-  - validation rule/profile
-  - law/runtime linkage
+- H.1b production verification now confirms:
+  - `procedures:rehab_law_index` exists and is published
+  - `laws:law_sources_manifest` exists and is published
+- H.1b production verification also found two blocking mismatches:
+  - bootstrap pack points to template key `rehab_v1`, but the published seeded template key is `rehab_template_v1`
+  - no published rehab-specific validation rule was found under:
+    - `rehab_default`
+    - `rehab_validation`
+    - `rehab_rules`
+- bootstrap `validation_profiles` also does not contain a `rehab` entry
 
 Impact:
-- config-as-data coverage is not yet proven to match the complaint pilot standard in the running workflow surface
+- config-as-data coverage is now partially proven, but still does not meet the complaint pilot standard in the running workflow surface
 
 Gate implication:
-- we need one runtime audit pass on published rehab content inventory before any rollout change
+- runtime audit is complete; next work must close the template-binding and validation-coverage gaps before any rollout change
 
 ### H.1b execution status
 
 Status update:
 - Runtime verification script added: `scripts/verify_rehab_runtime_catalog.py`
-- Execution status: `blocked` in local workspace (`DATABASE_URL` not set in this environment)
+- Local execution remains blocked in this workspace (`DATABASE_URL` not set), but production execution is now complete.
+- Production execution context:
+  - commit: `1e74a26`
+  - runtime root: `/srv/lawyer5rp.ru`
+  - command: `./web/.venv/bin/python ./scripts/verify_rehab_runtime_catalog.py --server blackberry --json 1`
+- Production execution result: `FAIL`
+- Production findings:
+  - `procedures:rehab_law_index` is present and published
+  - `laws:law_sources_manifest` is present and published
+  - `templates:rehab_v1` is missing as a published content item
+  - no published rehab validation rule key was found
+  - bootstrap `validation_profiles` does not include `rehab`
 - Scope used by the verifier:
   - `procedures:rehab_law_index` must be present and published
   - `templates` must include the active rehab template key from pack binding (default `rehab_template_v1`)
@@ -187,19 +203,16 @@ Before any activation change for rehab, all of the following must be confirmed:
 - seeded rehab procedure inventory: verified
 - seeded rehab template inventory: verified
 - rehab-specific validation parity: not verified
-- runtime-effective DB state: not verified
+- runtime-effective DB state: verified with blocking gaps
 
 ## Recommended next executable slice
 
-`H.1b Rehab runtime catalog verification`
+`H.1c Rehab template + validation alignment`
 
 Do only this next:
-- inspect current published catalog/admin inventory for rehab on `blackberry` through the running workflow surface or DB-backed admin API
-- verify whether rehab currently has:
-  - effective published procedure item/version
-  - effective published template item/version
-  - effective validation rule/profile
-  - sufficient provenance fields after generation
+- align the effective rehab template key so bootstrap metadata and published catalog inventory point to the same template
+- add or explicitly bind a rehab-specific published validation rule/profile
+- rerun `scripts/verify_rehab_runtime_catalog.py` after those two fixes
 
 Do not:
 - activate rehab rollout
