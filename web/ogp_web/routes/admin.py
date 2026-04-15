@@ -73,6 +73,19 @@ from ogp_web.services.admin_runtime_servers_service import (
     set_runtime_server_active_payload,
     update_runtime_server_payload,
 )
+from ogp_web.services.admin_law_sets_service import (
+    add_runtime_server_law_binding_payload,
+    create_law_source_registry_payload,
+    create_runtime_server_law_set_payload,
+    list_law_source_registry_payload,
+    list_runtime_server_law_bindings_payload,
+    list_runtime_server_law_sets_payload,
+    publish_law_set_payload,
+    resolve_law_set_rebuild_context,
+    resolve_law_set_rollback_context,
+    update_law_set_payload,
+    update_law_source_registry_payload,
+)
 from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
@@ -1154,9 +1167,7 @@ async def admin_runtime_server_law_sets(
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
 ):
     _ = user
-    normalized_code = _normalize_code(server_code)
-    items = store.list_law_sets(server_code=normalized_code)
-    return {"server_code": normalized_code, "items": items, "count": len(items)}
+    return list_runtime_server_law_sets_payload(store=store, server_code=server_code)
 
 
 @router.get("/api/admin/runtime-servers/{server_code}/law-bindings")
@@ -1166,9 +1177,7 @@ async def admin_runtime_server_law_bindings(
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
 ):
     _ = user
-    normalized_code = _normalize_code(server_code)
-    items = store.list_server_law_bindings(server_code=normalized_code)
-    return {"server_code": normalized_code, "items": items, "count": len(items)}
+    return list_runtime_server_law_bindings_payload(store=store, server_code=server_code)
 
 
 @router.post("/api/admin/runtime-servers/{server_code}/law-bindings")
@@ -1179,10 +1188,10 @@ async def admin_runtime_server_law_bindings_add(
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
-    normalized_code = _normalize_code(server_code)
     try:
-        item = store.add_server_law_binding(
-            server_code=normalized_code,
+        result = add_runtime_server_law_binding_payload(
+            store=store,
+            server_code=server_code,
             law_code=payload.law_code,
             source_id=payload.source_id,
             effective_from=payload.effective_from,
@@ -1191,6 +1200,8 @@ async def admin_runtime_server_law_bindings_add(
         )
     except ValueError as exc:
         _raise_bad_request(exc)
+    normalized_code = result["server_code"]
+    item = result["item"]
     metrics_store.log_event(
         event_type="admin_server_law_binding_add",
         username=user.username,
@@ -1211,15 +1222,18 @@ async def admin_runtime_server_law_sets_create(
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
-    normalized_code = _normalize_code(server_code)
     try:
-        law_set = store.create_law_set(server_code=normalized_code, name=payload.name)
-        items = store.replace_law_set_items(
-            law_set_id=int(law_set.get("id") or 0),
+        result = create_runtime_server_law_set_payload(
+            store=store,
+            server_code=server_code,
+            name=payload.name,
             items=[item.model_dump() for item in payload.items],
         )
     except ValueError as exc:
         _raise_bad_request(exc)
+    normalized_code = result["server_code"]
+    law_set = result["law_set"]
+    items = result["items"]
     metrics_store.log_event(
         event_type="admin_law_set_create",
         username=user.username,
@@ -1241,12 +1255,19 @@ async def admin_law_set_update(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     try:
-        law_set = store.update_law_set(law_set_id=law_set_id, name=payload.name, is_active=payload.is_active)
-        items = store.replace_law_set_items(law_set_id=law_set_id, items=[item.model_dump() for item in payload.items])
+        result = update_law_set_payload(
+            store=store,
+            law_set_id=law_set_id,
+            name=payload.name,
+            is_active=payload.is_active,
+            items=[item.model_dump() for item in payload.items],
+        )
     except ValueError as exc:
         _raise_bad_request(exc)
     except KeyError as exc:
         _raise_not_found(exc)
+    law_set = result["law_set"]
+    items = result["items"]
     metrics_store.log_event(
         event_type="admin_law_set_update",
         username=user.username,
@@ -1267,9 +1288,10 @@ async def admin_law_set_publish(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     try:
-        law_set = store.publish_law_set(law_set_id=law_set_id)
+        result = publish_law_set_payload(store=store, law_set_id=law_set_id)
     except KeyError as exc:
         _raise_not_found(exc)
+    law_set = result["law_set"]
     metrics_store.log_event(
         event_type="admin_law_set_publish",
         username=user.username,
@@ -1295,15 +1317,15 @@ async def admin_law_set_rebuild(
 ):
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
     try:
-        server_code, source_urls = store.list_source_urls_for_law_set(law_set_id=law_set_id)
+        context = resolve_law_set_rebuild_context(store=store, law_set_id=law_set_id)
     except KeyError as exc:
         _raise_not_found(exc)
-    if not source_urls:
-        _raise_bad_request("law_set_sources_empty")
+    except ValueError as exc:
+        _raise_bad_request(exc)
     service = LawAdminService(workflow_service)
     result = service.rebuild_index(
-        server_code=server_code,
-        source_urls=source_urls,
+        server_code=context["server_code"],
+        source_urls=context["source_urls"],
         actor_user_id=actor_user_id,
         request_id=getattr(request.state, "request_id", ""),
         persist_sources=True,
@@ -1312,13 +1334,18 @@ async def admin_law_set_rebuild(
     metrics_store.log_event(
         event_type="admin_law_set_rebuild",
         username=user.username,
-        server_code=server_code,
+        server_code=context["server_code"],
         path=f"/api/admin/law-sets/{law_set_id}/rebuild",
         method="POST",
         status_code=200,
         meta={"law_set_id": law_set_id, "law_version_id": result.get("law_version_id")},
     )
-    return _admin_ok(law_set_id=law_set_id, server_code=server_code, source_urls=source_urls, result=result)
+    return _admin_ok(
+        law_set_id=law_set_id,
+        server_code=context["server_code"],
+        source_urls=context["source_urls"],
+        result=result,
+    )
 
 
 @router.post("/api/admin/law-sets/{law_set_id}/rollback")
@@ -1331,18 +1358,21 @@ async def admin_law_set_rollback(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     try:
-        server_code, _ = store.list_source_urls_for_law_set(law_set_id=law_set_id)
+        context = resolve_law_set_rollback_context(store=store, law_set_id=law_set_id)
     except KeyError as exc:
         _raise_not_found(exc)
     service = LawAdminService(workflow_service)
     try:
-        result = service.rollback_active_version(server_code=server_code, law_version_id=payload.law_version_id)
+        result = service.rollback_active_version(
+            server_code=context["server_code"],
+            law_version_id=payload.law_version_id,
+        )
     except ValueError as exc:
         _raise_bad_request(exc)
     metrics_store.log_event(
         event_type="admin_law_set_rollback",
         username=user.username,
-        server_code=server_code,
+        server_code=context["server_code"],
         path=f"/api/admin/law-sets/{law_set_id}/rollback",
         method="POST",
         status_code=200,
@@ -1357,8 +1387,7 @@ async def admin_law_source_registry_list(
     store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
 ):
     _ = user
-    items = [record.__dict__ for record in store.list_sources()]
-    return {"items": items, "count": len(items)}
+    return list_law_source_registry_payload(store=store)
 
 
 @router.post("/api/admin/law-source-registry")
@@ -1369,7 +1398,7 @@ async def admin_law_source_registry_create(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     try:
-        row = store.create_source(name=payload.name, kind=payload.kind, url=payload.url)
+        result = create_law_source_registry_payload(store=store, name=payload.name, kind=payload.kind, url=payload.url)
     except ValueError as exc:
         _raise_bad_request(exc)
     metrics_store.log_event(
@@ -1379,9 +1408,9 @@ async def admin_law_source_registry_create(
         path="/api/admin/law-source-registry",
         method="POST",
         status_code=200,
-        meta={"source_id": row.id},
+        meta={"source_id": result["item"]["id"]},
     )
-    return _admin_ok(item=row.__dict__)
+    return _admin_ok(**result)
 
 
 @router.get("/api/admin/law-jobs/overview")
@@ -1469,7 +1498,14 @@ async def admin_law_source_registry_update(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     try:
-        row = store.update_source(source_id=source_id, name=payload.name, kind=payload.kind, url=payload.url, is_active=payload.is_active)
+        result = update_law_source_registry_payload(
+            store=store,
+            source_id=source_id,
+            name=payload.name,
+            kind=payload.kind,
+            url=payload.url,
+            is_active=payload.is_active,
+        )
     except ValueError as exc:
         _raise_bad_request(exc)
     except KeyError as exc:
@@ -1481,9 +1517,9 @@ async def admin_law_source_registry_update(
         path=f"/api/admin/law-source-registry/{source_id}",
         method="PUT",
         status_code=200,
-        meta={"source_id": row.id},
+        meta={"source_id": result["item"]["id"]},
     )
-    return _admin_ok(item=row.__dict__)
+    return _admin_ok(**result)
 
 
 def _resolve_actor_user_id(user_store: UserStore, username: str) -> int:
