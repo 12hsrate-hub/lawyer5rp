@@ -7,11 +7,11 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase H`
-- Active task: `H.1d Rehab runtime/provenance parity confirmation`
-- Status: `in_progress`
+- Active task: `H.2 Legacy cleanup wave 1`
+- Status: `phase_checkpoint_complete`
 - Last completed phase: `Phase G`
 - Inventory slices completed: `5`
-- Next slice: `confirm rehab runtime-path and provenance parity after H.1c PASS`
+- Next slice: `remove first accepted compatibility seam after H.1 acceptance`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -23,7 +23,11 @@ Date: 2026-04-14
     - `laws:law_sources_manifest`
     - `validation_rules:rehab_default`
     - bootstrap `validation_profiles.rehab`
-  - next remaining H.1 gate is runtime/provenance parity, not catalog coverage
+  - `H.1d` deployed on production commit `f7c0bb5`
+  - rehab remains on the bounded transitional runtime path, not a complaint-only adapter clone
+  - `/api/generate-rehab` now mirrors complaint post-generation validation behavior for `document_version`
+  - API coverage confirms rehab-generated documents are visible through admin provenance and review context with non-empty validation summary
+  - `Phase H.1` is accepted; next work moves to `H.2`
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.

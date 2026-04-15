@@ -7,10 +7,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 ## Current Execution State
 
 - Current phase: `Phase H — Post-pilot scale-out and legacy reduction`
-- Current task: `H.1 runtime parity closure`
-- Active execution phase override: `Phase G accepted; start post-pilot planning from H.1`
-- Current micro-step: `prove rehab runtime/provenance parity after H.1c catalog pass`
-- Overall status: `in_progress`
+- Current task: `H.1 complete`
+- Active execution phase override: `Phase H.1 accepted; next start is H.2 legacy cleanup wave 1`
+- Current micro-step: `prepare first accepted H.2 cleanup slice`
+- Overall status: `phase_checkpoint_complete`
 - Last updated: `2026-04-15`
 - Execution override update:
   - `Phase G` is accepted.
@@ -20,7 +20,8 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `H.1b` runtime catalog verification has now been executed on production for `blackberry + rehab`.
   - `H.1c` is now complete: rehab template binding, published validation rule, and pack validation profile are aligned in production.
   - Production verifier now returns `PASS` for rehab catalog coverage.
-  - `H.1` still remains open until rehab runtime-path and provenance parity are explicitly proven.
+  - `H.1d` is now complete: rehab remains on the bounded transitional runtime path, and admin review/provenance parity is covered by runtime code plus API tests.
+  - `Phase H.1` is accepted as the first post-pilot bounded candidate checkpoint.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -420,7 +421,8 @@ Execution status: `in_progress`
 - `H.1b` complete: runtime verification executed on production and recorded in `REHAB_ROLLOUT_GAP_MAP.md`.
 - Runtime verification script: `scripts/verify_rehab_runtime_catalog.py` (DB-backed catalog checks for `blackberry + rehab`).
 - `H.1c` complete: production catalog verification now passes after template/validation alignment.
-- Current H.1 executable slice: `prove rehab runtime-path and provenance parity`.
+- `H.1d` complete: rehab generation now mirrors complaint post-generation validation and is reviewable through the same admin provenance workspace.
+- Current H.1 executable slice: `complete; move to H.2 legacy cleanup wave 1`.
 
 ### H.2 Legacy cleanup wave 1
 - Remove only those compatibility seams that are already listed in the rollout backlog and have a satisfied removal gate.
@@ -601,8 +603,9 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `Phase H.1` selects one bounded post-pilot candidate and records its rollout gate before any broader scale-out
 - initial H.1 recommendation is `blackberry + rehab`, not `strawberry + complaint`
 - `H.1a` output is `REHAB_ROLLOUT_GAP_MAP.md`
-- `H.1c` is now complete and `scripts/verify_rehab_runtime_catalog.py` passes on production
-- immediate next step is `H.1d rehab runtime/provenance parity confirmation`
+- `H.1d` is now complete on production commit `f7c0bb5`
+- `Phase H.1` is accepted
+- immediate next step is `Phase H.2 legacy cleanup wave 1`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`
