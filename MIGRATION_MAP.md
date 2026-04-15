@@ -259,7 +259,7 @@ Date: 2026-04-14
   - law-QA runtime-context assembly now converges behind the same shared layer instead of staying inline in `ai_service.py`
   - `J.2` is accepted
   - after runtime-context, retry, and finalization extraction, the remaining law-QA block is mostly thin facade glue rather than another high-value orchestration seam
-  - `J.3a` is ready locally
+  - `J.3a` deployed on production commit `63192a4`
   - suggest runtime-context assembly now converges behind `ai_pipeline.orchestration.resolve_suggest_runtime_context(...)`, so `suggest_text_details(...)` no longer keeps inline validation, retrieval-shadow, low-confidence policy, and compaction-attempt assembly
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
