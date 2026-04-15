@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase G`
 - Inventory slices completed: `5`
-- Next slice: `select the twelfth accepted H.3 tightening seam`
+- Next slice: `select the thirteenth accepted H.3 tightening seam`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -65,6 +65,8 @@ Date: 2026-04-14
 - complaint generation routes now isolate adapter-vs-legacy context snapshot assembly and shared shadow citations-policy injection behind local helpers without changing route contracts
 - `H.3k` deployed on production commit `d4170c3`
 - complaint adapter snapshot internals now use dedicated effective-config, content-workflow, and server snapshot helpers, with a parity assertion keeping `content_workflow.applied_published_versions` aligned with `effective_config_snapshot`
+- `H.3l` deployed on production commit `1695401`
+- legacy complaint generation snapshots now use the same small helper structure for server/effective-config/content-workflow assembly, with parity coverage keeping legacy content_workflow aligned with effective_config_snapshot
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
