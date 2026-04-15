@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.1 shared server-context seam extraction`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded runtime/admin server-config seam after I.1x`
+- Current micro-step: `select the next bounded Phase I convergence target after accepted I.1`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -58,7 +58,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.1v` is now complete on production commit `8395223`: tiny dead cleanup leftovers were removed from bounded page/law-admin paths, and stale `law_admin_service` tests were aligned with the shared server-context helpers.
   - `I.1w` is now complete on production commit `304d9d6`: shared `resolve_server_ai_context_settings(...)` now backs bounded AI law-QA and suggest call sites instead of local extract-only seams.
   - `I.1x` is now complete on production commit `304d9d6`: shared `resolve_server_identity(...)` and `resolve_server_feature_flags(...)` now back bounded complaint generation snapshot assembly and related server-context tests.
-  - immediate next step is `I.1y` bounded seam selection after the accepted shared resolve-helper pass.
+  - `I.1y` is now complete on production commit `c7be298`: shared user-level resolvers now back complaint route identity/settings checks and remove the last local `_server_config_for_user(...)` wrapper.
+  - `I.1z` is now complete on production commit `c7be298`: verify-email page server selection now reuses a single page-level resolver for request-default and username-bound rendering paths.
+  - `I.1` is accepted: no further meaningful runtime/admin shared server-context seams remain that can be removed as small safe slices without inventing artificial helper layers.
+  - immediate next step is `select Phase I.2 after the accepted I.1 convergence wave`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
