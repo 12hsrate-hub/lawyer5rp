@@ -131,6 +131,61 @@ def test_suggest_validation_remediation_contract_retries_then_falls_back():
     assert result.remediation.safe_fallback_used is True
 
 
+def test_build_suggest_result_contract_aggregates_warning_codes():
+    result = orchestration.build_suggest_result(
+        text="ok",
+        generation_id="g1",
+        contract_version="v1",
+        shadow={},
+        telemetry_meta={"selected_model": "gpt-5.4"},
+        budget_status="ok",
+        budget_warnings=["budget_warn"],
+        budget_policy={"flow": "suggest"},
+        retrieval_ms=1,
+        openai_ms=2,
+        total_suggest_ms=3,
+        prompt_mode="legacy",
+        retrieval_confidence="high",
+        retrieval_context_mode="low_confidence_context",
+        retrieval_profile="suggest",
+        bundle_status="fresh",
+        bundle_generated_at="",
+        bundle_fingerprint="fp",
+        selected_norms_count=1,
+        policy_mode="factual_plus_legal",
+        policy_reason="r",
+        valid_triggers_count=1,
+        avg_trigger_confidence=0.5,
+        remediation_retries=1,
+        safe_fallback_used=False,
+        validation_status="pass_after_retry",
+        validation_retry_count=1,
+        validation_errors=("new_fact_detected",),
+        input_warning_codes=("input_warn",),
+        protected_terms=("term",),
+        selected_model="gpt-5.4",
+        selection_reason="suggest_default",
+        guard_warning_codes=("guard_warn",),
+        validator_warning_codes=("validator_warn",),
+        point3_input_warning_codes=("input_warn",),
+        context_compaction_level=1,
+        factual_fallback_expanded_mode="factual_fallback_expanded",
+        guard_status="warn",
+    )
+
+    assert result.guard_status == "warn"
+    assert result.selected_model == "gpt-5.4"
+    assert "guard_warn" in result.warnings
+    assert "validator_warn" in result.warnings
+    assert "budget_warn" in result.warnings
+    assert "input_warn" in result.warnings
+    assert "suggest_low_confidence_context" in result.warnings
+    assert "suggest_context_compacted" in result.warnings
+    assert "suggest_output_remediated" in result.warnings
+    assert "suggest_validation_retry" in result.warnings
+    assert "suggest_legal_grounded" in result.warnings
+
+
 def test_telemetry_meta_contracts():
     law_result = ai_service.LawQaAnswerResult(
         text="ok",

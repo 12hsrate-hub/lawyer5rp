@@ -62,6 +62,7 @@ from ogp_web.services.ai_pipeline.orchestration import (
     PrincipalScanDeps,
     SuggestGenerationAttempt,
     SuggestOrchestrationDeps,
+    build_suggest_result,
     run_suggest_generation_attempts,
     run_suggest_validation_remediation,
     run_law_qa,
@@ -2463,7 +2464,7 @@ def _answer_law_question_details_impl(payload: LawQaPayload) -> LawQaAnswerResul
         ),
         shadow=_shadow_to_dict(shadow),
         selected_norms=_build_law_qa_selected_norms(retrieval_result),
-        telemetry=telemetry_meta,
+        telemetry_meta=telemetry_meta,
         budget_status=budget_assessment.status,
         budget_warnings=list(budget_assessment.warnings),
         budget_policy=policy_to_meta(budget_assessment.policy),
@@ -2771,37 +2772,12 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
             "safe_fallback_used": remediation.safe_fallback_used,
         }
     )
-    return SuggestTextResult(
+    return build_suggest_result(
         text=final_text,
         generation_id=generation_id,
-        guard_status=combined_guard_status,
         contract_version=LEGAL_PIPELINE_CONTRACT_VERSION,
-        warnings=list(
-            dict.fromkeys(
-                list(guard_result.warning_codes)
-                + list(validation_result.warning_codes)
-                + list(budget_assessment.warnings)
-                + list(point3_context.input_audit.warning_codes)
-                + (
-                    ["suggest_low_confidence_context"]
-                    if suggest_context.retrieval_context_mode == "low_confidence_context"
-                    else []
-                )
-                + (["suggest_no_context"] if suggest_context.retrieval_context_mode == "no_context" else [])
-                + (["suggest_context_compacted"] if suggest_compaction_level > 0 else [])
-                + (["suggest_output_remediated"] if remediation.retries_used > 0 else [])
-                + (["suggest_safe_fallback_template"] if remediation.safe_fallback_used else [])
-                + (["suggest_safe_factual_fallback"] if remediation.safe_fallback_used else [])
-                + (["suggest_validation_retry"] if validation_retry_count > 0 else [])
-                + (
-                    ["suggest_factual_fallback_expanded"]
-                    if policy_mode == MODE_FACTUAL_FALLBACK_EXPANDED
-                    else ["suggest_legal_grounded"]
-                )
-            )
-        ),
         shadow=_shadow_to_dict(shadow),
-        telemetry=telemetry_meta,
+        telemetry_meta=telemetry_meta,
         budget_status=budget_assessment.status,
         budget_warnings=list(budget_assessment.warnings),
         budget_policy=policy_to_meta(budget_assessment.policy),
@@ -2829,6 +2805,12 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
         protected_terms=point3_context.input_audit.protected_terms,
         selected_model=selected_model,
         selection_reason=selection_reason,
+        guard_warning_codes=guard_result.warning_codes,
+        validator_warning_codes=validation_result.warning_codes,
+        point3_input_warning_codes=point3_context.input_audit.warning_codes,
+        context_compaction_level=suggest_compaction_level,
+        factual_fallback_expanded_mode=MODE_FACTUAL_FALLBACK_EXPANDED,
+        guard_status=combined_guard_status,
     )
 
 
