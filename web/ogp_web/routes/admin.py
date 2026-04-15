@@ -86,6 +86,17 @@ from ogp_web.services.admin_law_sets_service import (
     update_law_set_payload,
     update_law_source_registry_payload,
 )
+from ogp_web.services.admin_law_sources_service import (
+    build_law_sources_status_payload,
+    describe_law_sources_dependencies_payload,
+    list_law_sources_history_payload,
+    preview_law_sources_payload,
+    rebuild_law_sources_payload,
+    require_law_sources_task_status_payload,
+    resolve_law_sources_target_server_code,
+    save_law_sources_payload,
+    sync_law_sources_payload,
+)
 from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
@@ -1534,26 +1545,11 @@ def _resolve_law_sources_server_code(
     user_store: UserStore,
     requested_server_code: str = "",
 ) -> str:
-    normalized = str(requested_server_code or "").strip().lower()
-    target_server_code = normalized or user.server_code
-    if target_server_code == user.server_code:
-        return target_server_code
-
-    current_permissions = resolve_user_server_permissions(user_store, user.username, server_code=user.server_code)
-    if not current_permissions.has("manage_servers"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=["Недостаточно прав для управления источниками законов другого сервера."],
-        )
-
-    target_permissions = resolve_user_server_permissions(user_store, user.username, server_code=target_server_code)
-    if not target_permissions.has("manage_laws"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=[f"Недостаточно прав manage_laws для сервера '{target_server_code}'."],
-        )
-
-    return target_server_code
+    return resolve_law_sources_target_server_code(
+        user=user,
+        user_store=user_store,
+        requested_server_code=requested_server_code,
+    )
 
 
 def _resolve_active_change_request_id(item: dict[str, Any], change_requests: list[dict[str, Any]]) -> int | None:
@@ -2006,8 +2002,6 @@ async def admin_law_sources_status(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     target_server_code = _resolve_law_sources_server_code(user, user_store, server_code)
-    service = LawAdminService(workflow_service)
-    snapshot = service.get_effective_sources(server_code=target_server_code)
     metrics_store.log_event(
         event_type="admin_law_sources_status",
         username=user.username,
@@ -2016,15 +2010,7 @@ async def admin_law_sources_status(
         method="GET",
         status_code=200,
     )
-    return {
-        "server_code": target_server_code,
-        "source_urls": list(snapshot.source_urls),
-        "source_origin": snapshot.source_origin,
-        "manifest_item": snapshot.manifest_item,
-        "manifest_version": snapshot.manifest_version,
-        "active_law_version": snapshot.active_law_version,
-        "bundle_meta": snapshot.bundle_meta,
-    }
+    return build_law_sources_status_payload(workflow_service=workflow_service, server_code=target_server_code)
 
 
 @router.post("/api/admin/law-sources/sync")
@@ -2038,13 +2024,12 @@ async def admin_law_sources_sync(
 ):
     target_server_code = _resolve_law_sources_server_code(user, user_store, server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
-    service = LawAdminService(workflow_service)
     try:
-        result = service.sync_sources_manifest_from_server_config(
+        result = sync_law_sources_payload(
+            workflow_service=workflow_service,
             server_code=target_server_code,
             actor_user_id=actor_user_id,
             request_id=getattr(request.state, "request_id", ""),
-            safe_rerun=True,
         )
     except (ValueError, PermissionError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
@@ -2071,9 +2056,9 @@ async def admin_law_sources_rebuild(
 ):
     target_server_code = _resolve_law_sources_server_code(user, user_store, payload.server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
-    service = LawAdminService(workflow_service)
     try:
-        result = service.rebuild_index(
+        result = rebuild_law_sources_payload(
+            workflow_service=workflow_service,
             server_code=target_server_code,
             source_urls=payload.source_urls,
             actor_user_id=actor_user_id,
@@ -2127,8 +2112,8 @@ async def admin_law_sources_rebuild_async(
         _patch_admin_task(task_id, status="running", started_at=datetime.now(timezone.utc).isoformat())
         try:
             workflow_service = _get_content_workflow_service_for_request(request)
-            service = LawAdminService(workflow_service)
-            result = service.rebuild_index(
+            result = rebuild_law_sources_payload(
+                workflow_service=workflow_service,
                 server_code=target_server_code,
                 source_urls=payload.source_urls,
                 actor_user_id=actor_user_id,
@@ -2192,14 +2177,13 @@ async def admin_law_sources_save(
 ):
     target_server_code = _resolve_law_sources_server_code(user, user_store, payload.server_code)
     actor_user_id = _resolve_actor_user_id(user_store, user.username)
-    service = LawAdminService(workflow_service)
     try:
-        result = service.publish_sources_manifest(
+        result = save_law_sources_payload(
+            workflow_service=workflow_service,
             server_code=target_server_code,
             source_urls=payload.source_urls,
             actor_user_id=actor_user_id,
             request_id=getattr(request.state, "request_id", ""),
-            comment="law_sources_save_only",
         )
     except (ValueError, PermissionError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
@@ -2224,8 +2208,7 @@ async def admin_law_sources_preview(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     target_server_code = _resolve_law_sources_server_code(user, user_store, payload.server_code)
-    service = LawAdminService(workflow_service)
-    result = service.preview_sources(source_urls=payload.source_urls)
+    result = preview_law_sources_payload(workflow_service=workflow_service, source_urls=payload.source_urls)
     metrics_store.log_event(
         event_type="admin_law_sources_preview",
         username=user.username,
@@ -2252,8 +2235,11 @@ async def admin_law_sources_history(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     target_server_code = _resolve_law_sources_server_code(user, user_store, server_code)
-    service = LawAdminService(workflow_service)
-    result = service.list_recent_versions(server_code=target_server_code, limit=limit)
+    result = list_law_sources_history_payload(
+        workflow_service=workflow_service,
+        server_code=target_server_code,
+        limit=limit,
+    )
     metrics_store.log_event(
         event_type="admin_law_sources_history",
         username=user.username,
@@ -2273,8 +2259,7 @@ async def admin_law_sources_dependencies(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     _ = user
-    service = LawAdminService(workflow_service)
-    result = service.describe_sources_dependencies()
+    result = describe_law_sources_dependencies_payload(workflow_service=workflow_service)
     metrics_store.log_event(
         event_type="admin_law_sources_dependencies",
         username=user.username,
@@ -2296,13 +2281,11 @@ async def admin_law_sources_task_status(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     target_server_code = _resolve_law_sources_server_code(user, user_store, server_code)
-    task = _load_admin_task(task_id)
-    if not task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Задача не найдена."])
-    if task.get("scope") != "law_sources_rebuild":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Задача не найдена."])
-    if str(task.get("server_code") or "") != target_server_code:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=["Доступ запрещён."])
+    payload = require_law_sources_task_status_payload(
+        task_id=task_id,
+        target_server_code=target_server_code,
+        task_loader=_load_admin_task,
+    )
     metrics_store.log_event(
         event_type="admin_law_sources_task_status",
         username=user.username,
@@ -2310,9 +2293,9 @@ async def admin_law_sources_task_status(
         path=f"/api/admin/law-sources/tasks/{task_id}",
         method="GET",
         status_code=200,
-        meta={"status": task.get("status")},
+        meta={"status": payload.get("status")},
     )
-    return enrich_job_status(task, subsystem="admin_task")
+    return payload
 
 
 @router.get("/api/admin/dashboard")
