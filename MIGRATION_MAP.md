@@ -6,38 +6,13 @@ Date: 2026-04-14
 ## Execution Status
 
 - Execution checkpoint: `2026-04-15`
-- Active phase: `Phase E`
-- Active task: `E.1 Job model hardening`
-- Status: `in_progress`
-- New deliverable: `JOB_STATE_MATRIX.md`
-- Phase E progress:
-  - async state fragmentation is now documented for `AsyncJobService`, `ExamImportTaskRegistry`, and admin law rebuild tasks
-  - canonical operator-facing state target is fixed as `queued/running/succeeded/failed/retry_scheduled/cancelled`
-  - first read-model normalization slice is implemented via `job_status_service.py`
-  - canonical status is now exposed alongside raw status for:
-    - `/api/jobs*`
-    - `/api/exam-import/tasks/*`
-    - `/api/admin/law-sources/tasks/*`
-    - `/api/admin/tasks/*`
-  - automatic async retries in `AsyncJobService` now use explicit `retry_scheduled` instead of blending back into `queued`
-  - admin dashboard now exposes a first operator-facing async jobs summary via `/api/admin/async-jobs/overview`
-  - the dashboard slice includes problem-job counts, by-type aggregation, and canonical status rendering for `failed` and `retry_scheduled` jobs
-  - the same dashboard slice now exposes first operator actions on shared async jobs:
-    - manual retry for canonical `failed`
-    - cancel for canonical `retry_scheduled`
-  - the ops/dashboard surface now also includes `law rebuild` task status and failed rebuild alerts from `/api/admin/law-jobs/overview`
-  - the same ops/dashboard surface now also includes `exam import` pending scoring, failed entries, and recent failure signals from `/api/admin/exam-import/overview`
-  - async/job hardening docs are now in place:
-    - `docs/ASYNC_OPERATIONS_RUNBOOK.md`
-    - `RETRY_IDEMPOTENCY_MATRIX.md`
-  - shared async `content_reindex` now has an explicit route-level dedup contract via `/api/admin/reindex`
-
-- Active phase: `Phase A`
-- Active task: `Phase A complete`
-- Status: `done`
+- Active phase: `Phase G`
+- Active task: `Phase G complete`
+- Status: `phase_checkpoint_complete`
+- Last completed phase: `Phase G`
 - Inventory slices completed: `5`
-- Next slice: `Phase B.1 data model draft and persistence skeleton`
-- Last updated: `2026-04-14`
+- Next slice: `Post-Phase-G planning / next roadmap segment`
+- Last updated: `2026-04-15`
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
