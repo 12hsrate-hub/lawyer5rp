@@ -61,6 +61,7 @@ from ogp_web.services.ai_pipeline.orchestration import (
     finalize_law_qa_result,
     LawQaOrchestrationDeps,
     PrincipalScanDeps,
+    resolve_law_qa_runtime_context,
     run_law_qa_generation_attempts,
     SuggestGenerationAttempt,
     SuggestOrchestrationDeps,
@@ -2174,77 +2175,28 @@ def _truncate_suggest_value(value: str, *, max_chars: int) -> str:
 
 
 def _answer_law_question_details_impl(payload: LawQaPayload) -> LawQaAnswerResult:
-    question = payload.question.strip()
-    if not question:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=["\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0432\u043e\u043f\u0440\u043e\u0441 \u0434\u043b\u044f \u0430\u043d\u0430\u043b\u0438\u0437\u0430."],
-        )
-
-    requested_model = str(payload.model or "").strip()
+    runtime_context = resolve_law_qa_runtime_context(
+        payload=payload,
+        default_server_code=DEFAULT_SERVER_CODE,
+        retrieve_law_context=_retrieve_law_context,
+        resolve_server_config=resolve_server_config,
+        resolve_server_ai_context_settings=resolve_server_ai_context_settings,
+        select_law_qa_model=_select_law_qa_model,
+        get_flow_model=_get_flow_model,
+        build_shadow_comparison=build_shadow_comparison,
+        server_feature_enabled=_server_feature_enabled,
+        build_law_qa_context_blocks=_build_law_qa_context_blocks,
+        build_law_qa_context_blocks_limited=_build_law_qa_context_blocks_limited,
+    )
+    question = runtime_context.question
+    requested_model = runtime_context.requested_model
     generation_id = new_generation_id()
-    retrieval_result = _retrieve_law_context(
-        server_code=payload.server_code or DEFAULT_SERVER_CODE,
-        query=question,
-        excerpt_chars=1800,
-        profile="law_qa",
-        law_version_id=payload.law_version_id,
-    )
-    if not retrieval_result.is_configured:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=[
-                "\u0414\u043b\u044f \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u043e\u0433\u043e \u0441\u0435\u0440\u0432\u0435\u0440\u0430 "
-                "\u043d\u0435 \u043d\u0430\u0441\u0442\u0440\u043e\u0435\u043d\u044b \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438 \u0437\u0430\u043a\u043e\u043d\u043e\u0432."
-            ],
-        )
-
-    if not retrieval_result.indexed_chunk_count:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=[
-                "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c "
-                "\u0437\u0430\u043a\u043e\u043d\u044b \u0434\u043b\u044f \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u043e\u0433\u043e "
-                "\u0441\u0435\u0440\u0432\u0435\u0440\u0430. \u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 "
-                "\u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0443 law base."
-            ],
-        )
-
-    server_config = resolve_server_config(server_code=retrieval_result.server_code)
-    selection = _select_law_qa_model(
-        question=question,
-        retrieval_confidence=retrieval_result.confidence,
-        server_config=server_config,
-    )
-    ai_context = resolve_server_ai_context_settings(server_code=retrieval_result.server_code)
-    model_name = selection.model_name
-    selection_reason = selection.reason
-    low_confidence_model = _get_flow_model("law_qa", "low_confidence_model", "gpt-5.4")
-    shadow = build_shadow_comparison(enabled=False, profile="", primary_matches=retrieval_result.matches, shadow_matches=())
-    if _server_feature_enabled(server_config, "legal_pipeline_shadow"):
-        shadow_profile = ai_context.shadow_law_qa_profile
-        if shadow_profile and shadow_profile != retrieval_result.profile:
-            shadow_result = _retrieve_law_context(
-                server_code=retrieval_result.server_code,
-                query=question,
-                excerpt_chars=1800,
-                profile=shadow_profile,
-                law_version_id=payload.law_version_id,
-            )
-            shadow = build_shadow_comparison(
-                enabled=True,
-                profile=shadow_profile,
-                primary_matches=retrieval_result.matches,
-                shadow_matches=shadow_result.matches,
-            )
-
-    context_attempts = (
-        _build_law_qa_context_blocks(retrieval_result),
-        _build_law_qa_context_blocks_limited(retrieval_result, max_blocks=8, max_excerpt_chars=900),
-        _build_law_qa_context_blocks_limited(retrieval_result, max_blocks=5, max_excerpt_chars=650),
-        _build_law_qa_context_blocks_limited(retrieval_result, max_blocks=3, max_excerpt_chars=420),
-        _build_law_qa_context_blocks_limited(retrieval_result, max_blocks=2, max_excerpt_chars=280),
-    )
+    retrieval_result = runtime_context.retrieval_result
+    model_name = runtime_context.model_name
+    selection_reason = runtime_context.selection_reason
+    low_confidence_model = runtime_context.low_confidence_model
+    shadow = runtime_context.shadow
+    context_attempts = runtime_context.context_attempts
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
