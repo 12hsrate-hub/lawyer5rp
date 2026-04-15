@@ -15,12 +15,7 @@ Track compatibility seams that may become removable after pilot observation and 
   - current UI still normalizes some legacy-shaped snapshot refs on the client side
   - after stable normalized payloads exist, this compatibility formatting can shrink
 
-### 2. Pilot adapter fallback-only visibility paths
-- Area: `web/ogp_web/services/pilot_runtime_adapter.py`
-- Reason:
-  - once pilot cutover is accepted and low-drift remains stable, fallback-only branches may be reducible
-
-### 3. Legacy-only rollout assumptions in admin copy
+### 2. Legacy-only rollout assumptions in admin copy
 - Area: dashboard/admin rollout messaging
 - Reason:
   - current wording is intentionally cautious for observation mode
@@ -36,6 +31,14 @@ Track compatibility seams that may become removable after pilot observation and 
   - `scripts/check_pilot_drift.py`
 - Outcome:
   - compare-only pilot observation helpers no longer appear in the active cleanup backlog
+
+### Pilot adapter fallback-only visibility paths
+- Removed locally during `H.2e` and pending production commit
+- Removed artifacts:
+  - adapter snapshot `status` markers for published/seeded fallback visibility
+  - adapter snapshot `content_item_id` fields that were not used by runtime consumers
+- Outcome:
+  - pilot adapter keeps published-read resolution and seed fallback behavior without exposing extra visibility-only metadata
 
 ## Removal rule
 

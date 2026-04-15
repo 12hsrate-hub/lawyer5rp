@@ -45,24 +45,12 @@ def test_pilot_runtime_adapter_prefers_published_workflow_versions(monkeypatch):
         def fake_load(repository, *, server_code, content_type, content_key):
             _ = (repository, server_code)
             published = {
-                ("procedures", PILOT_PROCEDURE_CONTENT_KEY): (
-                    {"id": 11},
-                    {"id": 101, "version_number": 3, "payload_json": {"procedure_code": "complaint", "document_kind": "complaint"}},
-                ),
-                ("forms", PILOT_FORM_CONTENT_KEY): (
-                    {"id": 12},
-                    {"id": 102, "version_number": 4, "payload_json": {"form_code": "complaint_form"}},
-                ),
-                ("validation_rules", PILOT_VALIDATION_CONTENT_KEY): (
-                    {"id": 13},
-                    {"id": 103, "version_number": 5, "payload_json": {"rule_code": "complaint_default"}},
-                ),
-                ("templates", PILOT_TEMPLATE_CONTENT_KEY): (
-                    {"id": 14},
-                    {"id": 104, "version_number": 6, "payload_json": {"template_code": "complaint_v1"}},
-                ),
+                ("procedures", PILOT_PROCEDURE_CONTENT_KEY): {"id": 101, "version_number": 3, "payload_json": {"procedure_code": "complaint", "document_kind": "complaint"}},
+                ("forms", PILOT_FORM_CONTENT_KEY): {"id": 102, "version_number": 4, "payload_json": {"form_code": "complaint_form"}},
+                ("validation_rules", PILOT_VALIDATION_CONTENT_KEY): {"id": 103, "version_number": 5, "payload_json": {"rule_code": "complaint_default"}},
+                ("templates", PILOT_TEMPLATE_CONTENT_KEY): {"id": 104, "version_number": 6, "payload_json": {"template_code": "complaint_v1"}},
             }
-            return published.get((content_type, content_key), (None, None))
+            return published.get((content_type, content_key))
 
         monkeypatch.setattr(
             "ogp_web.services.pilot_runtime_adapter._load_published_content_version",
@@ -70,12 +58,10 @@ def test_pilot_runtime_adapter_prefers_published_workflow_versions(monkeypatch):
         )
         user = AuthUser(username="tester", email="tester@example.com", server_code="blackberry")
         context = resolve_pilot_complaint_runtime_context(store, user)
-        assert context.procedure_version["content_item_id"] == 11
-        assert context.form_version["content_item_id"] == 12
-        assert context.validation_rule_version["content_item_id"] == 13
-        assert context.template_version["content_item_id"] == 14
         assert context.procedure_version["version"] == "3"
         assert context.template_version["version"] == "6"
+        assert "content_item_id" not in context.procedure_version
+        assert "status" not in context.template_version
     finally:
         if store is not None:
             store.repository.close()
