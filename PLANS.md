@@ -119,9 +119,12 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.5b` is now complete on production commit `6ad4359`: `law-jobs` overview and `law-sources/rebuild-async` now reuse the same task ops service instead of keeping route-local task queue/orchestration logic.
   - `I.5c` is now complete on production commit `6ad4359`: async `users/bulk-actions` dispatch and generic `/api/admin/tasks/{task_id}` status now reuse the same service, and API tests now override the dependency-backed task service instead of patching route globals.
   - `I.5` is accepted: the remaining admin ops surfaces are thin wrappers or single-purpose execution boundaries, not another high-value convergence seam.
-  - `Phase I` is accepted: no further meaningful runtime/admin convergence seams remain that remove a real duplicated orchestration layer without slipping into thin wrappers, task boundaries, or cosmetic reshuffling.
-  - `Phase J` is opened as the next execution phase.
-  - immediate next step is `Phase J.1 suggest orchestration extraction`.
+- `Phase I` is accepted: no further meaningful runtime/admin convergence seams remain that remove a real duplicated orchestration layer without slipping into thin wrappers, task boundaries, or cosmetic reshuffling.
+- `Phase J` is opened as the next execution phase.
+- `J.1a` is now complete on production commit `dbeacc2`: bounded suggest generation-attempt compaction/retry orchestration now converges behind `ai_pipeline.orchestration` instead of staying inline in `ai_service.py`.
+- `J.1b` is now complete on production commit `dbeacc2`: bounded suggest validation/retry/fallback remediation orchestration now converges behind the same `ai_pipeline.orchestration` layer while keeping `suggest_text_details(...)` contract-stable.
+- the old positional `get_server_config(...)` retrieval seam in `ai_service.py` is now wrapped through a compatibility adapter so shared server-context resolution still works on the extracted suggest path.
+- immediate next step is `Phase J.1 suggest orchestration extraction`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -606,8 +609,10 @@ Execution status: `ready_to_start`
 - Use the existing `ogp_web.services.ai_pipeline` layer as the canonical home for suggest/law-QA orchestration seams that are still trapped inside `ai_service.py`.
 - Start with the bounded `suggest_text_details(...)` path, because it already has a stable facade/orchestration wrapper but still keeps a large implementation block in `ai_service.py`.
 - Keep external API contracts and telemetry payload shapes stable while extracting internal generation / validation / remediation orchestration helpers.
-- First candidate slice:
-  - move suggest attempt-compaction and validation-remediation orchestration behind dedicated `ai_pipeline` helpers while keeping `ai_service.suggest_text_details(...)` as a thin facade.
+- `J.1a` complete on production commit `dbeacc2`: suggest prompt-compaction / retry orchestration now lives behind dedicated `ai_pipeline.orchestration` helpers while `ai_service.suggest_text_details(...)` stays a stable facade.
+- `J.1b` complete on production commit `dbeacc2`: suggest validation retry / safe-fallback remediation now lives behind the same orchestration layer, with existing suggest and point3 tests remaining green.
+- Next candidate slice:
+  - shrink the remaining `suggest_text_details(...)` assembly block by moving warning aggregation / result assembly into the same bounded `ai_pipeline` layer without changing telemetry shape.
 
 ### J.2 Law-QA extraction follow-up
 - After the suggest path is stable, mirror the same extraction approach for `answer_law_question_details(...)`.
