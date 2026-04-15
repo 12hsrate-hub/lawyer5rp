@@ -186,6 +186,101 @@ def test_build_suggest_result_contract_aggregates_warning_codes():
     assert "suggest_legal_grounded" in result.warnings
 
 
+def test_finalize_suggest_result_contract_builds_metrics_and_payload():
+    class _GenerationResult:
+        usage = {"total_tokens": 3}
+        cache_hit = False
+        attempt_path = "direct"
+        attempt_duration_ms = 120
+        route_policy = "direct_first"
+
+    class _Validation:
+        blocker_codes = ()
+        warning_codes = ("validator_warn",)
+        info_codes = ("validator_info",)
+        blockers = ()
+        status = "warn"
+
+    class _Remediation:
+        validation = _Validation()
+        retries_used = 1
+        safe_fallback_used = False
+
+    class _Audit:
+        warning_codes = ("input_warn",)
+        protected_terms = ("term",)
+
+    class _PolicyDecision:
+        mode = "factual_plus_legal"
+        reason = "policy_reason"
+        valid_triggers_count = 2
+        avg_confidence = 0.75
+
+    class _Point3Context:
+        input_audit = _Audit()
+        policy_decision = _PolicyDecision()
+
+    class _SuggestContext:
+        retrieval_confidence = "high"
+        retrieval_context_mode = "normal_context"
+        retrieval_profile = "suggest"
+        bundle_status = "fresh"
+        bundle_generated_at = "2026-04-16T00:00:00Z"
+        bundle_fingerprint = "bundle-fp"
+        selected_norms_count = 1
+
+    class _BudgetAssessment:
+        status = "ok"
+        warnings = ("budget_warn",)
+        policy = {"flow": "suggest"}
+
+    class _GuardResult:
+        status = "warn"
+        warning_codes = ("guard_warn",)
+
+    result = orchestration.finalize_suggest_result(
+        generation_id="g-final",
+        contract_version="v-final",
+        shadow={"enabled": False},
+        generation_result=_GenerationResult(),
+        remediation=_Remediation(),
+        validation_retry_count=1,
+        validation_errors=(),
+        selected_model="gpt-5.4",
+        selection_reason="suggest_default",
+        suggest_compaction_level=1,
+        suggest_prompt_mode="data_driven",
+        suggest_context=_SuggestContext(),
+        point3_context=_Point3Context(),
+        prompt_text="prompt",
+        final_text="final text",
+        retrieval_ms=11,
+        openai_ms=22,
+        total_suggest_ms=33,
+        build_ai_telemetry=lambda **kwargs: {"model": kwargs["model_name"], "latency_ms": kwargs["latency_ms"]},
+        evaluate_budget=lambda **kwargs: _BudgetAssessment(),
+        telemetry_to_meta=lambda telemetry: dict(telemetry),
+        policy_to_meta=lambda policy: {"policy": policy["flow"]},
+        guard_suggest_answer=lambda text: _GuardResult(),
+        legacy_validation_error_codes=lambda codes: tuple(codes),
+        factual_fallback_expanded_mode="factual_fallback_expanded",
+    )
+
+    assert result.selected_model == "gpt-5.4"
+    assert result.selection_reason == "suggest_default"
+    assert result.guard_status == "warn"
+    assert result.retrieval_ms == 11
+    assert result.openai_ms == 22
+    assert result.total_suggest_ms == 33
+    assert result.telemetry["attempt_path"] == "direct"
+    assert result.telemetry["validation_status"] == "pass_after_retry"
+    assert "guard_warn" in result.warnings
+    assert "validator_warn" in result.warnings
+    assert "budget_warn" in result.warnings
+    assert "suggest_context_compacted" in result.warnings
+    assert "suggest_validation_retry" in result.warnings
+
+
 def test_telemetry_meta_contracts():
     law_result = ai_service.LawQaAnswerResult(
         text="ok",

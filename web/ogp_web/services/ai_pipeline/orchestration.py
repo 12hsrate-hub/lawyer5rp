@@ -276,6 +276,124 @@ def build_suggest_result(
     )
 
 
+def finalize_suggest_result(
+    *,
+    generation_id: str,
+    contract_version: str,
+    shadow: dict[str, object],
+    generation_result: Any,
+    remediation: Any,
+    validation_retry_count: int,
+    validation_errors: tuple[str, ...],
+    selected_model: str,
+    selection_reason: str,
+    suggest_compaction_level: int,
+    suggest_prompt_mode: str,
+    suggest_context: Any,
+    point3_context: Any,
+    prompt_text: str,
+    final_text: str,
+    retrieval_ms: int,
+    openai_ms: int,
+    total_suggest_ms: int,
+    build_ai_telemetry: Callable[..., Any],
+    evaluate_budget: Callable[..., Any],
+    telemetry_to_meta: Callable[[Any], dict[str, object]],
+    policy_to_meta: Callable[[Any], dict[str, object]],
+    guard_suggest_answer: Callable[[str], Any],
+    legacy_validation_error_codes: Callable[[tuple[str, ...]], tuple[str, ...]],
+    factual_fallback_expanded_mode: str,
+) -> SuggestTextResult:
+    telemetry = build_ai_telemetry(
+        model_name=selected_model,
+        prompt_text=prompt_text,
+        output_text=final_text,
+        usage=generation_result.usage,
+        latency_ms=openai_ms,
+        cache_hit=generation_result.cache_hit,
+    )
+    budget_assessment = evaluate_budget(flow="suggest", telemetry=telemetry)
+    validation_result = remediation.validation
+    guard_result = guard_suggest_answer(text=final_text)
+    combined_guard_status = "fail" if validation_result.blockers else "warn" if (
+        guard_result.status == "warn" or validation_result.status == "warn"
+    ) else "pass"
+    current_validation_errors = validation_errors
+    if not current_validation_errors:
+        current_validation_errors = legacy_validation_error_codes(tuple(validation_result.blocker_codes))
+    validation_status = validation_result.status
+    if remediation.safe_fallback_used:
+        validation_status = "fallback"
+    elif validation_retry_count > 0:
+        validation_status = "pass_after_retry"
+    telemetry_meta = telemetry_to_meta(telemetry)
+    telemetry_meta.update(
+        {
+            "attempt_path": generation_result.attempt_path,
+            "attempt_duration_ms": generation_result.attempt_duration_ms,
+            "route_policy": generation_result.route_policy,
+            "selected_model": selected_model,
+            "selection_reason": selection_reason,
+            "context_compaction_level": suggest_compaction_level,
+            "context_compacted": bool(suggest_compaction_level > 0),
+            "retrieval_context_mode": suggest_context.retrieval_context_mode,
+            "policy_mode": point3_context.policy_decision.mode,
+            "policy_reason": point3_context.policy_decision.reason,
+            "valid_triggers_count": point3_context.policy_decision.valid_triggers_count,
+            "avg_trigger_confidence": point3_context.policy_decision.avg_confidence,
+            "validator_warning_codes": list(validation_result.warning_codes),
+            "validator_info_codes": list(validation_result.info_codes),
+            "validation_errors": list(current_validation_errors),
+            "validation_retry_count": validation_retry_count,
+            "validation_status": validation_status,
+            "input_warning_codes": list(point3_context.input_audit.warning_codes),
+            "protected_terms": list(point3_context.input_audit.protected_terms),
+            "remediation_retries": remediation.retries_used,
+            "safe_fallback_used": remediation.safe_fallback_used,
+        }
+    )
+    return build_suggest_result(
+        text=final_text,
+        generation_id=generation_id,
+        contract_version=contract_version,
+        shadow=shadow,
+        telemetry_meta=telemetry_meta,
+        budget_status=budget_assessment.status,
+        budget_warnings=list(budget_assessment.warnings),
+        budget_policy=policy_to_meta(budget_assessment.policy),
+        retrieval_ms=retrieval_ms,
+        openai_ms=openai_ms,
+        total_suggest_ms=total_suggest_ms,
+        prompt_mode=suggest_prompt_mode,
+        retrieval_confidence=suggest_context.retrieval_confidence,
+        retrieval_context_mode=suggest_context.retrieval_context_mode,
+        retrieval_profile=suggest_context.retrieval_profile,
+        bundle_status=suggest_context.bundle_status,
+        bundle_generated_at=suggest_context.bundle_generated_at,
+        bundle_fingerprint=suggest_context.bundle_fingerprint,
+        selected_norms_count=suggest_context.selected_norms_count,
+        policy_mode=point3_context.policy_decision.mode,
+        policy_reason=point3_context.policy_decision.reason,
+        valid_triggers_count=point3_context.policy_decision.valid_triggers_count,
+        avg_trigger_confidence=point3_context.policy_decision.avg_confidence,
+        remediation_retries=remediation.retries_used,
+        safe_fallback_used=remediation.safe_fallback_used,
+        validation_status=validation_status,
+        validation_retry_count=validation_retry_count,
+        validation_errors=current_validation_errors,
+        input_warning_codes=point3_context.input_audit.warning_codes,
+        protected_terms=point3_context.input_audit.protected_terms,
+        selected_model=selected_model,
+        selection_reason=selection_reason,
+        guard_warning_codes=guard_result.warning_codes,
+        validator_warning_codes=validation_result.warning_codes,
+        point3_input_warning_codes=point3_context.input_audit.warning_codes,
+        context_compaction_level=suggest_compaction_level,
+        factual_fallback_expanded_mode=factual_fallback_expanded_mode,
+        guard_status=combined_guard_status,
+    )
+
+
 def run_principal_scan(payload: PrincipalScanPayload, deps: PrincipalScanDeps) -> PrincipalScanResult:
     image_data_url = payload.image_data_url.strip()
     if not image_data_url.startswith("data:image/"):
