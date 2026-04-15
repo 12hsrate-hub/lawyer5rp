@@ -470,6 +470,7 @@ Fallback criteria:
   - the `Pilot rollout` block now includes an explicit `go / hold / rollback` cutover summary derived from rollout state, warning severity, fallback usage, and rollback history
   - the `Pilot rollout` block now includes a `scale-out readiness` summary so the next migration candidate stays blocked until pilot observation is accepted
   - the `Pilot rollout` block now includes an `observation sign-off` table so pilot cutover criteria are visible as explicit `met / not met` checks
+  - the `Pilot rollout` block now includes a human-readable `next candidate recommendation` summary so reuse decisions are visible before a second candidate is chosen
 - Phase F outcome:
   - provenance baseline mapped in `PROVENANCE_SCHEMA.md` for `blackberry + complaint`
   - read-only provenance assembler and API added for `document_version_id`
