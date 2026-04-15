@@ -40,8 +40,8 @@ class PilotComplaintRuntimeContext:
     template_version: dict[str, Any]
     law_set_version: dict[str, Any]
 
-    def to_generation_context_snapshot(self) -> dict[str, Any]:
-        effective_config_snapshot = {
+    def _effective_config_snapshot(self) -> dict[str, str]:
+        return {
             "server_pack_version": str(self.server_config_version.get("version") or "0"),
             "procedure_version": str(self.procedure_version.get("version") or "1"),
             "form_version": str(self.form_version.get("version") or "1"),
@@ -49,21 +49,30 @@ class PilotComplaintRuntimeContext:
             "template_version": str(self.template_version.get("id") or "unknown"),
             "validation_version": str(self.validation_rule_version.get("hash") or "unknown"),
         }
+
+    def _content_workflow_snapshot(self, effective_config_snapshot: dict[str, str]) -> dict[str, Any]:
         return {
-            "server": {
-                "id": self.server_code,
-                "code": self.server_code,
-            },
+            "applied_published_versions": dict(effective_config_snapshot),
+            "rollback_safe": True,
+        }
+
+    def _server_snapshot(self) -> dict[str, str]:
+        return {
+            "id": self.server_code,
+            "code": self.server_code,
+        }
+
+    def to_generation_context_snapshot(self) -> dict[str, Any]:
+        effective_config_snapshot = self._effective_config_snapshot()
+        return {
+            "server": self._server_snapshot(),
             "procedure_version": dict(self.procedure_version),
             "form_version": dict(self.form_version),
             "template_version": dict(self.template_version),
             "law_version_set": dict(self.law_set_version),
             "validation_rules_version": dict(self.validation_rule_version),
             "effective_config_snapshot": effective_config_snapshot,
-            "content_workflow": {
-                "applied_published_versions": dict(effective_config_snapshot),
-                "rollback_safe": True,
-            },
+            "content_workflow": self._content_workflow_snapshot(effective_config_snapshot),
             "feature_flags": list(self.feature_flags),
         }
 
