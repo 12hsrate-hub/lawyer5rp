@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.1 shared server-context seam extraction`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded runtime/admin server-config seam after I.1c`
+- Current micro-step: `select the next bounded runtime/admin server-config seam after I.1d`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -37,7 +37,8 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.1a` is now complete on production commit `1b071bd`: shared user server-context resolution is extracted and reused by `pages.py` plus bounded `admin.py` paths.
   - `I.1b` is now complete on production commit `436fba9`: the same shared user server-context helper now also covers user-bound `complaint.py` and `profile.py` server-config reads.
   - `I.1c` is now complete on production commit `d740b24`: public/default server-config reads in `pages.py` now reuse a shared resolver for login, verify-email, and reset-password surfaces.
-  - immediate next step is `I.1d` bounded seam selection after the accepted public/default server-context reuse.
+  - `I.1d` is now complete on production commit `bc161e1`: `law_admin_service.py` now reuses shared server-config resolution across effective, sync, and rebuild paths.
+  - immediate next step is `I.1e` bounded seam selection after the accepted law-admin server-context reuse.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -485,7 +486,8 @@ Execution status: `ready_to_start`
 - `I.1a` complete on production commit `1b071bd`: `resolve_user_server_context(...)` now centralizes shared user server-config plus permission resolution for `pages.py` and bounded `admin.py` paths while keeping route contracts stable.
 - `I.1b` complete on production commit `436fba9`: user-bound server-config reads in `complaint.py` and `profile.py` now reuse the same shared helper while keeping draft/profile route contracts stable.
 - `I.1c` complete on production commit `d740b24`: `resolve_server_config(...)` now centralizes public/default server-config reads for login, verify-email, and reset-password page context assembly.
-- Current I.1 executable slice: `select I.1d after the accepted public/default context seam`.
+- `I.1d` complete on production commit `bc161e1`: `law_admin_service.py` now reuses shared server-config resolution in effective source, sync, and rebuild flows.
+- Current I.1 executable slice: `select I.1e after the accepted law-admin context seam`.
 
 ### I.2 Snapshot/provenance schema convergence
 - Align legacy and adapter snapshot/provenance internals behind common helper contracts where the payload shape is already the same.
@@ -694,7 +696,8 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `I.1a` is complete on production commit `1b071bd`: shared user server-context resolution is extracted and reused by `pages.py` plus bounded `admin.py` paths
 - `I.1b` is complete on production commit `436fba9`: the same shared helper now also covers user-bound `complaint.py` and `profile.py` server-config reads
 - `I.1c` is complete on production commit `d740b24`: public/default server-config reads in `pages.py` now reuse a shared resolver for login, verify-email, and reset-password surfaces
-- immediate next step is `I.1d bounded seam selection after the accepted public/default server-context extraction`
+- `I.1d` is complete on production commit `bc161e1`: `law_admin_service.py` now reuses shared server-config resolution across effective, sync, and rebuild paths
+- immediate next step is `I.1e bounded seam selection after the accepted law-admin server-context extraction`
 - Phase F completed:
   - provenance baseline documented in `PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`
