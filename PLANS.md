@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.1 shared server-context seam extraction`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded runtime/admin server-config seam after I.1o`
+- Current micro-step: `select the next bounded runtime/admin server-config seam after I.1q`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -49,7 +49,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.1m` is now complete on production commit `078350d`: shared page/admin shell context extraction now backs `pages.py` and `admin.py` instead of local server-config presentation shaping.
   - `I.1n` is now complete on production commit `4b64c12`: shared complaint/page server settings now back complaint payload validation plus complaint-test and exam-import page rendering.
   - `I.1o` is now complete on production commit `ff9be09`: shared user-permissions resolution now backs admin cross-server law-sources permission checks, and the `complaint_test_page` settings regression is fixed in production.
-  - immediate next step is `I.1p` bounded seam selection after the accepted shared permissions extraction.
+  - `I.1p` is now complete on production commit `9c83be7`: shared user-server config resolution now backs `profile.py` selected-server switching and complaint route config reads.
+  - `I.1q` is now complete on production commit `9c83be7`: shared law-QA server availability/identity helpers now back `pages.py` and law-sources dependency reporting.
+  - immediate next step is `I.1r` bounded seam selection after the accepted shared user-config and law-QA availability extraction.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
