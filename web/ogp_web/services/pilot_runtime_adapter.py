@@ -122,6 +122,41 @@ def _payload_json(version: dict[str, Any] | None) -> dict[str, Any]:
     return dict((version or {}).get("payload_json") or {})
 
 
+def _sorted_feature_flags(server_pack_metadata: dict[str, Any]) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                str(item).strip()
+                for item in (server_pack_metadata.get("feature_flags") or [])
+                if str(item).strip()
+            }
+        )
+    )
+
+
+def _version_number(version: dict[str, Any] | None) -> str:
+    return str((version or {}).get("version_number") or "1")
+
+
+def _build_runtime_version(
+    version: dict[str, Any] | None,
+    *,
+    fallback_id: str,
+    payload_field: str,
+    runtime_field: str,
+    fallback_payload_value: str,
+    extra_fields: dict[str, Any],
+) -> dict[str, Any]:
+    payload = _payload_json(version)
+    runtime_version = {
+        "id": (version or {}).get("id") or fallback_id,
+        runtime_field: str(payload.get(payload_field) or fallback_payload_value),
+        "version": _version_number(version),
+    }
+    runtime_version.update(extra_fields)
+    return runtime_version
+
+
 def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) -> PilotComplaintRuntimeContext:
     server_code = str(user.server_code or store.get_server_code(user.username) or "").strip().lower()
     if not supports_pilot_runtime_adapter(server_code=server_code, document_kind=PILOT_PROCEDURE_CODE):
@@ -140,55 +175,58 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
 
     server_pack_version = str(server_pack.get("version") or "1")
     bundle_hash = str(getattr(bundle_meta, "fingerprint", "") or "").strip()
-    procedure_payload = _payload_json(procedure_version)
-    form_payload = _payload_json(form_version)
-    validation_payload = _payload_json(validation_version)
-    template_payload = _payload_json(template_version)
-    law_payload = _payload_json(law_version)
 
     return PilotComplaintRuntimeContext(
         server_code=server_code,
-        feature_flags=tuple(
-            sorted(
-                {
-                    str(item).strip()
-                    for item in (server_pack_metadata.get("feature_flags") or [])
-                    if str(item).strip()
-                }
-            )
-        ),
+        feature_flags=_sorted_feature_flags(server_pack_metadata),
         server_config_version={
             "id": f"server_config:{server_code}:v{server_pack_version}",
             "version": server_pack_version,
         },
-        procedure_version={
-            "id": (procedure_version or {}).get("id") or f"procedure:{server_code}:{PILOT_PROCEDURE_CODE}:v1",
-            "procedure_code": str(procedure_payload.get("procedure_code") or PILOT_PROCEDURE_CODE),
-            "version": str((procedure_version or {}).get("version_number") or "1"),
-            "document_kind": str(procedure_payload.get("document_kind") or PILOT_PROCEDURE_CODE),
-        },
-        form_version={
-            "id": (form_version or {}).get("id") or f"form:{server_code}:{PILOT_PROCEDURE_CODE}:{form_version_hash()}",
-            "form_key": str(form_payload.get("form_code") or "complaint_draft_semantic"),
-            "version": str((form_version or {}).get("version_number") or "1"),
-            "hash": form_version_hash(),
-        },
-        validation_rule_version={
-            "id": (validation_version or {}).get("id") or f"validation:{server_code}:{PILOT_PROCEDURE_CODE}:{complaint_validation_rules_version(PILOT_PROCEDURE_CODE)}",
-            "rule_set_key": str(validation_payload.get("rule_code") or PILOT_VALIDATION_CONTENT_KEY),
-            "version": str((validation_version or {}).get("version_number") or "1"),
-            "hash": complaint_validation_rules_version(PILOT_PROCEDURE_CODE),
-        },
-        template_version={
-            "id": (template_version or {}).get("id") or "complaint_bbcode_v1",
-            "template_code": str(template_payload.get("template_code") or PILOT_TEMPLATE_CONTENT_KEY),
-            "version": str((template_version or {}).get("version_number") or "1"),
-            "hash": complaint_template_hash(PILOT_PROCEDURE_CODE),
-        },
-        law_set_version={
-            "id": (law_version or {}).get("id") or f"law_set:{server_code}:{bundle_hash or 'unknown'}",
-            "law_set_key": str(law_payload.get("key") or PILOT_LAWS_CONTENT_KEY),
-            "version": str((law_version or {}).get("version_number") or "1"),
-            "hash": bundle_hash,
-        },
+        procedure_version=_build_runtime_version(
+            procedure_version,
+            fallback_id=f"procedure:{server_code}:{PILOT_PROCEDURE_CODE}:v1",
+            payload_field="procedure_code",
+            runtime_field="procedure_code",
+            fallback_payload_value=PILOT_PROCEDURE_CODE,
+            extra_fields={"document_kind": str(_payload_json(procedure_version).get("document_kind") or PILOT_PROCEDURE_CODE)},
+        ),
+        form_version=_build_runtime_version(
+            form_version,
+            fallback_id=f"form:{server_code}:{PILOT_PROCEDURE_CODE}:{form_version_hash()}",
+            payload_field="form_code",
+            runtime_field="form_key",
+            fallback_payload_value="complaint_draft_semantic",
+            extra_fields={
+                "hash": form_version_hash(),
+            },
+        ),
+        validation_rule_version=_build_runtime_version(
+            validation_version,
+            fallback_id=f"validation:{server_code}:{PILOT_PROCEDURE_CODE}:{complaint_validation_rules_version(PILOT_PROCEDURE_CODE)}",
+            payload_field="rule_code",
+            runtime_field="rule_set_key",
+            fallback_payload_value=PILOT_VALIDATION_CONTENT_KEY,
+            extra_fields={
+                "hash": complaint_validation_rules_version(PILOT_PROCEDURE_CODE),
+            },
+        ),
+        template_version=_build_runtime_version(
+            template_version,
+            fallback_id="complaint_bbcode_v1",
+            payload_field="template_code",
+            runtime_field="template_code",
+            fallback_payload_value=PILOT_TEMPLATE_CONTENT_KEY,
+            extra_fields={"hash": complaint_template_hash(PILOT_PROCEDURE_CODE)},
+        ),
+        law_set_version=_build_runtime_version(
+            law_version,
+            fallback_id=f"law_set:{server_code}:{bundle_hash or 'unknown'}",
+            payload_field="key",
+            runtime_field="law_set_key",
+            fallback_payload_value=PILOT_LAWS_CONTENT_KEY,
+            extra_fields={
+                "hash": bundle_hash,
+            },
+        ),
     )
