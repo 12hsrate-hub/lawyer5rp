@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select I.3a after accepted I.2 snapshot/provenance convergence wave`
+- Next slice: `select I.3b after accepted exam-import overview decomposition seam`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -176,6 +176,8 @@ Date: 2026-04-14
   - `I.2` is accepted
   - no further meaningful snapshot/provenance convergence seams remain that remove a real second source of truth without slipping into wrapper-only reshuffling
   - route contracts remain unchanged and the first thirty-three Phase I convergence slices are accepted
+  - `I.3a` deployed on production commit `2b70af8`
+  - `exam_import` overview payload assembly now converges behind a shared admin overview helper reused by both the standalone admin route and the main dashboard payload builder
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
