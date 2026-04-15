@@ -281,6 +281,70 @@ def test_finalize_suggest_result_contract_builds_metrics_and_payload():
     assert "suggest_validation_retry" in result.warnings
 
 
+def test_finalize_law_qa_result_contract_builds_metrics_and_payload():
+    class _RetrievalResult:
+        indexed_chunk_count = 4
+        confidence = "high"
+        profile = "law_qa"
+        bundle_health = type(
+            "BundleHealth",
+            (),
+            {
+                "status": "fresh",
+                "generated_at": "2026-04-16T00:00:00Z",
+                "fingerprint": "bundle-fp",
+                "warnings": ("bundle_warn",),
+            },
+        )()
+
+    class _BudgetAssessment:
+        status = "ok"
+        warnings = ("budget_warn",)
+        policy = {"flow": "law_qa"}
+
+    class _GuardResult:
+        status = "warn"
+        warning_codes = ("guard_warn",)
+
+    result = orchestration.finalize_law_qa_result(
+        text="Answer with source https://laws.example",
+        generation_id="g-law",
+        contract_version="v-law",
+        retrieval_result=_RetrievalResult(),
+        shadow={"enabled": False},
+        model_name="gpt-5.4",
+        selection_reason="law_qa_default",
+        requested_model="gpt-5.4-mini",
+        compaction_level=1,
+        prompt="prompt",
+        usage={"total_tokens": 9},
+        latency_ms=44,
+        max_answer_chars=40,
+        build_ai_telemetry=lambda **kwargs: {"model": kwargs["model_name"], "latency_ms": kwargs["latency_ms"]},
+        evaluate_budget=lambda **kwargs: _BudgetAssessment(),
+        unique_sources=lambda retrieval_result: ("https://laws.example/article-1",),
+        guard_law_qa_answer=lambda **kwargs: _GuardResult(),
+        telemetry_to_meta=lambda telemetry: dict(telemetry),
+        policy_to_meta=lambda policy: {"policy": policy["flow"]},
+        strip_law_qa_source_urls=lambda text: text.replace(" https://laws.example", ""),
+        normalize_law_qa_text_formatting=lambda text: f"{text} normalized",
+        build_selected_norms=lambda retrieval_result: [{"article": "1"}],
+    )
+
+    assert result.selected_model == "gpt-5.4"
+    assert result.selection_reason == "law_qa_default"
+    assert result.requested_model == "gpt-5.4-mini"
+    assert result.guard_status == "warn"
+    assert result.used_sources == ["https://laws.example/article-1"]
+    assert result.telemetry["context_compaction_level"] == 1
+    assert result.telemetry["selected_model"] == "gpt-5.4"
+    assert result.selected_norms == [{"article": "1"}]
+    assert "bundle_warn" in result.warnings
+    assert "guard_warn" in result.warnings
+    assert "budget_warn" in result.warnings
+    assert "law_qa_context_compacted" in result.warnings
+
+
 def test_telemetry_meta_contracts():
     law_result = ai_service.LawQaAnswerResult(
         text="ok",

@@ -6,7 +6,7 @@ from typing import Any, Callable, Sequence
 from fastapi import HTTPException, status
 
 from ogp_web.schemas import LawQaPayload, PrincipalScanPayload, PrincipalScanResult, SuggestPayload
-from ogp_web.services.ai_pipeline.interfaces import SuggestTextResult
+from ogp_web.services.ai_pipeline.interfaces import LawQaAnswerResult, SuggestTextResult
 
 
 @dataclass(frozen=True)
@@ -391,6 +391,92 @@ def finalize_suggest_result(
         context_compaction_level=suggest_compaction_level,
         factual_fallback_expanded_mode=factual_fallback_expanded_mode,
         guard_status=combined_guard_status,
+    )
+
+
+def finalize_law_qa_result(
+    *,
+    text: str,
+    generation_id: str,
+    contract_version: str,
+    retrieval_result: Any,
+    shadow: dict[str, object],
+    model_name: str,
+    selection_reason: str,
+    requested_model: str,
+    compaction_level: int,
+    prompt: str,
+    usage: Any,
+    latency_ms: int,
+    max_answer_chars: int,
+    build_ai_telemetry: Callable[..., Any],
+    evaluate_budget: Callable[..., Any],
+    unique_sources: Callable[[Any], Sequence[str]],
+    guard_law_qa_answer: Callable[..., Any],
+    telemetry_to_meta: Callable[[Any], dict[str, object]],
+    policy_to_meta: Callable[[Any], dict[str, object]],
+    strip_law_qa_source_urls: Callable[[str], str],
+    normalize_law_qa_text_formatting: Callable[[str], str],
+    build_selected_norms: Callable[[Any], list[dict[str, object]]],
+) -> LawQaAnswerResult:
+    sanitized_text = strip_law_qa_source_urls(text)
+    sanitized_text = normalize_law_qa_text_formatting(sanitized_text)
+    limited = sanitized_text[:max_answer_chars].strip()
+    telemetry = build_ai_telemetry(
+        model_name=model_name,
+        prompt_text=prompt,
+        output_text=limited,
+        usage=usage,
+        latency_ms=latency_ms,
+        cache_hit=False,
+    )
+    budget_assessment = evaluate_budget(flow="law_qa", telemetry=telemetry)
+    used_sources = list(unique_sources(retrieval_result))
+    guard_result = guard_law_qa_answer(
+        text=limited,
+        allowed_source_urls=used_sources,
+        bundle_health=retrieval_result.bundle_health,
+    )
+    telemetry_meta = telemetry_to_meta(telemetry)
+    telemetry_meta.update(
+        {
+            "selected_model": model_name,
+            "selection_reason": selection_reason,
+            "requested_model": requested_model,
+            "context_compaction_level": compaction_level,
+            "context_compacted": bool(compaction_level > 0),
+        }
+    )
+    warnings = list(
+        dict.fromkeys(
+            list(retrieval_result.bundle_health.warnings)
+            + list(guard_result.warning_codes)
+            + list(budget_assessment.warnings)
+            + (["law_qa_context_compacted"] if compaction_level > 0 else [])
+        )
+    )
+    return LawQaAnswerResult(
+        text=limited,
+        generation_id=generation_id,
+        used_sources=used_sources,
+        indexed_documents=retrieval_result.indexed_chunk_count,
+        retrieval_confidence=retrieval_result.confidence,
+        retrieval_profile=retrieval_result.profile,
+        guard_status=guard_result.status,
+        contract_version=contract_version,
+        bundle_status=retrieval_result.bundle_health.status,
+        bundle_generated_at=retrieval_result.bundle_health.generated_at,
+        bundle_fingerprint=retrieval_result.bundle_health.fingerprint,
+        warnings=warnings,
+        shadow=shadow,
+        selected_norms=build_selected_norms(retrieval_result),
+        telemetry=telemetry_meta,
+        budget_status=budget_assessment.status,
+        budget_warnings=list(budget_assessment.warnings),
+        budget_policy=policy_to_meta(budget_assessment.policy),
+        selected_model=model_name,
+        selection_reason=selection_reason,
+        requested_model=requested_model,
     )
 
 
