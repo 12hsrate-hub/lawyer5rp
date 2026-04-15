@@ -43,7 +43,6 @@ from ogp_web.services.complaint_draft_schema import normalize_complaint_draft
 from ogp_web.services.complaint_service import build_generation_context_snapshot
 from ogp_web.services.citation_service import save_answer_citations
 from ogp_web.services.feature_flags import FeatureFlagService, RolloutContext
-from ogp_web.services.generation_orchestrator import GenerationOrchestrator
 from ogp_web.services.generated_document_trace_service import (
     list_user_generated_document_history,
     require_user_generated_document_trace_bundle,
@@ -137,12 +136,6 @@ async def _run_ai_task(
         threadpool_runner=run_in_threadpool,
         **kwargs,
     )
-
-
-def _validation_service(store: UserStore) -> ValidationService:
-    return _runtime_service().build_validation_service(store)
-
-
 def _with_shadow_citations_policy(context_snapshot: dict[str, object]) -> dict[str, object]:
     return _runtime_service().with_shadow_citations_policy(context_snapshot)
 
@@ -300,42 +293,23 @@ async def generate(
         _build_complaint_generation_context_snapshot(store=store, user=user, adapter_flag=adapter_flag)
     )
     bbcode = generate_bbcode_text(store, payload, user)
-    orchestrator = GenerationOrchestrator(store)
-    bridge_result = orchestrator.write_generation_bridge(
-        username=user.username,
-        server_code=user.server_code,
+    bridge_result = _runtime_service().persist_generation_result(
+        store=store,
+        user=user,
         document_kind="complaint",
         payload=payload.model_dump(),
         result_text=bbcode,
         context_snapshot=context_snapshot,
-        legacy_generated_document_id=None,
     )
     document_id = int(bridge_result.generated_document_id)
-    if bridge_result is not None:
-        try:
-            if validation_flag.use_new_flow:
-                result = _validation_service(store).run_validation(
-                    target_type="document_version",
-                    target_id=int(bridge_result.document_version_id),
-                )
-                record_validation_fail_rate(
-                    metrics_store,
-                    username=user.username,
-                    path="/api/generate",
-                    method="POST",
-                    labels=build_rollout_labels(
-                        flag="validation_gate_v1",
-                        rollout_mode=validation_flag.mode.value,
-                        cohort=validation_flag.cohort.value,
-                        server_id=user.server_code,
-                        flow_type="generate",
-                        status="fail" if result.run.get("status") == "fail" else "success",
-                    ),
-                    failed=result.run.get("status") == "fail",
-                )
-        except Exception:
-            if str(os.getenv("OGP_VALIDATION_GENERATION_STRICT", "0") or "").strip() in {"1", "true", "yes", "on"}:
-                raise
+    _runtime_service().maybe_validate_generated_document(
+        store=store,
+        metrics_store=metrics_store,
+        user=user,
+        path="/api/generate",
+        validation_flag=validation_flag,
+        bridge_result=bridge_result,
+    )
     metrics_store.log_event(
         event_type="complaint_generated",
         username=user.username,
@@ -384,41 +358,23 @@ async def generate_rehab(
     )
     context_snapshot = _with_shadow_citations_policy(build_generation_context_snapshot(store, user, document_kind="rehab"))
     bbcode = generate_rehab_bbcode_text(store, payload, user)
-    bridge_result = GenerationOrchestrator(store).write_generation_bridge(
-        username=user.username,
-        server_code=user.server_code,
+    bridge_result = _runtime_service().persist_generation_result(
+        store=store,
+        user=user,
         document_kind="rehab",
         payload=payload.model_dump(),
         result_text=bbcode,
         context_snapshot=context_snapshot,
-        legacy_generated_document_id=None,
     )
     document_id = int(bridge_result.generated_document_id)
-    if bridge_result is not None:
-        try:
-            if validation_flag.use_new_flow:
-                result = _validation_service(store).run_validation(
-                    target_type="document_version",
-                    target_id=int(bridge_result.document_version_id),
-                )
-                record_validation_fail_rate(
-                    metrics_store,
-                    username=user.username,
-                    path="/api/generate-rehab",
-                    method="POST",
-                    labels=build_rollout_labels(
-                        flag="validation_gate_v1",
-                        rollout_mode=validation_flag.mode.value,
-                        cohort=validation_flag.cohort.value,
-                        server_id=user.server_code,
-                        flow_type="generate",
-                        status="fail" if result.run.get("status") == "fail" else "success",
-                    ),
-                    failed=result.run.get("status") == "fail",
-                )
-        except Exception:
-            if str(os.getenv("OGP_VALIDATION_GENERATION_STRICT", "0") or "").strip() in {"1", "true", "yes", "on"}:
-                raise
+    _runtime_service().maybe_validate_generated_document(
+        store=store,
+        metrics_store=metrics_store,
+        user=user,
+        path="/api/generate-rehab",
+        validation_flag=validation_flag,
+        bridge_result=bridge_result,
+    )
     metrics_store.log_event(
         event_type="rehab_generated",
         username=user.username,
