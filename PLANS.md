@@ -6,10 +6,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 
 ## Current Execution State
 
-- Current phase: `Phase I — Runtime/admin convergence wave 1`
-- Current task: `select the next Phase I task after accepted I.5`
-- Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `pick the next non-wrapper Phase I convergence target after accepted I.5`
+- Current phase: `Phase J — AI pipeline decomposition wave 1`
+- Current task: `J.1 suggest orchestration extraction`
+- Active execution phase override: `Phase I is accepted; Phase J is now opened as the next execution phase`
+- Current micro-step: `select the first bounded ai_service -> ai_pipeline extraction seam without changing route contracts`
 - Overall status: `in_progress`
 - Last updated: `2026-04-16`
 - Execution override update:
@@ -119,7 +119,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.5b` is now complete on production commit `6ad4359`: `law-jobs` overview and `law-sources/rebuild-async` now reuse the same task ops service instead of keeping route-local task queue/orchestration logic.
   - `I.5c` is now complete on production commit `6ad4359`: async `users/bulk-actions` dispatch and generic `/api/admin/tasks/{task_id}` status now reuse the same service, and API tests now override the dependency-backed task service instead of patching route globals.
   - `I.5` is accepted: the remaining admin ops surfaces are thin wrappers or single-purpose execution boundaries, not another high-value convergence seam.
-  - immediate next step is `pick the next non-wrapper Phase I convergence target after accepted I.5`.
+  - `Phase I` is accepted: no further meaningful runtime/admin convergence seams remain that remove a real duplicated orchestration layer without slipping into thin wrappers, task boundaries, or cosmetic reshuffling.
+  - `Phase J` is opened as the next execution phase.
+  - immediate next step is `Phase J.1 suggest orchestration extraction`.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
@@ -599,6 +601,21 @@ Execution status: `ready_to_start`
 - `I.5b` complete on production commit `6ad4359`: `law-jobs` overview and `law-sources/rebuild-async` now reuse the same service-backed task registry instead of route-local queue helpers.
 - `I.5c` complete on production commit `6ad4359`: async `users/bulk-actions` and `/api/admin/tasks/{task_id}` now reuse the same service-backed task execution/status path, and API coverage now targets dependency overrides instead of route globals.
 - `I.5` accepted: no further meaningful admin task/ops lifecycle seams remain that remove a real orchestration layer without drifting into thin wrappers.
+
+### J.1 Suggest orchestration extraction
+- Use the existing `ogp_web.services.ai_pipeline` layer as the canonical home for suggest/law-QA orchestration seams that are still trapped inside `ai_service.py`.
+- Start with the bounded `suggest_text_details(...)` path, because it already has a stable facade/orchestration wrapper but still keeps a large implementation block in `ai_service.py`.
+- Keep external API contracts and telemetry payload shapes stable while extracting internal generation / validation / remediation orchestration helpers.
+- First candidate slice:
+  - move suggest attempt-compaction and validation-remediation orchestration behind dedicated `ai_pipeline` helpers while keeping `ai_service.suggest_text_details(...)` as a thin facade.
+
+### J.2 Law-QA extraction follow-up
+- After the suggest path is stable, mirror the same extraction approach for `answer_law_question_details(...)`.
+- Reuse the same bounded rule: internal orchestration moves, route/service contracts stay stable.
+
+### J.3 AI facade tightening
+- Once suggest and law-QA internals are extracted, reduce `ai_service.py` to compatibility facades, shared retrieval helpers, and stable metrics adapters.
+- Stop as soon as the remaining code is mostly thin facade glue; do not keep slicing for cosmetic movement.
 
 ### Deliverables
 - `Phase I` execution brief with the first accepted bounded seam
