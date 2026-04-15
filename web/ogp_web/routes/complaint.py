@@ -53,7 +53,11 @@ from ogp_web.services.regression_metrics import (
     record_validation_fail_rate,
     start_timer,
 )
-from ogp_web.services.server_context_service import extract_server_complaint_settings, extract_server_identity_settings, resolve_user_server_context
+from ogp_web.services.server_context_service import (
+    extract_server_complaint_settings,
+    extract_server_identity_settings,
+    resolve_user_server_config,
+)
 from ogp_web.services.validation_service import ValidationService
 from ogp_web.services.retrieval_service import run_retrieval
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -223,8 +227,7 @@ async def _run_ai_task(
 
 
 def _server_config_for_user(store: UserStore, user: AuthUser):
-    server_config, _ = resolve_user_server_context(store, user.username, server_code=user.server_code)
-    return server_config
+    return resolve_user_server_config(store, user.username, server_code=user.server_code)
 
 
 def _validation_service(store: UserStore) -> ValidationService:

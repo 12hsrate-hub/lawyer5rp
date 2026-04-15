@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from ogp_web.db.factory import get_database_backend
 from ogp_web.dependencies import get_exam_answers_store, get_user_store, requires_permission
 from ogp_web.env import is_test_user
-from ogp_web.server_config import PermissionSet, ServerConfig, list_server_configs
+from ogp_web.server_config import PermissionSet, ServerConfig
 from ogp_web.services.ai_service import get_default_law_qa_model
 from ogp_web.services.auth_service import AuthError, AuthUser, get_current_user
 from ogp_web.services.content_workflow_service import ContentWorkflowService
@@ -16,7 +16,7 @@ from ogp_web.services.law_admin_service import LawAdminService
 from ogp_web.services.server_context_service import (
     extract_server_complaint_settings,
     extract_server_shell_context,
-    extract_server_law_context_settings,
+    list_servers_with_law_qa_context,
     resolve_server_config,
     resolve_server_law_sources,
     resolve_user_server_context,
@@ -240,14 +240,7 @@ async def law_qa_test_page(
             server_config=server_config,
             permissions=permissions,
             nav_active="law_qa_test",
-            law_qa_servers=[
-                {"code": item.code, "name": item.name}
-                for item in list_server_configs()
-                if (
-                    extract_server_law_context_settings(item).source_urls
-                    or extract_server_law_context_settings(item).bundle_path
-                )
-            ],
+            law_qa_servers=list_servers_with_law_qa_context(),
             law_qa_sources=law_sources,
             law_qa_default_model=get_default_law_qa_model(),
         ),
