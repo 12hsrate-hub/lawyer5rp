@@ -247,6 +247,8 @@ Date: 2026-04-14
   - `J.1b` deployed on production commit `dbeacc2`
   - suggest validation retry / safe-fallback remediation now converge behind the same orchestration layer while keeping the public suggest contract stable
   - the local `get_server_config(...)` seam in `ai_service.py` now uses a compatibility wrapper so shared server-context resolution remains positional-safe for retrieval helpers
+  - `J.1c` deployed on production commit `3114c63`
+  - suggest warning aggregation and `SuggestTextResult` payload assembly now converge behind the same orchestration layer instead of staying inline in `ai_service.py`
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
