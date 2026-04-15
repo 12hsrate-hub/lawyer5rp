@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.1 shared server-context seam extraction`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded runtime/admin server-config seam after I.1l`
+- Current micro-step: `select the next bounded runtime/admin server-config seam after I.1m`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -46,7 +46,8 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.1j` is now complete on production commit `6ca518f`: `ai_service` now reuses shared extracted AI-context settings for law-QA/suggest shadow profiles and suggest-mode policy shaping.
   - `I.1k` is now complete on production commit `7026994`: shared server identity extraction now backs `law_retrieval_service` result shaping and complaint generation snapshot server metadata.
   - `I.1l` is now complete on production commit `7026994`: shared normalized feature-flag extraction now backs complaint snapshot feature flags and `ai_service` feature checks.
-  - immediate next step is `I.1m` bounded seam selection after the accepted shared server identity/flag extraction.
+  - `I.1m` is now complete on production commit `078350d`: shared page/admin shell context extraction now backs `pages.py` and `admin.py` instead of local server-config presentation shaping.
+  - immediate next step is `I.1n` bounded seam selection after the accepted shared shell-context extraction.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
