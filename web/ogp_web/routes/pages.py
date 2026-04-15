@@ -30,8 +30,14 @@ from ogp_web.web import page_context, templates
 
 router = APIRouter()
 
+
 def _server_context(store: UserStore, username: str) -> tuple[ServerConfig, PermissionSet]:
     return resolve_user_server_context(store, username)
+
+
+def _request_server_config(request: Request) -> ServerConfig:
+    default_server = getattr(request.app.state, "server_config", None)
+    return resolve_server_config(server_code=getattr(default_server, "code", "blackberry"))
 
 
 def _build_page_context(
@@ -66,8 +72,7 @@ async def login_page(request: Request):
     user = get_current_user(request)
     if user:
         return RedirectResponse(url="/complaint", status_code=status.HTTP_302_FOUND)
-    default_server = getattr(request.app.state, "server_config", None)
-    server_config = resolve_server_config(server_code=getattr(default_server, "code", "blackberry"))
+    server_config = _request_server_config(request)
     return templates.TemplateResponse(
         request,
         "login.html",
@@ -97,7 +102,7 @@ async def verify_email_page(
     server_code = (
         store.get_server_code(username)
         if username
-        else getattr(request.app.state.server_config, "code", "blackberry")
+        else _request_server_config(request).code
     )
     server_config = resolve_server_config(server_code=server_code)
     return templates.TemplateResponse(
@@ -114,7 +119,7 @@ async def verify_email_page(
 
 @router.get("/reset-password", response_class=HTMLResponse)
 async def reset_password_page(request: Request, token: str = ""):
-    server_config = resolve_server_config(server_code=getattr(request.app.state.server_config, "code", "blackberry"))
+    server_config = _request_server_config(request)
     return templates.TemplateResponse(
         request,
         "reset_password.html",
@@ -132,7 +137,6 @@ async def complaint_page(
     store: UserStore = Depends(get_user_store),
 ):
     server_config, permissions = _server_context(store, user.username)
-    complaint_settings = extract_server_complaint_settings(server_config)
     return templates.TemplateResponse(
         request,
         "complaint.html",
