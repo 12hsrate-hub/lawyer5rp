@@ -6,6 +6,7 @@ from typing import Any, Callable, Sequence
 from fastapi import HTTPException, status
 
 from ogp_web.schemas import LawQaPayload, PrincipalScanPayload, PrincipalScanResult, SuggestPayload
+from ogp_web.services.ai_pipeline.interfaces import SuggestTextResult
 
 
 @dataclass(frozen=True)
@@ -173,6 +174,105 @@ def run_suggest_validation_remediation(
         remediation=remediation,
         validation_retry_count=validation_retry_count,
         validation_errors=validation_errors,
+    )
+
+
+def build_suggest_result(
+    *,
+    text: str,
+    generation_id: str,
+    contract_version: str,
+    shadow: dict[str, object],
+    telemetry_meta: dict[str, object],
+    budget_status: str,
+    budget_warnings: list[str],
+    budget_policy: dict[str, object],
+    retrieval_ms: int,
+    openai_ms: int,
+    total_suggest_ms: int,
+    prompt_mode: str,
+    retrieval_confidence: str,
+    retrieval_context_mode: str,
+    retrieval_profile: str,
+    bundle_status: str,
+    bundle_generated_at: str,
+    bundle_fingerprint: str,
+    selected_norms_count: int,
+    policy_mode: str,
+    policy_reason: str,
+    valid_triggers_count: int,
+    avg_trigger_confidence: float,
+    remediation_retries: int,
+    safe_fallback_used: bool,
+    validation_status: str,
+    validation_retry_count: int,
+    validation_errors: tuple[str, ...],
+    input_warning_codes: tuple[str, ...],
+    protected_terms: tuple[str, ...],
+    selected_model: str,
+    selection_reason: str,
+    guard_warning_codes: Sequence[str],
+    validator_warning_codes: Sequence[str],
+    point3_input_warning_codes: Sequence[str],
+    context_compaction_level: int,
+    factual_fallback_expanded_mode: str,
+    guard_status: str,
+) -> SuggestTextResult:
+    warnings = list(
+        dict.fromkeys(
+            list(guard_warning_codes)
+            + list(validator_warning_codes)
+            + list(budget_warnings)
+            + list(point3_input_warning_codes)
+            + (["suggest_low_confidence_context"] if retrieval_context_mode == "low_confidence_context" else [])
+            + (["suggest_no_context"] if retrieval_context_mode == "no_context" else [])
+            + (["suggest_context_compacted"] if context_compaction_level > 0 else [])
+            + (["suggest_output_remediated"] if remediation_retries > 0 else [])
+            + (["suggest_safe_fallback_template"] if safe_fallback_used else [])
+            + (["suggest_safe_factual_fallback"] if safe_fallback_used else [])
+            + (["suggest_validation_retry"] if validation_retry_count > 0 else [])
+            + (
+                ["suggest_factual_fallback_expanded"]
+                if policy_mode == factual_fallback_expanded_mode
+                else ["suggest_legal_grounded"]
+            )
+        )
+    )
+    return SuggestTextResult(
+        text=text,
+        generation_id=generation_id,
+        guard_status=guard_status,
+        contract_version=contract_version,
+        warnings=warnings,
+        shadow=shadow,
+        telemetry=telemetry_meta,
+        budget_status=budget_status,
+        budget_warnings=list(budget_warnings),
+        budget_policy=budget_policy,
+        retrieval_ms=retrieval_ms,
+        openai_ms=openai_ms,
+        total_suggest_ms=total_suggest_ms,
+        prompt_mode=prompt_mode,
+        retrieval_confidence=retrieval_confidence,
+        retrieval_context_mode=retrieval_context_mode,
+        retrieval_profile=retrieval_profile,
+        bundle_status=bundle_status,
+        bundle_generated_at=bundle_generated_at,
+        bundle_fingerprint=bundle_fingerprint,
+        selected_norms_count=selected_norms_count,
+        policy_mode=policy_mode,
+        policy_reason=policy_reason,
+        valid_triggers_count=valid_triggers_count,
+        avg_trigger_confidence=avg_trigger_confidence,
+        remediation_retries=remediation_retries,
+        safe_fallback_used=safe_fallback_used,
+        validation_status=validation_status,
+        validation_retry_count=validation_retry_count,
+        validation_errors=validation_errors,
+        input_warning_codes=input_warning_codes,
+        protected_terms=protected_terms,
+        selected_model=selected_model,
+        selection_reason=selection_reason,
     )
 
 
