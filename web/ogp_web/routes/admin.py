@@ -122,6 +122,7 @@ from ogp_web.services.admin_users_service import (
 from ogp_web.services.admin_user_mutations_service import (
     block_admin_user_payload,
     deactivate_admin_user_payload,
+    execute_bulk_user_mutation_action,
     grant_gka_payload,
     grant_tester_payload,
     reactivate_admin_user_payload,
@@ -880,93 +881,13 @@ def _apply_bulk_action(
     user_store: UserStore,
     task_id: str | None = None,
 ) -> dict[str, Any]:
-    action = str(payload.action or "").strip().lower()
-    if action == "set_daily_quota" and payload.daily_limit is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Для set_daily_quota обязательно поле daily_limit."])
-    usernames = [str(item or "").strip().lower() for item in payload.usernames if str(item or "").strip()]
-    if not usernames:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["Не переданы пользователи для массовой операции."])
-
-    results: list[dict[str, Any]] = []
-    success_count = 0
-    for index, username in enumerate(usernames, start=1):
-        try:
-            if action == "verify_email":
-                user_store.admin_mark_email_verified(username)
-                event_type = "admin_verify_email"
-                meta: dict[str, Any] = {"target_username": username, "bulk": True}
-                path = f"/api/admin/users/{username}/verify-email"
-            elif action == "block":
-                user_store.admin_set_access_blocked(username, payload.reason)
-                event_type = "admin_block_user"
-                meta = {"target_username": username, "reason": payload.reason, "bulk": True}
-                path = f"/api/admin/users/{username}/block"
-            elif action == "unblock":
-                user_store.admin_clear_access_blocked(username)
-                event_type = "admin_unblock_user"
-                meta = {"target_username": username, "bulk": True}
-                path = f"/api/admin/users/{username}/unblock"
-            elif action == "grant_tester":
-                user_store.admin_set_tester_status(username, True)
-                event_type = "admin_grant_tester"
-                meta = {"target_username": username, "bulk": True}
-                path = f"/api/admin/users/{username}/grant-tester"
-            elif action == "revoke_tester":
-                user_store.admin_set_tester_status(username, False)
-                event_type = "admin_revoke_tester"
-                meta = {"target_username": username, "bulk": True}
-                path = f"/api/admin/users/{username}/revoke-tester"
-            elif action == "grant_gka":
-                user_store.admin_set_gka_status(username, True)
-                event_type = "admin_grant_gka"
-                meta = {"target_username": username, "bulk": True}
-                path = f"/api/admin/users/{username}/grant-gka"
-            elif action == "revoke_gka":
-                user_store.admin_set_gka_status(username, False)
-                event_type = "admin_revoke_gka"
-                meta = {"target_username": username, "bulk": True}
-                path = f"/api/admin/users/{username}/revoke-gka"
-            elif action == "deactivate":
-                user_store.admin_deactivate_user(username, payload.reason)
-                event_type = "admin_deactivate_user"
-                meta = {"target_username": username, "reason": payload.reason, "bulk": True}
-                path = f"/api/admin/users/{username}/deactivate"
-            elif action == "reactivate":
-                user_store.admin_reactivate_user(username)
-                event_type = "admin_reactivate_user"
-                meta = {"target_username": username, "bulk": True}
-                path = f"/api/admin/users/{username}/reactivate"
-            elif action == "set_daily_quota":
-                safe_limit = int(payload.daily_limit or 0)
-                user_store.admin_set_daily_quota(username, safe_limit)
-                event_type = "admin_set_daily_quota"
-                meta = {"target_username": username, "daily_limit": safe_limit, "bulk": True}
-                path = f"/api/admin/users/{username}/daily-quota"
-            else:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[f"Неизвестное bulk-действие: {action}."])
-            metrics_store.log_event(
-                event_type=event_type,
-                username=user.username,
-                server_code=user.server_code,
-                path=path,
-                method="POST",
-                status_code=200,
-                meta=meta,
-            )
-            success_count += 1
-            results.append({"username": username, "ok": True})
-        except Exception as exc:  # noqa: BLE001
-            results.append({"username": username, "ok": False, "error": str(exc)})
-        if task_id:
-            _patch_admin_task(task_id, progress={"done": index, "total": len(usernames)})
-
-    return {
-        "action": action,
-        "total": len(usernames),
-        "success_count": success_count,
-        "failed_count": len(usernames) - success_count,
-        "results": results,
-    }
+    return execute_bulk_user_mutation_action(
+        payload=payload,
+        user=user,
+        metrics_store=metrics_store,
+        user_store=user_store,
+        progress_callback=(lambda done, total: _patch_admin_task(task_id, progress={"done": done, "total": total})) if task_id else None,
+    )
 
 
 def _admin_template_payload(request: Request, user: AuthUser, *, admin_focus: str) -> dict[str, Any]:
