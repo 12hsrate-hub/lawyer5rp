@@ -9,7 +9,7 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - Current phase: `Phase I — Runtime/admin convergence wave 1`
 - Current task: `I.1 shared server-context seam extraction`
 - Active execution phase override: `Phase H is accepted; Phase I is now opened as the next execution phase`
-- Current micro-step: `select the next bounded runtime/admin server-config seam after I.1v`
+- Current micro-step: `select the next bounded runtime/admin server-config seam after I.1x`
 - Overall status: `in_progress`
 - Last updated: `2026-04-15`
 - Execution override update:
@@ -56,7 +56,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
   - `I.1t` is now complete on production commit `adb09aa`: dead `resolve_server_config(...)` reads were removed from bounded law-QA admin/AI helper paths without changing runtime contracts.
   - `I.1u` is now complete on production commit `8395223`: repeated request-default server-config lookup in `pages.py` is centralized behind `_request_server_config(...)` for login, verify-email, and reset-password flows.
   - `I.1v` is now complete on production commit `8395223`: tiny dead cleanup leftovers were removed from bounded page/law-admin paths, and stale `law_admin_service` tests were aligned with the shared server-context helpers.
-  - immediate next step is `I.1w` bounded seam selection after the accepted request-default cleanup pass.
+  - `I.1w` is now complete on production commit `304d9d6`: shared `resolve_server_ai_context_settings(...)` now backs bounded AI law-QA and suggest call sites instead of local extract-only seams.
+  - `I.1x` is now complete on production commit `304d9d6`: shared `resolve_server_identity(...)` and `resolve_server_feature_flags(...)` now back bounded complaint generation snapshot assembly and related server-context tests.
+  - immediate next step is `I.1y` bounded seam selection after the accepted shared resolve-helper pass.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
