@@ -1,6 +1,6 @@
 # REHAB_ROLLOUT_GAP_MAP.md
 
-Status: `H.1c complete; rollout still gated on parity proof`  
+Status: `H.1 complete; candidate checkpoint accepted`  
 Date: `2026-04-15`
 
 ## Scope
@@ -96,9 +96,10 @@ Impact:
 - rehab still appears to run through legacy/runtime snapshot logic only
 
 Gate implication:
-- rehab cannot be treated as the next bounded candidate until we decide whether:
-  - to extend the current pilot adapter to rehab
-  - or to create a second bounded adapter path with the same rollout discipline
+- decision made for H.1:
+  - rehab stays on the bounded transitional runtime path
+  - no complaint-only pilot adapter extension is required for the H.1 checkpoint
+  - parity is satisfied by shared bridge write, validation run, and admin review/provenance surfaces
 
 ### Gap 2. Runtime-effective rehab published state is verified and catalog-aligned
 
@@ -168,18 +169,18 @@ Status update:
 ### Gap 3. Provenance equivalence is not yet explicitly proven for rehab
 
 Current state:
-- complaint pilot provenance is now explainable end-to-end
-- rehab route persists generated output, but no rehab-specific provenance parity checklist is documented yet
+- complaint pilot provenance is explainable end-to-end
+- rehab now uses the same bridge write plus admin provenance/review endpoints
+- `/api/generate-rehab` now mirrors complaint post-generation validation behavior for `document_version`
+- automated API coverage proves rehab-generated documents are readable via:
+  - `/api/admin/generated-documents/{id}/provenance`
+  - `/api/admin/generated-documents/{id}/review-context`
 
 Impact:
-- rehab may generate documents successfully while still missing some explainability guarantees we now require after Phase F
+- rehab provenance/readability parity is now acceptable for the bounded H.1 candidate
 
 Gate implication:
-- rehab rollout must prove:
-  - snapshot summary
-  - validation summary
-  - export/artifact context
-  - provenance/review readability
+- parity proof for the H.1 checkpoint is satisfied
 
 ### Gap 4. Validation profile parity is still unclear
 
@@ -209,6 +210,10 @@ Before any activation change for rehab, all of the following must be confirmed:
 4. rehab output is reviewable through the same admin provenance/review workspace standard
 5. rehab rollout remains same-server and single-procedure only
 
+Result:
+- `H.1` gate is accepted as a bounded candidate checkpoint
+- activation-wide expansion is still out of scope
+
 ## H.1a result
 
 `H.1a Rehab inventory verification` is complete at the code/seed level:
@@ -221,12 +226,12 @@ Before any activation change for rehab, all of the following must be confirmed:
 
 ## Recommended next executable slice
 
-`H.1d Rehab runtime-path + provenance parity`
+`H.2 Legacy cleanup wave 1`
 
 Do only this next:
-- confirm whether rehab should stay on the current transitional runtime path or get a bounded adapter-backed published-read path
-- prove rehab-generated output is readable through the same provenance/review workspace standard as complaint
-- record the parity result as the final H.1 rollout gate decision
+- remove only one already-approved compatibility seam from the legacy cleanup backlog
+- keep rollback visibility and admin explainability intact after the cleanup slice
+- record the cleanup result back into the rollout backlog and plan
 
 Do not:
 - activate rehab rollout
