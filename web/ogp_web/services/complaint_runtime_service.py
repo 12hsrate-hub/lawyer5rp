@@ -15,7 +15,9 @@ from ogp_web.services.feature_flags import FlagDecision
 from ogp_web.services.regression_metrics import (
     build_rollout_labels,
     record_async_queue_lag,
+    record_validation_fail_rate,
 )
+from ogp_web.services.generation_orchestrator import GenerationOrchestrator
 from ogp_web.services.server_context_service import (
     resolve_user_server_complaint_settings,
     resolve_user_server_identity,
@@ -86,6 +88,64 @@ class ComplaintRuntimeService:
 
     def build_validation_service(self, store: UserStore) -> ValidationService:
         return ValidationService(ValidationRepository(store.backend))
+
+    def persist_generation_result(
+        self,
+        *,
+        store: UserStore,
+        user: AuthUser,
+        document_kind: str,
+        payload: dict[str, Any],
+        result_text: str,
+        context_snapshot: dict[str, object],
+    ) -> Any:
+        return GenerationOrchestrator(store).write_generation_bridge(
+            username=user.username,
+            server_code=user.server_code,
+            document_kind=document_kind,
+            payload=payload,
+            result_text=result_text,
+            context_snapshot=context_snapshot,
+            legacy_generated_document_id=None,
+        )
+
+    def maybe_validate_generated_document(
+        self,
+        *,
+        store: UserStore,
+        metrics_store: AdminMetricsStore,
+        user: AuthUser,
+        path: str,
+        validation_flag: FlagDecision,
+        bridge_result: Any,
+        flow_type: str = "generate",
+    ) -> None:
+        if bridge_result is None:
+            return
+        try:
+            if validation_flag.use_new_flow:
+                result = self.build_validation_service(store).run_validation(
+                    target_type="document_version",
+                    target_id=int(bridge_result.document_version_id),
+                )
+                record_validation_fail_rate(
+                    metrics_store,
+                    username=user.username,
+                    path=path,
+                    method="POST",
+                    labels=build_rollout_labels(
+                        flag="validation_gate_v1",
+                        rollout_mode=validation_flag.mode.value,
+                        cohort=validation_flag.cohort.value,
+                        server_id=user.server_code,
+                        flow_type=flow_type,
+                        status="fail" if result.run.get("status") == "fail" else "success",
+                    ),
+                    failed=result.run.get("status") == "fail",
+                )
+        except Exception:
+            if str(os.getenv("OGP_VALIDATION_GENERATION_STRICT", "0") or "").strip() in {"1", "true", "yes", "on"}:
+                raise
 
     def with_shadow_citations_policy(self, context_snapshot: dict[str, object]) -> dict[str, object]:
         snapshot = dict(context_snapshot)
