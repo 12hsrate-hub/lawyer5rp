@@ -521,6 +521,95 @@ def test_resolve_suggest_runtime_context_contract_builds_shadow_and_attempts():
     assert retrieval_calls == [("suggest", "query"), ("shadow_profile", "query")]
 
 
+def test_run_suggest_execution_flow_contract_builds_attempt_and_validation_flow():
+    runtime_context = orchestration.SuggestRuntimeContext(
+        generation_id="gen-1",
+        server_config=object(),
+        ai_context=object(),
+        suggest_context=type(
+            "SuggestContext",
+            (),
+            {
+                "retrieval_context_mode": "normal_context",
+                "bundle_fingerprint": "bundle-fp",
+                "retrieval_profile": "suggest",
+            },
+        )(),
+        shadow={},
+        victim_name="Victim",
+        org="Org",
+        subject="Subject",
+        event_dt="2026-04-16 10:00",
+        complaint_basis="basis",
+        main_focus="focus",
+        raw_desc="Draft",
+        suggest_prompt_mode="data_driven",
+        low_confidence_policy="controlled_fallback",
+        selected_model="gpt-5.4-mini",
+        selection_reason="suggest_default",
+        low_confidence_model="gpt-5.4",
+        point3_context=object(),
+        pipeline_context_payload={"ctx": "payload"},
+        prompt_law_context="prompt-law-context",
+        suggest_attempts=(
+            orchestration.SuggestGenerationAttempt(raw_desc="Draft", law_context="law-ctx"),
+        ),
+        retrieval_ms=120,
+    )
+    compaction_levels: list[int] = []
+    transport_calls: list[tuple[str, str, str]] = []
+
+    def transport_call(*, model_name, raw_desc, law_context, validation_error=""):
+        transport_calls.append((model_name, law_context, validation_error))
+        return type("Gen", (), {"text": "generated", "usage": {"total_tokens": 3}, "cache_hit": False})()
+
+    generation_attempt = orchestration.SuggestGenerationAttemptResult(
+        generation_result=type("Gen", (), {"text": "generated", "usage": {"total_tokens": 3}, "cache_hit": False})(),
+        prompt_text="prompt-text",
+        selected_model="gpt-5.4",
+        selection_reason="suggest_context_compacted",
+        compaction_level=1,
+        openai_ms=220,
+    )
+    remediation = type("Remediation", (), {"text": "final-text", "validation": object(), "retries_used": 1, "safe_fallback_used": False})()
+    validation_result = orchestration.SuggestValidationRemediationResult(
+        generation_result=generation_attempt.generation_result,
+        cleaned_text="cleaned",
+        remediation=remediation,
+        validation_retry_count=1,
+        validation_errors=("warn",),
+    )
+
+    result = orchestration.run_suggest_execution_flow(
+        runtime_context=runtime_context,
+        policy_mode="factual_plus_legal",
+        transport_call=transport_call,
+        build_suggest_prompt=lambda **kwargs: "prompt-text",
+        run_suggest_generation_attempts=lambda **kwargs: compaction_levels.append(1) or generation_attempt,
+        run_suggest_validation_remediation=lambda **kwargs: validation_result,
+        is_context_window_error=lambda exc: False,
+        ai_exception_details=lambda exc: [str(exc)],
+        clock=lambda: 1.0,
+        logger_warning=lambda message, level: None,
+        clean_text=lambda text: text,
+        validate_generated_paragraph=lambda text, context: object(),
+        legacy_validation_error_codes=lambda codes: tuple(codes),
+        build_safe_fallback_paragraph=lambda context: "fallback",
+        apply_validation_remediation=lambda text, context: remediation,
+        remediation_factory=lambda text, validation, retries_used, safe_fallback_used: remediation,
+    )
+
+    assert result.prompt_text == "prompt-text"
+    assert result.selected_model == "gpt-5.4"
+    assert result.selection_reason == "suggest_context_compacted"
+    assert result.suggest_compaction_level == 1
+    assert result.openai_ms == 220
+    assert result.validation_retry_count == 1
+    assert result.validation_errors == ("warn",)
+    assert result.final_text == "final-text"
+    assert compaction_levels == [1]
+
+
 def test_telemetry_meta_contracts():
     law_result = ai_service.LawQaAnswerResult(
         text="ok",

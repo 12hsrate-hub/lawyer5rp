@@ -100,6 +100,20 @@ class SuggestValidationRemediationResult:
     validation_errors: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class SuggestExecutionFlowResult:
+    generation_result: Any
+    prompt_text: str
+    selected_model: str
+    selection_reason: str
+    suggest_compaction_level: int
+    openai_ms: int
+    remediation: Any
+    validation_retry_count: int
+    validation_errors: tuple[str, ...]
+    final_text: str
+
+
 def run_law_qa(payload: LawQaPayload, deps: LawQaOrchestrationDeps):
     return deps.impl(payload)
 
@@ -505,6 +519,97 @@ def run_suggest_validation_remediation(
         remediation=remediation,
         validation_retry_count=validation_retry_count,
         validation_errors=validation_errors,
+    )
+
+
+def run_suggest_execution_flow(
+    *,
+    runtime_context: SuggestRuntimeContext,
+    policy_mode: str,
+    transport_call: Callable[..., Any],
+    build_suggest_prompt: Callable[..., str],
+    run_suggest_generation_attempts: Callable[..., SuggestGenerationAttemptResult],
+    run_suggest_validation_remediation: Callable[..., SuggestValidationRemediationResult],
+    is_context_window_error: Callable[[Exception], bool],
+    ai_exception_details: Callable[[Exception], list[str]],
+    clock: Callable[[], float],
+    logger_warning: Callable[[str, int], None] | None,
+    clean_text: Callable[[str], str],
+    validate_generated_paragraph: Callable[[str, Any], Any],
+    legacy_validation_error_codes: Callable[[tuple[str, ...]], tuple[str, ...]],
+    build_safe_fallback_paragraph: Callable[[Any], str],
+    apply_validation_remediation: Callable[[str, Any], Any],
+    remediation_factory: Callable[[str, Any, int, bool], Any],
+) -> SuggestExecutionFlowResult:
+    generation_attempt = run_suggest_generation_attempts(
+        attempts=runtime_context.suggest_attempts,
+        prompt_builder=lambda attempt: build_suggest_prompt(
+            victim_name=runtime_context.victim_name,
+            org=runtime_context.org,
+            subject=runtime_context.subject,
+            event_dt=runtime_context.event_dt,
+            raw_desc=attempt.raw_desc,
+            complaint_basis=runtime_context.complaint_basis,
+            main_focus=runtime_context.main_focus,
+            law_context=attempt.law_context,
+            prompt_mode=runtime_context.suggest_prompt_mode,
+            policy_mode=policy_mode,
+            pipeline_context=runtime_context.pipeline_context_payload,
+            retrieval_context_mode=runtime_context.suggest_context.retrieval_context_mode,
+        ),
+        generator=lambda attempt, model_name: transport_call(
+            model_name=model_name,
+            raw_desc=attempt.raw_desc,
+            law_context=attempt.law_context,
+        ),
+        is_context_window_error=is_context_window_error,
+        ai_exception_details=ai_exception_details,
+        clock=clock,
+        selected_model=runtime_context.selected_model,
+        selection_reason=runtime_context.selection_reason,
+        low_confidence_model=runtime_context.low_confidence_model,
+        on_context_compaction=(lambda level: logger_warning("Suggest prompt exceeded context window; retrying with compact context level=%s", level))
+        if logger_warning is not None
+        else None,
+    )
+    generation_result = generation_attempt.generation_result
+    selected_model = generation_attempt.selected_model
+
+    validation_flow = run_suggest_validation_remediation(
+        generation_result=generation_result,
+        point3_context=runtime_context.point3_context,
+        clean_text=clean_text,
+        validate_generated_paragraph=validate_generated_paragraph,
+        legacy_validation_error_codes=legacy_validation_error_codes,
+        retry_generator=lambda validation_error: transport_call(
+            model_name=selected_model,
+            raw_desc=runtime_context.raw_desc,
+            law_context=runtime_context.prompt_law_context,
+            validation_error=validation_error,
+        ),
+        ai_exception_details=ai_exception_details,
+        build_safe_fallback_paragraph=build_safe_fallback_paragraph,
+        apply_validation_remediation=apply_validation_remediation,
+        remediation_factory=remediation_factory,
+    )
+    remediation = validation_flow.remediation
+    final_text = str(getattr(remediation, "text", "") or "")
+    if not final_text:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=["Модель вернула пустой или некорректный текст после валидации."],
+        )
+    return SuggestExecutionFlowResult(
+        generation_result=validation_flow.generation_result,
+        prompt_text=generation_attempt.prompt_text,
+        selected_model=generation_attempt.selected_model,
+        selection_reason=generation_attempt.selection_reason,
+        suggest_compaction_level=generation_attempt.compaction_level,
+        openai_ms=generation_attempt.openai_ms,
+        remediation=remediation,
+        validation_retry_count=validation_flow.validation_retry_count,
+        validation_errors=validation_flow.validation_errors,
+        final_text=final_text,
     )
 
 
