@@ -1208,6 +1208,16 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Unknown complaint draft keys", str(response.json().get("detail", "")))
 
+    def test_profile_selected_server_uses_shared_context_resolution_path(self):
+        self._register_verify_and_login("tester_switch", "draft-switch@example.com")
+
+        response = self.client.patch("/api/profile/selected-server", json={"server_code": "blackberry"})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["server_code"], "blackberry")
+        self.assertIn("Обновите страницу", payload["message"])
+        self.assertIsInstance(payload.get("switch_actions"), list)
+
     def test_complaint_draft_accepts_envelope_payload_and_flattens_document(self):
         self._register_verify_and_login("tester_envelope", "draft-envelope@example.com")
 
