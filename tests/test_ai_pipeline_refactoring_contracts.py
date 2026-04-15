@@ -432,6 +432,95 @@ def test_resolve_law_qa_runtime_context_contract_builds_shadow_and_attempts():
     assert calls == [("law_qa", "When must detainee be released?"), ("shadow_profile", "When must detainee be released?")]
 
 
+def test_resolve_suggest_runtime_context_contract_builds_shadow_and_attempts():
+    payload = SuggestPayload(
+        victim_name="Victim",
+        org="Org",
+        subject="Subject",
+        event_dt="2026-04-16 10:00",
+        raw_desc="Draft",
+        complaint_basis="basis",
+        main_focus="focus",
+        law_version_id=9,
+    )
+
+    suggest_context = type(
+        "SuggestContext",
+        (),
+        {
+            "context_text": "law-context",
+            "retrieval_confidence": "low",
+            "retrieval_context_mode": "low_confidence_context",
+            "retrieval_profile": "suggest",
+            "bundle_status": "fresh",
+            "bundle_generated_at": "2026-04-16T00:00:00Z",
+            "bundle_fingerprint": "bundle-fp",
+            "selected_norms_count": 1,
+            "selected_norms": ("norm-1",),
+        },
+    )()
+    primary_result = type("PrimaryResult", (), {"matches": ("primary",)})()
+    shadow_result = type("ShadowResult", (), {"matches": ("shadow",)})()
+    server_config = type("ServerConfig", (), {"feature_flags": frozenset({"legal_pipeline_shadow"})})()
+    ai_context = type(
+        "AiContext",
+        (),
+        {
+            "suggest_prompt_mode": "data_driven",
+            "suggest_low_confidence_policy": "controlled_fallback",
+            "shadow_suggest_profile": "shadow_profile",
+        },
+    )()
+    selection = type("Selection", (), {"model_name": "gpt-5.4-mini", "reason": "suggest_default"})()
+    point3_context = type(
+        "Point3Context",
+        (),
+        {
+            "policy_decision": type("PolicyDecision", (), {"mode": "factual_plus_legal"})(),
+            "prompt_context_json": staticmethod(lambda: {"ctx": "payload"}),
+        },
+    )()
+    retrieval_calls: list[tuple[str, str]] = []
+
+    def retrieve_law_context(**kwargs):
+        retrieval_calls.append((kwargs["profile"], kwargs["query"]))
+        return shadow_result if kwargs["profile"] == "shadow_profile" else primary_result
+
+    result = orchestration.resolve_suggest_runtime_context(
+        payload=payload,
+        server_code="blackberry",
+        default_server_code="default",
+        clock=iter((10.0, 10.2)).__next__,
+        new_generation_id=lambda: "gen-1",
+        resolve_server_config=lambda **kwargs: server_config,
+        resolve_server_ai_context_settings=lambda **kwargs: ai_context,
+        build_shadow_comparison=lambda **kwargs: {"enabled": kwargs["enabled"], "profile": kwargs["profile"]},
+        build_suggest_retrieval_query=lambda current_payload: "query",
+        build_suggest_law_context=lambda **kwargs: suggest_context,
+        suggest_context_factory=lambda **kwargs: kwargs,
+        server_feature_enabled=lambda cfg, flag: flag in cfg.feature_flags,
+        retrieve_law_context=retrieve_law_context,
+        select_suggest_model=lambda **kwargs: selection,
+        get_flow_model=lambda flow, field, fallback: "gpt-5.4",
+        build_point3_pipeline_context=lambda **kwargs: point3_context,
+        build_filtered_prompt_law_context=lambda **kwargs: "prompt-law-context",
+        truncate_suggest_value=lambda text, max_chars: f"{text[:max_chars]}:{max_chars}",
+    )
+
+    assert result.generation_id == "gen-1"
+    assert result.suggest_prompt_mode == "data_driven"
+    assert result.low_confidence_policy == "controlled_fallback"
+    assert result.selected_model == "gpt-5.4-mini"
+    assert result.selection_reason == "suggest_default"
+    assert result.low_confidence_model == "gpt-5.4"
+    assert result.prompt_law_context == "prompt-law-context"
+    assert result.retrieval_ms == 199
+    assert result.shadow == {"enabled": True, "profile": "shadow_profile"}
+    assert result.suggest_attempts[0].law_context == "prompt-law-context"
+    assert result.suggest_attempts[1].law_context.endswith(":2600")
+    assert retrieval_calls == [("suggest", "query"), ("shadow_profile", "query")]
+
+
 def test_telemetry_meta_contracts():
     law_result = ai_service.LawQaAnswerResult(
         text="ok",

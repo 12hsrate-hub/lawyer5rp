@@ -62,8 +62,8 @@ from ogp_web.services.ai_pipeline.orchestration import (
     LawQaOrchestrationDeps,
     PrincipalScanDeps,
     resolve_law_qa_runtime_context,
+    resolve_suggest_runtime_context,
     run_law_qa_generation_attempts,
-    SuggestGenerationAttempt,
     SuggestOrchestrationDeps,
     finalize_suggest_result,
     run_suggest_generation_attempts,
@@ -71,10 +71,6 @@ from ogp_web.services.ai_pipeline.orchestration import (
     run_law_qa,
     run_principal_scan,
     run_suggest,
-)
-from ogp_web.services.ai_pipeline.telemetry_meta import (
-    build_law_qa_metrics_meta as _pipeline_build_law_qa_metrics_meta,
-    build_suggest_metrics_meta as _pipeline_build_suggest_metrics_meta,
 )
 from shared.ogp_ai import (
     AiUsageSummary,
@@ -1539,26 +1535,6 @@ def _build_shadow_retrieval(
     )
 
 
-def build_law_qa_metrics_meta(*, payload: LawQaPayload, result: LawQaAnswerResult, used_sources: list[str]) -> dict[str, object]:
-    return _pipeline_build_law_qa_metrics_meta(
-        payload=payload,
-        result=result,
-        used_sources=used_sources,
-        short_text_hash=short_text_hash,
-        mask_text_preview=mask_text_preview,
-    )
-
-
-def build_suggest_metrics_meta(*, payload: SuggestPayload, result: SuggestTextResult, server_code: str) -> dict[str, object]:
-    return _pipeline_build_suggest_metrics_meta(
-        payload=payload,
-        result=result,
-        server_code=server_code,
-        short_text_hash=short_text_hash,
-        mask_text_preview=mask_text_preview,
-    )
-
-
 def _normalize_suggest_inline(value: object) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip())
 
@@ -2275,187 +2251,71 @@ def answer_law_question(payload: LawQaPayload) -> tuple[str, list[str], int]:
 
 def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DEFAULT_SERVER_CODE) -> SuggestTextResult:
     total_started_at = monotonic()
-    if not payload.victim_name.strip() or not payload.org.strip() or not payload.subject.strip() or not payload.event_dt.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=["Заполните: доверитель, дата/время, организация, объект заявления."],
-        )
-    if not payload.raw_desc.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=["Сначала заполните черновик описания событий."],
-        )
-
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     proxy_url = os.getenv("OPENAI_PROXY_URL", "").strip()
-    generation_id = new_generation_id()
-    server_config = resolve_server_config(server_code=server_code, fallback_server_code=DEFAULT_SERVER_CODE)
-    ai_context = resolve_server_ai_context_settings(server_code=server_code, fallback_server_code=DEFAULT_SERVER_CODE)
-    suggest_prompt_mode = ai_context.suggest_prompt_mode
-    low_confidence_policy = ai_context.suggest_low_confidence_policy
-    shadow = build_shadow_comparison(enabled=False, profile="", primary_matches=(), shadow_matches=())
-    suggest_query = build_suggest_retrieval_query_light(payload)
-    retrieval_started_at = monotonic()
-    suggest_context_raw = _build_suggest_law_context(
-        server_code=server_code,
-        question=suggest_query,
-        law_version_id=payload.law_version_id,
-    )
-    if isinstance(suggest_context_raw, SuggestContextBuildResult):
-        suggest_context = suggest_context_raw
-    else:
-        suggest_context = SuggestContextBuildResult(
-            context_text=str(suggest_context_raw or "").strip(),
-            retrieval_confidence="medium",
-            retrieval_context_mode="normal_context" if str(suggest_context_raw or "").strip() else "no_context",
-            retrieval_profile="suggest",
-            bundle_status="unknown",
-            bundle_generated_at="",
-            bundle_fingerprint="",
-            selected_norms_count=0,
-            applicability_mode="",
-            applicability_notes="",
-            allowed_article_numbers=(),
-            selected_norms=(),
-        )
-    retrieval_ms = int((monotonic() - retrieval_started_at) * 1000)
-    law_context = suggest_context.context_text
-    if suggest_context.retrieval_context_mode == "low_confidence_context" and low_confidence_policy == "controlled_fallback":
-        law_context = "\n".join(
-            (
-                "Статус retrieval: low_confidence_context",
-                "Важно: используй только явно подтвержденные нормы из блока ниже. Если прямой нормы нет, не выдумывай ее.",
-                law_context,
-            )
-        ).strip()
-    if suggest_context.retrieval_context_mode == "no_context" and low_confidence_policy == "controlled_fallback":
-        law_context = "\n".join(
-            (
-                "Статус retrieval: no_context",
-                "Важно: надежный правовой контекст не найден. Пиши только факты из черновика и не выдумывай нормы.",
-            )
-        )
-    if _server_feature_enabled(server_config, "legal_pipeline_shadow"):
-        shadow_profile = ai_context.shadow_suggest_profile
-        if shadow_profile and shadow_profile != "suggest":
-            primary_result = _retrieve_law_context(
-                server_code=server_code,
-                query=suggest_query,
-                excerpt_chars=900,
-                profile="suggest",
-                law_version_id=payload.law_version_id,
-            )
-            shadow_result = _retrieve_law_context(
-                server_code=server_code,
-                query=suggest_query,
-                excerpt_chars=900,
-                profile=shadow_profile,
-                law_version_id=payload.law_version_id,
-            )
-            shadow = build_shadow_comparison(
-                enabled=True,
-                profile=shadow_profile,
-                primary_matches=primary_result.matches,
-                shadow_matches=shadow_result.matches,
-            )
-
-    victim_name = payload.victim_name.strip()
-    org = payload.org.strip()
-    subject = payload.subject.strip()
-    event_dt = payload.event_dt.strip()
-    complaint_basis = payload.complaint_basis.strip()
-    main_focus = payload.main_focus.strip()
-    raw_desc = payload.raw_desc.strip()
-    selection = _select_suggest_model(
+    runtime_context = resolve_suggest_runtime_context(
         payload=payload,
-        retrieval_context_mode=suggest_context.retrieval_context_mode,
-        server_config=server_config,
+        server_code=server_code,
+        default_server_code=DEFAULT_SERVER_CODE,
+        clock=monotonic,
+        new_generation_id=new_generation_id,
+        resolve_server_config=resolve_server_config,
+        resolve_server_ai_context_settings=resolve_server_ai_context_settings,
+        build_shadow_comparison=build_shadow_comparison,
+        build_suggest_retrieval_query=build_suggest_retrieval_query_light,
+        build_suggest_law_context=_build_suggest_law_context,
+        suggest_context_factory=SuggestContextBuildResult,
+        server_feature_enabled=_server_feature_enabled,
+        retrieve_law_context=_retrieve_law_context,
+        select_suggest_model=_select_suggest_model,
+        get_flow_model=_get_flow_model,
+        build_point3_pipeline_context=build_point3_pipeline_context,
+        build_filtered_prompt_law_context=_build_filtered_prompt_law_context,
+        truncate_suggest_value=_truncate_suggest_value,
     )
-    selected_model = selection.model_name
-    selection_reason = selection.reason
-    low_confidence_model = _get_flow_model("suggest", "low_confidence_model", "gpt-5.4")
-    if low_confidence_policy == "soft_fail" and suggest_context.retrieval_context_mode in {"low_confidence_context", "no_context"}:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=[
-                "Недостаточно надежного правового контекста для генерации. Уточните факты и повторите запрос.",
-            ],
-        )
-    point3_context = build_point3_pipeline_context(
-        complainant=victim_name,
-        organization=org,
-        target_person=subject,
-        event_datetime=event_dt,
-        draft_text=raw_desc,
-        complaint_basis=complaint_basis,
-        main_focus=main_focus,
-        retrieval_status=suggest_context.retrieval_context_mode,
-        retrieval_confidence=suggest_context.retrieval_confidence,
-        retrieved_law_context=law_context,
-        selected_norms=suggest_context.selected_norms,
-    )
-    policy_mode = point3_context.policy_decision.mode
-    pipeline_context_payload = point3_context.prompt_context_json()
-    prompt_law_context = _build_filtered_prompt_law_context(
-        point3_context=point3_context,
-        suggest_context=suggest_context,
-        fallback_law_context=law_context,
-    )
-    suggest_attempts = (
-        SuggestGenerationAttempt(raw_desc=raw_desc, law_context=prompt_law_context),
-        SuggestGenerationAttempt(raw_desc=raw_desc, law_context=_truncate_suggest_value(prompt_law_context, max_chars=2600)),
-        SuggestGenerationAttempt(raw_desc=raw_desc, law_context=_truncate_suggest_value(prompt_law_context, max_chars=1500)),
-        SuggestGenerationAttempt(
-            raw_desc=_truncate_suggest_value(raw_desc, max_chars=8000),
-            law_context=_truncate_suggest_value(prompt_law_context, max_chars=1200),
-        ),
-        SuggestGenerationAttempt(
-            raw_desc=_truncate_suggest_value(raw_desc, max_chars=5000),
-            law_context=_truncate_suggest_value(prompt_law_context, max_chars=700),
-        ),
-    )
+    policy_mode = runtime_context.point3_context.policy_decision.mode
 
     generation_attempt = run_suggest_generation_attempts(
-        attempts=suggest_attempts,
+        attempts=runtime_context.suggest_attempts,
         prompt_builder=lambda attempt: build_suggest_prompt(
-            victim_name=victim_name,
-            org=org,
-            subject=subject,
-            event_dt=event_dt,
+            victim_name=runtime_context.victim_name,
+            org=runtime_context.org,
+            subject=runtime_context.subject,
+            event_dt=runtime_context.event_dt,
             raw_desc=attempt.raw_desc,
-            complaint_basis=complaint_basis,
-            main_focus=main_focus,
+            complaint_basis=runtime_context.complaint_basis,
+            main_focus=runtime_context.main_focus,
             law_context=attempt.law_context,
-            prompt_mode=suggest_prompt_mode,
+            prompt_mode=runtime_context.suggest_prompt_mode,
             policy_mode=policy_mode,
-            pipeline_context=pipeline_context_payload,
-            retrieval_context_mode=suggest_context.retrieval_context_mode,
+            pipeline_context=runtime_context.pipeline_context_payload,
+            retrieval_context_mode=runtime_context.suggest_context.retrieval_context_mode,
         ),
         generator=lambda attempt, model_name: suggest_description_with_proxy_fallback_result(
             api_key=api_key,
             proxy_url=proxy_url,
             model_name=model_name,
-            victim_name=victim_name,
-            org=org,
-            subject=subject,
-            event_dt=event_dt,
+            victim_name=runtime_context.victim_name,
+            org=runtime_context.org,
+            subject=runtime_context.subject,
+            event_dt=runtime_context.event_dt,
             raw_desc=attempt.raw_desc,
-            complaint_basis=complaint_basis,
-            main_focus=main_focus,
+            complaint_basis=runtime_context.complaint_basis,
+            main_focus=runtime_context.main_focus,
             law_context=attempt.law_context,
-            prompt_mode=suggest_prompt_mode,
+            prompt_mode=runtime_context.suggest_prompt_mode,
             policy_mode=policy_mode,
-            pipeline_context=pipeline_context_payload,
-            retrieval_context_mode=suggest_context.retrieval_context_mode,
-            bundle_fingerprint=suggest_context.bundle_fingerprint,
-            retrieval_profile=suggest_context.retrieval_profile,
+            pipeline_context=runtime_context.pipeline_context_payload,
+            retrieval_context_mode=runtime_context.suggest_context.retrieval_context_mode,
+            bundle_fingerprint=runtime_context.suggest_context.bundle_fingerprint,
+            retrieval_profile=runtime_context.suggest_context.retrieval_profile,
         ),
         is_context_window_error=_is_context_window_error,
         ai_exception_details=_ai_exception_details,
         clock=monotonic,
-        selected_model=selected_model,
-        selection_reason=selection_reason,
-        low_confidence_model=low_confidence_model,
+        selected_model=runtime_context.selected_model,
+        selection_reason=runtime_context.selection_reason,
+        low_confidence_model=runtime_context.low_confidence_model,
         on_context_compaction=lambda level: LOGGER.warning(
             "Suggest prompt exceeded context window; retrying with compact context level=%s",
             level,
@@ -2470,7 +2330,7 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
 
     validation_flow = run_suggest_validation_remediation(
         generation_result=generation_result,
-        point3_context=point3_context,
+        point3_context=runtime_context.point3_context,
         clean_text=_clean_suggest_text,
         validate_generated_paragraph=validate_generated_paragraph,
         legacy_validation_error_codes=_legacy_validation_error_codes,
@@ -2478,20 +2338,20 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
             api_key=api_key,
             proxy_url=proxy_url,
             model_name=selected_model,
-            victim_name=victim_name,
-            org=org,
-            subject=subject,
-            event_dt=event_dt,
-            raw_desc=raw_desc,
-            complaint_basis=complaint_basis,
-            main_focus=main_focus,
-            law_context=prompt_law_context,
-            prompt_mode=suggest_prompt_mode,
+            victim_name=runtime_context.victim_name,
+            org=runtime_context.org,
+            subject=runtime_context.subject,
+            event_dt=runtime_context.event_dt,
+            raw_desc=runtime_context.raw_desc,
+            complaint_basis=runtime_context.complaint_basis,
+            main_focus=runtime_context.main_focus,
+            law_context=runtime_context.prompt_law_context,
+            prompt_mode=runtime_context.suggest_prompt_mode,
             policy_mode=policy_mode,
-            pipeline_context=pipeline_context_payload,
-            retrieval_context_mode=suggest_context.retrieval_context_mode,
-            bundle_fingerprint=suggest_context.bundle_fingerprint,
-            retrieval_profile=suggest_context.retrieval_profile,
+            pipeline_context=runtime_context.pipeline_context_payload,
+            retrieval_context_mode=runtime_context.suggest_context.retrieval_context_mode,
+            bundle_fingerprint=runtime_context.suggest_context.bundle_fingerprint,
+            retrieval_profile=runtime_context.suggest_context.retrieval_profile,
             validation_error=validation_error,
         ),
         ai_exception_details=_ai_exception_details,
@@ -2516,9 +2376,9 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
         )
     total_suggest_ms = int((monotonic() - total_started_at) * 1000)
     return finalize_suggest_result(
-        generation_id=generation_id,
+        generation_id=runtime_context.generation_id,
         contract_version=LEGAL_PIPELINE_CONTRACT_VERSION,
-        shadow=_shadow_to_dict(shadow),
+        shadow=_shadow_to_dict(runtime_context.shadow),
         generation_result=generation_result,
         remediation=remediation,
         validation_retry_count=validation_retry_count,
@@ -2526,12 +2386,12 @@ def _suggest_text_details_impl(payload: SuggestPayload, *, server_code: str = DE
         selected_model=selected_model,
         selection_reason=selection_reason,
         suggest_compaction_level=suggest_compaction_level,
-        suggest_prompt_mode=suggest_prompt_mode,
-        suggest_context=suggest_context,
-        point3_context=point3_context,
+        suggest_prompt_mode=runtime_context.suggest_prompt_mode,
+        suggest_context=runtime_context.suggest_context,
+        point3_context=runtime_context.point3_context,
         prompt_text=prompt_text,
         final_text=final_text,
-        retrieval_ms=retrieval_ms,
+        retrieval_ms=runtime_context.retrieval_ms,
         openai_ms=openai_ms,
         total_suggest_ms=total_suggest_ms,
         build_ai_telemetry=build_ai_telemetry,
