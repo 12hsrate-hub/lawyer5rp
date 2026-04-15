@@ -20,19 +20,22 @@ Track compatibility seams that may become removable after pilot observation and 
 - Reason:
   - once pilot cutover is accepted and low-drift remains stable, fallback-only branches may be reducible
 
-### 3. Shadow-compare-only metrics plumbing
-- Area:
-  - `scripts/report_pilot_drift.py`
-  - `scripts/check_pilot_drift.py`
-  - `pilot_runtime_shadow_compare` event handling
-- Reason:
-  - after pilot acceptance, some compare-only plumbing may move from always-on observation into targeted regression tooling
-
-### 4. Legacy-only rollout assumptions in admin copy
+### 3. Legacy-only rollout assumptions in admin copy
 - Area: dashboard/admin rollout messaging
 - Reason:
   - current wording is intentionally cautious for observation mode
   - after stable activation, some “preflight-only” copy may be simplified
+
+## Removed in Phase H.2
+
+### Shadow-compare-only metrics plumbing
+- Removed on production commit `07f302a`
+- Removed artifacts:
+  - `pilot_runtime_shadow_compare` complaint metrics logging
+  - `scripts/report_pilot_drift.py`
+  - `scripts/check_pilot_drift.py`
+- Outcome:
+  - compare-only pilot observation helpers no longer appear in the active cleanup backlog
 
 ## Removal rule
 

@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase G`
 - Inventory slices completed: `5`
-- Next slice: `remove the next accepted compatibility seam after H.2c`
+- Next slice: `remove the next accepted compatibility seam after H.2d`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -35,6 +35,8 @@ Date: 2026-04-14
   - pilot adapter fallback-only `source_of_truth` visibility metadata has been removed
   - `H.2c` deployed on production commit `07f302a`
   - shadow-compare-only complaint metrics plumbing and the pilot snapshot parity helper have been removed
+  - `H.2d` is in progress locally
+  - compare-only pilot drift helper scripts are being removed because no runtime path emits `pilot_runtime_shadow_compare` anymore
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
