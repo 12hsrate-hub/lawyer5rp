@@ -11,7 +11,7 @@ Date: 2026-04-14
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `5`
-- Next slice: `select I.1j after the accepted law-QA page context seam`
+- Next slice: `select I.1k after the accepted shared AI-context seam`
 - Last updated: `2026-04-15`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -90,7 +90,9 @@ Date: 2026-04-14
   - `law_retrieval_service.py` now reuses shared extracted law-context settings for source URLs, bundle path, and bundle max-age shaping
   - `I.1i` deployed on production commit `ef329f4`
   - `law_qa_test` page rendering now reuses shared law-context helpers for source listing and server availability filtering
-  - route contracts remain unchanged and the first nine Phase I convergence slices are accepted
+  - `I.1j` deployed on production commit `6ca518f`
+  - `ai_service` now reuses shared extracted AI-context settings for law-QA/suggest shadow profiles plus suggest prompt/policy shaping
+  - route contracts remain unchanged and the first ten Phase I convergence slices are accepted
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
