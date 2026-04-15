@@ -6,8 +6,8 @@ Date: 2026-04-14
 ## Execution Status
 
 - Execution checkpoint: `2026-04-15`
-- Active phase: `Phase J`
-- Active task: `select the next non-cosmetic post-Phase-J execution target`
+- Active phase: `Phase K`
+- Active task: `K.1 complaint route orchestration extraction`
 - Status: `in_progress`
 - Last completed phase: `Phase H`
 - Inventory slices completed: `6`
@@ -268,6 +268,9 @@ Date: 2026-04-14
 - `J.3` is accepted
 - the remaining `ai_service.py` seams are compat wrappers, domain helpers, or thin facades rather than another high-value orchestration extraction slice
 - `Phase J` is accepted
+- the next real seam is no longer inside `ai_service.py`; it is `routes/complaint.py`, where route-local concurrency/threadpool/generation orchestration still wraps already-extracted service and pipeline layers
+- `Phase K` is opened for bounded complaint route/runtime boundary extraction work
+- first target: move complaint route execution helpers, concurrency limiting, and generation-boundary glue behind dedicated complaint runtime services without changing route contracts
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.

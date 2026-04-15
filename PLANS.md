@@ -6,9 +6,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 
 ## Current Execution State
 
-- Current phase: `Phase J — AI pipeline decomposition wave 1`
-- Current task: `select the next non-cosmetic post-Phase-J execution target`
-- Active execution phase override: `Phase I is accepted; Phase J is now opened as the next execution phase`
+- Current phase: `Phase K — complaint runtime boundary decomposition wave 1`
+- Current task: `K.1 complaint route orchestration extraction`
+- Active execution phase override: `Phase J is accepted; Phase K is now opened as the next execution phase`
 - Current micro-step: `reduce ai_service.py to thin suggest/law-qa facades by moving runtime-context assembly and remaining transport glue into ai_pipeline`
 - Overall status: `in_progress`
 - Last updated: `2026-04-16`
@@ -136,6 +136,9 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - `J.3c` is now complete on production commit `eed8971`: law-QA generation/client/retry flow now converges behind `ai_pipeline.orchestration.run_law_qa_execution_flow(...)`, leaving `answer_law_question_details(...)` closer to a thin facade over runtime-context resolution and result finalization.
 - `J.3` is accepted: after runtime-context, execution-flow, and result-finalization extraction, the remaining `ai_service.py` seams are compat wrappers, domain helpers, or thin facades rather than another high-value decomposition slice.
 - `Phase J` is accepted: no further meaningful `ai_service -> ai_pipeline` extraction seams remain that remove a real orchestration layer without sliding into provider-wrapper cosmetics.
+- `Phase K` is opened as the next execution phase.
+- first focus area is `web/ogp_web/routes/complaint.py`, where route-local concurrency limiting, threadpool execution, and generation-boundary orchestration still sit above already-extracted service layers.
+- `K.1` target: move bounded complaint-route orchestration into dedicated complaint runtime helpers/services without changing request/response contracts.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
