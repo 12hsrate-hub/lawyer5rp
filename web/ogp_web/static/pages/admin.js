@@ -1813,6 +1813,46 @@ function derivePilotScaleOutContext({ decision, warningRows, rollbackHistory, si
   };
 }
 
+function derivePilotNextCandidateContext({ rolloutState, decision, signOff, scaleOut, warningRows }) {
+  const reviewSignals = warningRows.filter((item) => String(item?.severity || "") === "review");
+  const criticalSignals = warningRows.filter((item) => String(item?.severity || "") === "critical");
+
+  if (decision.decision === "rollback") {
+    return {
+      status: "blocked",
+      tone: "danger-soft",
+      candidate: "No candidate recommended",
+      note: "Pilot has rollback pressure or critical warning signals, so reuse must stay frozen.",
+      nextStep: "Keep the next server or procedure on legacy until rollback causes are resolved.",
+    };
+  }
+
+  if (scaleOut.status !== "ready" || signOff.status !== "ready") {
+    return {
+      status: "hold",
+      tone: "info",
+      candidate: "No candidate recommended yet",
+      note:
+        rolloutState === "legacy_only"
+          ? "Pilot has not yet entered shadow or active mode for a reusable observation window."
+          : criticalSignals.length
+            ? `Critical pilot signals still need closure: ${criticalSignals.map((item) => item.label).join(", ")}.`
+            : reviewSignals.length
+              ? `${reviewSignals.length} review signal(s) still need owner sign-off before reuse starts.`
+              : "Observation sign-off is still incomplete for the pilot.",
+      nextStep: "Keep the next migration candidate on hold until Cutover summary, Scale-out readiness, and Observation sign-off are all green.",
+    };
+  }
+
+  return {
+    status: "ready",
+    tone: "success-soft",
+    candidate: "Recommend one bounded next candidate",
+    note: "Pilot observation is clean enough to approve one more tightly-scoped server or procedure candidate.",
+    nextStep: "Use SCALE_OUT_CHECKLIST_TEMPLATE.md to select a single next candidate and preserve rollback isolation.",
+  };
+}
+
 function derivePilotObservationSignOff({ rolloutState, warningRows, fallbackToLegacyUsage, rollbackHistory }) {
   const fallbackCount = Number(fallbackToLegacyUsage || 0);
   const rollbackCount = Array.isArray(rollbackHistory) ? rollbackHistory.length : 0;
@@ -1903,6 +1943,13 @@ function renderPilotRolloutMarkup(payload) {
     rollbackHistory,
     signOffStatus: signOff.status,
   });
+  const nextCandidate = derivePilotNextCandidateContext({
+    rolloutState,
+    decision,
+    signOff,
+    scaleOut,
+    warningRows,
+  });
   const checklist = [
     {
       label: "Shadow compare enabled before cutover",
@@ -1989,6 +2036,22 @@ function renderPilotRolloutMarkup(payload) {
               <td>${renderBadge(scaleOut.status, scaleOut.tone)}</td>
               <td>${escapeHtml(String(scaleOut.note || "-"))}</td>
               <td>${escapeHtml(String(scaleOut.nextStep || "-"))}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="legal-field">
+      <span class="legal-field__label">Next candidate recommendation</span>
+      <div class="legal-table-shell">
+        <table class="legal-table admin-table admin-table--compact">
+          <thead><tr><th>Status</th><th>Recommendation</th><th>Reason</th><th>Next step</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>${renderBadge(nextCandidate.status, nextCandidate.tone)}</td>
+              <td>${escapeHtml(String(nextCandidate.candidate || "-"))}</td>
+              <td>${escapeHtml(String(nextCandidate.note || "-"))}</td>
+              <td>${escapeHtml(String(nextCandidate.nextStep || "-"))}</td>
             </tr>
           </tbody>
         </table>
