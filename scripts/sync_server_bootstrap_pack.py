@@ -89,6 +89,7 @@ def sync_server_pack(*, server_code: str) -> dict[str, object]:
             """,
             (server_code, next_version, json.dumps(metadata, ensure_ascii=False)),
         )
+        conn.commit()
         return {
             "server_code": server_code,
             "changed": True,
