@@ -22,6 +22,7 @@ from ogp_web.app import create_app
 from ogp_web.dependencies import (
     get_canonical_law_document_versions_store,
     get_law_source_sets_store,
+    get_runtime_law_sets_store,
     get_server_effective_law_projections_store,
 )
 from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
@@ -193,6 +194,53 @@ class _FakeProjectionsStore:
         return item
 
 
+class _FakeSource:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class _FakeRuntimeLawSetsStore:
+    def __init__(self):
+        self.sources = []
+        self.law_sets = []
+        self.items_by_law_set = {}
+
+    def list_sources(self):
+        return list(self.sources)
+
+    def create_source(self, *, name: str, kind: str, url: str):
+        item = _FakeSource(
+            id=len(self.sources) + 1,
+            name=name,
+            kind=kind,
+            url=url,
+            is_active=True,
+        )
+        self.sources.append(item)
+        return item
+
+    def create_law_set(self, *, server_code: str, name: str):
+        item = {
+            "id": len(self.law_sets) + 1,
+            "server_code": server_code,
+            "name": name,
+            "is_active": True,
+            "is_published": False,
+        }
+        self.law_sets.append(item)
+        return dict(item)
+
+    def replace_law_set_items(self, *, law_set_id: int, items):
+        self.items_by_law_set[int(law_set_id)] = list(items)
+        return list(items)
+
+    def update_law_set(self, *, law_set_id: int, name: str, is_active: bool):
+        item = next(row for row in self.law_sets if int(row["id"]) == int(law_set_id))
+        item["name"] = name
+        item["is_active"] = bool(is_active)
+        return dict(item)
+
+
 class AdminLawProjectionApiTests(unittest.TestCase):
     def setUp(self):
         self.tmpdir = make_temporary_directory()
@@ -212,9 +260,11 @@ class AdminLawProjectionApiTests(unittest.TestCase):
         self.source_sets_store = _FakeSourceSetsStore()
         self.versions_store = _FakeVersionsStore()
         self.projections_store = _FakeProjectionsStore()
+        self.runtime_law_sets_store = _FakeRuntimeLawSetsStore()
         app.dependency_overrides[get_law_source_sets_store] = lambda: self.source_sets_store
         app.dependency_overrides[get_canonical_law_document_versions_store] = lambda: self.versions_store
         app.dependency_overrides[get_server_effective_law_projections_store] = lambda: self.projections_store
+        app.dependency_overrides[get_runtime_law_sets_store] = lambda: self.runtime_law_sets_store
         self.client = TestClient(app, base_url="https://testserver")
         reset_rate_limit(self.client.app.state.rate_limiter)
         self._register_and_login_admin("12345", "admin@example.com")
@@ -259,6 +309,18 @@ class AdminLawProjectionApiTests(unittest.TestCase):
         self.assertEqual(approved.status_code, 200)
         self.assertEqual(approved.json()["run"]["status"], "approved")
 
+        materialized = self.client.post("/api/admin/law-projection-runs/1/materialize-law-set", json={"safe_rerun": True})
+        self.assertEqual(materialized.status_code, 200)
+        self.assertTrue(materialized.json()["changed"])
+        self.assertEqual(materialized.json()["law_set"]["server_code"], "orange")
+        self.assertFalse(materialized.json()["law_set"]["is_published"])
+        self.assertFalse(materialized.json()["law_set"]["is_active"])
+
+        reused = self.client.post("/api/admin/law-projection-runs/1/materialize-law-set", json={"safe_rerun": True})
+        self.assertEqual(reused.status_code, 200)
+        self.assertFalse(reused.json()["changed"])
+        self.assertTrue(reused.json()["reused_law_set"])
+
         held = self.client.post("/api/admin/law-projection-runs/1/hold", json={"reason": "manual_pause"})
         self.assertEqual(held.status_code, 200)
         self.assertEqual(held.json()["run"]["status"], "held")
@@ -267,3 +329,13 @@ class AdminLawProjectionApiTests(unittest.TestCase):
         response = self.client.get("/api/admin/law-projection-runs/999/items")
         self.assertEqual(response.status_code, 404)
         self.assertIn("server_effective_law_projection_run_not_found", " ".join(response.json().get("detail") or []))
+
+    def test_admin_law_projection_materialize_requires_approved_run(self):
+        preview = self.client.post(
+            "/api/admin/runtime-servers/orange/law-projection-runs",
+            json={"trigger_mode": "manual", "safe_rerun": True},
+        )
+        self.assertEqual(preview.status_code, 200)
+        response = self.client.post("/api/admin/law-projection-runs/1/materialize-law-set", json={"safe_rerun": True})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("server_effective_law_projection_run_not_approved", " ".join(response.json().get("detail") or []))

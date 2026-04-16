@@ -13,6 +13,7 @@ from ogp_web.services.admin_law_projection_service import (
     decide_server_effective_law_projection_payload,
     list_server_effective_law_projection_items_payload,
     list_server_effective_law_projection_runs_payload,
+    materialize_server_effective_law_projection_payload,
     preview_server_effective_law_projection_payload,
 )
 
@@ -193,6 +194,53 @@ class _FakeProjectionsStore:
         return item
 
 
+class _FakeSource:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class _FakeRuntimeLawSetsStore:
+    def __init__(self):
+        self.sources = []
+        self.law_sets = []
+        self.items_by_law_set = {}
+
+    def list_sources(self):
+        return list(self.sources)
+
+    def create_source(self, *, name: str, kind: str, url: str):
+        item = _FakeSource(
+            id=len(self.sources) + 1,
+            name=name,
+            kind=kind,
+            url=url,
+            is_active=True,
+        )
+        self.sources.append(item)
+        return item
+
+    def create_law_set(self, *, server_code: str, name: str):
+        item = {
+            "id": len(self.law_sets) + 1,
+            "server_code": server_code,
+            "name": name,
+            "is_active": True,
+            "is_published": False,
+        }
+        self.law_sets.append(item)
+        return dict(item)
+
+    def replace_law_set_items(self, *, law_set_id: int, items):
+        self.items_by_law_set[int(law_set_id)] = list(items)
+        return list(items)
+
+    def update_law_set(self, *, law_set_id: int, name: str, is_active: bool):
+        item = next(row for row in self.law_sets if int(row["id"]) == int(law_set_id))
+        item["name"] = name
+        item["is_active"] = bool(is_active)
+        return dict(item)
+
+
 def test_preview_server_effective_law_projection_payload_selects_highest_priority_binding():
     projections = _FakeProjectionsStore()
     payload = preview_server_effective_law_projection_payload(
@@ -267,3 +315,67 @@ def test_decide_server_effective_law_projection_payload_updates_run_status():
     )
     assert approved["run"]["status"] == "approved"
     assert approved["run"]["summary_json"]["decision_reason"] == "ready_for_runtime_bridge"
+
+
+def test_materialize_server_effective_law_projection_payload_requires_approved_run():
+    projections = _FakeProjectionsStore()
+    created = preview_server_effective_law_projection_payload(
+        source_sets_store=_FakeSourceSetsStore(),
+        versions_store=_FakeVersionsStore(),
+        projections_store=projections,
+        server_code="orange",
+    )
+    runtime_store = _FakeRuntimeLawSetsStore()
+    try:
+        materialize_server_effective_law_projection_payload(
+            projections_store=projections,
+            runtime_law_sets_store=runtime_store,
+            run_id=created["run"]["id"],
+            materialized_by="admin",
+        )
+    except ValueError as exc:
+        assert str(exc) == "server_effective_law_projection_run_not_approved"
+    else:
+        raise AssertionError("expected approved-only materialization guard")
+
+
+def test_materialize_server_effective_law_projection_payload_creates_draft_law_set_and_reuses_it():
+    projections = _FakeProjectionsStore()
+    created = preview_server_effective_law_projection_payload(
+        source_sets_store=_FakeSourceSetsStore(),
+        versions_store=_FakeVersionsStore(),
+        projections_store=projections,
+        server_code="orange",
+    )
+    decide_server_effective_law_projection_payload(
+        projections_store=projections,
+        run_id=created["run"]["id"],
+        status="approved",
+        decided_by="admin",
+        reason="ready",
+    )
+    runtime_store = _FakeRuntimeLawSetsStore()
+    materialized = materialize_server_effective_law_projection_payload(
+        projections_store=projections,
+        runtime_law_sets_store=runtime_store,
+        run_id=created["run"]["id"],
+        materialized_by="admin",
+    )
+    assert materialized["changed"] is True
+    assert materialized["law_set"]["server_code"] == "orange"
+    assert materialized["law_set"]["is_published"] is False
+    assert materialized["law_set"]["is_active"] is False
+    assert materialized["count"] == 2
+    assert len(runtime_store.sources) == 2
+    assert materialized["items"][0]["law_code"] == "url_seed:law-a"
+
+    reused = materialize_server_effective_law_projection_payload(
+        projections_store=projections,
+        runtime_law_sets_store=runtime_store,
+        run_id=created["run"]["id"],
+        materialized_by="admin",
+        safe_rerun=True,
+    )
+    assert reused["changed"] is False
+    assert reused["reused_law_set"] is True
+    assert len(runtime_store.law_sets) == 1

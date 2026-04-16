@@ -36,6 +36,7 @@ from ogp_web.schemas import (
     AdminCanonicalLawDocumentVersionParsePayload,
     AdminLawProjectionRunPayload,
     AdminLawProjectionDecisionPayload,
+    AdminLawProjectionMaterializePayload,
     AdminDeactivatePayload,
     AdminEmailUpdatePayload,
     AdminExamScoreResetPayload,
@@ -190,6 +191,7 @@ from ogp_web.services.admin_law_projection_service import (
     decide_server_effective_law_projection_payload,
     list_server_effective_law_projection_items_payload,
     list_server_effective_law_projection_runs_payload,
+    materialize_server_effective_law_projection_payload,
     preview_server_effective_law_projection_payload,
 )
 from ogp_web.web import page_context, templates
@@ -1104,6 +1106,44 @@ async def admin_law_projection_run_hold(
         method="POST",
         status_code=200,
         meta={"run_id": int(run_id), "status": "held"},
+    )
+    return result
+
+
+@router.post("/api/admin/law-projection-runs/{run_id}/materialize-law-set")
+async def admin_law_projection_run_materialize_law_set(
+    run_id: int,
+    payload: AdminLawProjectionMaterializePayload,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    runtime_law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        result = materialize_server_effective_law_projection_payload(
+            projections_store=projections_store,
+            runtime_law_sets_store=runtime_law_sets_store,
+            run_id=run_id,
+            materialized_by=user.username,
+            safe_rerun=payload.safe_rerun,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_law_projection_run_materialize_law_set",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/law-projection-runs/{int(run_id)}/materialize-law-set",
+        method="POST",
+        status_code=200,
+        meta={
+            "run_id": int(run_id),
+            "changed": bool(result.get("changed")),
+            "law_set_id": int((result.get("materialization") or {}).get("law_set_id") or 0),
+            "item_count": int(result.get("count") or 0),
+        },
     )
     return result
 
