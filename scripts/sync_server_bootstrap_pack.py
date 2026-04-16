@@ -39,6 +39,23 @@ def sync_server_pack(*, server_code: str) -> dict[str, object]:
     backend = get_database_backend()
     conn = backend.connect()
     try:
+        server_row = conn.execute(
+            """
+            SELECT code
+            FROM servers
+            WHERE code = %s
+            LIMIT 1
+            """,
+            (server_code,),
+        ).fetchone()
+        if server_row is None:
+            return {
+                "server_code": server_code,
+                "changed": False,
+                "version": 0,
+                "reason": "server_missing",
+            }
+
         row = conn.execute(
             """
             SELECT id, version, metadata_json
