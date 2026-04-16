@@ -259,6 +259,32 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn("Activation State", response.text)
         self.assertIn("Linked Configuration", response.text)
 
+    def test_admin_server_detail_page_contains_server_workspace_tabs(self):
+        self.client.post("/api/auth/logout")
+        response = self.client.post(
+            "/api/auth/register",
+            json={"username": "12345", "email": "admin@example.com", "password": "Password123!"},
+        )
+        verify_url = response.json()["verification_url"]
+        split = urlsplit(verify_url)
+        self.client.get(f"{split.path}?{split.query}")
+        self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
+
+        response = self.client.get("/admin/servers/blackberry")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('id="admin-server-workspace"', response.text)
+        self.assertIn('data-server-code="blackberry"', response.text)
+        self.assertIn("Server workspace: blackberry", response.text)
+        self.assertIn('data-server-workspace-tab="overview"', response.text)
+        self.assertIn('data-server-workspace-tab="laws"', response.text)
+        self.assertIn('data-server-workspace-tab="features"', response.text)
+        self.assertIn('data-server-workspace-tab="templates"', response.text)
+        self.assertIn('data-server-workspace-tab="users"', response.text)
+        self.assertIn('data-server-workspace-tab="access"', response.text)
+        self.assertIn('data-server-workspace-tab="audit"', response.text)
+        self.assertIn('data-server-workspace-tab="errors"', response.text)
+        self.assertIn('data-server-workspace-tab="diagnostics"', response.text)
+
     def test_admin_templates_page_redirects_to_servers(self):
         self.client.post("/api/auth/logout")
         response = self.client.post(

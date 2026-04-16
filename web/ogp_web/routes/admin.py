@@ -94,6 +94,10 @@ from ogp_web.services.admin_runtime_servers_service import (
     set_runtime_server_active_payload,
     update_runtime_server_payload,
 )
+from ogp_web.services.admin_server_workspace_service import (
+    build_server_activity_payload,
+    build_server_workspace_payload,
+)
 from ogp_web.services.admin_law_sets_service import (
     add_runtime_server_law_binding_payload,
     create_law_source_registry_payload,
@@ -345,6 +349,21 @@ async def admin_servers_page(request: Request, user: AuthUser = Depends(require_
     )
 
 
+@router.get("/admin/servers/{server_code}", response_class=HTMLResponse)
+async def admin_server_detail_page(
+    request: Request,
+    server_code: str,
+    user: AuthUser = Depends(require_admin_user),
+):
+    payload = _admin_template_payload(request, user, admin_focus="servers")
+    payload["admin_server_code"] = _normalize_code(server_code)
+    return templates.TemplateResponse(
+        request,
+        "admin.html",
+        payload,
+    )
+
+
 @router.get("/admin/laws", response_class=HTMLResponse)
 async def admin_laws_page(request: Request, user: AuthUser = Depends(require_admin_user)):
     return templates.TemplateResponse(
@@ -519,6 +538,53 @@ async def admin_runtime_server_health(
         meta=payload.get("summary") or {},
     )
     return payload
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/workspace")
+async def admin_runtime_server_workspace(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
+    runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    dashboard_service: AdminDashboardService = Depends(get_admin_dashboard_service),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    user_store: UserStore = Depends(get_user_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+):
+    try:
+        payload = build_server_workspace_payload(
+            server_code=server_code,
+            runtime_servers_store=runtime_servers_store,
+            law_sets_store=law_sets_store,
+            projections_store=projections_store,
+            workflow_service=workflow_service,
+            dashboard_service=dashboard_service,
+            metrics_store=metrics_store,
+            user_store=user_store,
+            source_sets_store=source_sets_store,
+            username=user.username,
+        )
+    except KeyError as exc:
+        _raise_not_found(exc)
+    return _admin_ok(**payload)
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/activity")
+async def admin_runtime_server_activity(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    dashboard_service: AdminDashboardService = Depends(get_admin_dashboard_service),
+):
+    payload = build_server_activity_payload(
+        server_code=server_code,
+        metrics_store=metrics_store,
+        dashboard_service=dashboard_service,
+        username=user.username,
+    )
+    return _admin_ok(**payload)
 
 
 @router.post("/api/admin/runtime-servers/{server_code}/deactivate")
