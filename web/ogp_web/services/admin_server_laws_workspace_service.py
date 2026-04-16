@@ -238,6 +238,15 @@ def _runtime_item_parity_summary(
     shared = active_keys & projected_keys
     runtime_only = active_keys - projected_keys
     projection_only = projected_keys - active_keys
+    runtime_only_keys = sorted(runtime_only)
+    projection_only_keys = sorted(projection_only)
+    runtime_only_sample = runtime_only_keys[:3]
+    projection_only_sample = projection_only_keys[:3]
+    drift_parts: list[str] = []
+    if runtime_only_sample:
+        drift_parts.append(f"runtime_only: {', '.join(runtime_only_sample)}")
+    if projection_only_sample:
+        drift_parts.append(f"projection_only: {', '.join(projection_only_sample)}")
     if active_keys and projected_keys and not runtime_only and not projection_only:
         status = "aligned"
         detail = "Active runtime law shell matches the latest projection by law identity."
@@ -255,8 +264,11 @@ def _runtime_item_parity_summary(
         "shared_count": len(shared),
         "runtime_only_count": len(runtime_only),
         "projection_only_count": len(projection_only),
-        "runtime_only_keys": sorted(runtime_only),
-        "projection_only_keys": sorted(projection_only),
+        "runtime_only_keys": runtime_only_keys,
+        "projection_only_keys": projection_only_keys,
+        "runtime_only_sample": runtime_only_sample,
+        "projection_only_sample": projection_only_sample,
+        "drift_summary": "; ".join(drift_parts),
     }
 
 
