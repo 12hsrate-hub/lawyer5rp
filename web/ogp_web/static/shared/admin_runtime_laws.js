@@ -28,9 +28,12 @@ window.OGPAdminRuntimeLaws = {
     const runtimeCount = Array.isArray(runtimeServerItems) ? runtimeServerItems.length : 0;
     const summary = runtimeServerHealth?.summary || {};
     const checks = runtimeServerHealth?.checks || {};
+    const onboarding = runtimeServerHealth?.onboarding || server?.onboarding || {};
     const readyCount = Number(summary.ready_count || 0);
     const totalCount = Number(summary.total_count || 5);
     const healthOk = Boolean(checks.health?.ok);
+    const onboardingState = String(onboarding.highest_completed_state || "not-ready");
+    const onboardingSource = String(onboarding.resolution_label || "unknown");
     const healthDetail = healthOk
       ? `Version ${String(checks.health?.active_law_version_id || "-")}, chunks ${String(checks.health?.chunk_count || 0)}.`
       : String(checks.health?.detail || "Run health verification after binding and activation.");
@@ -43,14 +46,14 @@ window.OGPAdminRuntimeLaws = {
         </div>
         <p class="legal-section__description">${escapeHtml(
           server
-            ? `Сервер ${serverTitle} (${String(server.code || "").trim().toLowerCase()}) подготовлен на ${readyCount}/${totalCount} шагов.`
+            ? `Сервер ${serverTitle} (${String(server.code || "").trim().toLowerCase()}) подготовлен на ${readyCount}/${totalCount} health-шагов. Onboarding state: ${onboardingState}. Resolution: ${onboardingSource}.`
             : "Сначала создайте или выберите runtime-сервер, затем пройдите шаги подготовки.",
         )}</p>
         <div class="admin-workflow-grid">
           ${window.OGPAdminRuntimeLaws.renderWorkflowStep({
             title: "1. Сервер",
             status: server ? "выбран" : "не выбран",
-            detail: server ? `${serverTitle}. Статус: ${server.is_active ? "active" : "disabled"}.` : "Создайте новый runtime-сервер или выберите существующий в селекторе выше.",
+            detail: server ? `${serverTitle}. Статус: ${server.is_active ? "active" : "disabled"}. Onboarding: ${onboardingState}. Resolution: ${onboardingSource}.` : "Создайте новый runtime-сервер или выберите существующий в селекторе выше.",
             tone: server ? "done" : "warning",
             actionHtml: `
               <button type="button" id="workflow-create-server" class="primary-button">Создать сервер</button>
@@ -160,7 +163,7 @@ window.OGPAdminRuntimeLaws = {
     return `
       <table class="legal-table admin-table admin-table--compact">
         <thead>
-          <tr><th>Код</th><th>Название</th><th>Статус</th><th>Действия</th></tr>
+          <tr><th>Код</th><th>Название</th><th>Статус</th><th>Onboarding</th><th>Действия</th></tr>
         </thead>
         <tbody>
           ${items.length
@@ -169,13 +172,14 @@ window.OGPAdminRuntimeLaws = {
                 <td>${escapeHtml(String(item.code || "—"))}</td>
                 <td>${escapeHtml(String(item.title || "—"))}</td>
                 <td>${item.is_active ? "active" : "disabled"}</td>
+                <td>${escapeHtml(String(item.onboarding?.highest_completed_state || "not-ready"))}<br><span class="admin-user-cell__secondary">${escapeHtml(String(item.onboarding?.resolution_label || "unknown"))}</span></td>
                 <td>
                   <button type="button" class="ghost-button" data-runtime-server-edit="${escapeHtml(String(item.code || ""))}" data-runtime-server-title="${escapeHtml(String(item.title || ""))}">Изменить</button>
                   <button type="button" class="ghost-button" data-runtime-server-toggle="${escapeHtml(String(item.code || ""))}" data-runtime-server-active="${item.is_active ? "1" : "0"}">${item.is_active ? "Деактивировать" : "Активировать"}</button>
                 </td>
               </tr>
             `).join("")
-            : '<tr><td colspan="4" class="legal-section__description">Серверы не найдены.</td></tr>'}
+            : '<tr><td colspan="5" class="legal-section__description">Серверы не найдены.</td></tr>'}
         </tbody>
       </table>
     `;

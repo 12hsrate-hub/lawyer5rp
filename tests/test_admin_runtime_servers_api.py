@@ -279,10 +279,13 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         listed = self.client.get("/api/admin/runtime-servers")
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(listed.json()["count"], 1)
+        self.assertEqual(listed.json()["items"][0]["onboarding"]["highest_completed_state"], "workflow-ready")
 
         created = self.client.post("/api/admin/runtime-servers", json={"code": "city2", "title": "City 2"})
         self.assertEqual(created.status_code, 200)
         self.assertEqual(created.json()["item"]["code"], "city2")
+        self.assertEqual(created.json()["item"]["onboarding"]["highest_completed_state"], "not-ready")
+        self.assertEqual(created.json()["item"]["onboarding"]["resolution_mode"], "neutral_fallback")
 
         updated = self.client.put("/api/admin/runtime-servers/city2", json={"code": "city2", "title": "City 2 RU"})
         self.assertEqual(updated.status_code, 200)
@@ -343,6 +346,8 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertEqual(payload_before["summary"]["ready_count"], 4)
             self.assertFalse(payload_before["checks"]["activation"]["ok"])
             self.assertTrue(payload_before["checks"]["health"]["ok"])
+            self.assertEqual(payload_before["onboarding"]["highest_completed_state"], "not-ready")
+            self.assertEqual(payload_before["onboarding"]["resolution_mode"], "neutral_fallback")
 
             activated = self.client.post("/api/admin/runtime-servers/city2/activate")
             self.assertEqual(activated.status_code, 200)
@@ -353,6 +358,8 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertTrue(payload_after["summary"]["is_ready"])
             self.assertEqual(payload_after["summary"]["ready_count"], payload_after["summary"]["total_count"])
             self.assertEqual(payload_after["checks"]["health"]["active_law_version_id"], 77)
+            self.assertEqual(payload_after["onboarding"]["highest_completed_state"], "not-ready")
+            self.assertEqual(payload_after["onboarding"]["next_required_state"], "bootstrap-ready")
 
     def test_catalog_audit_accepts_entity_filters(self):
         fake_workflow = _FakeContentWorkflowService()
