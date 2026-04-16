@@ -106,6 +106,8 @@ class ServerConfigRegistryTests(unittest.TestCase):
             orange.template_bindings["complaint"]["template_key"],
             "complaint_orange_v1",
         )
+        self.assertEqual(orange.law_qa_sources, ("https://forum.gta5rp.com/forums/zakonodatelnaja-baza.102/",))
+        self.assertEqual(orange.law_qa_bundle_path, "law_bundles/orange.json")
         self.assertEqual(orange.document_builder["choice_sets"]["claim_kind_by_court_type"]["appeal"][0]["value"], "orange_appeal_admin_claim")
 
     def test_resolve_document_builder_config_uses_bootstrap_metadata(self):

@@ -88,6 +88,35 @@ def build_server_config_from_pack(*, metadata: dict[str, Any], code: str = "blac
 
     organizations_raw = metadata.get("organizations") if isinstance(metadata, dict) else []
     procedure_types_raw = metadata.get("procedure_types") if isinstance(metadata, dict) else []
+    law_qa_sources_raw = metadata.get("law_qa_sources") if isinstance(metadata, dict) else None
+    if isinstance(law_qa_sources_raw, (list, tuple)):
+        law_qa_sources = tuple(str(item).strip() for item in law_qa_sources_raw if str(item).strip())
+    else:
+        law_qa_sources = ()
+    if not law_qa_sources:
+        law_qa_sources = (
+            "https://forum.gta5rp.com/threads/processualnyi-kodeks-shtata-san-andreas-redakcija-ot-29-marta-2026-goda.826899/",
+            "https://forum.gta5rp.com/threads/sudebnye-precedenty.1291064/",
+            "https://forum.gta5rp.com/threads/dorozhnyi-kodeks-shtata-san-andreas-redakcija-ot-29-marta-2025-goda.826974/",
+            "https://forum.gta5rp.com/threads/administrativnyi-kodeks-shtata-san-andreas-redakcija-ot-29-marta-2025-goda.827016/",
+            "https://forum.gta5rp.com/threads/ugolovnyi-kodeks-shtata-san-andreas-redakcija-ot-29-marta-2026-goda.826988/",
+            "https://forum.gta5rp.com/threads/grazhdanskii-kodeks-shtata-san-andreas-redakcija-ot-05-marta-2026-goda.932736/",
+            "https://forum.gta5rp.com/threads/ehticheskii-kodeks-shtata-san-andreas-redakcija-ot-19-oktjabrja-2024-goda.826971/",
+            "https://forum.gta5rp.com/threads/konstitucija-shtata-san-andreas-redakcija-ot-29-marta-2026-goda.826866/",
+            "https://forum.gta5rp.com/threads/zakon-ob-advokature-i-advokatskoi-dejatelnosti-v-shtate-san-andreas-redakcija-ot-05-marta-2026-goda.827351/",
+            "https://forum.gta5rp.com/threads/zakon-o-sudebnoi-sisteme-i-sudoproizvodstve-redakcija-ot-29-marta-2025.3284901/",
+            "https://forum.gta5rp.com/threads/zakon-o-dejatelnosti-regionalnyx-pravooxranitelnyx-organov-redakcija-ot-29-marta-2026-goda.3284897/",
+            "https://forum.gta5rp.com/threads/zakon-o-federalnom-rassledovatelskom-bjuro-redakcija-ot-29-marta-2026-goda.827363/",
+            "https://forum.gta5rp.com/threads/kodeks-o-dejatelnosti-pravitelstva-shtata-san-andreas-redakcija-ot-29-marta-2026-goda.3253844/",
+            "https://forum.gta5rp.com/threads/kodeks-o-zakonodatelnoi-vlasti-i-politicheskix-partijax-shtata-san-andreas-redakcija-ot-26-ijulja-2025-goda.3253847/",
+            "https://forum.gta5rp.com/threads/trudovoi-kodeks-shtata-san-andreas-redakcija-ot-29-marta-2026-goda.827090/",
+            "https://forum.gta5rp.com/threads/zakon-o-predprinimatelskoi-dejatelnosti-i-nalogooblozhenii-redakcija-ot-26-ijulja-2025-goda.827261/",
+            "https://forum.gta5rp.com/threads/zakon-o-gosudarstvennoi-taine-v-shtate-san-andreas-redakcija-ot-27-ijunja-2025-goda.827290/",
+        )
+    law_qa_bundle_path = str(metadata.get("law_qa_bundle_path") or "").strip() if isinstance(metadata, dict) else ""
+    if not law_qa_bundle_path:
+        law_qa_bundle_path = "law_bundles/blackberry.json"
+    law_qa_bundle_max_age_hours = int(metadata.get("law_qa_bundle_max_age_hours", 168) or 168) if isinstance(metadata, dict) else 168
 
     return ServerConfig(
         code=code,
@@ -182,27 +211,9 @@ def build_server_config_from_pack(*, metadata: dict[str, Any], code: str = "blac
                 "legal_pipeline_contract",
             }
         ),
-        law_qa_sources=(
-            "https://forum.gta5rp.com/threads/processualnyi-kodeks-shtata-san-andreas-redakcija-ot-29-marta-2026-goda.826899/",
-            "https://forum.gta5rp.com/threads/sudebnye-precedenty.1291064/",
-            "https://forum.gta5rp.com/threads/dorozhnyi-kodeks-shtata-san-andreas-redakcija-ot-29-marta-2025-goda.826974/",
-            "https://forum.gta5rp.com/threads/administrativnyi-kodeks-shtata-san-andreas-redakcija-ot-29-marta-2025-goda.827016/",
-            "https://forum.gta5rp.com/threads/ugolovnyi-kodeks-shtata-san-andreas-redakcija-ot-29-marta-2026-goda.826988/",
-            "https://forum.gta5rp.com/threads/grazhdanskii-kodeks-shtata-san-andreas-redakcija-ot-05-marta-2026-goda.932736/",
-            "https://forum.gta5rp.com/threads/ehticheskii-kodeks-shtata-san-andreas-redakcija-ot-19-oktjabrja-2024-goda.826971/",
-            "https://forum.gta5rp.com/threads/konstitucija-shtata-san-andreas-redakcija-ot-29-marta-2026-goda.826866/",
-            "https://forum.gta5rp.com/threads/zakon-ob-advokature-i-advokatskoi-dejatelnosti-v-shtate-san-andreas-redakcija-ot-05-marta-2026-goda.827351/",
-            "https://forum.gta5rp.com/threads/zakon-o-sudebnoi-sisteme-i-sudoproizvodstve-redakcija-ot-29-marta-2025.3284901/",
-            "https://forum.gta5rp.com/threads/zakon-o-dejatelnosti-regionalnyx-pravooxranitelnyx-organov-redakcija-ot-29-marta-2026-goda.3284897/",
-            "https://forum.gta5rp.com/threads/zakon-o-federalnom-rassledovatelskom-bjuro-redakcija-ot-29-marta-2026-goda.827363/",
-            "https://forum.gta5rp.com/threads/kodeks-o-dejatelnosti-pravitelstva-shtata-san-andreas-redakcija-ot-29-marta-2026-goda.3253844/",
-            "https://forum.gta5rp.com/threads/kodeks-o-zakonodatelnoi-vlasti-i-politicheskix-partijax-shtata-san-andreas-redakcija-ot-26-ijulja-2025-goda.3253847/",
-            "https://forum.gta5rp.com/threads/trudovoi-kodeks-shtata-san-andreas-redakcija-ot-29-marta-2026-goda.827090/",
-            "https://forum.gta5rp.com/threads/zakon-o-predprinimatelskoi-dejatelnosti-i-nalogooblozhenii-redakcija-ot-26-ijulja-2025-goda.827261/",
-            "https://forum.gta5rp.com/threads/zakon-o-gosudarstvennoi-taine-v-shtate-san-andreas-redakcija-ot-27-ijunja-2025-goda.827290/",
-        ),
-        law_qa_bundle_path="law_bundles/blackberry.json",
-        law_qa_bundle_max_age_hours=168,
+        law_qa_sources=law_qa_sources,
+        law_qa_bundle_path=law_qa_bundle_path,
+        law_qa_bundle_max_age_hours=law_qa_bundle_max_age_hours,
         suggest_prompt_mode="data_driven",
         suggest_low_confidence_policy="controlled_fallback",
         exam_sheet_url=EXAM_SHEET_URL,
