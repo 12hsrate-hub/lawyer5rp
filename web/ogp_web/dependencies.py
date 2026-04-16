@@ -25,6 +25,7 @@ from ogp_web.storage.law_source_discovery_store import LawSourceDiscoveryStore
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
 from ogp_web.storage.runtime_servers_store import RuntimeServersStore
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
+from ogp_web.storage.server_effective_law_projections_store import ServerEffectiveLawProjectionsStore
 
 _DEFAULT_ADMIN_TASK_OPS_SERVICE = AdminTaskOpsService()
 _DEFAULT_JOBS_RUNTIME_SERVICE = JobsRuntimeService()
@@ -146,6 +147,11 @@ def get_canonical_law_documents_store(_: Request) -> CanonicalLawDocumentsStore:
 def get_canonical_law_document_versions_store(_: Request) -> CanonicalLawDocumentVersionsStore:
     backend = get_database_backend()
     return CanonicalLawDocumentVersionsStore(backend)
+
+
+def get_server_effective_law_projections_store(_: Request) -> ServerEffectiveLawProjectionsStore:
+    backend = get_database_backend()
+    return ServerEffectiveLawProjectionsStore(backend)
 
 def get_exam_import_task_registry(request: Request) -> ExamImportTaskRegistry:
     return request.app.state.exam_import_task_registry
