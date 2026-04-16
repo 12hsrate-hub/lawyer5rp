@@ -152,6 +152,33 @@ window.OGPAdminServerWorkspace = {
       return "admin-badge--muted";
     }
 
+    function permissionLabel(code, permissions) {
+      const normalized = normalizeKey(code);
+      const items = Array.isArray(permissions) ? permissions : [];
+      const match = items.find((item) => normalizeKey(item?.code) === normalized);
+      return String(match?.description || normalized || "permission");
+    }
+
+    function summarizeIssueNextStep(item) {
+      const issueId = normalizeKey(item?.issue_id);
+      if (issueId === "laws_runtime_health") {
+        return "Сначала проверьте наполнение законов. Если контент появился, runtime issue должен исчезнуть после recheck.";
+      }
+      if (issueId === "laws_bindings_missing") {
+        return "Откройте вкладку «Законы» и добавьте хотя бы один активный source set binding.";
+      }
+      if (issueId === "synthetic_failures") {
+        return "Перезапустите smoke и проверьте, исчезли ли падения. Если нет, откройте «Диагностика».";
+      }
+      if (issueId === "integrity_checks") {
+        return "Проблема требует технической проверки. Используйте «Диагностика» и ops/dashboard для детализации.";
+      }
+      if (issueId === "jobs_dlq") {
+        return "Есть зависшие задачи. Нужна операторская проверка очередей и downstream обработчиков.";
+      }
+      return "Откройте смежную вкладку сервера или «Диагностика», чтобы уточнить источник проблемы.";
+    }
+
     function renderSummary() {
       const summaryHost = document.getElementById("admin-server-workspace-summary");
       if (!(summaryHost instanceof HTMLElement)) {
@@ -654,11 +681,14 @@ window.OGPAdminServerWorkspace = {
       const roles = Array.isArray(state.rolesData?.items) ? state.rolesData.items : [];
       const permissions = Array.isArray(state.permissionsData?.items) ? state.permissionsData.items : [];
       const selectedUser = getSelectedAccessUser();
+      const selectedAssignments = Array.isArray(selectedUser?.assignments) ? selectedUser.assignments : [];
+      const selectedPermissions = Array.isArray(selectedUser?.permissions) ? selectedUser.permissions : [];
+      const highlightedRoleCodes = new Set(selectedAssignments.map((item) => normalizeKey(item?.role_code)));
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
             <span class="legal-field__label">Роли / Доступ</span>
-            <p class="legal-section__description">Назначение ролей и просмотр effective permissions для выбранного сервера без ухода в raw RBAC-таблицы.</p>
+            <p class="legal-section__description">Назначение ролей и понятное объяснение effective доступа для выбранного сервера без ухода в raw RBAC-таблицы.</p>
           </div>
           <div class="admin-section-toolbar">
             <button type="button" id="admin-server-access-reload" class="ghost-button">Обновить блок</button>
@@ -669,11 +699,11 @@ window.OGPAdminServerWorkspace = {
           ${
             totals.length
               ? `<div class="admin-section-toolbar">${totals.map((item) => `<span class="admin-badge admin-badge--muted">${escapeHtml(String(item.code || ""))}: ${escapeHtml(String(item.count || 0))}</span>`).join("")}</div>`
-              : '<p class="legal-section__description">Разрешения для сервера пока не вычислены.</p>'
-          }
-        </div>
-        <div class="legal-field-grid legal-field-grid--two">
-          <div class="legal-field">
+                : '<p class="legal-section__description">Разрешения для сервера пока не вычислены.</p>'
+            }
+          </div>
+          <div class="legal-field-grid legal-field-grid--two">
+            <div class="legal-field">
             <span class="legal-field__label">Назначить роль</span>
             ${
               items.length && roles.length
@@ -704,22 +734,33 @@ window.OGPAdminServerWorkspace = {
                     <div class="admin-section-toolbar">
                       <button type="submit" class="primary-button">Назначить роль</button>
                     </div>
-                  </form>`
-                : '<p class="legal-section__description">Сначала убедитесь, что у сервера есть пользователи и доступен каталог ролей.</p>'
-            }
+                    </form>`
+                  : '<p class="legal-section__description">Сначала убедитесь, что у сервера есть пользователи и доступен каталог ролей.</p>'
+              }
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Выбранный пользователь</span>
+              ${
+                selectedUser
+                  ? `<div><strong>${escapeHtml(String(selectedUser.display_name || selectedUser.username || "—"))}</strong></div>
+                     <div class="admin-user-cell__secondary">${escapeHtml(String(selectedUser.username || ""))}</div>
+                     <div class="admin-section-toolbar">
+                       ${selectedAssignments.length
+                         ? selectedAssignments.map((entry) => `<span class="admin-badge admin-badge--muted">${escapeHtml(String(entry.role_name || entry.role_code || ""))}${entry.scope === "global" ? " • global" : ""}</span>`).join("")
+                         : '<span class="admin-badge admin-badge--muted">Нет явных ролей</span>'}
+                     </div>
+                     <div class="admin-user-cell__secondary">Flags: ${selectedUser.is_tester ? "tester " : ""}${selectedUser.is_gka ? "gka " : ""}${selectedUser.is_blocked ? "blocked" : selectedUser.is_deactivated ? "deactivated" : "active"}</div>
+                     <div class="admin-section-toolbar">
+                       ${selectedPermissions.length
+                         ? selectedPermissions.map((code) => `<span class="admin-badge admin-badge--muted" title="${escapeHtml(permissionLabel(code, permissions))}">${escapeHtml(String(code))}</span>`).join("")
+                         : '<span class="admin-badge admin-badge--muted">Нет effective permissions</span>'}
+                     </div>`
+                  : '<p class="legal-section__description">Выберите пользователя из таблицы ниже, чтобы увидеть его effective доступ.</p>'
+              }
+            </div>
           </div>
-          <div class="legal-field">
-            <span class="legal-field__label">Каталог ролей</span>
-            ${
-              roles.length
-                ? `<div class="admin-section-toolbar">${roles.map((role) => `<span class="admin-badge admin-badge--muted">${escapeHtml(String(role.code || ""))}</span>`).join("")}</div>
-                   <div class="admin-user-cell__secondary">permissions: ${escapeHtml(String(permissions.length || 0))}</div>`
-                : '<p class="legal-section__description">Каталог ролей пока недоступен.</p>'
-            }
-          </div>
-        </div>
-        ${
-          items.length
+          ${
+            items.length
             ? `<div class="legal-subcard">
                 <span class="legal-field__label">Effective access</span>
                 <table class="legal-table admin-table admin-table--compact"><thead><tr><th>User</th><th>Roles</th><th>Permissions</th><th>Flags</th></tr></thead><tbody>${items.map((item) => {
@@ -739,11 +780,27 @@ window.OGPAdminServerWorkspace = {
                     <td>${item.is_tester ? "tester " : ""}${item.is_gka ? "gka " : ""}${item.is_blocked ? "blocked" : item.is_deactivated ? "deactivated" : ""}</td>
                   </tr>`;
                 }).join("")}</tbody></table>
-              </div>`
-            : ""
-        }
-      `;
-    }
+                </div>`
+              : ""
+          }
+          <div class="legal-subcard">
+            <span class="legal-field__label">Каталог ролей</span>
+            ${
+              roles.length
+                ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Роль</th><th>Права</th><th>Состояние</th></tr></thead><tbody>${roles.map((role) => {
+                    const permissionCodes = Array.isArray(role.permission_codes) ? role.permission_codes : [];
+                    const highlighted = highlightedRoleCodes.has(normalizeKey(role.code));
+                    return `<tr>
+                      <td><strong>${escapeHtml(String(role.name || role.code || "—"))}</strong><div class="admin-user-cell__secondary">${escapeHtml(String(role.code || ""))}</div></td>
+                      <td>${permissionCodes.length ? permissionCodes.map((code) => `<span class="admin-badge admin-badge--muted" title="${escapeHtml(permissionLabel(code, permissions))}">${escapeHtml(String(code))}</span>`).join(" ") : "—"}</td>
+                      <td>${highlighted ? '<span class="admin-badge admin-badge--success">Назначена</span>' : '<span class="admin-badge admin-badge--muted">Не назначена</span>'}</td>
+                    </tr>`;
+                  }).join("")}</tbody></table>`
+                : '<p class="legal-section__description">Каталог ролей пока недоступен.</p>'
+            }
+          </div>
+        `;
+      }
 
     function renderAudit() {
       const hostNode = document.getElementById("admin-server-workspace-panel-audit");
@@ -751,19 +808,32 @@ window.OGPAdminServerWorkspace = {
         return;
       }
       const items = Array.isArray(state.auditData?.items) ? state.auditData.items : [];
+      const groupedCounts = items.reduce((acc, item) => {
+        const kind = String(item?.kind || "event");
+        acc[kind] = (acc[kind] || 0) + 1;
+        return acc;
+      }, {});
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
             <span class="legal-field__label">Аудит</span>
-            <p class="legal-section__description">Единая история событий по серверу: workflow changes, metrics events и law projection activity.</p>
+            <p class="legal-section__description">Единая история событий по серверу: что меняли, когда происходили публикации и какие операционные сигналы появились.</p>
           </div>
           <div class="admin-section-toolbar">
             <button type="button" id="admin-server-audit-reload" class="ghost-button">Обновить блок</button>
           </div>
         </div>
+        <div class="legal-subcard">
+          <span class="legal-field__label">Сводка событий</span>
+          ${
+            items.length
+              ? `<div class="admin-section-toolbar">${Object.keys(groupedCounts).sort().map((kind) => `<span class="admin-badge admin-badge--muted">${escapeHtml(kind)}: ${escapeHtml(String(groupedCounts[kind] || 0))}</span>`).join("")}</div>`
+              : '<p class="legal-section__description">Для сервера пока нет audit events.</p>'
+          }
+        </div>
         ${
           items.length
-            ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Когда</th><th>Тип</th><th>Событие</th><th>Детали</th></tr></thead><tbody>${items.map((item) => `<tr><td>${escapeHtml(String(item.created_at || "—"))}</td><td>${escapeHtml(String(item.kind || "event"))}</td><td>${escapeHtml(String(item.title || "event"))}</td><td>${escapeHtml(String(item.description || "—"))}</td></tr>`).join("")}</tbody></table>`
+            ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Когда</th><th>Тип</th><th>Событие</th><th>Что это значит</th></tr></thead><tbody>${items.map((item) => `<tr><td>${escapeHtml(String(item.created_at || "—"))}</td><td>${escapeHtml(String(item.kind || "event"))}</td><td><strong>${escapeHtml(String(item.title || "event"))}</strong><div class="admin-user-cell__secondary">${escapeHtml(String(item.description || "—"))}</div></td><td>${escapeHtml(String(item.kind === "law_projection" ? "Обновлялся server-effective набор законов." : item.kind === "workflow_audit" || item.kind === "content_audit" ? "Было изменение контента или workflow-состояния." : "Операционный сигнал или системное событие."))}</td></tr>`).join("")}</tbody></table>`
             : '<p class="legal-section__description">История по серверу пока пуста.</p>'
         }
       `;
@@ -776,11 +846,12 @@ window.OGPAdminServerWorkspace = {
       }
       const issues = state.issuesData || state.workspace?.issues || {};
       const items = Array.isArray(issues.items) ? issues.items : [];
+      const actionableCount = items.filter((item) => Array.isArray(item.available_actions) && item.available_actions.length).length;
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
             <span class="legal-field__label">Ошибки / Проблемы</span>
-            <p class="legal-section__description">Operator-friendly список проблем по серверу с безопасными retry/recheck действиями там, где они уже поддерживаются.</p>
+            <p class="legal-section__description">Список незакрытых проблем по серверу с понятным следующим шагом и безопасными retry/recheck действиями там, где они уже поддерживаются.</p>
           </div>
           <div class="admin-section-toolbar">
             <button type="button" id="admin-server-issues-reload" class="ghost-button">Обновить блок</button>
@@ -790,10 +861,11 @@ window.OGPAdminServerWorkspace = {
           <span class="admin-badge ${issues.error_count ? "admin-badge--danger" : "admin-badge--muted"}">errors: ${escapeHtml(String(issues.error_count || 0))}</span>
           <span class="admin-badge ${issues.warning_count ? "admin-badge--warning" : "admin-badge--muted"}">warnings: ${escapeHtml(String(issues.warning_count || 0))}</span>
           <span class="admin-badge admin-badge--muted">unresolved: ${escapeHtml(String(issues.unresolved_count || 0))}</span>
+          <span class="admin-badge admin-badge--muted">actions: ${escapeHtml(String(actionableCount || 0))}</span>
         </div>
         ${
           items.length
-            ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Severity</th><th>Source</th><th>Title</th><th>Detail</th><th>Действия</th></tr></thead><tbody>${items.map((item) => `<tr><td>${escapeHtml(String(item.severity || "info"))}</td><td>${escapeHtml(String(item.source || "—"))}</td><td>${escapeHtml(String(item.title || "—"))}</td><td>${escapeHtml(String(item.detail || "—"))}</td><td>${Array.isArray(item.available_actions) && item.available_actions.length ? item.available_actions.map((action) => `<button type="button" class="ghost-button" data-server-issue-action="${escapeHtml(String(action.kind || ""))}" data-server-issue-id="${escapeHtml(String(item.issue_id || ""))}">${escapeHtml(String(action.label || action.kind || ""))}</button>`).join(" ") : "—"}</td></tr>`).join("")}</tbody></table>`
+            ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Severity</th><th>Source</th><th>Проблема</th><th>Что делать</th><th>Действия</th></tr></thead><tbody>${items.map((item) => `<tr><td><span class="admin-badge ${issueSeverityClass(item.severity)}">${escapeHtml(String(item.severity || "info"))}</span></td><td>${escapeHtml(String(item.source || "—"))}</td><td><strong>${escapeHtml(String(item.title || "—"))}</strong><div class="admin-user-cell__secondary">${escapeHtml(String(item.detail || "—"))}</div></td><td>${escapeHtml(summarizeIssueNextStep(item))}</td><td>${Array.isArray(item.available_actions) && item.available_actions.length ? item.available_actions.map((action) => `<button type="button" class="ghost-button" data-server-issue-action="${escapeHtml(String(action.kind || ""))}" data-server-issue-id="${escapeHtml(String(item.issue_id || ""))}">${escapeHtml(String(action.label || action.kind || ""))}</button>`).join(" ") : "—"}</td></tr>`).join("")}</tbody></table>`
             : '<p class="legal-section__description">Критичных сигналов по серверу сейчас не найдено.</p>'
         }
       `;
