@@ -97,8 +97,92 @@ class _FakeRuntimeServersStore:
 
 
 class _FakeContentWorkflowService:
+    class _Repository:
+        def __init__(self, service: "_FakeContentWorkflowService"):
+            self._service = service
+
+        def get_content_item_by_identity(self, *, server_scope: str, server_id: str | None, content_type: str, content_key: str):
+            return self._service._find_item(
+                server_scope=server_scope,
+                server_id=server_id,
+                content_type=content_type,
+                content_key=content_key,
+            )
+
     def __init__(self):
         self.calls: list[dict[str, object]] = []
+        self.repository = self._Repository(self)
+        self._next_item_id = 10
+        self._next_version_id = 100
+        self._next_change_request_id = 1000
+        self.items = [
+            {
+                "id": 1,
+                "server_scope": "global",
+                "server_id": None,
+                "content_type": "features",
+                "content_key": "complaint_intake",
+                "title": "Оформление жалобы",
+                "status": "published",
+                "current_published_version_id": 11,
+                "metadata_json": {},
+            },
+            {
+                "id": 2,
+                "server_scope": "server",
+                "server_id": "blackberry",
+                "content_type": "features",
+                "content_key": "complaint_intake",
+                "title": "Оформление жалобы",
+                "status": "published",
+                "current_published_version_id": 21,
+                "metadata_json": {"workspace": "server-centric"},
+            },
+            {
+                "id": 3,
+                "server_scope": "global",
+                "server_id": None,
+                "content_type": "templates",
+                "content_key": "complaint_template_v1",
+                "title": "Жалоба",
+                "status": "published",
+                "current_published_version_id": 31,
+                "metadata_json": {},
+            },
+        ]
+        self.versions = {
+            1: [
+                {"id": 11, "payload_json": {"feature_code": "complaint_intake", "title": "Оформление жалобы", "enabled": True, "rollout": "global", "owner": "ops", "notes": "", "status": "published", "order": 10, "hidden": False}},
+            ],
+            2: [
+                {"id": 21, "payload_json": {"feature_code": "complaint_intake", "title": "Оформление жалобы", "enabled": True, "rollout": "blackberry", "owner": "ops", "notes": "server override", "status": "published", "order": 1, "hidden": False}},
+            ],
+            3: [
+                {"id": 31, "payload_json": {"template_code": "complaint_template_v1", "title": "Жалоба", "body": "[b]{{document_title}}[/b]\n{{result}}", "format": "bbcode", "status": "published", "notes": ""}},
+            ],
+        }
+        self.change_requests = {
+            1: [],
+            2: [],
+            3: [],
+        }
+
+    def _find_item(self, *, server_scope: str, server_id: str | None, content_type: str, content_key: str):
+        normalized_server_scope = str(server_scope or "").strip().lower()
+        normalized_server_id = str(server_id or "").strip().lower() or None
+        normalized_content_type = str(content_type or "").strip().lower()
+        normalized_content_key = str(content_key or "").strip().lower()
+        for item in self.items:
+            if str(item.get("server_scope") or "").strip().lower() != normalized_server_scope:
+                continue
+            if (str(item.get("server_id") or "").strip().lower() or None) != normalized_server_id:
+                continue
+            if str(item.get("content_type") or "").strip().lower() != normalized_content_type:
+                continue
+            if str(item.get("content_key") or "").strip().lower() != normalized_content_key:
+                continue
+            return dict(item)
+        return None
 
     def list_content_items(self, *, server_scope: str, server_id: str | None, content_type: str | None = None, include_legacy_fallback: bool = False):
         self.calls.append(
@@ -110,17 +194,94 @@ class _FakeContentWorkflowService:
                 "include_legacy_fallback": include_legacy_fallback,
             }
         )
-        return {
-            "items": [
+        items = []
+        for item in self.items:
+            if str(item.get("server_scope") or "").strip().lower() != str(server_scope or "").strip().lower():
+                continue
+            if (str(item.get("server_id") or "").strip().lower() or None) != (str(server_id or "").strip().lower() or None):
+                continue
+            if content_type and str(item.get("content_type") or "").strip().lower() != str(content_type or "").strip().lower():
+                continue
+            items.append(dict(item))
+        if not items and str(content_type or "").strip().lower() == "procedures":
+            items.append(
                 {
                     "id": 42,
+                    "server_scope": server_scope,
+                    "server_id": server_id,
+                    "content_type": "procedures",
+                    "content_key": "complaint_law_index",
                     "title": "Complaint law index",
-                    "content_type": content_type,
                     "status": "draft",
+                    "current_published_version_id": None,
+                    "metadata_json": {},
                 }
-            ],
+            )
+        return {
+            "items": items,
             "legacy_fallback": [],
         }
+
+    def get_content_item(self, *, content_item_id: int, server_scope: str, server_id: str | None):
+        self.calls.append(
+            {
+                "kind": "get_content_item",
+                "content_item_id": content_item_id,
+                "server_scope": server_scope,
+                "server_id": server_id,
+            }
+        )
+        for item in self.items:
+            if int(item.get("id") or 0) != int(content_item_id):
+                continue
+            if str(item.get("server_scope") or "").strip().lower() != str(server_scope or "").strip().lower():
+                continue
+            if (str(item.get("server_id") or "").strip().lower() or None) != (str(server_id or "").strip().lower() or None):
+                continue
+            return dict(item)
+        raise KeyError("content_item_not_found")
+
+    def create_content_item(self, *, server_scope: str, server_id: str | None, content_type: str, content_key: str, title: str, metadata_json: dict | None = None, actor_user_id: int, request_id: str):
+        self.calls.append(
+            {
+                "kind": "create_content_item",
+                "server_scope": server_scope,
+                "server_id": server_id,
+                "content_type": content_type,
+                "content_key": content_key,
+                "actor_user_id": actor_user_id,
+                "request_id": request_id,
+            }
+        )
+        item = {
+            "id": self._next_item_id,
+            "server_scope": server_scope,
+            "server_id": server_id,
+            "content_type": content_type,
+            "content_key": content_key,
+            "title": title,
+            "status": "draft",
+            "current_published_version_id": None,
+            "metadata_json": dict(metadata_json or {}),
+        }
+        self._next_item_id += 1
+        self.items.append(item)
+        self.versions[item["id"]] = []
+        self.change_requests[item["id"]] = []
+        return dict(item)
+
+    def list_versions(self, *, content_item_id: int, server_scope: str, server_id: str | None):
+        self.calls.append(
+            {
+                "kind": "list_versions",
+                "content_item_id": content_item_id,
+                "server_scope": server_scope,
+                "server_id": server_id,
+            }
+        )
+        _ = server_scope
+        _ = server_id
+        return [dict(row) for row in self.versions.get(int(content_item_id), [])]
 
     def list_change_requests(self, *, content_item_id: int, server_scope: str, server_id: str | None):
         self.calls.append(
@@ -131,7 +292,102 @@ class _FakeContentWorkflowService:
                 "server_id": server_id,
             }
         )
-        return []
+        return [dict(row) for row in self.change_requests.get(int(content_item_id), [])]
+
+    def create_draft_version(self, *, content_item_id: int, payload_json: dict, schema_version: int, actor_user_id: int, request_id: str, server_scope: str, server_id: str | None, comment: str = ""):
+        self.calls.append(
+            {
+                "kind": "create_draft_version",
+                "content_item_id": content_item_id,
+                "schema_version": schema_version,
+                "actor_user_id": actor_user_id,
+                "request_id": request_id,
+                "server_scope": server_scope,
+                "server_id": server_id,
+                "comment": comment,
+            }
+        )
+        version = {
+            "id": self._next_version_id,
+            "payload_json": dict(payload_json),
+        }
+        self._next_version_id += 1
+        self.versions.setdefault(int(content_item_id), []).append(version)
+        change_request = {
+            "id": self._next_change_request_id,
+            "status": "draft",
+            "candidate_version_id": int(version["id"]),
+        }
+        self._next_change_request_id += 1
+        self.change_requests.setdefault(int(content_item_id), []).insert(0, change_request)
+        for item in self.items:
+            if int(item.get("id") or 0) == int(content_item_id):
+                item["status"] = "draft"
+                break
+        return {"version": dict(version), "change_request": dict(change_request)}
+
+    def submit_change_request(self, *, change_request_id: int, actor_user_id: int, request_id: str, server_scope: str, server_id: str | None):
+        self.calls.append(
+            {
+                "kind": "submit_change_request",
+                "change_request_id": change_request_id,
+                "actor_user_id": actor_user_id,
+                "request_id": request_id,
+                "server_scope": server_scope,
+                "server_id": server_id,
+            }
+        )
+        return self._mutate_change_request(change_request_id=change_request_id, new_status="in_review", item_status="in_review")
+
+    def review_change_request(self, *, change_request_id: int, reviewer_user_id: int, decision: str, comment: str, diff_json: dict, request_id: str, server_scope: str, server_id: str | None):
+        self.calls.append(
+            {
+                "kind": "review_change_request",
+                "change_request_id": change_request_id,
+                "reviewer_user_id": reviewer_user_id,
+                "decision": decision,
+                "comment": comment,
+                "diff_json": dict(diff_json or {}),
+                "request_id": request_id,
+                "server_scope": server_scope,
+                "server_id": server_id,
+            }
+        )
+        new_status = "approved" if decision == "approve" else "request_changes"
+        item_status = "approved" if decision == "approve" else "draft"
+        return self._mutate_change_request(change_request_id=change_request_id, new_status=new_status, item_status=item_status)
+
+    def publish_change_request(self, *, change_request_id: int, actor_user_id: int, request_id: str, summary_json: dict, server_scope: str, server_id: str | None):
+        self.calls.append(
+            {
+                "kind": "publish_change_request",
+                "change_request_id": change_request_id,
+                "actor_user_id": actor_user_id,
+                "request_id": request_id,
+                "summary_json": dict(summary_json or {}),
+                "server_scope": server_scope,
+                "server_id": server_id,
+            }
+        )
+        for item in self.items:
+            for change_request in self.change_requests.get(int(item["id"]), []):
+                if int(change_request.get("id") or 0) != int(change_request_id):
+                    continue
+                item["current_published_version_id"] = int(change_request.get("candidate_version_id") or 0) or None
+                item["status"] = "published"
+                change_request["status"] = "published"
+                return {"change_request": dict(change_request), "publish_batch": {"id": 501, "change_request_id": change_request_id}}
+        raise KeyError("change_request_not_found")
+
+    def _mutate_change_request(self, *, change_request_id: int, new_status: str, item_status: str):
+        for item in self.items:
+            for change_request in self.change_requests.get(int(item["id"]), []):
+                if int(change_request.get("id") or 0) != int(change_request_id):
+                    continue
+                change_request["status"] = new_status
+                item["status"] = item_status
+                return {"change_request": dict(change_request)}
+        raise KeyError("change_request_not_found")
 
     def list_audit_trail(self, *, server_scope: str, server_id: str | None, entity_type: str = "", entity_id: str = "", limit: int = 100):
         self.calls.append(
@@ -744,6 +1000,101 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertTrue(recheck_payload["ok"])
         self.assertEqual(recheck_payload["summary"]["with_content"], 1)
         self.assertEqual(recheck_payload["summary"]["missing_content"], 0)
+
+    def test_runtime_server_features_endpoints_support_effective_list_create_and_workflow(self):
+        listed = self.client.get("/api/admin/runtime-servers/blackberry/features")
+        self.assertEqual(listed.status_code, 200)
+        list_payload = listed.json()
+        self.assertTrue(list_payload["ok"])
+        self.assertEqual(list_payload["counts"]["effective"], 1)
+        self.assertEqual(list_payload["effective_items"][0]["source_scope"], "server")
+
+        created = self.client.post(
+            "/api/admin/runtime-servers/blackberry/features",
+            json={
+                "title": "Проверка теста",
+                "key": "law_qa_retrieval",
+                "status": "draft",
+                "feature_flag": "law_qa_retrieval",
+                "config": {
+                    "feature_code": "law_qa_retrieval",
+                    "enabled": True,
+                    "rollout": "server_override",
+                    "owner": "ops",
+                    "notes": "server feature override",
+                    "order": 2,
+                },
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        create_payload = created.json()
+        self.assertTrue(create_payload["ok"])
+        change_request_id = int(create_payload["change_request"]["id"])
+
+        workflow = self.client.post(
+            "/api/admin/runtime-servers/blackberry/features/law_qa_retrieval/workflow",
+            json={"action": "submit_for_review", "change_request_id": change_request_id},
+        )
+        self.assertEqual(workflow.status_code, 200)
+        workflow_payload = workflow.json()
+        self.assertEqual(workflow_payload["result"]["change_request"]["status"], "in_review")
+
+    def test_runtime_server_templates_endpoints_support_effective_list_preview_placeholders_and_reset(self):
+        listed = self.client.get("/api/admin/runtime-servers/blackberry/templates")
+        self.assertEqual(listed.status_code, 200)
+        list_payload = listed.json()
+        self.assertTrue(list_payload["ok"])
+        self.assertEqual(list_payload["counts"]["effective"], 1)
+        self.assertEqual(list_payload["effective_items"][0]["source_scope"], "global")
+
+        created = self.client.post(
+            "/api/admin/runtime-servers/blackberry/templates",
+            json={
+                "title": "Жалоба",
+                "key": "complaint_template_v1",
+                "status": "draft",
+                "output_format": "bbcode",
+                "config": {
+                    "template_code": "complaint_template_v1",
+                    "title": "Жалоба",
+                    "body": "[b]{{document_title}}[/b]\\n{{result}}\\n{{server_code}}",
+                    "format": "bbcode",
+                    "status": "draft",
+                    "notes": "server template override",
+                },
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        create_payload = created.json()
+        self.assertTrue(create_payload["ok"])
+        change_request_id = int(create_payload["change_request"]["id"])
+
+        preview = self.client.post(
+            "/api/admin/runtime-servers/blackberry/templates/complaint_template_v1/preview",
+            json={"sample_json": {"document_title": "Жалоба", "result": "Готово", "server_title": "BlackBerry"}},
+        )
+        self.assertEqual(preview.status_code, 200)
+        preview_payload = preview.json()
+        self.assertIn("Готово", preview_payload["preview"])
+        self.assertIn("blackberry", preview_payload["preview"])
+
+        placeholders = self.client.get("/api/admin/runtime-servers/blackberry/templates/complaint_template_v1/placeholders")
+        self.assertEqual(placeholders.status_code, 200)
+        placeholders_payload = placeholders.json()
+        self.assertGreaterEqual(placeholders_payload["count"], 6)
+
+        workflow = self.client.post(
+            "/api/admin/runtime-servers/blackberry/templates/complaint_template_v1/workflow",
+            json={"action": "submit_for_review", "change_request_id": change_request_id},
+        )
+        self.assertEqual(workflow.status_code, 200)
+        self.assertEqual(workflow.json()["result"]["change_request"]["status"], "in_review")
+
+        reset = self.client.post("/api/admin/runtime-servers/blackberry/templates/complaint_template_v1/reset-to-default")
+        self.assertEqual(reset.status_code, 200)
+        reset_payload = reset.json()
+        self.assertTrue(reset_payload["ok"])
+        self.assertEqual(reset_payload["reset_source_scope"], "global")
 
     def test_second_server_published_pack_health_endpoint_reports_release_candidate_state(self):
         self.runtime_store.rows["orange"] = {
