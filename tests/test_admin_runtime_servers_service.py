@@ -69,14 +69,18 @@ class _FakeRuntimeLawSetsStore:
 
 def test_runtime_server_payload_helpers_cover_crud_shape():
     store = _FakeRuntimeServersStore()
+    law_sets_store = _FakeRuntimeLawSetsStore()
 
-    listed = list_runtime_servers_payload(store=store)
-    created = create_runtime_server_payload(store=store, code="city2", title="City 2")
-    updated = update_runtime_server_payload(store=store, code="city2", title="City 2 RU")
-    deactivated = set_runtime_server_active_payload(store=store, code="city2", is_active=False)
+    listed = list_runtime_servers_payload(store=store, law_sets_store=law_sets_store)
+    created = create_runtime_server_payload(store=store, law_sets_store=law_sets_store, code="city2", title="City 2")
+    updated = update_runtime_server_payload(store=store, law_sets_store=law_sets_store, code="city2", title="City 2 RU")
+    deactivated = set_runtime_server_active_payload(store=store, law_sets_store=law_sets_store, code="city2", is_active=False)
 
     assert listed["count"] == 1
+    assert listed["items"][0]["onboarding"]["highest_completed_state"] == "workflow-ready"
     assert created["item"]["code"] == "city2"
+    assert created["item"]["onboarding"]["highest_completed_state"] == "not-ready"
+    assert created["item"]["onboarding"]["resolution_mode"] == "neutral_fallback"
     assert updated["item"]["title"] == "City 2 RU"
     assert deactivated["item"]["is_active"] is False
 
@@ -108,3 +112,5 @@ def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
     assert payload["summary"]["is_ready"] is True
     assert payload["summary"]["ready_count"] == payload["summary"]["total_count"]
     assert payload["checks"]["health"]["active_law_version_id"] == 77
+    assert payload["onboarding"]["highest_completed_state"] == "rollout-ready"
+    assert payload["onboarding"]["next_required_state"] == "production-ready"
