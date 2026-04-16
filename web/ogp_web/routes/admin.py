@@ -37,6 +37,7 @@ from ogp_web.schemas import (
     AdminLawProjectionRunPayload,
     AdminLawProjectionDecisionPayload,
     AdminLawProjectionMaterializePayload,
+    AdminLawProjectionActivatePayload,
     AdminDeactivatePayload,
     AdminEmailUpdatePayload,
     AdminExamScoreResetPayload,
@@ -188,6 +189,7 @@ from ogp_web.services.admin_law_source_sets_service import (
     list_source_sets_payload,
 )
 from ogp_web.services.admin_law_projection_service import (
+    activate_server_effective_law_projection_payload,
     decide_server_effective_law_projection_payload,
     list_server_effective_law_projection_items_payload,
     list_server_effective_law_projection_runs_payload,
@@ -1143,6 +1145,51 @@ async def admin_law_projection_run_materialize_law_set(
             "changed": bool(result.get("changed")),
             "law_set_id": int((result.get("materialization") or {}).get("law_set_id") or 0),
             "item_count": int(result.get("count") or 0),
+        },
+    )
+    return result
+
+
+@router.post("/api/admin/law-projection-runs/{run_id}/activate-runtime")
+async def admin_law_projection_run_activate_runtime(
+    run_id: int,
+    payload: AdminLawProjectionActivatePayload,
+    request: Request,
+    user: AuthUser = Depends(requires_permission("publish_law_sets")),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    runtime_law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    user_store: UserStore = Depends(get_user_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    actor_user_id = _resolve_actor_user_id(user_store, user.username)
+    try:
+        result = activate_server_effective_law_projection_payload(
+            projections_store=projections_store,
+            runtime_law_sets_store=runtime_law_sets_store,
+            law_admin_service=LawAdminService(workflow_service),
+            run_id=run_id,
+            actor_user_id=actor_user_id,
+            request_id=getattr(request.state, "request_id", ""),
+            activated_by=user.username,
+            safe_rerun=payload.safe_rerun,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_law_projection_run_activate_runtime",
+        username=user.username,
+        server_code=str((result.get("activation") or {}).get("server_code") or user.server_code),
+        path=f"/api/admin/law-projection-runs/{int(run_id)}/activate-runtime",
+        method="POST",
+        status_code=200,
+        meta={
+            "run_id": int(run_id),
+            "changed": bool(result.get("changed")),
+            "law_set_id": int((result.get("activation") or {}).get("law_set_id") or 0),
+            "law_version_id": int((result.get("activation") or {}).get("law_version_id") or 0),
         },
     )
     return result

@@ -685,6 +685,10 @@ class AdminLawProjectionMaterializePayload(BaseModel):
     safe_rerun: bool = True
 
 
+class AdminLawProjectionActivatePayload(BaseModel):
+    safe_rerun: bool = True
+
+
 class AdminLawSourceRegistryPayload(BaseModel):
     name: str = ""
     kind: str = "url"
