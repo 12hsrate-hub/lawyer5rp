@@ -35,6 +35,7 @@ Provide a minimal release checklist for publishing workflow-backed pilot configu
 - Publish should happen only from an approved change request.
 - Publish is a version switch, not an in-place mutation.
 - The publish batch id is the rollback handle.
+- After merge to `main`, confirm that the standard `CI Runtime`, `UTF-8 Check`, and `Deploy Production` workflows were created for the merge commit.
 
 ## Immediate rollback checklist
 
