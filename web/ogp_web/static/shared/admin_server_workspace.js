@@ -21,6 +21,10 @@ window.OGPAdminServerWorkspace = {
       permissionsData: null,
       auditData: null,
       issuesData: null,
+      auditKindFilter: "all",
+      auditSearch: "",
+      issueSeverityFilter: "all",
+      issueSourceFilter: "all",
       selectedAccessUsername: "",
       featuresData: null,
       templatesData: null,
@@ -177,6 +181,17 @@ window.OGPAdminServerWorkspace = {
         return "Есть зависшие задачи. Нужна операторская проверка очередей и downstream обработчиков.";
       }
       return "Откройте смежную вкладку сервера или «Диагностика», чтобы уточнить источник проблемы.";
+    }
+
+    function uniqueValues(items, getter) {
+      const values = new Set();
+      (Array.isArray(items) ? items : []).forEach((item) => {
+        const value = String(getter(item) || "").trim().toLowerCase();
+        if (value) {
+          values.add(value);
+        }
+      });
+      return Array.from(values).sort();
     }
 
     function renderSummary() {
@@ -813,6 +828,18 @@ window.OGPAdminServerWorkspace = {
         acc[kind] = (acc[kind] || 0) + 1;
         return acc;
       }, {});
+      const kindOptions = uniqueValues(items, (item) => item?.kind);
+      const filteredItems = items.filter((item) => {
+        const kind = String(item?.kind || "").trim().toLowerCase();
+        const haystack = `${item?.title || ""} ${item?.description || ""}`.toLowerCase();
+        if (state.auditKindFilter !== "all" && kind !== state.auditKindFilter) {
+          return false;
+        }
+        if (state.auditSearch && !haystack.includes(state.auditSearch)) {
+          return false;
+        }
+        return true;
+      });
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
@@ -831,9 +858,24 @@ window.OGPAdminServerWorkspace = {
               : '<p class="legal-section__description">Для сервера пока нет audit events.</p>'
           }
         </div>
+        <div class="legal-field-grid legal-field-grid--two">
+          <label class="legal-field">
+            <span class="legal-field__label">Тип события</span>
+            <select id="admin-server-audit-kind-filter" class="text-input">
+              <option value="all">Все события</option>
+              ${kindOptions.map((kind) => `<option value="${escapeHtml(kind)}" ${state.auditKindFilter === kind ? "selected" : ""}>${escapeHtml(kind)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="legal-field">
+            <span class="legal-field__label">Поиск</span>
+            <input id="admin-server-audit-search" class="text-input" type="search" value="${escapeHtml(state.auditSearch)}" placeholder="Например: publish, projection, content_item">
+          </label>
+        </div>
         ${
           items.length
-            ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Когда</th><th>Тип</th><th>Событие</th><th>Что это значит</th></tr></thead><tbody>${items.map((item) => `<tr><td>${escapeHtml(String(item.created_at || "—"))}</td><td>${escapeHtml(String(item.kind || "event"))}</td><td><strong>${escapeHtml(String(item.title || "event"))}</strong><div class="admin-user-cell__secondary">${escapeHtml(String(item.description || "—"))}</div></td><td>${escapeHtml(String(item.kind === "law_projection" ? "Обновлялся server-effective набор законов." : item.kind === "workflow_audit" || item.kind === "content_audit" ? "Было изменение контента или workflow-состояния." : "Операционный сигнал или системное событие."))}</td></tr>`).join("")}</tbody></table>`
+            ? filteredItems.length
+              ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Когда</th><th>Тип</th><th>Событие</th><th>Что это значит</th></tr></thead><tbody>${filteredItems.map((item) => `<tr><td>${escapeHtml(String(item.created_at || "—"))}</td><td>${escapeHtml(String(item.kind || "event"))}</td><td><strong>${escapeHtml(String(item.title || "event"))}</strong><div class="admin-user-cell__secondary">${escapeHtml(String(item.description || "—"))}</div></td><td>${escapeHtml(String(item.kind === "law_projection" ? "Обновлялся server-effective набор законов." : item.kind === "workflow_audit" || item.kind === "content_audit" ? "Было изменение контента или workflow-состояния." : "Операционный сигнал или системное событие."))}</td></tr>`).join("")}</tbody></table>`
+              : '<p class="legal-section__description">По текущим фильтрам событий не найдено.</p>'
             : '<p class="legal-section__description">История по серверу пока пуста.</p>'
         }
       `;
@@ -846,6 +888,19 @@ window.OGPAdminServerWorkspace = {
       }
       const issues = state.issuesData || state.workspace?.issues || {};
       const items = Array.isArray(issues.items) ? issues.items : [];
+      const actionableCount = items.filter((item) => Array.isArray(item.available_actions) && item.available_actions.length).length;
+      const sourceOptions = uniqueValues(items, (item) => item?.source);
+      const filteredItems = items.filter((item) => {
+        const severity = String(item?.severity || "").trim().toLowerCase();
+        const source = String(item?.source || "").trim().toLowerCase();
+        if (state.issueSeverityFilter !== "all" && severity !== state.issueSeverityFilter) {
+          return false;
+        }
+        if (state.issueSourceFilter !== "all" && source !== state.issueSourceFilter) {
+          return false;
+        }
+        return true;
+      });
       const actionableCount = items.filter((item) => Array.isArray(item.available_actions) && item.available_actions.length).length;
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
@@ -863,9 +918,30 @@ window.OGPAdminServerWorkspace = {
           <span class="admin-badge admin-badge--muted">unresolved: ${escapeHtml(String(issues.unresolved_count || 0))}</span>
           <span class="admin-badge admin-badge--muted">actions: ${escapeHtml(String(actionableCount || 0))}</span>
         </div>
+          <span class="admin-badge admin-badge--muted">actions: ${escapeHtml(String(actionableCount || 0))}</span>
+        </div>
+        <div class="legal-field-grid legal-field-grid--two">
+          <label class="legal-field">
+            <span class="legal-field__label">Severity</span>
+            <select id="admin-server-issues-severity-filter" class="text-input">
+              <option value="all">Все</option>
+              <option value="error" ${state.issueSeverityFilter === "error" ? "selected" : ""}>Только error</option>
+              <option value="warn" ${state.issueSeverityFilter === "warn" ? "selected" : ""}>Только warn</option>
+            </select>
+          </label>
+          <label class="legal-field">
+            <span class="legal-field__label">Источник</span>
+            <select id="admin-server-issues-source-filter" class="text-input">
+              <option value="all">Все источники</option>
+              ${sourceOptions.map((source) => `<option value="${escapeHtml(source)}" ${state.issueSourceFilter === source ? "selected" : ""}>${escapeHtml(source)}</option>`).join("")}
+            </select>
+          </label>
+        </div>
         ${
           items.length
-            ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Severity</th><th>Source</th><th>Проблема</th><th>Что делать</th><th>Действия</th></tr></thead><tbody>${items.map((item) => `<tr><td><span class="admin-badge ${issueSeverityClass(item.severity)}">${escapeHtml(String(item.severity || "info"))}</span></td><td>${escapeHtml(String(item.source || "—"))}</td><td><strong>${escapeHtml(String(item.title || "—"))}</strong><div class="admin-user-cell__secondary">${escapeHtml(String(item.detail || "—"))}</div></td><td>${escapeHtml(summarizeIssueNextStep(item))}</td><td>${Array.isArray(item.available_actions) && item.available_actions.length ? item.available_actions.map((action) => `<button type="button" class="ghost-button" data-server-issue-action="${escapeHtml(String(action.kind || ""))}" data-server-issue-id="${escapeHtml(String(item.issue_id || ""))}">${escapeHtml(String(action.label || action.kind || ""))}</button>`).join(" ") : "—"}</td></tr>`).join("")}</tbody></table>`
+            ? filteredItems.length
+              ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Severity</th><th>Source</th><th>Проблема</th><th>Что делать</th><th>Действия</th></tr></thead><tbody>${filteredItems.map((item) => `<tr><td><span class="admin-badge ${issueSeverityClass(item.severity)}">${escapeHtml(String(item.severity || "info"))}</span></td><td>${escapeHtml(String(item.source || "—"))}</td><td><strong>${escapeHtml(String(item.title || "—"))}</strong><div class="admin-user-cell__secondary">${escapeHtml(String(item.detail || "—"))}</div></td><td>${escapeHtml(summarizeIssueNextStep(item))}</td><td>${Array.isArray(item.available_actions) && item.available_actions.length ? item.available_actions.map((action) => `<button type="button" class="ghost-button" data-server-issue-action="${escapeHtml(String(action.kind || ""))}" data-server-issue-id="${escapeHtml(String(item.issue_id || ""))}">${escapeHtml(String(action.label || action.kind || ""))}</button>`).join(" ") : "—"}</td></tr>`).join("")}</tbody></table>`
+              : '<p class="legal-section__description">По текущим фильтрам проблем не найдено.</p>'
             : '<p class="legal-section__description">Критичных сигналов по серверу сейчас не найдено.</p>'
         }
       `;
@@ -1088,7 +1164,7 @@ window.OGPAdminServerWorkspace = {
       }
     }
 
-    host.addEventListener("click", (event) => {
+      host.addEventListener("click", (event) => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) {
         return;
@@ -1471,6 +1547,39 @@ window.OGPAdminServerWorkspace = {
             }
           })();
           return;
+        }
+      });
+
+      host.addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+        if (target.id === "admin-server-audit-kind-filter") {
+          state.auditKindFilter = normalizeKey(target.value) || "all";
+          renderAudit();
+          return;
+        }
+        if (target.id === "admin-server-issues-severity-filter") {
+          state.issueSeverityFilter = normalizeKey(target.value) || "all";
+          renderErrors();
+          return;
+        }
+        if (target.id === "admin-server-issues-source-filter") {
+          state.issueSourceFilter = normalizeKey(target.value) || "all";
+          renderErrors();
+          return;
+        }
+      });
+
+      host.addEventListener("input", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+        if (target.id === "admin-server-audit-search") {
+          state.auditSearch = String(target.value || "").trim().toLowerCase();
+          renderAudit();
         }
       });
 
