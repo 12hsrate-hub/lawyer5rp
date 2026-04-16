@@ -5,6 +5,7 @@ import sys
 import unittest
 from pathlib import Path
 from urllib.parse import urlsplit
+from unittest.mock import patch
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 WEB_DIR = ROOT_DIR / "web"
@@ -21,6 +22,7 @@ from fastapi.testclient import TestClient
 from ogp_web.app import create_app
 from ogp_web.dependencies import (
     get_canonical_law_document_versions_store,
+    get_content_workflow_service,
     get_law_source_sets_store,
     get_runtime_law_sets_store,
     get_server_effective_law_projections_store,
@@ -240,6 +242,21 @@ class _FakeRuntimeLawSetsStore:
         item["is_active"] = bool(is_active)
         return dict(item)
 
+    def publish_law_set(self, *, law_set_id: int):
+        item = next(row for row in self.law_sets if int(row["id"]) == int(law_set_id))
+        item["is_published"] = True
+        item["is_active"] = True
+        return dict(item)
+
+    def list_source_urls_for_law_set(self, *, law_set_id: int):
+        item = next(row for row in self.law_sets if int(row["id"]) == int(law_set_id))
+        stored_items = self.items_by_law_set.get(int(law_set_id), [])
+        source_urls = []
+        for law_item in stored_items:
+            source = next(source for source in self.sources if int(source.id) == int(law_item["source_id"]))
+            source_urls.append(str(source.url))
+        return str(item["server_code"]), list(source_urls)
+
 
 class AdminLawProjectionApiTests(unittest.TestCase):
     def setUp(self):
@@ -265,6 +282,9 @@ class AdminLawProjectionApiTests(unittest.TestCase):
         app.dependency_overrides[get_canonical_law_document_versions_store] = lambda: self.versions_store
         app.dependency_overrides[get_server_effective_law_projections_store] = lambda: self.projections_store
         app.dependency_overrides[get_runtime_law_sets_store] = lambda: self.runtime_law_sets_store
+        class _DummyWorkflowService:
+            repository = object()
+        app.dependency_overrides[get_content_workflow_service] = lambda: _DummyWorkflowService()
         self.client = TestClient(app, base_url="https://testserver")
         reset_rate_limit(self.client.app.state.rate_limiter)
         self._register_and_login_admin("12345", "admin@example.com")
@@ -321,6 +341,21 @@ class AdminLawProjectionApiTests(unittest.TestCase):
         self.assertFalse(reused.json()["changed"])
         self.assertTrue(reused.json()["reused_law_set"])
 
+        with patch("ogp_web.routes.admin.LawAdminService.rebuild_index") as fake_rebuild:
+            fake_rebuild.return_value = {"ok": True, "law_version_id": 91}
+            activated = self.client.post("/api/admin/law-projection-runs/1/activate-runtime", json={"safe_rerun": True})
+        self.assertEqual(activated.status_code, 200)
+        self.assertTrue(activated.json()["changed"])
+        self.assertEqual(activated.json()["activation"]["law_version_id"], 91)
+        self.assertFalse(fake_rebuild.call_args.kwargs["persist_sources"])
+
+        with patch("ogp_web.routes.admin.LawAdminService.rebuild_index") as fake_rebuild_again:
+            reused_activation = self.client.post("/api/admin/law-projection-runs/1/activate-runtime", json={"safe_rerun": True})
+        self.assertEqual(reused_activation.status_code, 200)
+        self.assertFalse(reused_activation.json()["changed"])
+        self.assertTrue(reused_activation.json()["reused_activation"])
+        fake_rebuild_again.assert_not_called()
+
         held = self.client.post("/api/admin/law-projection-runs/1/hold", json={"reason": "manual_pause"})
         self.assertEqual(held.status_code, 200)
         self.assertEqual(held.json()["run"]["status"], "held")
@@ -339,3 +374,15 @@ class AdminLawProjectionApiTests(unittest.TestCase):
         response = self.client.post("/api/admin/law-projection-runs/1/materialize-law-set", json={"safe_rerun": True})
         self.assertEqual(response.status_code, 400)
         self.assertIn("server_effective_law_projection_run_not_approved", " ".join(response.json().get("detail") or []))
+
+    def test_admin_law_projection_activate_requires_materialized_run(self):
+        preview = self.client.post(
+            "/api/admin/runtime-servers/orange/law-projection-runs",
+            json={"trigger_mode": "manual", "safe_rerun": True},
+        )
+        self.assertEqual(preview.status_code, 200)
+        approved = self.client.post("/api/admin/law-projection-runs/1/approve", json={"reason": "looks_good"})
+        self.assertEqual(approved.status_code, 200)
+        response = self.client.post("/api/admin/law-projection-runs/1/activate-runtime", json={"safe_rerun": True})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("server_effective_law_projection_materialization_missing", " ".join(response.json().get("detail") or []))

@@ -329,6 +329,90 @@ def materialize_server_effective_law_projection_payload(
     }
 
 
+def activate_server_effective_law_projection_payload(
+    *,
+    projections_store: ServerEffectiveLawProjectionsStore,
+    runtime_law_sets_store: RuntimeLawSetsStore,
+    law_admin_service: Any,
+    run_id: int,
+    actor_user_id: int,
+    request_id: str,
+    activated_by: str,
+    safe_rerun: bool = True,
+) -> dict[str, Any]:
+    if int(run_id) <= 0:
+        raise ValueError("server_effective_law_projection_run_id_required")
+    run = projections_store.get_run(run_id=int(run_id))
+    if run is None:
+        raise KeyError("server_effective_law_projection_run_not_found")
+    if str(run.status or "").strip().lower() != "approved":
+        raise ValueError("server_effective_law_projection_run_not_approved")
+
+    summary_json = dict(run.summary_json or {})
+    materialization = dict(summary_json.get("materialization") or {})
+    law_set_id = int(materialization.get("law_set_id") or 0)
+    if law_set_id <= 0:
+        raise ValueError("server_effective_law_projection_materialization_missing")
+    activation = dict(summary_json.get("activation") or {})
+    if safe_rerun and int(activation.get("law_set_id") or 0) == law_set_id and int(activation.get("law_version_id") or 0) > 0:
+        return {
+            "ok": True,
+            "changed": False,
+            "reused_activation": True,
+            "run": {
+                "id": run.id,
+                "server_code": run.server_code,
+                "trigger_mode": run.trigger_mode,
+                "status": run.status,
+                "summary_json": summary_json,
+                "created_at": run.created_at,
+            },
+            "activation": activation,
+        }
+
+    published_law_set = runtime_law_sets_store.publish_law_set(law_set_id=law_set_id)
+    server_code, source_urls = runtime_law_sets_store.list_source_urls_for_law_set(law_set_id=law_set_id)
+    if not source_urls:
+        raise ValueError("law_set_sources_empty")
+    rebuild_result = law_admin_service.rebuild_index(
+        server_code=server_code,
+        source_urls=list(source_urls),
+        actor_user_id=int(actor_user_id),
+        request_id=str(request_id or "").strip(),
+        persist_sources=False,
+        dry_run=False,
+    )
+    activation_payload = {
+        "law_set_id": law_set_id,
+        "server_code": str(server_code or ""),
+        "law_version_id": int(rebuild_result.get("law_version_id") or 0),
+        "source_urls_count": len(source_urls),
+        "activated_by": str(activated_by or "").strip(),
+    }
+    summary_json["activation"] = activation_payload
+    updated_run = projections_store.update_run_status(
+        run_id=int(run.id),
+        status=run.status,
+        summary_json=summary_json,
+    )
+    return {
+        "ok": True,
+        "changed": True,
+        "reused_activation": False,
+        "run": {
+            "id": updated_run.id,
+            "server_code": updated_run.server_code,
+            "trigger_mode": updated_run.trigger_mode,
+            "status": updated_run.status,
+            "summary_json": dict(updated_run.summary_json),
+            "created_at": updated_run.created_at,
+        },
+        "law_set": dict(published_law_set),
+        "activation": activation_payload,
+        "result": rebuild_result,
+    }
+
+
 def preview_server_effective_law_projection_payload(
     *,
     source_sets_store: LawSourceSetsStore,
