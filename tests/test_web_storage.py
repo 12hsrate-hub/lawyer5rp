@@ -23,6 +23,7 @@ from ogp_web.storage.exam_answers_store import ExamAnswersStore, INVALID_BATCH_R
 from ogp_web.storage.user_store import UserStore
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.rate_limit import PersistentRateLimiter
+from ogp_web.db.errors import DatabaseSchemaError
 from ogp_web.services.auth_service import AuthError
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -1328,6 +1329,11 @@ class FakeAdminMetricsConnection:
         if normalized == "SELECT to_regclass(%s) AS regclass":
             present = bool(self.state["has_metric_events_table"])
             return FakeCursor(rowcount=1, one={"regclass": params[0] if present else None})
+        if normalized == "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'metric_events'":
+            return FakeCursor(
+                rowcount=len(self.state["metric_columns"]),
+                rows=[{"column_name": column_name} for column_name in sorted(self.state["metric_columns"])],
+            )
         if normalized.startswith("CREATE TABLE IF NOT EXISTS metric_events"):
             return FakeCursor(rowcount=0)
         if normalized.startswith("CREATE INDEX IF NOT EXISTS idx_metric_events_"):
@@ -3312,7 +3318,7 @@ class PostgresAdminMetricsStoreTests(unittest.TestCase):
 
 
 class PostgresAdminMetricsStoreSchemaMigrationTests(unittest.TestCase):
-    def test_store_initialization_migrates_old_metric_events_schema_without_required_columns(self):
+    def test_store_initialization_fails_for_old_metric_events_schema_without_required_columns(self):
         tmpdir = make_temp_dir()
         self.addCleanup(shutil.rmtree, tmpdir, True)
         root = Path(tmpdir)
@@ -3332,23 +3338,13 @@ class PostgresAdminMetricsStoreSchemaMigrationTests(unittest.TestCase):
             }
         )
 
-        store = AdminMetricsStore(root / "admin_metrics.db", backend=backend)
+        with self.assertRaises(DatabaseSchemaError) as exc_info:
+            AdminMetricsStore(root / "admin_metrics.db", backend=backend)
 
-        self.assertIn("server_code", backend._state["metric_columns"])
-        self.assertIn("meta_json", backend._state["metric_columns"])
-
-        store.log_ai_generation(
-            username="legacy_user",
-            server_code="blackberry",
-            flow="suggest",
-            generation_id="legacy-gen-1",
-            path="/api/ai/suggest",
-            meta={"retrieval_context_mode": "normal_context"},
-        )
-
-        logs = store.list_ai_generation_logs(flow="suggest", limit=10)
-        self.assertEqual(len(logs), 1)
-        self.assertEqual(logs[0]["meta"]["generation_id"], "legacy-gen-1")
+        message = str(exc_info.exception)
+        self.assertIn("metric_events schema is missing required columns", message)
+        self.assertIn("server_code", message)
+        self.assertIn("meta_json", message)
 
     def test_store_initialization_skips_metric_events_migration_when_table_absent(self):
         tmpdir = make_temp_dir()

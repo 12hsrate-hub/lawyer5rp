@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ogp_web.db.errors import DatabaseUnavailableError
+from ogp_web.db.errors import DatabaseSchemaError, DatabaseUnavailableError
 from ogp_web.db.factory import get_database_backend
 from ogp_web.db.types import DatabaseBackend
 
@@ -21,6 +21,8 @@ USER_SORT_OPTIONS = {"complaints", "api_requests", "last_seen", "created_at", "u
 
 
 class AdminMetricsStore:
+    _REQUIRED_METRIC_EVENT_COLUMNS = frozenset({"server_code", "meta_json"})
+
     def __init__(self, db_path: Path, backend: DatabaseBackend | None = None):
         self.db_path = db_path
         self.backend = backend or get_database_backend()
@@ -218,22 +220,25 @@ class AdminMetricsStore:
             ).fetchone()
             if not row or not row["regclass"]:
                 return
-            conn.execute("ALTER TABLE metric_events ADD COLUMN IF NOT EXISTS server_code TEXT")
-            conn.execute(
-                "ALTER TABLE metric_events ADD COLUMN IF NOT EXISTS meta_json JSONB NOT NULL DEFAULT '{}'::jsonb"
-            )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_server_code ON metric_events(server_code)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_metric_events_event_type ON metric_events(event_type)")
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_metric_events_event_type_created_at ON metric_events(event_type, created_at DESC)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_metric_events_path_created_at ON metric_events(path, created_at DESC) WHERE path IS NOT NULL"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_metric_events_username_created_at ON metric_events(username, created_at DESC) WHERE username IS NOT NULL"
-            )
-            conn.commit()
+            column_rows = conn.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'metric_events'
+                """,
+            ).fetchall()
+            present_columns = {
+                str(item.get("column_name") or "").strip().lower()
+                for item in column_rows
+                if item is not None
+            }
+            missing = sorted(self._REQUIRED_METRIC_EVENT_COLUMNS - present_columns)
+            if missing:
+                missing_list = ", ".join(missing)
+                raise DatabaseSchemaError(
+                    "metric_events schema is missing required columns: "
+                    f"{missing_list}. Run database migrations before starting the application."
+                )
 
     def log_event(
         self,
