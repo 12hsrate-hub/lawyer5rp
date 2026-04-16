@@ -97,7 +97,7 @@ def test_runtime_server_payload_helpers_cover_crud_shape():
     store = _FakeRuntimeServersStore()
     law_sets_store = _FakeRuntimeLawSetsStore()
 
-    listed = list_runtime_servers_payload(store=store, law_sets_store=law_sets_store)
+    listed = list_runtime_servers_payload(store=store, law_sets_store=law_sets_store, projections_store=_FakeProjectionsStore())
     created = create_runtime_server_payload(store=store, law_sets_store=law_sets_store, code="city2", title="City 2")
     updated = update_runtime_server_payload(store=store, law_sets_store=law_sets_store, code="city2", title="City 2 RU")
     deactivated = set_runtime_server_active_payload(store=store, law_sets_store=law_sets_store, code="city2", is_active=False)
@@ -108,8 +108,30 @@ def test_runtime_server_payload_helpers_cover_crud_shape():
     assert created["item"]["is_active"] is False
     assert created["item"]["onboarding"]["highest_completed_state"] == "not-ready"
     assert created["item"]["onboarding"]["resolution_mode"] == "neutral_fallback"
+    assert created["item"]["projection_bridge"] is None
     assert updated["item"]["title"] == "City 2 RU"
     assert deactivated["item"]["is_active"] is False
+
+
+def test_runtime_server_list_payload_exposes_projection_bridge_summary_without_health_match():
+    store = _FakeRuntimeServersStore()
+    store.rows["orange"] = {
+        "code": "orange",
+        "title": "Orange City",
+        "is_active": True,
+        "created_at": "2026-04-16T00:00:00+00:00",
+    }
+    listed = list_runtime_servers_payload(
+        store=store,
+        law_sets_store=_FakeRuntimeLawSetsStore(),
+        projections_store=_FakeProjectionsStore(),
+    )
+
+    orange_item = next(item for item in listed["items"] if item["code"] == "orange")
+    assert orange_item["projection_bridge"]["run_id"] == 4
+    assert orange_item["projection_bridge"]["law_set_id"] == 2
+    assert orange_item["projection_bridge"]["law_version_id"] == 88
+    assert orange_item["projection_bridge"]["matches_active_law_version"] is None
 
 
 def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
