@@ -1,0 +1,253 @@
+from __future__ import annotations
+
+import os
+import sys
+import unittest
+from pathlib import Path
+from urllib.parse import urlsplit
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+WEB_DIR = ROOT_DIR / "web"
+for candidate in (ROOT_DIR, WEB_DIR):
+    if str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
+
+os.environ.setdefault("OGP_WEB_SECRET", "test-secret")
+os.environ.setdefault("OGP_DB_BACKEND", "postgres")
+os.environ.setdefault("OGP_SKIP_DEFAULT_APP_INIT", "1")
+
+from fastapi.testclient import TestClient
+
+from ogp_web.app import create_app
+from ogp_web.dependencies import (
+    get_canonical_law_document_versions_store,
+    get_law_source_sets_store,
+    get_server_effective_law_projections_store,
+)
+from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
+from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
+from ogp_web.storage.admin_metrics_store import AdminMetricsStore
+from ogp_web.storage.exam_answers_store import ExamAnswersStore
+from ogp_web.storage.user_repository import UserRepository
+from ogp_web.storage.user_store import UserStore
+from tests.temp_helpers import make_temporary_directory
+from tests.test_web_storage import (
+    FakeAdminMetricsPostgresBackend,
+    FakeExamAnswersPostgresBackend,
+    FakeExamImportTasksPostgresBackend,
+    PostgresBackend,
+)
+
+
+class _FakeBinding:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class _FakeVersion:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class _FakeSourceSetsStore:
+    def list_bindings(self, *, server_code: str):
+        if server_code != "orange":
+            return []
+        return [
+            _FakeBinding(
+                id=1,
+                server_code="orange",
+                source_set_key="orange-priority",
+                priority=10,
+                is_active=True,
+                include_law_keys=(),
+                exclude_law_keys=(),
+                pin_policy_json={},
+                metadata_json={},
+            ),
+            _FakeBinding(
+                id=2,
+                server_code="orange",
+                source_set_key="orange-core",
+                priority=20,
+                is_active=True,
+                include_law_keys=(),
+                exclude_law_keys=(),
+                pin_policy_json={},
+                metadata_json={},
+            ),
+        ]
+
+
+class _FakeVersionsStore:
+    def list_parsed_versions_for_source_sets(self, *, source_set_keys):
+        return [
+            _FakeVersion(
+                id=8,
+                canonical_law_document_id=1,
+                canonical_identity_key="url_seed:law-a",
+                display_title="Law A",
+                source_discovery_run_id=12,
+                discovered_law_link_id=102,
+                source_set_key="orange-priority",
+                source_set_revision_id=4,
+                revision=4,
+                normalized_url="https://example.com/law/a",
+                source_container_url="https://example.com/container/2",
+                fetch_status="fetched",
+                parse_status="parsed",
+                content_checksum="def",
+                raw_title="Law A",
+                parsed_title="Law A",
+                body_text="Law A body updated",
+                metadata_json={},
+                created_at="2026-04-16T05:10:00+00:00",
+                updated_at="2026-04-16T05:10:00+00:00",
+            ),
+            _FakeVersion(
+                id=9,
+                canonical_law_document_id=2,
+                canonical_identity_key="url_seed:law-b",
+                display_title="Law B",
+                source_discovery_run_id=13,
+                discovered_law_link_id=103,
+                source_set_key="orange-core",
+                source_set_revision_id=3,
+                revision=3,
+                normalized_url="https://example.com/law/b",
+                source_container_url="https://example.com/container/1",
+                fetch_status="fetched",
+                parse_status="parsed",
+                content_checksum="ghi",
+                raw_title="Law B",
+                parsed_title="Law B",
+                body_text="Law B body",
+                metadata_json={},
+                created_at="2026-04-16T05:20:00+00:00",
+                updated_at="2026-04-16T05:20:00+00:00",
+            ),
+        ]
+
+
+class _FakeRun:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class _FakeItem:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class _FakeProjectionsStore:
+    def __init__(self):
+        self.runs = []
+        self.items = []
+
+    def list_runs(self, *, server_code: str):
+        return [item for item in self.runs if item.server_code == server_code]
+
+    def get_run(self, *, run_id: int):
+        return next((item for item in self.runs if int(item.id) == int(run_id)), None)
+
+    def list_items(self, *, projection_run_id: int):
+        return [item for item in self.items if int(item.projection_run_id) == int(projection_run_id)]
+
+    def create_projection_run(self, **kwargs):
+        item = _FakeRun(
+            id=len(self.runs) + 1,
+            server_code=kwargs["server_code"],
+            trigger_mode=kwargs["trigger_mode"],
+            status=kwargs["status"],
+            summary_json=dict(kwargs.get("summary_json") or {}),
+            created_at="2026-04-16T06:00:00+00:00",
+        )
+        self.runs.insert(0, item)
+        return item
+
+    def create_projection_item(self, **kwargs):
+        item = _FakeItem(
+            id=len(self.items) + 1,
+            projection_run_id=kwargs["projection_run_id"],
+            canonical_law_document_id=kwargs["canonical_law_document_id"],
+            canonical_identity_key=kwargs["canonical_identity_key"],
+            normalized_url=kwargs["normalized_url"],
+            selected_document_version_id=kwargs["selected_document_version_id"],
+            selected_source_set_key=kwargs["selected_source_set_key"],
+            selected_revision=kwargs["selected_revision"],
+            precedence_rank=kwargs["precedence_rank"],
+            contributor_count=kwargs["contributor_count"],
+            status=kwargs["status"],
+            provenance_json=dict(kwargs.get("provenance_json") or {}),
+            created_at="2026-04-16T06:01:00+00:00",
+        )
+        self.items.append(item)
+        return item
+
+
+class AdminLawProjectionApiTests(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = make_temporary_directory()
+        root = Path(self.tmpdir.name)
+        self.user_store = UserStore(
+            root / "app.db",
+            root / "users.json",
+            repository=UserRepository(PostgresBackend()),
+        )
+        self.exam_store = ExamAnswersStore(root / "exam_answers.db", backend=FakeExamAnswersPostgresBackend())
+        self.admin_store = AdminMetricsStore(root / "admin_metrics.db", backend=FakeAdminMetricsPostgresBackend())
+        self.task_registry = ExamImportTaskRegistry(
+            root / "exam_import_tasks.db",
+            backend=FakeExamImportTasksPostgresBackend(),
+        )
+        app = create_app(self.user_store, self.exam_store, self.admin_store, self.task_registry)
+        self.source_sets_store = _FakeSourceSetsStore()
+        self.versions_store = _FakeVersionsStore()
+        self.projections_store = _FakeProjectionsStore()
+        app.dependency_overrides[get_law_source_sets_store] = lambda: self.source_sets_store
+        app.dependency_overrides[get_canonical_law_document_versions_store] = lambda: self.versions_store
+        app.dependency_overrides[get_server_effective_law_projections_store] = lambda: self.projections_store
+        self.client = TestClient(app, base_url="https://testserver")
+        reset_rate_limit(self.client.app.state.rate_limiter)
+        self._register_and_login_admin("12345", "admin@example.com")
+
+    def tearDown(self):
+        reset_rate_limit(self.client.app.state.rate_limiter)
+        self.client.close()
+        self.client.app.state.rate_limiter.repository.close()
+        self.user_store.repository.close()
+        self.tmpdir.cleanup()
+
+    def _register_and_login_admin(self, username: str, email: str):
+        response = self.client.post(
+            "/api/auth/register",
+            json={"username": username, "email": email, "password": "Password123!"},
+        )
+        self.assertEqual(response.status_code, 200)
+        split = urlsplit(response.json()["verification_url"])
+        self.client.get(f"{split.path}?{split.query}")
+        login = self.client.post("/api/auth/login", json={"username": username, "password": "Password123!"})
+        self.assertEqual(login.status_code, 200)
+
+    def test_admin_law_projection_preview_and_read_endpoints(self):
+        preview = self.client.post(
+            "/api/admin/runtime-servers/orange/law-projection-runs",
+            json={"trigger_mode": "manual", "safe_rerun": True},
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertTrue(preview.json()["changed"])
+        self.assertEqual(preview.json()["count"], 2)
+
+        runs = self.client.get("/api/admin/runtime-servers/orange/law-projection-runs")
+        self.assertEqual(runs.status_code, 200)
+        self.assertEqual(runs.json()["count"], 1)
+
+        items = self.client.get("/api/admin/law-projection-runs/1/items")
+        self.assertEqual(items.status_code, 200)
+        self.assertEqual(items.json()["count"], 2)
+        self.assertEqual(items.json()["items"][0]["selected_source_set_key"], "orange-priority")
+
+    def test_admin_law_projection_missing_run(self):
+        response = self.client.get("/api/admin/law-projection-runs/999/items")
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("server_effective_law_projection_run_not_found", " ".join(response.json().get("detail") or []))

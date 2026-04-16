@@ -659,6 +659,19 @@ class AdminCanonicalLawDocumentVersionParsePayload(BaseModel):
     safe_rerun: bool = True
 
 
+class AdminLawProjectionRunPayload(BaseModel):
+    trigger_mode: str = "manual"
+    safe_rerun: bool = True
+
+    @field_validator("trigger_mode")
+    @classmethod
+    def validate_trigger_mode(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower() or "manual"
+        if normalized not in {"manual", "replay"}:
+            raise ValueError("server_effective_law_projection_trigger_mode_invalid")
+        return normalized
+
+
 class AdminLawSourceRegistryPayload(BaseModel):
     name: str = ""
     kind: str = "url"
