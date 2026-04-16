@@ -1,6 +1,6 @@
 # Orange Multi-Server RC Evidence
 
-Status: live preflight hold  
+Status: preflight-ready pending RC window  
 Date: 2026-04-16
 
 ## Scope
@@ -50,6 +50,9 @@ Date: 2026-04-16
   - https://github.com/12hsrate-hub/lawyer5rp/pull/307
 - Merged commit:
   - `c1dabbb451170008cedcb622951a14dd113b1908`
+- Orange enablement follow-ups:
+  - PR `#312` — `Guard bootstrap pack sync for missing servers`
+  - PR `#313` — `Commit published bootstrap pack sync`
 - CI Runtime:
   - `success`
   - https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487677670
@@ -57,10 +60,10 @@ Date: 2026-04-16
   - `success`
   - https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487677658
 - Current known-good deployed baseline:
-  - commit `4b6049e`
-  - Deploy Production run `24487921717`
-  - https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487921717
-- Baseline production verification from run `24487921717`:
+  - commit `9b687b2`
+  - Deploy Production run `24488945906`
+  - https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24488945906
+- Baseline production verification from run `24488945906`:
   - `/health`: `status=ok`
   - deploy smoke: `passed`
   - synthetic smoke: `pass`
@@ -76,6 +79,32 @@ Date: 2026-04-16
   - `orange` law set + binding + active-law visibility + rollback path exist in targeted RC evidence coverage
   - `orange` document-builder bundle is `orange`-owned, not inherited from `blackberry`
 
+## Live enablement snapshot
+
+- Snapshot time:
+  - `2026-04-16T02:37:44Z`
+- Current production baseline:
+  - `/health = status=ok`
+- `orange` runtime server:
+  - exists
+  - `is_active = false`
+  - title = `Orange`
+- `orange` admin health snapshot:
+  - `highest_completed_state = workflow-ready`
+  - `next_required_state = rollout-ready`
+  - `resolution_mode = published_pack`
+  - `uses_transitional_fallback = false`
+- `orange` law runtime state:
+  - published `law_set_id = 3`
+  - binding count = `1`
+  - active `law_version_id = 199`
+  - rollback path remains the existing admin law-version flow
+- `orange` document-builder sample:
+  - `claim_kind_by_court_type.appeal[0].value = orange_appeal_admin_claim`
+  - bundle resolves from orange-owned metadata, not base fallback
+- scope confirmation:
+  - second-server complaint runtime remains out of scope
+
 ## Evidence to fill during RC rollout
 
 - Deploy Production run for RC window:
@@ -83,17 +112,17 @@ Date: 2026-04-16
 - Deploy smoke result for RC window:
 - Synthetic smoke result for RC window:
 - `orange` admin health payload snapshot:
-  - live preflight captured pre-activation at `2026-04-16T02:12:19Z`
-  - result: no payload available because `orange` runtime server record is missing in production
+  - live enablement captured pre-activation at `2026-04-16T02:37:44Z`
+  - result: payload is operator-readable; `workflow-ready`, `published_pack`, inactive
 - `orange` document-builder sample:
-  - live preflight captured pre-activation at `2026-04-16T02:12:19Z`
-  - result: bundle resolves, but only to base `court_claim` schema
+  - live enablement captured pre-activation at `2026-04-16T02:37:44Z`
+  - result: bundle resolves with orange-owned metadata
   - evidence:
     - `server = orange`
-    - `claim_kind_by_court_type = {}`
-    - no orange-specific document-builder metadata was present
+    - `claim_kind_by_court_type.appeal[0].value = orange_appeal_admin_claim`
+    - orange-specific document-builder metadata is present
 - `orange` law rollback sample:
-  - live preflight captured pre-activation at `2026-04-16T02:12:19Z`
-  - result: no law rollback evidence available because `orange` has no runtime law sets, bindings, or active law version in production
+  - live enablement captured pre-activation at `2026-04-16T02:37:44Z`
+  - result: published law set, binding, and active law version are present; rollback path is now explainable
 - Observation window status:
-  - RC window not opened; preflight ended in `hold`
+  - RC window not opened; orange is ready for a fresh live preflight and activation decision
