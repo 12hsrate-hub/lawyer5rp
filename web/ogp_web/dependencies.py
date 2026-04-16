@@ -14,6 +14,7 @@ from ogp_web.services.admin_dashboard_service import AdminDashboardService
 from ogp_web.services.admin_analytics_service import AdminAnalyticsService
 from ogp_web.services.admin_ai_pipeline_service import AdminAiPipelineService
 from ogp_web.services.admin_task_ops_service import AdminTaskOpsService
+from ogp_web.services.jobs_runtime_service import JobsRuntimeService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore, get_default_exam_answers_store
 from ogp_web.storage.user_store import UserStore, get_default_user_store
 from ogp_web.storage.content_workflow_repository import ContentWorkflowRepository
@@ -22,6 +23,7 @@ from ogp_web.storage.runtime_servers_store import RuntimeServersStore
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
 
 _DEFAULT_ADMIN_TASK_OPS_SERVICE = AdminTaskOpsService()
+_DEFAULT_JOBS_RUNTIME_SERVICE = JobsRuntimeService()
 
 
 def get_user_store(request: Request) -> UserStore:
@@ -103,6 +105,13 @@ def get_admin_task_ops_service(request: Request) -> AdminTaskOpsService:
     if service is not None:
         return service
     return _DEFAULT_ADMIN_TASK_OPS_SERVICE
+
+
+def get_jobs_runtime_service(request: Request) -> JobsRuntimeService:
+    service = getattr(request.app.state, "jobs_runtime_service", None)
+    if service is not None:
+        return service
+    return _DEFAULT_JOBS_RUNTIME_SERVICE
 
 
 def get_runtime_servers_store(_: Request) -> RuntimeServersStore:

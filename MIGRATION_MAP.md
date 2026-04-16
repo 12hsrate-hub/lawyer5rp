@@ -7,11 +7,11 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase K`
-- Active task: `K.2 exam import route orchestration extraction`
+- Active task: `select next non-cosmetic phase target after K`
 - Status: `in_progress`
 - Last completed phase: `Phase J`
 - Inventory slices completed: `6`
-- Next slice: `inspect whether exam-import task/sync endpoints still remove a real orchestration layer after K.2a`
+- Next slice: `choose the next real post-K execution target`
 - Last updated: `2026-04-16`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -288,6 +288,18 @@ Date: 2026-04-14
 - bulk scoring, row scoring, and failed-rescoring wrapper lock/orchestration no longer live inline in `routes/exam_import.py`
 - those bounded exam-import runtime seams now live in `web/ogp_web/services/exam_import_runtime_service.py`, while route-level helper symbols stay stable for current monkeypatch-based API tests
 - exam-import seam note: `docs/seams/2026-04/exam-import-runtime-boundary-shrink.md`
+- `K.2b` is now complete locally
+- `K.2c` is now complete locally
+- `K.2` is accepted
+- exam-import task creation/status plus sync/detail/clear orchestration now converge behind `exam_import_runtime_service.py`, and the remaining route code is mostly transport/auth plus response serialization
+- `K.3` is opened for bounded jobs route/service convergence work
+- `K.3a` is now complete locally
+- `K.3b` is now complete locally
+- `K.3` is accepted
+- jobs service wiring, actor resolution, error translation, create/retry/cancel/list orchestration, and canonical async-job payload shaping now converge behind `jobs_runtime_service.py`, leaving `routes/jobs.py` as a thin transport/auth facade
+- jobs seam note: `docs/seams/2026-04/jobs-runtime-boundary-shrink.md`
+- `Phase K` is accepted
+- complaint, exam-import, and jobs runtime-boundary seams are now reduced to service-owned orchestration with route-level compatibility wrappers only where tests still rely on route symbols
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
