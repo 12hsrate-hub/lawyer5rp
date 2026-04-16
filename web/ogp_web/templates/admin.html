@@ -45,7 +45,7 @@
       <a class="segmented-tabs__item{% if admin_focus == 'dashboard' %} is-active{% endif %}" href="/admin/dashboard">Сводка</a>
       <a class="segmented-tabs__item{% if admin_focus == 'users' %} is-active{% endif %}" href="/admin/users">Пользователи и аудит</a>
       <a class="segmented-tabs__item{% if admin_focus == 'servers' %} is-active{% endif %}" href="/admin/servers">Серверы · Основное</a>
-      <a class="segmented-tabs__item{% if admin_focus == 'laws' %} is-active{% endif %}" href="/admin/laws">Законы · Advanced</a>
+      <a class="segmented-tabs__item{% if admin_focus == 'laws' %} is-active{% endif %}" href="/admin/laws">Законы · Диагностика</a>
     </nav>
     <nav class="legal-section-jump" aria-label="Навигация по разделам админ-панели">
       {% if admin_focus in ["dashboard", "users"] %}
@@ -64,7 +64,7 @@
       <a class="legal-section-jump__link" href="#admin-errors-explorer-content">Error Explorer</a>
       <a class="legal-section-jump__link" href="#admin-section-events">События</a>
       {% endif %}
-      {% if admin_focus in ["servers", "laws", "templates", "features", "rules"] %}
+      {% if admin_focus in ["servers", "laws", "templates", "features", "rules"] and admin_focus != "laws" %}
       <a class="legal-section-jump__link" href="#admin-domain-summary">Domain Summary</a>
       <a class="legal-section-jump__link" href="#admin-catalog-content">Configuration Catalog</a>
       {% endif %}
@@ -83,11 +83,9 @@
       {% endif %}
       {% endif %}
       {% if admin_focus == "laws" %}
-      <a class="legal-section-jump__link" href="#admin-law-domain-map">Law Domain Map</a>
       <a class="legal-section-jump__link" href="#law-source-sets-host">Source Sets</a>
-      <a class="legal-section-jump__link" href="#law-source-set-revisions-host">Revisions</a>
       <a class="legal-section-jump__link" href="#server-source-set-bindings-host">Server Bindings</a>
-      <a class="legal-section-jump__link" href="#law-main-check-host">Main Check</a>
+      <a class="legal-section-jump__link" href="#law-source-set-revisions-host">Revisions</a>
       <a class="legal-section-jump__link" href="#law-legacy-runtime-panel">Legacy / Runtime</a>
       {% endif %}
       {% if admin_focus == "templates" %}
@@ -112,10 +110,10 @@
             Server-centric рабочее место и официальный основной путь для повседневной настройки сервера: readiness, законы, функции, шаблоны, доступы и операционные сигналы.
           </p>
           {% else %}
-          <h1 class="legal-section__title">Runtime and configuration workspace</h1>
+          <h1 class="legal-section__title">{% if admin_focus == "laws" %}Advanced law diagnostics{% else %}Runtime and configuration workspace{% endif %}</h1>
           <p class="legal-section__description">
             {% if admin_focus == "laws" %}
-            Advanced / compatibility workspace для source sets, revisions, server bindings и low-level law diagnostics. Для повседневной работы используйте /admin/servers и карточку конкретного сервера.
+            Низкоуровневый law-domain экран для diagnostics, compatibility и legacy/runtime detail. Для повседневной работы используйте /admin/servers и карточку конкретного сервера.
             {% else %}
             Read-only domain view for runtime inventory, catalog-backed configuration, and publication context.
             {% endif %}
@@ -662,12 +660,12 @@
       <section id="admin-domain-summary" class="legal-subcard admin-collapsible" data-collapsible-section="domain-summary">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
-            <span class="legal-field__label">Read-only domain slice</span>
+            <span class="legal-field__label">{% if admin_focus == "laws" %}Compatibility snapshot{% else %}Read-only domain slice{% endif %}</span>
             <p class="legal-section__description">
               {% if admin_focus == "servers" %}
               Runtime inventory, active server state, and linked configuration bundles.
               {% elif admin_focus == "laws" %}
-              Source sets, revisions, server bindings, and безопасная preview-проверка для legal runtime.
+              Сводка по source sets, revisions, server bindings и runtime boundary. Этот блок вторичен по отношению к server-centric workspace.
               {% elif admin_focus == "templates" %}
               Document templates and their versioned configuration inventory.
               {% elif admin_focus == "features" %}
@@ -681,14 +679,14 @@
             type="button"
             class="ghost-button admin-collapsible__toggle"
             data-collapsible-target="admin-domain-summary-content"
-            data-expanded-default="true"
-            aria-expanded="true"
+            data-expanded-default="{% if admin_focus == 'laws' %}false{% else %}true{% endif %}"
+            aria-expanded="{% if admin_focus == 'laws' %}false{% else %}true{% endif %}"
             aria-controls="admin-domain-summary-content"
           >
-            Скрыть
+            {% if admin_focus == 'laws' %}Показать{% else %}Скрыть{% endif %}
           </button>
         </div>
-        <div id="admin-domain-summary-content" class="admin-collapsible__content">
+        <div id="admin-domain-summary-content" class="admin-collapsible__content"{% if admin_focus == "laws" %} hidden{% endif %}>
           <div class="legal-field-grid legal-field-grid--two">
             <div class="legal-field">
               <span class="legal-field__label">Primary domain</span>
@@ -759,6 +757,19 @@
           <div>
             <span class="legal-field__label">Advanced / Compatibility</span>
             <p class="legal-section__description">Этот экран остаётся для raw law diagnostics, legacy/runtime detail и low-level operator сценариев. Основной рабочий путь теперь начинается с <a class="button-link ghost-button" href="/admin/servers">/admin/servers</a> и карточки конкретного сервера.</p>
+          </div>
+          <div class="admin-section-toolbar">
+            <a class="button-link primary-button" href="/admin/servers">Открыть server workspace</a>
+          </div>
+        </div>
+        <div class="legal-field-grid legal-field-grid--two">
+          <div class="legal-field">
+            <span class="legal-field__label">Когда нужен этот экран</span>
+            <div class="admin-user-cell__secondary">Для low-level law diagnostics, raw compatibility checks и legacy/runtime detail, которые не должны мешать обычной настройке сервера.</div>
+          </div>
+          <div class="legal-field">
+            <span class="legal-field__label">Что делать обычно</span>
+            <div class="admin-user-cell__secondary">Открывайте <strong>/admin/servers</strong>, затем карточку нужного сервера и работайте через вкладки Законы, Функции и Шаблоны вывода.</div>
           </div>
         </div>
       </section>
@@ -908,21 +919,21 @@
       <section class="legal-subcard admin-collapsible" data-collapsible-section="catalog-workflow">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
-            <span class="legal-field__label">Configuration Catalog</span>
-            <p class="legal-section__description">Versioned inventory and workflow surface for servers, laws, templates, capabilities, and validation rules.</p>
+            <span class="legal-field__label">{% if admin_focus == "laws" %}Advanced catalog / compatibility{% else %}Configuration Catalog{% endif %}</span>
+            <p class="legal-section__description">{% if admin_focus == "laws" %}Legacy-backed catalog inventory и низкоуровневые workflow surfaces. Для ежедневной работы используйте server-centric tabs в карточке сервера.{% else %}Versioned inventory and workflow surface for servers, laws, templates, capabilities, and validation rules.{% endif %}</p>
           </div>
           <button
             type="button"
             class="ghost-button admin-collapsible__toggle"
             data-collapsible-target="admin-catalog-content"
-            data-expanded-default="true"
-            aria-expanded="true"
+            data-expanded-default="{% if admin_focus == 'laws' %}false{% else %}true{% endif %}"
+            aria-expanded="{% if admin_focus == 'laws' %}false{% else %}true{% endif %}"
             aria-controls="admin-catalog-content"
           >
-            Скрыть
+            {% if admin_focus == 'laws' %}Показать{% else %}Скрыть{% endif %}
           </button>
         </div>
-        <div id="admin-catalog-content" class="admin-collapsible__content">
+        <div id="admin-catalog-content" class="admin-collapsible__content"{% if admin_focus == "laws" %} hidden{% endif %}>
           <div id="admin-catalog" data-catalog-entity="{{ admin_focus }}"></div>
         </div>
       </section>
