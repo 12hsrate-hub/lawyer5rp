@@ -377,6 +377,7 @@ window.OGPAdminServerWorkspace = {
         const projectionBridgeReadiness = laws.projection_bridge_readiness || state.lawsDiff?.projection_bridge_readiness || {};
         const promotionCandidate = laws.promotion_candidate || state.lawsDiff?.promotion_candidate || {};
         const promotionDelta = laws.promotion_delta || state.lawsDiff?.promotion_delta || {};
+        const promotionBlockers = laws.promotion_blockers || state.lawsDiff?.promotion_blockers || {};
         const effective = state.lawsEffective || {};
       const effectiveItems = Array.isArray(effective.items) ? effective.items.slice(0, 12) : [];
       const fillSummary = laws.fill_check || effective.summary || {};
@@ -447,7 +448,12 @@ window.OGPAdminServerWorkspace = {
               <div><strong>${escapeHtml(String(promotionDelta.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">${escapeHtml(String(promotionDelta.detail || "Promotion delta summary is not available yet."))}</div>
             </div>
-          </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Promotion blockers</span>
+              <div><strong>${escapeHtml(String(promotionBlockers.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(promotionBlockers.detail || "Promotion blockers summary is not available yet."))}</div>
+            </div>
+        </div>
         <div class="legal-subcard">
           <span class="legal-field__label">Source set bindings</span>
           ${
