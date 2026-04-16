@@ -48,7 +48,7 @@
     </nav>
     {% if admin_focus == "laws" %}
     <div class="admin-section-toolbar">
-      <span class="admin-badge admin-badge--warning">Advanced diagnostics only</span>
+      <span class="admin-badge admin-badge--warning">Compatibility seam · diagnostics only</span>
       <a class="ghost-button button-link" href="/admin/servers">Вернуться в server workspace</a>
     </div>
     {% endif %}
@@ -115,10 +115,10 @@
             Server-centric рабочее место и официальный основной путь для повседневной настройки сервера: readiness, законы, функции, шаблоны, доступы и операционные сигналы.
           </p>
           {% else %}
-          <h1 class="legal-section__title">{% if admin_focus == "laws" %}Advanced law diagnostics{% else %}Runtime and configuration workspace{% endif %}</h1>
+          <h1 class="legal-section__title">{% if admin_focus == "laws" %}Advanced law diagnostics / compatibility seam{% else %}Runtime and configuration workspace{% endif %}</h1>
           <p class="legal-section__description">
             {% if admin_focus == "laws" %}
-            Низкоуровневый law-domain экран для diagnostics, compatibility и legacy/runtime detail. Для повседневной работы используйте /admin/servers и карточку конкретного сервера.
+            Низкоуровневый law-domain экран для diagnostics, compatibility и legacy/runtime detail. Не используйте его как стартовую точку onboarding или повседневной настройки сервера: рабочий путь начинается с /admin/servers и карточки конкретного сервера.
             {% else %}
             Read-only domain view for runtime inventory, catalog-backed configuration, and publication context.
             {% endif %}
@@ -691,7 +691,7 @@
       <section id="admin-domain-summary" class="legal-subcard admin-collapsible" data-collapsible-section="domain-summary">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
-            <span class="legal-field__label">{% if admin_focus == "laws" %}Compatibility snapshot{% else %}Read-only domain slice{% endif %}</span>
+            <span class="legal-field__label">{% if admin_focus == "laws" %}Compatibility seam snapshot{% else %}Read-only domain slice{% endif %}</span>
             <p class="legal-section__description">
               {% if admin_focus == "servers" %}
               Runtime inventory, active server state, and linked configuration bundles.
@@ -787,7 +787,7 @@
         <div class="legal-subcard__header">
           <div>
             <span class="legal-field__label">Advanced / Compatibility</span>
-            <p class="legal-section__description">Этот экран остаётся для raw law diagnostics, legacy/runtime detail и low-level operator сценариев. Основной рабочий путь теперь начинается с <a class="button-link ghost-button" href="/admin/servers">/admin/servers</a> и карточки конкретного сервера.</p>
+            <p class="legal-section__description">Этот экран остаётся только для raw law diagnostics, legacy/runtime detail и low-level operator сценариев. Основной рабочий путь начинается с <a class="button-link ghost-button" href="/admin/servers">/admin/servers</a> и карточки конкретного сервера.</p>
           </div>
           <div class="admin-section-toolbar">
             <a class="button-link primary-button" href="/admin/servers">Открыть server workspace</a>
@@ -801,6 +801,14 @@
           <div class="legal-field">
             <span class="legal-field__label">Что делать обычно</span>
             <div class="admin-user-cell__secondary">Открывайте <strong>/admin/servers</strong>, затем карточку нужного сервера и работайте через вкладки Законы, Функции и Шаблоны вывода.</div>
+          </div>
+          <div class="legal-field">
+            <span class="legal-field__label">Статус миграции</span>
+            <div class="admin-user-cell__secondary">Повседневные operator flows уже перенесены в server-centric workspace. Этот экран сохраняется как compatibility seam и не должен конкурировать с новым путём.</div>
+          </div>
+          <div class="legal-field">
+            <span class="legal-field__label">Чего не делать здесь</span>
+            <div class="admin-user-cell__secondary">Не начинайте здесь новый server setup, не используйте этот экран как primary workspace и не считайте его заменой карточки сервера.</div>
           </div>
         </div>
       </section>
@@ -950,8 +958,8 @@
       <section class="legal-subcard admin-collapsible" data-collapsible-section="catalog-workflow">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
-            <span class="legal-field__label">{% if admin_focus == "laws" %}Advanced catalog / compatibility{% else %}Configuration Catalog{% endif %}</span>
-            <p class="legal-section__description">{% if admin_focus == "laws" %}Legacy-backed catalog inventory и низкоуровневые workflow surfaces. Для ежедневной работы используйте server-centric tabs в карточке сервера.{% else %}Versioned inventory and workflow surface for servers, laws, templates, capabilities, and validation rules.{% endif %}</p>
+            <span class="legal-field__label">{% if admin_focus == "laws" %}Compatibility-backed catalog{% else %}Configuration Catalog{% endif %}</span>
+            <p class="legal-section__description">{% if admin_focus == "laws" %}Legacy-backed catalog inventory и низкоуровневые workflow surfaces. Для ежедневной работы используйте server-centric tabs в карточке сервера, а этот блок открывайте только при необходимости raw diagnostics.{% else %}Versioned inventory and workflow surface for servers, laws, templates, capabilities, and validation rules.{% endif %}</p>
           </div>
           <button
             type="button"
