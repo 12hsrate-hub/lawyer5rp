@@ -29,6 +29,8 @@ Route policy:
 - `/admin/laws` remains an advanced diagnostics and compatibility surface.
 - `/admin/dashboard` remains the global ops surface.
 - `/admin/users` remains the global user/audit surface.
+- the primary top-level admin tab strip should point only to `/admin/servers`
+- global ops and global users/audit should appear as secondary links, not as competing primary tabs
 - `/admin/templates`, `/admin/features`, and `/admin/rules` are no longer primary entrypoints and should not be restored as top-level operator tabs.
 - `/admin/laws` must not be used as the primary onboarding or day-to-day configuration entrypoint for a server.
 
