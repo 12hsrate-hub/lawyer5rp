@@ -369,6 +369,7 @@ window.OGPAdminServerWorkspace = {
       const laws = state.lawsSummary || {};
       const bindings = Array.isArray(laws.bindings) ? laws.bindings : [];
       const projection = laws.latest_projection_run || {};
+      const runtimeProvenance = laws.runtime_provenance || {};
       const effective = state.lawsEffective || {};
       const effectiveItems = Array.isArray(effective.items) ? effective.items.slice(0, 12) : [];
       const fillSummary = laws.fill_check || effective.summary || {};
@@ -398,6 +399,11 @@ window.OGPAdminServerWorkspace = {
             <span class="legal-field__label">Последний preview</span>
             <div><strong>${escapeHtml(String(projection.id || "—"))}</strong></div>
             <div class="admin-user-cell__secondary">status: ${escapeHtml(String(projection.status || "none"))} • selected: ${escapeHtml(String(projection.selected_count || 0))}</div>
+          </div>
+          <div class="legal-field">
+            <span class="legal-field__label">Runtime provenance</span>
+            <div><strong>${escapeHtml(String(runtimeProvenance.mode || "unknown"))}</strong></div>
+            <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeProvenance.detail || "Runtime source-of-truth explanation is not available yet."))}</div>
           </div>
         </div>
         <div class="legal-subcard">
