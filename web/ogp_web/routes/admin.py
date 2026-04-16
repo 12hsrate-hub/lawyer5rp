@@ -30,6 +30,7 @@ from ogp_web.schemas import (
     AdminCatalogRollbackPayload,
     AdminCatalogWorkflowPayload,
     AdminCanonicalLawDocumentIngestPayload,
+    AdminCanonicalLawDocumentVersionFetchPayload,
     AdminCanonicalLawDocumentVersionIngestPayload,
     AdminDeactivatePayload,
     AdminEmailUpdatePayload,
@@ -163,6 +164,9 @@ from ogp_web.services.admin_canonical_law_document_versions_service import (
     ingest_discovery_run_document_versions_payload,
     list_canonical_law_document_versions_payload,
     list_discovery_run_document_versions_payload,
+)
+from ogp_web.services.admin_canonical_law_document_fetch_service import (
+    fetch_discovery_run_document_versions_payload,
 )
 from ogp_web.services.admin_law_source_discovery_service import (
     execute_source_set_discovery_payload,
@@ -849,6 +853,48 @@ async def admin_law_source_discovery_run_ingest_document_versions(
             "run_id": int(run_id),
             "changed": bool(result.get("changed")),
             "created_versions": int(result.get("created_versions") or 0),
+        },
+    )
+    return result
+
+
+@router.post("/api/admin/law-source-discovery-runs/{run_id}/fetch-document-versions")
+async def admin_law_source_discovery_run_fetch_document_versions(
+    request: Request,
+    run_id: int,
+    payload: AdminCanonicalLawDocumentVersionFetchPayload,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    discovery_store: LawSourceDiscoveryStore = Depends(get_law_source_discovery_store),
+    versions_store: CanonicalLawDocumentVersionsStore = Depends(get_canonical_law_document_versions_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    fetcher = getattr(request.app.state, "canonical_law_document_version_fetcher", None)
+    try:
+        result = fetch_discovery_run_document_versions_payload(
+            discovery_store=discovery_store,
+            versions_store=versions_store,
+            run_id=run_id,
+            safe_rerun=payload.safe_rerun,
+            timeout_sec=payload.timeout_sec,
+            fetcher=fetcher,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_law_source_discovery_run_fetch_document_versions",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/law-source-discovery-runs/{int(run_id)}/fetch-document-versions",
+        method="POST",
+        status_code=200,
+        meta={
+            "count": result["count"],
+            "run_id": int(run_id),
+            "changed": bool(result.get("changed")),
+            "fetched_versions": int(result.get("fetched_versions") or 0),
+            "failed_versions": int(result.get("failed_versions") or 0),
         },
     )
     return result

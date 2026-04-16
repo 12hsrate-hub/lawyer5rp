@@ -18,7 +18,9 @@ class _Cursor:
         self._rows = rows or []
 
     def fetchone(self):
-        return self._one
+        if self._one is not None:
+            return self._one
+        return self._rows[0] if self._rows else None
 
     def fetchall(self):
         return list(self._rows)
@@ -82,7 +84,19 @@ class _Connection:
         if normalized.startswith("SELECT v.id, v.canonical_law_document_id, d.canonical_identity_key, d.display_title, v.source_discovery_run_id, v.discovered_law_link_id, rev.source_set_key, l.source_set_revision_id, rev.revision, l.normalized_url, l.source_container_url, v.fetch_status, v.parse_status, v.content_checksum, v.raw_title, v.parsed_title, v.body_text, v.metadata_json, v.created_at, v.updated_at FROM canonical_law_document_versions AS v JOIN canonical_law_documents AS d ON d.id = v.canonical_law_document_id JOIN discovered_law_links AS l ON l.id = v.discovered_law_link_id JOIN source_set_revisions AS rev ON rev.id = l.source_set_revision_id WHERE v.id = %s"):
             version_id = int(params[0])
             row = next((self._joined_row(item) for item in self.versions if int(item["id"]) == version_id), None)
-            return _Cursor(one=row)
+            return _Cursor(rows=[row] if row else [])
+        if normalized.startswith("UPDATE canonical_law_document_versions SET fetch_status = %s, content_checksum = %s, raw_title = %s, body_text = %s, metadata_json = %s::jsonb, updated_at = NOW() WHERE id = %s RETURNING id"):
+            fetch_status, content_checksum, raw_title, body_text, metadata_json, version_id = params
+            row = next((item for item in self.versions if int(item["id"]) == int(version_id)), None)
+            if row is None:
+                return _Cursor(one=None)
+            row["fetch_status"] = fetch_status
+            row["content_checksum"] = content_checksum
+            row["raw_title"] = raw_title
+            row["body_text"] = body_text
+            row["metadata_json"] = dict(metadata_json)
+            row["updated_at"] = "2026-04-16T03:00:00+00:00"
+            return _Cursor(one={"id": row["id"]})
         raise AssertionError(f"Unsupported query: {normalized}")
 
     def commit(self):
@@ -138,3 +152,27 @@ def test_canonical_law_document_versions_store_duplicate_link_returns_value_erro
         assert False, "expected ValueError"
     except ValueError as exc:
         assert str(exc) == "canonical_law_document_version_already_exists"
+
+
+def test_canonical_law_document_versions_store_updates_fetch_result():
+    store = CanonicalLawDocumentVersionsStore(_Backend())
+    created = store.create_version(
+        canonical_law_document_id=1,
+        source_discovery_run_id=5,
+        discovered_law_link_id=11,
+    )
+    updated = store.update_fetch_result(
+        version_id=created.id,
+        fetch_status="fetched",
+        content_checksum="def456",
+        raw_title="Fetched Title",
+        body_text="Fetched body",
+        metadata_json={"fetch_mode": "manual_admin_fetch"},
+    )
+    assert updated.fetch_status == "fetched"
+    assert updated.content_checksum == "def456"
+    assert updated.raw_title == "Fetched Title"
+    assert updated.body_text == "Fetched body"
+    fetched = store.get_version(version_id=created.id)
+    assert fetched is not None
+    assert fetched.fetch_status == "fetched"
