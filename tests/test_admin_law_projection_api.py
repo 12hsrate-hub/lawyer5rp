@@ -83,9 +83,9 @@ class _FakeSourceSetsStore:
 
 
 class _FakeVersionsStore:
-    def list_parsed_versions_for_source_sets(self, *, source_set_keys):
-        return [
-            _FakeVersion(
+    def __init__(self):
+        self._versions = {
+            8: _FakeVersion(
                 id=8,
                 canonical_law_document_id=1,
                 canonical_identity_key="url_seed:law-a",
@@ -107,7 +107,7 @@ class _FakeVersionsStore:
                 created_at="2026-04-16T05:10:00+00:00",
                 updated_at="2026-04-16T05:10:00+00:00",
             ),
-            _FakeVersion(
+            9: _FakeVersion(
                 id=9,
                 canonical_law_document_id=2,
                 canonical_identity_key="url_seed:law-b",
@@ -129,7 +129,13 @@ class _FakeVersionsStore:
                 created_at="2026-04-16T05:20:00+00:00",
                 updated_at="2026-04-16T05:20:00+00:00",
             ),
-        ]
+        }
+
+    def list_parsed_versions_for_source_sets(self, *, source_set_keys):
+        return [self._versions[8], self._versions[9]]
+
+    def get_version(self, *, version_id: int):
+        return self._versions.get(int(version_id))
 
 
 class _FakeRun:
@@ -361,13 +367,13 @@ class AdminLawProjectionApiTests(unittest.TestCase):
         self.assertFalse(reused.json()["changed"])
         self.assertTrue(reused.json()["reused_law_set"])
 
-        with patch("ogp_web.routes.admin.LawAdminService.rebuild_index") as fake_rebuild:
-            fake_rebuild.return_value = {"ok": True, "law_version_id": 91}
+        with patch("ogp_web.services.admin_law_projection_service.import_law_snapshot", return_value=91) as fake_import:
             activated = self.client.post("/api/admin/law-projection-runs/1/activate-runtime", json={"safe_rerun": True})
         self.assertEqual(activated.status_code, 200)
         self.assertTrue(activated.json()["changed"])
         self.assertEqual(activated.json()["activation"]["law_version_id"], 91)
-        self.assertFalse(fake_rebuild.call_args.kwargs["persist_sources"])
+        self.assertEqual(fake_import.call_args.kwargs["server_code"], "orange")
+        self.assertGreater(activated.json()["activation"]["chunk_count"], 0)
 
         with patch(
             "ogp_web.routes.admin.resolve_active_law_version",
@@ -393,7 +399,7 @@ class AdminLawProjectionApiTests(unittest.TestCase):
         self.assertTrue(status_payload.json()["runtime_alignment"]["item_count_matches_materialization"])
         self.assertTrue(status_payload.json()["runtime_alignment"]["activation_law_version_matches_active"])
 
-        with patch("ogp_web.routes.admin.LawAdminService.rebuild_index") as fake_rebuild_again:
+        with patch("ogp_web.services.admin_law_projection_service.import_law_snapshot") as fake_rebuild_again:
             reused_activation = self.client.post("/api/admin/law-projection-runs/1/activate-runtime", json={"safe_rerun": True})
         self.assertEqual(reused_activation.status_code, 200)
         self.assertFalse(reused_activation.json()["changed"])
