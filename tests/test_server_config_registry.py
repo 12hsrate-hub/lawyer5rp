@@ -36,6 +36,15 @@ class ServerConfigRegistryTests(unittest.TestCase):
         self.assertEqual(pack["version"], 7)
         self.assertEqual(pack["metadata"]["organizations"], ["FIB"])
 
+    def test_runtime_resolution_snapshot_marks_neutral_fallback_for_db_only_server(self):
+        with patch("ogp_web.server_config.registry._load_effective_pack_from_db", return_value=None):
+            snapshot = registry.build_runtime_resolution_snapshot(server_code="orange", title="Orange City")
+
+        self.assertEqual(snapshot["resolution_mode"], "neutral_fallback")
+        self.assertTrue(snapshot["requires_explicit_runtime_pack"])
+        self.assertFalse(snapshot["has_runtime_metadata"])
+        self.assertFalse(snapshot["has_identity_capabilities"])
+
     def test_effective_server_pack_uses_published_pack_for_second_server(self):
         with patch(
             "ogp_web.server_config.registry._load_effective_pack_from_db",
@@ -122,6 +131,18 @@ class ServerConfigRegistryTests(unittest.TestCase):
             document_builder = registry.resolve_document_builder_config("orange")
 
         self.assertEqual(document_builder, {})
+
+    def test_runtime_resolution_snapshot_marks_published_pack_without_explicit_fallback(self):
+        with patch(
+            "ogp_web.server_config.registry._load_effective_pack_from_db",
+            side_effect=lambda *, server_code, at_timestamp=None: orange_published_pack() if server_code == "orange" else None,
+        ):
+            snapshot = registry.build_runtime_resolution_snapshot(server_code="orange", title="Orange City")
+
+        self.assertEqual(snapshot["resolution_mode"], "published_pack")
+        self.assertFalse(snapshot["requires_explicit_runtime_pack"])
+        self.assertTrue(snapshot["has_runtime_metadata"])
+        self.assertTrue(snapshot["has_identity_capabilities"])
 
 
 if __name__ == "__main__":

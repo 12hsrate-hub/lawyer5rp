@@ -171,6 +171,9 @@ window.OGPAdminServerWorkspace = {
       if (issueId === "laws_bindings_missing") {
         return "Во вкладке «Законы» добавьте хотя бы один активный source set binding.";
       }
+      if (issueId === "runtime_config_fallback") {
+        return "Закрепите published или bootstrap runtime pack, чтобы сервер перестал зависеть от neutral fallback.";
+      }
       if (issueId === "synthetic_failures") {
         return "Запустите retry. Если ошибка останется, откройте «Диагностика» и проверьте synthetic / ops сигналы.";
       }
@@ -202,6 +205,7 @@ window.OGPAdminServerWorkspace = {
       const readiness = state.workspace?.readiness || {};
       const counters = readiness.counters || {};
       const health = state.workspace?.health?.summary || {};
+      const onboarding = state.workspace?.health?.onboarding || {};
       const issues = state.issuesData || state.workspace?.issues || {};
       const latestAudit = Array.isArray(state.auditData?.items) ? state.auditData.items[0] : null;
       summaryHost.innerHTML = `
@@ -219,6 +223,11 @@ window.OGPAdminServerWorkspace = {
           <span class="legal-field__label">Health</span>
           <div><strong>${health.is_ready ? "готов" : "нужна проверка"}</strong></div>
           <div class="admin-user-cell__secondary">${escapeHtml(String(health.ready_count || 0))}/${escapeHtml(String(health.total_count || 0))} checks</div>
+        </div>
+        <div class="legal-field">
+          <span class="legal-field__label">Runtime source</span>
+          <div><strong>${escapeHtml(String(onboarding.resolution_label || "unknown"))}</strong></div>
+          <div class="admin-user-cell__secondary">${onboarding.requires_explicit_runtime_pack ? "Нужен published/bootstrap pack, сейчас сервер ещё на neutral fallback." : "Runtime source-of-truth уже закреплён без neutral fallback."}</div>
         </div>
         <div class="legal-field">
           <span class="legal-field__label">Сигналы</span>
@@ -256,6 +265,7 @@ window.OGPAdminServerWorkspace = {
       const activityItems = Array.isArray(state.workspace?.activity) ? state.workspace.activity.slice(0, 8) : [];
       const warningSignals = Array.isArray(dashboard.release?.warning_signals) ? dashboard.release.warning_signals : [];
       const recentIssues = Array.isArray(issues.items) ? issues.items.slice(0, 4) : [];
+      const onboarding = state.workspace?.health?.onboarding || {};
       const recentChanges = auditItems
         .filter((item) => ["workflow_audit", "content_audit", "law_projection"].includes(String(item.kind || "")))
         .slice(0, 5);
@@ -315,6 +325,11 @@ window.OGPAdminServerWorkspace = {
             <span class="legal-field__label">Последние обновления</span>
             <div class="admin-user-cell__secondary">publish batches: ${escapeHtml(String((dashboard.content?.publish_batches || []).length || 0))}</div>
             <div class="admin-user-cell__secondary">warning signals: ${escapeHtml(String((dashboard.release?.warning_signals || []).length || 0))}</div>
+          </div>
+          <div class="legal-field">
+            <span class="legal-field__label">Runtime source</span>
+            <div><span class="admin-badge ${onboarding.requires_explicit_runtime_pack ? "admin-badge--warning" : "admin-badge--success"}">${escapeHtml(String(onboarding.resolution_label || "unknown"))}</span></div>
+            <div class="admin-user-cell__secondary">${onboarding.requires_explicit_runtime_pack ? "Сервер ещё зависит от neutral fallback. Для полной readiness нужен published/bootstrap pack." : "Сервер уже использует explicit runtime pack path."}</div>
           </div>
         </div>
         <div class="legal-field-grid legal-field-grid--two">

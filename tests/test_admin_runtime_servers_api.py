@@ -905,8 +905,10 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertEqual(payload_before["summary"]["ready_count"], 4)
             self.assertFalse(payload_before["checks"]["activation"]["ok"])
             self.assertTrue(payload_before["checks"]["health"]["ok"])
+            self.assertFalse(payload_before["checks"]["config_resolution"]["ok"])
             self.assertEqual(payload_before["onboarding"]["highest_completed_state"], "not-ready")
             self.assertEqual(payload_before["onboarding"]["resolution_mode"], "neutral_fallback")
+            self.assertTrue(payload_before["onboarding"]["requires_explicit_runtime_pack"])
 
             activated = self.client.post("/api/admin/runtime-servers/city2/activate")
             self.assertEqual(activated.status_code, 200)
@@ -914,9 +916,10 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             health_after = self.client.get("/api/admin/runtime-servers/city2/health")
             self.assertEqual(health_after.status_code, 200)
             payload_after = health_after.json()
-            self.assertTrue(payload_after["summary"]["is_ready"])
-            self.assertEqual(payload_after["summary"]["ready_count"], payload_after["summary"]["total_count"])
+            self.assertFalse(payload_after["summary"]["is_ready"])
+            self.assertEqual(payload_after["summary"]["ready_count"], payload_after["summary"]["total_count"] - 1)
             self.assertEqual(payload_after["checks"]["health"]["active_law_version_id"], 77)
+            self.assertFalse(payload_after["checks"]["config_resolution"]["ok"])
             self.assertEqual(payload_after["onboarding"]["highest_completed_state"], "not-ready")
             self.assertEqual(payload_after["onboarding"]["next_required_state"], "bootstrap-ready")
 
@@ -947,6 +950,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertIn("users", payload["overview"])
         self.assertIn("access", payload["overview"])
         self.assertEqual(payload["overview"]["laws"]["binding_count"], 1)
+        self.assertEqual(payload["health"]["onboarding"]["resolution_mode"], "bootstrap_pack")
         self.assertIsInstance(payload["activity"], list)
 
     def test_runtime_server_activity_endpoint_returns_items(self):
@@ -983,7 +987,19 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertTrue(recheck_payload["ok"])
         self.assertEqual(recheck_payload["issue_id"], "laws_runtime_health")
         self.assertEqual(recheck_payload["action"], "recheck")
-        self.assertEqual(recheck_payload["result"]["summary"]["with_content"], 1)
+
+    def test_runtime_server_issues_endpoint_marks_neutral_fallback_as_warning(self):
+        created = self.client.post(
+            "/api/admin/runtime-servers",
+            json={"code": "city2", "title": "City 2"},
+        )
+        self.assertEqual(created.status_code, 200)
+
+        issues = self.client.get("/api/admin/runtime-servers/city2/issues")
+        self.assertEqual(issues.status_code, 200)
+        payload = issues.json()
+        issue_ids = {item["issue_id"] for item in payload["items"]}
+        self.assertIn("runtime_config_fallback", issue_ids)
 
     def test_runtime_server_access_endpoints_support_roles_permissions_assign_and_revoke(self):
         self.user_store.register("moderator1", "moderator1@example.com", "Password123!")
@@ -1218,6 +1234,8 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertTrue(payload["summary"]["is_ready"])
         self.assertEqual(payload["onboarding"]["resolution_mode"], "published_pack")
         self.assertFalse(payload["onboarding"]["uses_transitional_fallback"])
+        self.assertFalse(payload["onboarding"]["requires_explicit_runtime_pack"])
+        self.assertTrue(payload["checks"]["config_resolution"]["ok"])
         self.assertEqual(payload["onboarding"]["highest_completed_state"], "rollout-ready")
         self.assertEqual(payload["checks"]["health"]["active_law_version_id"], 88)
         self.assertEqual(payload["projection_bridge"]["run_id"], 4)
