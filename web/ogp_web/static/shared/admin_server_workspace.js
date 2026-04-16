@@ -237,7 +237,7 @@ window.OGPAdminServerWorkspace = {
             <button type="button" class="ghost-button" data-server-workspace-switch="features">Функции</button>
             <button type="button" class="ghost-button" data-server-workspace-switch="templates">Шаблоны</button>
             <button type="button" class="ghost-button" data-server-workspace-switch="errors">Проблемы</button>
-            <a class="ghost-button button-link" href="/admin/users">Users</a>
+            <a class="ghost-button button-link" href="/admin/audit">Global users / audit</a>
           </div>
         </div>
       `;
@@ -653,7 +653,7 @@ window.OGPAdminServerWorkspace = {
           </div>
           <div class="admin-section-toolbar">
             <button type="button" id="admin-server-users-reload" class="ghost-button">Обновить блок</button>
-            <a class="ghost-button button-link" href="/admin/users">Открыть users workspace</a>
+            <a class="ghost-button button-link" href="/admin/audit">Открыть users / audit</a>
           </div>
         </div>
         ${
@@ -964,7 +964,8 @@ window.OGPAdminServerWorkspace = {
           </div>
           <div class="admin-section-toolbar">
             <a class="ghost-button button-link" href="/admin/laws">Advanced laws diagnostics</a>
-            <a class="ghost-button button-link" href="/admin/dashboard">Ops dashboard</a>
+            <a class="ghost-button button-link" href="/admin/ops">Global ops</a>
+            <a class="ghost-button button-link" href="/admin/audit">Global users / audit</a>
           </div>
         </div>
         <pre class="legal-field__hint">${escapeHtml(JSON.stringify(state.workspace?.health || {}, null, 2))}</pre>
