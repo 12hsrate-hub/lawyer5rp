@@ -166,21 +166,21 @@ window.OGPAdminServerWorkspace = {
     function summarizeIssueNextStep(item) {
       const issueId = normalizeKey(item?.issue_id);
       if (issueId === "laws_runtime_health") {
-        return "Сначала проверьте наполнение законов. Если контент появился, runtime issue должен исчезнуть после recheck.";
+        return "Откройте вкладку «Законы», запустите проверку наполнения и затем сделайте recheck.";
       }
       if (issueId === "laws_bindings_missing") {
-        return "Откройте вкладку «Законы» и добавьте хотя бы один активный source set binding.";
+        return "Во вкладке «Законы» добавьте хотя бы один активный source set binding.";
       }
       if (issueId === "synthetic_failures") {
-        return "Перезапустите smoke и проверьте, исчезли ли падения. Если нет, откройте «Диагностика».";
+        return "Запустите retry. Если ошибка останется, откройте «Диагностика» и проверьте synthetic / ops сигналы.";
       }
       if (issueId === "integrity_checks") {
-        return "Проблема требует технической проверки. Используйте «Диагностика» и ops/dashboard для детализации.";
+        return "Откройте «Диагностика» и ops/dashboard: эта проблема требует технической сверки целостности.";
       }
       if (issueId === "jobs_dlq") {
-        return "Есть зависшие задачи. Нужна операторская проверка очередей и downstream обработчиков.";
+        return "Нужна операторская проверка очередей и downstream-обработчиков. Из карточки сервера это обычно не чинится напрямую.";
       }
-      return "Откройте смежную вкладку сервера или «Диагностика», чтобы уточнить источник проблемы.";
+      return "Проверьте смежную вкладку сервера или «Диагностика», чтобы уточнить источник и следующий шаг.";
     }
 
     function uniqueValues(items, getter) {
@@ -390,7 +390,11 @@ window.OGPAdminServerWorkspace = {
           ${
             bindings.length
               ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Source set</th><th>Priority</th><th>Status</th></tr></thead><tbody>${bindings.map((item) => `<tr><td>${escapeHtml(String(item.source_set_key || "—"))}</td><td>${escapeHtml(String(item.priority || 0))}</td><td>${item.is_active ? "active" : "disabled"}</td></tr>`).join("")}</tbody></table>`
-              : '<p class="legal-section__description">Для сервера пока нет source set bindings. Сначала привяжите source set в расширенном laws workspace.</p>'
+              : `<p class="legal-section__description">Для сервера пока нет source set bindings. Сначала создайте или выберите source set и привяжите его в расширенном laws workspace.</p>
+                 <div class="admin-section-toolbar">
+                   <a class="ghost-button button-link" href="/admin/laws">Открыть laws workspace</a>
+                   <button type="button" class="ghost-button" data-server-workspace-switch="diagnostics">Открыть диагностику</button>
+                 </div>`
           }
         </div>
         <div class="legal-field-grid legal-field-grid--two">
@@ -410,7 +414,10 @@ window.OGPAdminServerWorkspace = {
           ${
             effectiveItems.length
               ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Закон</th><th>Источник</th><th>Обновлено</th><th>Статус</th></tr></thead><tbody>${effectiveItems.map((item) => `<tr><td><strong>${escapeHtml(String(item.title || item.canonical_identity_key || "—"))}</strong><div class="admin-user-cell__secondary">${escapeHtml(String(item.preview_excerpt || "Без preview"))}</div></td><td>${escapeHtml(String(item.selected_source_set_key || "—"))}<div class="admin-user-cell__secondary">rev ${escapeHtml(String(item.selected_revision || 0))}</div></td><td>${escapeHtml(String(item.updated_at || "—"))}</td><td>${item.has_content ? "content ready" : "missing content"}<div class="admin-user-cell__secondary">${escapeHtml(String(item.fetch_status || "—"))} / ${escapeHtml(String(item.parse_status || "—"))}</div></td></tr>`).join("")}</tbody></table>`
-              : '<p class="legal-section__description">Effective laws пока не рассчитаны. Нажмите «Обновить законы», чтобы получить безопасный preview.</p>'
+              : `<p class="legal-section__description">Effective laws пока не рассчитаны. Нажмите «Обновить законы», чтобы получить безопасный preview, или сначала добавьте bindings.</p>
+                 <div class="admin-section-toolbar">
+                   <button type="button" class="ghost-button" id="admin-server-laws-refresh-preview-empty">Запустить preview</button>
+                 </div>`
           }
         </div>
       `;
@@ -452,7 +459,7 @@ window.OGPAdminServerWorkspace = {
                   <td><div class="admin-section-toolbar"><button type="button" class="ghost-button" data-server-feature-edit="${escapeHtml(String(item.content_key || ""))}">${item.has_server_override ? "Редактировать" : "Создать override"}</button>${workflowActions.map((action) => `<button type="button" class="ghost-button" data-server-feature-workflow="${escapeHtml(String(item.content_key || ""))}" data-server-feature-workflow-action="${escapeHtml(action)}" data-server-feature-cr-id="${escapeHtml(String(item.active_change_request?.id || ""))}">${escapeHtml(buildWorkflowActionLabel(action))}</button>`).join("")}</div></td>
                 </tr>`;
               }).join("")}</tbody></table>`
-            : '<p class="legal-section__description">Для сервера пока нет effective функций.</p>'
+            : '<p class="legal-section__description">Для сервера пока нет effective функций. Добавьте server override, если нужна локальная настройка, скрытие или порядок показа.</p>'
         }
         ${
           editor
@@ -513,7 +520,7 @@ window.OGPAdminServerWorkspace = {
                   </div>
                 </form>
               </div>`
-            : '<p class="legal-section__description">Выберите функцию из списка или создайте новый override, если нужно серверное включение, скрытие или порядок показа.</p>'
+            : '<p class="legal-section__description">Выберите функцию из списка или создайте новый override, если нужно серверное включение, скрытие, локальный rollout или порядок показа.</p>'
         }
       `;
     }
@@ -558,7 +565,7 @@ window.OGPAdminServerWorkspace = {
                   <td><div class="admin-section-toolbar"><button type="button" class="ghost-button" data-server-template-edit="${escapeHtml(String(item.content_key || ""))}">${item.has_server_override ? "Редактировать" : "Создать override"}</button>${item.source_scope === "server" ? `<button type="button" class="ghost-button" data-server-template-reset="${escapeHtml(String(item.content_key || ""))}">Reset</button>` : ""}${workflowActions.map((action) => `<button type="button" class="ghost-button" data-server-template-workflow="${escapeHtml(String(item.content_key || ""))}" data-server-template-workflow-action="${escapeHtml(action)}" data-server-template-cr-id="${escapeHtml(String(item.active_change_request?.id || ""))}">${escapeHtml(buildWorkflowActionLabel(action))}</button>`).join("")}</div></td>
                 </tr>`;
               }).join("")}</tbody></table>`
-            : '<p class="legal-section__description">Для сервера пока нет effective шаблонов.</p>'
+            : '<p class="legal-section__description">Для сервера пока нет effective шаблонов. Добавьте override, если нужен серверный BBCode, preview или reset к global default.</p>'
         }
         ${
           editor
@@ -627,7 +634,7 @@ window.OGPAdminServerWorkspace = {
                   </div>
                 </div>
               </div>`
-            : '<p class="legal-section__description">Выберите шаблон из списка, чтобы настроить server override, сделать preview или выполнить reset к global default.</p>'
+            : '<p class="legal-section__description">Выберите шаблон из списка, чтобы настроить server override, сделать preview, посмотреть placeholders или выполнить reset к global default.</p>'
         }
       `;
     }
@@ -698,7 +705,7 @@ window.OGPAdminServerWorkspace = {
       const selectedUser = getSelectedAccessUser();
       const selectedAssignments = Array.isArray(selectedUser?.assignments) ? selectedUser.assignments : [];
       const selectedPermissions = Array.isArray(selectedUser?.permissions) ? selectedUser.permissions : [];
-      const highlightedRoleCodes = new Set(selectedAssignments.map((item) => normalizeKey(item?.role_code)));
+      const highlightedRoleCodes = new Set(selectedAssignments.map((entry) => normalizeKey(entry?.role_code)));
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
@@ -776,7 +783,7 @@ window.OGPAdminServerWorkspace = {
           </div>
           ${
             items.length
-            ? `<div class="legal-subcard">
+              ? `<div class="legal-subcard">
                 <span class="legal-field__label">Effective access</span>
                 <table class="legal-table admin-table admin-table--compact"><thead><tr><th>User</th><th>Roles</th><th>Permissions</th><th>Flags</th></tr></thead><tbody>${items.map((item) => {
                   const username = String(item.username || "").trim();
@@ -796,26 +803,26 @@ window.OGPAdminServerWorkspace = {
                   </tr>`;
                 }).join("")}</tbody></table>
                 </div>`
-              : ""
+            : ""
+        }
+        <div class="legal-subcard">
+          <span class="legal-field__label">Каталог ролей</span>
+          ${
+            roles.length
+              ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Роль</th><th>Права</th><th>Состояние</th></tr></thead><tbody>${roles.map((role) => {
+                  const permissionCodes = Array.isArray(role.permission_codes) ? role.permission_codes : [];
+                  const highlighted = highlightedRoleCodes.has(normalizeKey(role.code));
+                  return `<tr>
+                    <td><strong>${escapeHtml(String(role.name || role.code || "—"))}</strong><div class="admin-user-cell__secondary">${escapeHtml(String(role.code || ""))}</div></td>
+                    <td>${permissionCodes.length ? permissionCodes.map((code) => `<span class="admin-badge admin-badge--muted" title="${escapeHtml(permissionLabel(code, permissions))}">${escapeHtml(String(code))}</span>`).join(" ") : "—"}</td>
+                    <td>${highlighted ? '<span class="admin-badge admin-badge--success">Назначена</span>' : '<span class="admin-badge admin-badge--muted">Не назначена</span>'}</td>
+                  </tr>`;
+                }).join("")}</tbody></table>`
+              : '<p class="legal-section__description">Каталог ролей пока недоступен.</p>'
           }
-          <div class="legal-subcard">
-            <span class="legal-field__label">Каталог ролей</span>
-            ${
-              roles.length
-                ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Роль</th><th>Права</th><th>Состояние</th></tr></thead><tbody>${roles.map((role) => {
-                    const permissionCodes = Array.isArray(role.permission_codes) ? role.permission_codes : [];
-                    const highlighted = highlightedRoleCodes.has(normalizeKey(role.code));
-                    return `<tr>
-                      <td><strong>${escapeHtml(String(role.name || role.code || "—"))}</strong><div class="admin-user-cell__secondary">${escapeHtml(String(role.code || ""))}</div></td>
-                      <td>${permissionCodes.length ? permissionCodes.map((code) => `<span class="admin-badge admin-badge--muted" title="${escapeHtml(permissionLabel(code, permissions))}">${escapeHtml(String(code))}</span>`).join(" ") : "—"}</td>
-                      <td>${highlighted ? '<span class="admin-badge admin-badge--success">Назначена</span>' : '<span class="admin-badge admin-badge--muted">Не назначена</span>'}</td>
-                    </tr>`;
-                  }).join("")}</tbody></table>`
-                : '<p class="legal-section__description">Каталог ролей пока недоступен.</p>'
-            }
-          </div>
-        `;
-      }
+        </div>
+      `;
+    }
 
     function renderAudit() {
       const hostNode = document.getElementById("admin-server-workspace-panel-audit");
@@ -844,7 +851,7 @@ window.OGPAdminServerWorkspace = {
         <div class="legal-subcard__header">
           <div>
             <span class="legal-field__label">Аудит</span>
-            <p class="legal-section__description">Единая история событий по серверу: что меняли, когда происходили публикации и какие операционные сигналы появились.</p>
+            <p class="legal-section__description">Единая история изменений и событий по серверу. Здесь удобно смотреть, что меняли, когда запускали workflow и какие сигналы появились.</p>
           </div>
           <div class="admin-section-toolbar">
             <button type="button" id="admin-server-audit-reload" class="ghost-button">Обновить блок</button>
@@ -901,12 +908,11 @@ window.OGPAdminServerWorkspace = {
         }
         return true;
       });
-      const actionableCount = items.filter((item) => Array.isArray(item.available_actions) && item.available_actions.length).length;
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
             <span class="legal-field__label">Ошибки / Проблемы</span>
-            <p class="legal-section__description">Список незакрытых проблем по серверу с понятным следующим шагом и безопасными retry/recheck действиями там, где они уже поддерживаются.</p>
+            <p class="legal-section__description">Незакрытые проблемы по серверу с понятным следующим шагом и безопасными retry/recheck действиями там, где они уже поддерживаются.</p>
           </div>
           <div class="admin-section-toolbar">
             <button type="button" id="admin-server-issues-reload" class="ghost-button">Обновить блок</button>
@@ -916,8 +922,6 @@ window.OGPAdminServerWorkspace = {
           <span class="admin-badge ${issues.error_count ? "admin-badge--danger" : "admin-badge--muted"}">errors: ${escapeHtml(String(issues.error_count || 0))}</span>
           <span class="admin-badge ${issues.warning_count ? "admin-badge--warning" : "admin-badge--muted"}">warnings: ${escapeHtml(String(issues.warning_count || 0))}</span>
           <span class="admin-badge admin-badge--muted">unresolved: ${escapeHtml(String(issues.unresolved_count || 0))}</span>
-          <span class="admin-badge admin-badge--muted">actions: ${escapeHtml(String(actionableCount || 0))}</span>
-        </div>
           <span class="admin-badge admin-badge--muted">actions: ${escapeHtml(String(actionableCount || 0))}</span>
         </div>
         <div class="legal-field-grid legal-field-grid--two">
@@ -1194,7 +1198,7 @@ window.OGPAdminServerWorkspace = {
         loadWorkspace();
         return;
       }
-      if (target.id === "admin-server-laws-refresh-preview") {
+      if (target.id === "admin-server-laws-refresh-preview" || target.id === "admin-server-laws-refresh-preview-empty") {
         (async () => {
           deps.clearMessage?.();
           deps.setStateIdle?.(deps.errorsHost);
@@ -1552,7 +1556,7 @@ window.OGPAdminServerWorkspace = {
 
       host.addEventListener("change", (event) => {
         const target = event.target;
-        if (!(target instanceof HTMLElement)) {
+        if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement)) {
           return;
         }
         if (target.id === "admin-server-audit-kind-filter") {
@@ -1568,13 +1572,12 @@ window.OGPAdminServerWorkspace = {
         if (target.id === "admin-server-issues-source-filter") {
           state.issueSourceFilter = normalizeKey(target.value) || "all";
           renderErrors();
-          return;
         }
       });
 
       host.addEventListener("input", (event) => {
         const target = event.target;
-        if (!(target instanceof HTMLElement)) {
+        if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
           return;
         }
         if (target.id === "admin-server-audit-search") {
