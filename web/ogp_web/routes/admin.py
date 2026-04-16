@@ -108,6 +108,11 @@ from ogp_web.services.admin_server_access_workspace_service import (
     list_user_role_assignments_payload,
     revoke_user_role_assignment_payload,
 )
+from ogp_web.services.admin_server_observability_service import (
+    build_server_audit_payload,
+    build_server_issues_payload,
+    execute_server_issue_action_payload,
+)
 from ogp_web.services.admin_server_content_workspace_service import (
     build_server_template_placeholders_payload,
     build_server_template_preview_payload,
@@ -611,6 +616,133 @@ async def admin_runtime_server_activity(
         metrics_store=metrics_store,
         dashboard_service=dashboard_service,
         username=user.username,
+    )
+    return _admin_ok(**payload)
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/audit")
+async def admin_runtime_server_audit(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    dashboard_service: AdminDashboardService = Depends(get_admin_dashboard_service),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+):
+    payload = build_server_audit_payload(
+        server_code=server_code,
+        workflow_service=workflow_service,
+        dashboard_service=dashboard_service,
+        metrics_store=metrics_store,
+        projections_store=projections_store,
+        username=user.username,
+    )
+    metrics_store.log_event(
+        event_type="admin_runtime_server_audit",
+        username=user.username,
+        server_code=_normalize_code(server_code),
+        path=f"/api/admin/runtime-servers/{_normalize_code(server_code)}/audit",
+        method="GET",
+        status_code=200,
+        meta={"count": payload["count"]},
+    )
+    return _admin_ok(**payload)
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/issues")
+async def admin_runtime_server_issues(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
+    runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    dashboard_service: AdminDashboardService = Depends(get_admin_dashboard_service),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    payload = build_server_issues_payload(
+        server_code=server_code,
+        runtime_servers_store=runtime_servers_store,
+        law_sets_store=law_sets_store,
+        dashboard_service=dashboard_service,
+        projections_store=projections_store,
+        username=user.username,
+    )
+    metrics_store.log_event(
+        event_type="admin_runtime_server_issues",
+        username=user.username,
+        server_code=_normalize_code(server_code),
+        path=f"/api/admin/runtime-servers/{_normalize_code(server_code)}/issues",
+        method="GET",
+        status_code=200,
+        meta={"count": payload["count"], "errors": payload["error_count"], "warnings": payload["warning_count"]},
+    )
+    return _admin_ok(**payload)
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/issues/{issue_id}/recheck")
+async def admin_runtime_server_issue_recheck(
+    server_code: str,
+    issue_id: str,
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
+    runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    versions_store: CanonicalLawDocumentVersionsStore = Depends(get_canonical_law_document_versions_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        payload = execute_server_issue_action_payload(
+            server_code=server_code,
+            issue_id=issue_id,
+            action="recheck",
+            runtime_servers_store=runtime_servers_store,
+            versions_store=versions_store,
+            projections_store=projections_store,
+            metrics_store=metrics_store,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    metrics_store.log_event(
+        event_type="admin_runtime_server_issue_recheck",
+        username=user.username,
+        server_code=_normalize_code(server_code),
+        path=f"/api/admin/runtime-servers/{_normalize_code(server_code)}/issues/{_normalize_code(issue_id)}/recheck",
+        method="POST",
+        status_code=200,
+        meta={"issue_id": _normalize_code(issue_id)},
+    )
+    return _admin_ok(**payload)
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/issues/{issue_id}/retry")
+async def admin_runtime_server_issue_retry(
+    server_code: str,
+    issue_id: str,
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
+    runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    versions_store: CanonicalLawDocumentVersionsStore = Depends(get_canonical_law_document_versions_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        payload = execute_server_issue_action_payload(
+            server_code=server_code,
+            issue_id=issue_id,
+            action="retry",
+            runtime_servers_store=runtime_servers_store,
+            versions_store=versions_store,
+            projections_store=projections_store,
+            metrics_store=metrics_store,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    metrics_store.log_event(
+        event_type="admin_runtime_server_issue_retry",
+        username=user.username,
+        server_code=_normalize_code(server_code),
+        path=f"/api/admin/runtime-servers/{_normalize_code(server_code)}/issues/{_normalize_code(issue_id)}/retry",
+        method="POST",
+        status_code=200,
+        meta={"issue_id": _normalize_code(issue_id)},
     )
     return _admin_ok(**payload)
 
