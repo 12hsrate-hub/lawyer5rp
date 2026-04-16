@@ -35,7 +35,7 @@ Date: 2026-04-16
   - deactivate `orange`
   - verify `blackberry` health and runtime server visibility
 - Code-wide rollback:
-  - redeploy the previous known-good `main` commit `4f3b059` via `Deploy Production`
+  - redeploy the previous known-good `main` commit `4b6049e` via `Deploy Production`
 
 ## Validation commands
 
@@ -57,18 +57,18 @@ Date: 2026-04-16
   - `success`
   - https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487677658
 - Current known-good deployed baseline:
-  - commit `4f3b059`
-  - Deploy Production run `24487474591`
-  - https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487474591
-- Baseline production verification from run `24487474591`:
+  - commit `4b6049e`
+  - Deploy Production run `24487921717`
+  - https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487921717
+- Baseline production verification from run `24487921717`:
   - `/health`: `status=ok`
   - deploy smoke: `passed`
   - synthetic smoke: `pass`
-- Latest local pre-window validation results on `main@c1dabbb`:
+- Latest local pre-window validation results on `main@4b6049e`:
   - `python -m pytest tests/test_runtime_servers_store.py tests/test_server_config_registry.py tests/test_document_builder_bundle_service.py tests/test_admin_runtime_servers_service.py tests/test_admin_runtime_servers_api.py tests/test_admin_runtime_law_sets_api.py -q`
-  - result: `31 passed in 3.03s`
+  - result: `31 passed in 3.04s`
   - `python -m pytest tests/test_web_api.py -q -k "selected_server or runtime_servers or document_builder_bundle"`
-  - result: `5 passed, 96 deselected in 1.25s`
+  - result: `5 passed, 96 deselected in 1.22s`
 - Proven by current regression pack:
   - inactive server selection fails safely
   - active `orange` selection succeeds

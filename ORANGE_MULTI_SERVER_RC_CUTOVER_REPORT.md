@@ -7,7 +7,7 @@ Date: 2026-04-16
 
 ## 1. Scope
 
-- Date: `next controlled production window after orange preflight sign-off on main@c1dabbb`
+- Date: `next controlled production window after orange preflight sign-off on main@4b6049e`
 - Operator: `platform-ops`
 - Server: `orange`
 - Procedure scope: `runtime/admin/law/config surfaces only`
@@ -23,7 +23,7 @@ Date: 2026-04-16
 - Published/bootstrap-backed config path verified: `pre-window regression evidence present; execution-window payload capture pending`
 - Warning signals clear: `pending execution-window confirmation`
 - Fallback path understood: `yes`
-- Rollback path confirmed: `yes — deactivate orange; code-wide fallback to main@4f3b059 via Deploy Production if needed`
+- Rollback path confirmed: `yes — deactivate orange; code-wide fallback to main@4b6049e via Deploy Production if needed`
 - Admin/runtime visibility available: `pre-window regression evidence present; execution-window payload capture pending`
 - Law set / law binding / active version evidence available: `pre-window regression evidence present; execution-window payload capture pending`
 - Document-builder sample available: `pre-window regression evidence present; activation-window sample pending`
@@ -39,13 +39,13 @@ Date: 2026-04-16
 - Law set / binding / rollback sample:
   - paste orange law evidence here during the RC window
 - Deploy workflow:
-  - baseline known-good deploy run: `24487474591`
+  - baseline known-good deploy run: `24487921717`
   - RC window deploy run: `pending`
 - Health output:
-  - baseline: `status=ok` on main@`4f3b059`
+  - baseline: `status=ok` on main@`4b6049e`
   - RC window: `pending`
 - Synthetic smoke output:
-  - baseline: `pass` on deploy run `24487474591`
+  - baseline: `pass` on deploy run `24487921717`
   - RC window: `pending`
 
 ## 4. Decision
