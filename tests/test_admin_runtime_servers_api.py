@@ -958,6 +958,33 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(payload["server_code"], "blackberry")
         self.assertIn("items", payload)
 
+    def test_runtime_server_audit_endpoint_returns_unified_items(self):
+        response = self.client.get("/api/admin/runtime-servers/blackberry/audit")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["server_code"], "blackberry")
+        self.assertGreaterEqual(payload["count"], 1)
+        self.assertTrue(any(item["kind"] in {"workflow_audit", "law_projection", "content_audit"} for item in payload["items"]))
+
+    def test_runtime_server_issues_endpoint_and_recheck_action_are_operator_safe(self):
+        issues = self.client.get("/api/admin/runtime-servers/blackberry/issues")
+        self.assertEqual(issues.status_code, 200)
+        issues_payload = issues.json()
+        self.assertTrue(issues_payload["ok"])
+        self.assertGreaterEqual(issues_payload["count"], 1)
+        issue_ids = {item["issue_id"] for item in issues_payload["items"]}
+        self.assertIn("laws_runtime_health", issue_ids)
+
+        recheck = self.client.post("/api/admin/runtime-servers/blackberry/issues/laws_runtime_health/recheck")
+        self.assertEqual(recheck.status_code, 200)
+        recheck_payload = recheck.json()
+        self.assertTrue(recheck_payload["ok"])
+        self.assertEqual(recheck_payload["issue_id"], "laws_runtime_health")
+        self.assertEqual(recheck_payload["action"], "recheck")
+        self.assertEqual(recheck_payload["result"]["summary"]["with_content"], 1)
+
     def test_runtime_server_access_endpoints_support_roles_permissions_assign_and_revoke(self):
         self.user_store.register("moderator1", "moderator1@example.com", "Password123!")
         self.user_store.set_selected_server_code("moderator1", "blackberry")

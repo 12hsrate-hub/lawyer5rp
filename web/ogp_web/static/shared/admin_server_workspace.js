@@ -19,6 +19,8 @@ window.OGPAdminServerWorkspace = {
       accessSummary: null,
       rolesData: null,
       permissionsData: null,
+      auditData: null,
+      issuesData: null,
       selectedAccessUsername: "",
       featuresData: null,
       templatesData: null,
@@ -655,17 +657,20 @@ window.OGPAdminServerWorkspace = {
       if (!(hostNode instanceof HTMLElement)) {
         return;
       }
-      const items = Array.isArray(state.activity?.items) ? state.activity.items : [];
+      const items = Array.isArray(state.auditData?.items) ? state.auditData.items : [];
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
             <span class="legal-field__label">Аудит</span>
-            <p class="legal-section__description">Unified recent activity feed for this server.</p>
+            <p class="legal-section__description">Единая история событий по серверу: workflow changes, metrics events и law projection activity.</p>
+          </div>
+          <div class="admin-section-toolbar">
+            <button type="button" id="admin-server-audit-reload" class="ghost-button">Обновить блок</button>
           </div>
         </div>
         ${
           items.length
-            ? `<ul class="legal-section__description">${items.map((item) => `<li><strong>${escapeHtml(String(item.title || item.kind || "event"))}</strong> • ${escapeHtml(String(item.created_at || "—"))} • ${escapeHtml(String(item.description || ""))}</li>`).join("")}</ul>`
+            ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Когда</th><th>Тип</th><th>Событие</th><th>Детали</th></tr></thead><tbody>${items.map((item) => `<tr><td>${escapeHtml(String(item.created_at || "—"))}</td><td>${escapeHtml(String(item.kind || "event"))}</td><td>${escapeHtml(String(item.title || "event"))}</td><td>${escapeHtml(String(item.description || "—"))}</td></tr>`).join("")}</tbody></table>`
             : '<p class="legal-section__description">История по серверу пока пуста.</p>'
         }
       `;
@@ -676,18 +681,26 @@ window.OGPAdminServerWorkspace = {
       if (!(hostNode instanceof HTMLElement)) {
         return;
       }
-      const issues = state.workspace?.issues || {};
+      const issues = state.issuesData || state.workspace?.issues || {};
       const items = Array.isArray(issues.items) ? issues.items : [];
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
             <span class="legal-field__label">Ошибки / Проблемы</span>
-            <p class="legal-section__description">Незакрытые сигналы по законам, целостности, synthetic monitoring и jobs.</p>
+            <p class="legal-section__description">Operator-friendly список проблем по серверу с безопасными retry/recheck действиями там, где они уже поддерживаются.</p>
           </div>
+          <div class="admin-section-toolbar">
+            <button type="button" id="admin-server-issues-reload" class="ghost-button">Обновить блок</button>
+          </div>
+        </div>
+        <div class="admin-section-toolbar">
+          <span class="admin-badge ${issues.error_count ? "admin-badge--danger" : "admin-badge--muted"}">errors: ${escapeHtml(String(issues.error_count || 0))}</span>
+          <span class="admin-badge ${issues.warning_count ? "admin-badge--warning" : "admin-badge--muted"}">warnings: ${escapeHtml(String(issues.warning_count || 0))}</span>
+          <span class="admin-badge admin-badge--muted">unresolved: ${escapeHtml(String(issues.unresolved_count || 0))}</span>
         </div>
         ${
           items.length
-            ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Severity</th><th>Source</th><th>Title</th><th>Detail</th></tr></thead><tbody>${items.map((item) => `<tr><td>${escapeHtml(String(item.severity || "info"))}</td><td>${escapeHtml(String(item.source || "—"))}</td><td>${escapeHtml(String(item.title || "—"))}</td><td>${escapeHtml(String(item.detail || "—"))}</td></tr>`).join("")}</tbody></table>`
+            ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Severity</th><th>Source</th><th>Title</th><th>Detail</th><th>Действия</th></tr></thead><tbody>${items.map((item) => `<tr><td>${escapeHtml(String(item.severity || "info"))}</td><td>${escapeHtml(String(item.source || "—"))}</td><td>${escapeHtml(String(item.title || "—"))}</td><td>${escapeHtml(String(item.detail || "—"))}</td><td>${Array.isArray(item.available_actions) && item.available_actions.length ? item.available_actions.map((action) => `<button type="button" class="ghost-button" data-server-issue-action="${escapeHtml(String(action.kind || ""))}" data-server-issue-id="${escapeHtml(String(item.issue_id || ""))}">${escapeHtml(String(action.label || action.kind || ""))}</button>`).join(" ") : "—"}</td></tr>`).join("")}</tbody></table>`
             : '<p class="legal-section__description">Критичных сигналов по серверу сейчас не найдено.</p>'
         }
       `;
@@ -773,6 +786,23 @@ window.OGPAdminServerWorkspace = {
       } catch (error) {
         deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось обновить блок доступа.");
       }
+    }
+
+    async function loadObservabilityData() {
+      const [auditResponse, issuesResponse] = await Promise.all([
+        deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/audit`),
+        deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/issues`),
+      ]);
+      const auditPayload = await deps.parsePayload(auditResponse);
+      const issuesPayload = await deps.parsePayload(issuesResponse);
+      if (!auditResponse.ok) {
+        throw new Error(deps.formatHttpError?.(auditResponse, auditPayload, "Не удалось загрузить аудит сервера.") || "Не удалось загрузить аудит сервера.");
+      }
+      if (!issuesResponse.ok) {
+        throw new Error(deps.formatHttpError?.(issuesResponse, issuesPayload, "Не удалось загрузить список проблем сервера.") || "Не удалось загрузить список проблем сервера.");
+      }
+      state.auditData = auditPayload;
+      state.issuesData = issuesPayload;
     }
 
     async function runUserAction(endpoint, successMessage, body = null) {
@@ -883,7 +913,7 @@ window.OGPAdminServerWorkspace = {
         state.lawsSummary = lawsSummaryPayload;
         state.lawsEffective = lawsEffectivePayload;
         state.lawsDiff = lawsDiffPayload;
-        await Promise.all([loadFeaturesData(), loadTemplatesData(), loadAccessData()]);
+        await Promise.all([loadFeaturesData(), loadTemplatesData(), loadAccessData(), loadObservabilityData()]);
         renderPanels();
         applyTabState();
       } catch (error) {
@@ -980,6 +1010,19 @@ window.OGPAdminServerWorkspace = {
         void reloadAccessOnly(target.id === "admin-server-users-reload" ? "Блок пользователей обновлен." : "Блок доступа обновлен.");
         return;
       }
+      if (target.id === "admin-server-audit-reload" || target.id === "admin-server-issues-reload") {
+        (async () => {
+          try {
+            await loadObservabilityData();
+            renderAudit();
+            renderErrors();
+            deps.showMessage?.(target.id === "admin-server-audit-reload" ? "Блок аудита обновлен." : "Блок проблем обновлен.");
+          } catch (error) {
+            deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось обновить observability блок.");
+          }
+        })();
+        return;
+      }
       const accessSelectUserButton = target.closest("[data-server-access-select-user]");
       if (accessSelectUserButton instanceof HTMLElement) {
         state.selectedAccessUsername = String(accessSelectUserButton.getAttribute("data-server-access-select-user") || "");
@@ -1061,6 +1104,33 @@ window.OGPAdminServerWorkspace = {
             await reloadAccessOnly("Назначение роли снято.");
           } catch (error) {
             deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось снять назначение роли.");
+          }
+        })();
+        return;
+      }
+      const issueActionButton = target.closest("[data-server-issue-action]");
+      if (issueActionButton instanceof HTMLElement) {
+        (async () => {
+          const action = String(issueActionButton.getAttribute("data-server-issue-action") || "").trim().toLowerCase();
+          const issueId = String(issueActionButton.getAttribute("data-server-issue-id") || "").trim().toLowerCase();
+          if (!action || !issueId) {
+            return;
+          }
+          try {
+            const response = await deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/issues/${encodeURIComponent(issueId)}/${encodeURIComponent(action)}`, {
+              method: "POST",
+            });
+            const payload = await deps.parsePayload(response);
+            if (!response.ok) {
+              deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(response, payload, "Не удалось выполнить action для проблемы."));
+              return;
+            }
+            await loadWorkspace();
+            state.activeTab = "errors";
+            applyTabState();
+            deps.showMessage?.(action === "recheck" ? "Пере-проверка выполнена." : "Retry выполнен.");
+          } catch (error) {
+            deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось выполнить action для проблемы.");
           }
         })();
         return;
