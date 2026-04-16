@@ -1,0 +1,54 @@
+name: Ensure Post-Merge Main Workflows
+
+on:
+  pull_request_target:
+    types:
+      - closed
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  dispatch-missing-main-workflows:
+    if: >
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Wait for normal push workflows
+        run: sleep 20
+
+      - name: Dispatch missing workflows for merge commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+
+          workflows=(
+            "ci-runtime.yml"
+            "utf8-check.yml"
+            "deploy-production.yml"
+          )
+
+          for workflow in "${workflows[@]}"; do
+            existing_run="$(
+              gh api "repos/$REPOSITORY/actions/workflows/$workflow/runs?per_page=30" \
+                --jq ".workflow_runs[] | select(.head_sha == \"$MERGE_SHA\") | .id" \
+                | head -n 1
+            )"
+
+            if [ -n "$existing_run" ]; then
+              echo "Workflow $workflow already has run $existing_run for $MERGE_SHA"
+              continue
+            fi
+
+            echo "Dispatching missing workflow $workflow for merge commit $MERGE_SHA"
+            gh workflow run "$workflow" --repo "$REPOSITORY" --ref main
+          done
