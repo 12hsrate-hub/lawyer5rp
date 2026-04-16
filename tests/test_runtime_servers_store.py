@@ -39,7 +39,7 @@ class _Connection:
             code, title = params
             if code in self.rows:
                 return _Cursor(one=None)
-            row = {"code": code, "title": title, "is_active": True, "created_at": "2026-04-14T00:00:00+00:00"}
+            row = {"code": code, "title": title, "is_active": False, "created_at": "2026-04-14T00:00:00+00:00"}
             self.rows[code] = row
             return _Cursor(one=row)
         if normalized.startswith("UPDATE servers SET title = %s WHERE code = %s RETURNING"):
@@ -85,13 +85,13 @@ def test_runtime_servers_store_crud():
     created = store.create_server(code="city2", title="City 2")
     assert created.code == "city2"
     assert created.title == "City 2"
-    assert created.is_active is True
+    assert created.is_active is False
 
     updated = store.update_server(code="city2", title="City 2 RU")
     assert updated.title == "City 2 RU"
 
-    toggled = store.set_active(code="city2", is_active=False)
-    assert toggled.is_active is False
+    toggled = store.set_active(code="city2", is_active=True)
+    assert toggled.is_active is True
 
 
 def test_runtime_servers_store_duplicate_code():

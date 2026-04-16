@@ -42,6 +42,21 @@ class _FakeRuntimeLawSetsStore:
         self.law_sets = {
             1: {"id": 1, "server_code": "blackberry", "name": "Default", "is_active": True, "is_published": True, "item_count": 1}
         }
+        self.bindings = {
+            "blackberry": [
+                {
+                    "law_set_id": 1,
+                    "law_set_name": "Default",
+                    "item_id": 1,
+                    "law_code": "uk",
+                    "priority": 100,
+                    "effective_from": "",
+                    "source_name": "Main",
+                    "source_url": "https://example.com/law/a",
+                    "server_code": "blackberry",
+                }
+            ]
+        }
         self.sources = {
             1: {"id": 1, "name": "Main", "kind": "url", "url": "https://example.com/law/a", "is_active": True}
         }
@@ -83,18 +98,7 @@ class _FakeRuntimeLawSetsStore:
         return self.law_sets[law_set_id]["server_code"], ["https://example.com/law/a"]
 
     def list_server_law_bindings(self, *, server_code: str):
-        return [
-            {
-                "law_set_id": 1,
-                "law_set_name": "Default",
-                "item_id": 1,
-                "law_code": "uk",
-                "priority": 100,
-                "effective_from": "",
-                "source_name": "Main",
-                "source_url": "https://example.com/law/a",
-            }
-        ] if server_code == "blackberry" else []
+        return list(self.bindings.get(server_code, []))
 
     def add_server_law_binding(self, *, server_code: str, law_code: str, source_id: int, effective_from: str = "", priority: int = 100, law_set_id=None):
         if law_set_id is not None:
@@ -103,15 +107,21 @@ class _FakeRuntimeLawSetsStore:
                 raise ValueError("law_set_not_found")
             if str(set_row.get("server_code") or "").strip().lower() != str(server_code or "").strip().lower():
                 raise ValueError("law_set_server_mismatch")
-        return {
+        binding = {
             "id": 88,
             "law_set_id": int(law_set_id or 1),
+            "law_set_name": str(self.law_sets.get(int(law_set_id or 1), {}).get("name") or ""),
+            "item_id": len(self.bindings.get(server_code, [])) + 1,
             "law_code": law_code,
             "source_id": source_id,
             "priority": priority,
             "effective_from": effective_from,
             "server_code": server_code,
+            "source_name": str(self.sources.get(int(source_id), {}).get("name") or ""),
+            "source_url": str(self.sources.get(int(source_id), {}).get("url") or ""),
         }
+        self.bindings.setdefault(server_code, []).append(binding)
+        return binding
 
     def list_sources(self):
         return [self._Source(**item) for item in self.sources.values()]
@@ -247,6 +257,43 @@ class AdminRuntimeLawSetsApiTests(unittest.TestCase):
         )
         self.assertEqual(bind_foreign.status_code, 400)
         self.assertIn("law_set_server_mismatch", " ".join(bind_foreign.json().get("detail") or []))
+
+    def test_second_server_runtime_law_routes_support_release_candidate_flow(self):
+        created = self.client.post(
+            "/api/admin/runtime-servers/orange/law-sets",
+            json={"name": "Orange Draft", "is_active": True, "items": [{"law_code": "orange_code", "priority": 20}]},
+        )
+        self.assertEqual(created.status_code, 200)
+        orange_law_set_id = created.json()["law_set"]["id"]
+        self.assertEqual(created.json()["law_set"]["server_code"], "orange")
+
+        published = self.client.post(f"/api/admin/law-sets/{orange_law_set_id}/publish")
+        self.assertEqual(published.status_code, 200)
+
+        bind_added = self.client.post(
+            "/api/admin/runtime-servers/orange/law-bindings",
+            json={"law_code": "orange_code", "source_id": 1, "priority": 50, "effective_from": "", "law_set_id": orange_law_set_id},
+        )
+        self.assertEqual(bind_added.status_code, 200)
+        self.assertEqual(bind_added.json()["item"]["server_code"], "orange")
+
+        listed = self.client.get("/api/admin/runtime-servers/orange/law-sets")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.json()["count"], 1)
+        self.assertEqual(listed.json()["items"][0]["server_code"], "orange")
+
+        bindings = self.client.get("/api/admin/runtime-servers/orange/law-bindings")
+        self.assertEqual(bindings.status_code, 200)
+        self.assertEqual(bindings.json()["count"], 1)
+        self.assertEqual(bindings.json()["items"][0]["law_code"], "orange_code")
+
+        with patch("ogp_web.routes.admin.LawAdminService.rollback_active_version") as fake_rollback:
+            fake_rollback.return_value = {"ok": True, "active_law_version_id": 17}
+            rollback = self.client.post(f"/api/admin/law-sets/{orange_law_set_id}/rollback", json={})
+
+        self.assertEqual(rollback.status_code, 200)
+        self.assertEqual(rollback.json()["result"]["active_law_version_id"], 17)
+        self.assertEqual(fake_rollback.call_args.kwargs["server_code"], "orange")
 
 
 if __name__ == "__main__":

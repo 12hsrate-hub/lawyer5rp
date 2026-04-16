@@ -30,6 +30,7 @@ from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.storage.user_store import UserStore
 from tests.temp_helpers import make_temporary_directory
+from tests.second_server_fixtures import orange_published_pack
 from tests.test_web_storage import (
     FakeAdminMetricsPostgresBackend,
     FakeExamAnswersPostgresBackend,
@@ -68,7 +69,7 @@ class _FakeRuntimeServersStore:
     def create_server(self, *, code: str, title: str):
         if code in self.rows:
             raise ValueError("server_code_already_exists")
-        row = {"code": code, "title": title, "is_active": True, "created_at": "2026-04-14T00:00:00+00:00"}
+        row = {"code": code, "title": title, "is_active": False, "created_at": "2026-04-14T00:00:00+00:00"}
         self.rows[code] = row
         return self._Record(**row)
 
@@ -284,6 +285,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         created = self.client.post("/api/admin/runtime-servers", json={"code": "city2", "title": "City 2"})
         self.assertEqual(created.status_code, 200)
         self.assertEqual(created.json()["item"]["code"], "city2")
+        self.assertFalse(created.json()["item"]["is_active"])
         self.assertEqual(created.json()["item"]["onboarding"]["highest_completed_state"], "not-ready")
         self.assertEqual(created.json()["item"]["onboarding"]["resolution_mode"], "neutral_fallback")
 
@@ -360,6 +362,59 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertEqual(payload_after["checks"]["health"]["active_law_version_id"], 77)
             self.assertEqual(payload_after["onboarding"]["highest_completed_state"], "not-ready")
             self.assertEqual(payload_after["onboarding"]["next_required_state"], "bootstrap-ready")
+
+    def test_second_server_published_pack_health_endpoint_reports_release_candidate_state(self):
+        self.runtime_store.rows["orange"] = {
+            "code": "orange",
+            "title": "Orange City",
+            "is_active": True,
+            "created_at": "2026-04-16T00:00:00+00:00",
+        }
+        self.runtime_law_sets_store.law_sets[2] = {
+            "id": 2,
+            "server_code": "orange",
+            "name": "Orange RC",
+            "is_active": True,
+            "is_published": True,
+            "item_count": 1,
+        }
+        self.runtime_law_sets_store.bindings["orange"] = [
+            {
+                "law_set_id": 2,
+                "item_id": 1,
+                "law_code": "orange_code",
+                "priority": 100,
+                "effective_from": "",
+                "source_name": "Orange Main",
+                "source_url": "https://example.com/orange/law",
+            }
+        ]
+
+        with patch(
+            "ogp_web.server_config.registry._load_effective_pack_from_db",
+            side_effect=lambda *, server_code, at_timestamp=None: orange_published_pack() if server_code == "orange" else None,
+        ), patch.object(
+            admin_runtime_servers_service,
+            "resolve_active_law_version",
+            return_value=ResolvedLawVersion(
+                id=88,
+                server_code="orange",
+                generated_at_utc="2026-04-16T00:00:00+00:00",
+                effective_from="2026-04-16",
+                effective_to="",
+                fingerprint="orange-fp",
+                chunk_count=9,
+            ),
+        ):
+            response = self.client.get("/api/admin/runtime-servers/orange/health")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["summary"]["is_ready"])
+        self.assertEqual(payload["onboarding"]["resolution_mode"], "published_pack")
+        self.assertFalse(payload["onboarding"]["uses_transitional_fallback"])
+        self.assertEqual(payload["onboarding"]["highest_completed_state"], "rollout-ready")
+        self.assertEqual(payload["checks"]["health"]["active_law_version_id"], 88)
 
     def test_catalog_audit_accepts_entity_filters(self):
         fake_workflow = _FakeContentWorkflowService()

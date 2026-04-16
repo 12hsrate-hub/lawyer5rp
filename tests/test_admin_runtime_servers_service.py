@@ -17,6 +17,7 @@ from ogp_web.services.admin_runtime_servers_service import (
     update_runtime_server_payload,
 )
 from ogp_web.services.law_version_service import ResolvedLawVersion
+from tests.second_server_fixtures import orange_published_pack
 
 
 class _FakeRuntimeServersStore:
@@ -46,7 +47,7 @@ class _FakeRuntimeServersStore:
         return self._Record(**row) if row else None
 
     def create_server(self, *, code: str, title: str):
-        row = {"code": code, "title": title, "is_active": True, "created_at": "2026-04-14T00:00:00+00:00"}
+        row = {"code": code, "title": title, "is_active": False, "created_at": "2026-04-14T00:00:00+00:00"}
         self.rows[code] = row
         return self._Record(**row)
 
@@ -79,6 +80,7 @@ def test_runtime_server_payload_helpers_cover_crud_shape():
     assert listed["count"] == 1
     assert listed["items"][0]["onboarding"]["highest_completed_state"] == "workflow-ready"
     assert created["item"]["code"] == "city2"
+    assert created["item"]["is_active"] is False
     assert created["item"]["onboarding"]["highest_completed_state"] == "not-ready"
     assert created["item"]["onboarding"]["resolution_mode"] == "neutral_fallback"
     assert updated["item"]["title"] == "City 2 RU"
@@ -114,3 +116,57 @@ def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
     assert payload["checks"]["health"]["active_law_version_id"] == 77
     assert payload["onboarding"]["highest_completed_state"] == "rollout-ready"
     assert payload["onboarding"]["next_required_state"] == "production-ready"
+
+
+def test_second_server_published_pack_health_payload_reports_release_candidate_state(monkeypatch):
+    store = _FakeRuntimeServersStore()
+    store.rows["orange"] = {
+        "code": "orange",
+        "title": "Orange City",
+        "is_active": True,
+        "created_at": "2026-04-16T00:00:00+00:00",
+    }
+
+    class OrangeLawSetsStore:
+        def list_law_sets(self, *, server_code: str):
+            if server_code == "orange":
+                return [{"id": 2, "server_code": "orange", "name": "Orange Draft", "is_active": True, "is_published": True}]
+            return [{"id": 1, "server_code": server_code, "name": "Default", "is_active": True, "is_published": True}]
+
+        def list_server_law_bindings(self, *, server_code: str):
+            if server_code == "orange":
+                return [{"law_set_id": 2, "law_code": "orange_code"}]
+            return [{"law_set_id": 1, "law_code": "uk"}]
+
+    monkeypatch.setattr(
+        "ogp_web.services.admin_runtime_servers_service.resolve_active_law_version",
+        lambda *, server_code: ResolvedLawVersion(
+            id=88,
+            server_code=server_code,
+            generated_at_utc="2026-04-16T00:00:00+00:00",
+            effective_from="2026-04-16",
+            effective_to="",
+            fingerprint="orange-fp",
+            chunk_count=9,
+        ),
+    )
+    monkeypatch.setattr(
+        "ogp_web.services.admin_runtime_servers_service.load_law_bundle_meta",
+        lambda server_code: type("BundleMeta", (), {"chunk_count": 9})(),
+    )
+    monkeypatch.setattr(
+        "ogp_web.server_config.registry._load_effective_pack_from_db",
+        lambda *, server_code, at_timestamp=None: orange_published_pack() if server_code == "orange" else None,
+    )
+
+    payload = build_runtime_server_health_payload(
+        server_code="orange",
+        runtime_servers_store=store,
+        law_sets_store=OrangeLawSetsStore(),
+    )
+
+    assert payload["summary"]["is_ready"] is True
+    assert payload["onboarding"]["resolution_mode"] == "published_pack"
+    assert payload["onboarding"]["uses_transitional_fallback"] is False
+    assert payload["onboarding"]["highest_completed_state"] == "rollout-ready"
+    assert payload["checks"]["health"]["active_law_version_id"] == 88

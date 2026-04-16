@@ -85,7 +85,7 @@ class RuntimeServersStore:
             row = conn.execute(
                 """
                 INSERT INTO servers (code, title, is_active)
-                VALUES (%s, %s, TRUE)
+                VALUES (%s, %s, FALSE)
                 ON CONFLICT (code) DO NOTHING
                 RETURNING code, title, is_active, created_at
                 """,
