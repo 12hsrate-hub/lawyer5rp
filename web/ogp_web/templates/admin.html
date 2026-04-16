@@ -75,11 +75,9 @@
       <a class="legal-section-jump__link" href="#admin-law-domain-map">Law Domain Map</a>
       <a class="legal-section-jump__link" href="#law-source-sets-host">Source Sets</a>
       <a class="legal-section-jump__link" href="#law-source-set-revisions-host">Revisions</a>
-      <a class="legal-section-jump__link" href="#server-source-set-bindings-host">Source-Set Bindings</a>
-      <a class="legal-section-jump__link" href="#law-canonical-pipeline-host">Canonical Pipeline</a>
-      <a class="legal-section-jump__link" href="#law-sets-host">Law Sets</a>
-      <a class="legal-section-jump__link" href="#law-source-registry-host">Source Registry</a>
-      <a class="legal-section-jump__link" href="#server-law-bindings-host">Server Bindings</a>
+      <a class="legal-section-jump__link" href="#server-source-set-bindings-host">Server Bindings</a>
+      <a class="legal-section-jump__link" href="#law-main-check-host">Main Check</a>
+      <a class="legal-section-jump__link" href="#law-legacy-runtime-panel">Legacy / Runtime</a>
       {% endif %}
       {% if admin_focus == "templates" %}
       <a class="legal-section-jump__link" href="#admin-template-domain-map">Template Domain Map</a>
@@ -99,7 +97,11 @@
           <p class="legal-section__eyebrow">Configuration Admin</p>
           <h1 class="legal-section__title">Runtime and configuration workspace</h1>
           <p class="legal-section__description">
+            {% if admin_focus == "laws" %}
+            Повседневная настройка source sets, revisions и server bindings с быстрым доступом к проверке результата.
+            {% else %}
             Read-only domain view for runtime inventory, catalog-backed configuration, and publication context.
+            {% endif %}
           </p>
           {% else %}
           <p class="legal-section__eyebrow">Администрирование</p>
@@ -611,7 +613,7 @@
               {% if admin_focus == "servers" %}
               Runtime inventory, active server state, and linked configuration bundles.
               {% elif admin_focus == "laws" %}
-              Law sources, law sets, and server bindings for the pilot legal runtime.
+              Source sets, revisions, server bindings, and безопасная preview-проверка для legal runtime.
               {% elif admin_focus == "templates" %}
               Document templates and their versioned configuration inventory.
               {% elif admin_focus == "features" %}
@@ -708,14 +710,14 @@
             type="button"
             class="ghost-button admin-collapsible__toggle"
             data-collapsible-target="admin-law-domain-map-content"
-            data-expanded-default="true"
-            aria-expanded="true"
+            data-expanded-default="false"
+            aria-expanded="false"
             aria-controls="admin-law-domain-map-content"
           >
-            Скрыть
+            Показать
           </button>
         </div>
-        <div id="admin-law-domain-map-content" class="admin-collapsible__content">
+        <div id="admin-law-domain-map-content" class="admin-collapsible__content" hidden>
           <div class="legal-field-grid legal-field-grid--two">
             <div class="legal-field">
               <span class="legal-field__label">Canonical Source Sets</span>
