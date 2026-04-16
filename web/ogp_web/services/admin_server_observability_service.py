@@ -6,7 +6,10 @@ from ogp_web.services.admin_runtime_servers_service import (
     build_runtime_server_health_payload,
     normalize_runtime_server_code,
 )
-from ogp_web.services.admin_server_laws_workspace_service import build_server_laws_recheck_payload
+from ogp_web.services.admin_server_laws_workspace_service import (
+    build_projection_bridge_readiness_summary,
+    build_server_laws_recheck_payload,
+)
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.services.admin_dashboard_service import AdminDashboardService
@@ -262,6 +265,30 @@ def _build_projection_bridge_lifecycle_issue(projection_bridge_lifecycle: dict[s
     }
 
 
+def _build_projection_bridge_readiness_issue(projection_bridge_readiness: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((projection_bridge_readiness or {}).get("status") or "").strip().lower()
+    if status in {"", "ready"}:
+        return None
+    blockers = ", ".join(str(item) for item in list((projection_bridge_readiness or {}).get("blockers") or []) if str(item).strip())
+    detail = str((projection_bridge_readiness or {}).get("detail") or "").strip()
+    next_step = str((projection_bridge_readiness or {}).get("next_step") or "").strip()
+    composed = detail
+    if blockers:
+        composed = f"{composed} blockers={blockers}."
+    if next_step:
+        composed = f"{composed} {next_step}".strip()
+    return {
+        "issue_id": "laws_projection_bridge_readiness",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Projection bridge readiness требует внимания",
+        "detail": composed,
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
 def build_server_audit_payload(
     *,
     server_code: str,
@@ -403,6 +430,13 @@ def build_server_issues_payload(
     )
     runtime_version_parity = _build_runtime_version_parity(health_payload=health_payload)
     projection_bridge_lifecycle = _build_projection_bridge_lifecycle(health_payload=health_payload)
+    projection_bridge_readiness = build_projection_bridge_readiness_summary(
+        binding_count=int((checks.get("bindings") or {}).get("count") or 0),
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+        runtime_version_parity=runtime_version_parity,
+        fill_summary={},
+        latest_projection_run={},
+    )
     items: list[dict[str, Any]] = []
     if bool(onboarding.get("requires_explicit_runtime_pack")):
         items.append(
@@ -451,6 +485,9 @@ def build_server_issues_payload(
     projection_bridge_lifecycle_issue = _build_projection_bridge_lifecycle_issue(projection_bridge_lifecycle)
     if projection_bridge_lifecycle_issue is not None:
         items.append(projection_bridge_lifecycle_issue)
+    projection_bridge_readiness_issue = _build_projection_bridge_readiness_issue(projection_bridge_readiness)
+    if projection_bridge_readiness_issue is not None:
+        items.append(projection_bridge_readiness_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -519,7 +556,7 @@ def execute_server_issue_action_payload(
     normalized_server = normalize_runtime_server_code(server_code)
     normalized_issue = str(issue_id or "").strip().lower()
     normalized_action = str(action or "").strip().lower()
-    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle"} and normalized_action == "recheck":
+    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness"} and normalized_action == "recheck":
         result = build_server_laws_recheck_payload(
             server_code=normalized_server,
             runtime_servers_store=runtime_servers_store,
