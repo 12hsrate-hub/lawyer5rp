@@ -173,7 +173,7 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["location"], "/admin/servers")
 
-    def test_admin_dashboard_uses_segmented_item_tabs(self):
+    def test_admin_dashboard_uses_secondary_global_navigation(self):
         self.client.post("/api/auth/logout")
         response = self.client.post(
             "/api/auth/register",
@@ -186,11 +186,11 @@ class WebPagesSmokeTests(unittest.TestCase):
 
         response = self.client.get("/admin/dashboard")
         self.assertEqual(response.status_code, 200)
-        self.assertIn('class="segmented-tabs__item is-active"', response.text)
-        self.assertIn("Сводка · Ops", response.text)
+        self.assertIn("Серверы · Основное", response.text)
         self.assertIn("Global ops workspace", response.text)
         self.assertIn("Global ops", response.text)
         self.assertIn("Открыть server workspace", response.text)
+        self.assertIn("Secondary global surface", response.text)
         self.assertIn('href="/admin/users"', response.text)
         self.assertIn("Async Jobs", response.text)
         self.assertIn("Law rebuild tasks", response.text)
@@ -241,6 +241,8 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn("Advanced / Compatibility", response.text)
         self.assertIn("Compatibility seam · diagnostics only", response.text)
         self.assertIn("Вернуться в server workspace", response.text)
+        self.assertIn('href="/admin/dashboard"', response.text)
+        self.assertIn('href="/admin/users"', response.text)
         self.assertIn("Основной рабочий путь начинается с", response.text)
         self.assertIn("Открыть server workspace", response.text)
         self.assertIn("Статус миграции", response.text)
@@ -308,6 +310,9 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn("Server workspace: blackberry", response.text)
         self.assertIn("официальный основной путь", response.text)
         self.assertIn("Серверы · Основное", response.text)
+        self.assertIn("Primary admin path", response.text)
+        self.assertIn('href="/admin/dashboard"', response.text)
+        self.assertIn('href="/admin/users"', response.text)
         self.assertIn('data-server-workspace-tab="overview"', response.text)
         self.assertIn('data-server-workspace-tab="laws"', response.text)
         self.assertIn('data-server-workspace-tab="features"', response.text)
@@ -317,8 +322,6 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn('data-server-workspace-tab="audit"', response.text)
         self.assertIn('data-server-workspace-tab="errors"', response.text)
         self.assertIn('data-server-workspace-tab="diagnostics"', response.text)
-        self.assertIn("Сводка · Ops", response.text)
-        self.assertIn("Пользователи и аудит · Global", response.text)
         self.assertIn("Серверы · Основное", response.text)
         self.assertNotIn("Законы · Диагностика", response.text)
 
