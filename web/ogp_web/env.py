@@ -29,12 +29,14 @@ def _parse_env_line(raw_line: str) -> tuple[str, str] | None:
     return key, value
 
 
-def load_web_env() -> None:
-    if not ENV_PATH.exists():
+def load_web_env(env_path: str | Path | None = None) -> None:
+    target_path = Path(env_path) if env_path is not None else ENV_PATH
+
+    if not target_path.exists():
         configure_process_temp_dir()
         return
 
-    for raw_line in ENV_PATH.read_text(encoding="utf-8").splitlines():
+    for raw_line in target_path.read_text(encoding="utf-8").splitlines():
         parsed = _parse_env_line(raw_line)
         if parsed is None:
             continue

@@ -43,15 +43,23 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--actor-user-id", type=int, default=1, help="Actor user id for rebuild audit writes")
     parser.add_argument("--activated-by", default="github_actions:projection_pilot", help="Human-readable activation actor label")
     parser.add_argument("--decision-reason", default="pilot_projection_runtime_cutover", help="Approval reason")
+    parser.add_argument("--env-file", default=None, help="Optional path to a runtime .env file to load before database access")
     return parser.parse_args()
 
 
-def run_projection_pilot(*, server_code: str, actor_user_id: int, activated_by: str, decision_reason: str) -> dict[str, object]:
+def run_projection_pilot(
+    *,
+    server_code: str,
+    actor_user_id: int,
+    activated_by: str,
+    decision_reason: str,
+    env_file: str | None = None,
+) -> dict[str, object]:
     normalized_server = str(server_code or "").strip().lower()
     if not normalized_server:
         raise ValueError("server_code_required")
 
-    load_web_env()
+    load_web_env(env_file)
     backend = get_database_backend()
     source_sets_store = LawSourceSetsStore(backend)
     versions_store = CanonicalLawDocumentVersionsStore(backend)
@@ -152,6 +160,7 @@ def main() -> int:
         actor_user_id=args.actor_user_id,
         activated_by=str(args.activated_by or "").strip(),
         decision_reason=str(args.decision_reason or "").strip(),
+        env_file=str(args.env_file or "").strip() or None,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0

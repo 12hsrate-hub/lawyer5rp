@@ -80,14 +80,10 @@ jobs:
             git -C /srv/lawyer5rp-deploy/repo fetch origin
             git -C /srv/lawyer5rp-deploy/repo checkout main
             git -C /srv/lawyer5rp-deploy/repo reset --hard origin/main
-            if [ -f /srv/lawyer5rp.ru/web/.env ]; then
-              set -a
-              . /srv/lawyer5rp.ru/web/.env
-              set +a
-            fi
             cd /srv/lawyer5rp-deploy/repo
             /srv/lawyer5rp.ru/web/.venv/bin/python scripts/run_projection_pilot.py \
               --server "'"$SERVER_CODE"'" \
               --actor-user-id "'"$ACTOR_USER_ID"'" \
+              --env-file "/srv/lawyer5rp.ru/web/.env" \
               --activated-by "github_actions:orange_projection_pilot"
           '
