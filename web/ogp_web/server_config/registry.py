@@ -23,6 +23,12 @@ _BOOTSTRAP_SERVER_PACKS: dict[str, dict[str, Any]] = {
     str(BLACKBERRY_BOOTSTRAP_SERVER_PACK.get("server_code") or DEFAULT_SERVER_CODE): dict(BLACKBERRY_BOOTSTRAP_SERVER_PACK),
 }
 
+_RESOLUTION_MODE_LABELS = {
+    "published_pack": "published pack",
+    "bootstrap_pack": "bootstrap pack",
+    "neutral_fallback": "neutral fallback",
+}
+
 
 class ServerUnavailableError(AuthError):
     pass
@@ -147,6 +153,52 @@ def effective_server_pack(server_code: str, at_timestamp: datetime | None = None
         "version": 0,
         "status": "draft",
         "metadata": {},
+    }
+
+
+def build_runtime_resolution_snapshot(
+    *,
+    server_code: str,
+    title: str = "",
+    at_timestamp: datetime | None = None,
+) -> dict[str, Any]:
+    normalized = resolve_default_server_code(explicit_server_code=server_code)
+    pack = effective_server_pack(normalized, at_timestamp=at_timestamp)
+    pack_metadata = dict(pack.get("metadata") or {}) if isinstance(pack, dict) else {}
+    if pack.get("id") is not None:
+        resolution_mode = "published_pack"
+    elif pack_metadata:
+        resolution_mode = "bootstrap_pack"
+    else:
+        resolution_mode = "neutral_fallback"
+    base_config = _BASE_SERVER_CONFIGS.get(normalized)
+    resolved_title = str(title or (base_config.name if base_config else normalized) or normalized)
+    runtime_config = _build_server_config_from_pack_or_base(
+        code=normalized,
+        title=resolved_title,
+        base_config=base_config,
+    )
+    has_identity_capabilities = bool(
+        runtime_config
+        and (
+            tuple(getattr(runtime_config, "organizations", ()) or ())
+            or tuple(getattr(runtime_config, "procedure_types", ()) or ())
+            or frozenset(getattr(runtime_config, "enabled_pages", frozenset()) or frozenset())
+        )
+    )
+    return {
+        "server_code": normalized,
+        "pack": dict(pack or {}),
+        "pack_metadata": pack_metadata,
+        "resolution_mode": resolution_mode,
+        "resolution_label": _RESOLUTION_MODE_LABELS.get(resolution_mode, resolution_mode.replace("_", " ")),
+        "uses_transitional_fallback": resolution_mode != "published_pack",
+        "requires_explicit_runtime_pack": resolution_mode == "neutral_fallback",
+        "has_published_pack": pack.get("id") is not None,
+        "has_bootstrap_pack": normalized in _BOOTSTRAP_SERVER_PACKS,
+        "has_runtime_metadata": bool(pack_metadata),
+        "has_identity_capabilities": has_identity_capabilities,
+        "runtime_config": runtime_config,
     }
 
 

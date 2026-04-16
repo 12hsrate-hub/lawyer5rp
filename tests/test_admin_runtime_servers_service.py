@@ -108,6 +108,7 @@ def test_runtime_server_payload_helpers_cover_crud_shape():
     assert created["item"]["is_active"] is False
     assert created["item"]["onboarding"]["highest_completed_state"] == "not-ready"
     assert created["item"]["onboarding"]["resolution_mode"] == "neutral_fallback"
+    assert created["item"]["onboarding"]["requires_explicit_runtime_pack"] is True
     assert created["item"]["projection_bridge"] is None
     assert updated["item"]["title"] == "City 2 RU"
     assert deactivated["item"]["is_active"] is False
@@ -161,6 +162,7 @@ def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
     assert payload["summary"]["is_ready"] is True
     assert payload["summary"]["ready_count"] == payload["summary"]["total_count"]
     assert payload["checks"]["health"]["active_law_version_id"] == 77
+    assert payload["checks"]["config_resolution"]["ok"] is True
     assert payload["onboarding"]["highest_completed_state"] == "rollout-ready"
     assert payload["onboarding"]["next_required_state"] == "production-ready"
 
@@ -216,6 +218,7 @@ def test_second_server_published_pack_health_payload_reports_release_candidate_s
     assert payload["summary"]["is_ready"] is True
     assert payload["onboarding"]["resolution_mode"] == "published_pack"
     assert payload["onboarding"]["uses_transitional_fallback"] is False
+    assert payload["checks"]["config_resolution"]["ok"] is True
     assert payload["onboarding"]["highest_completed_state"] == "rollout-ready"
     assert payload["checks"]["health"]["active_law_version_id"] == 88
     assert payload["projection_bridge"]["run_id"] == 4

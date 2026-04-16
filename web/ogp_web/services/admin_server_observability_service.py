@@ -147,7 +147,19 @@ def build_server_issues_payload(
         }
     dashboard_payload = dashboard_service.get_dashboard(username=username, server_id=normalized_server)
     checks = dict(health_payload.get("checks") or {})
+    onboarding = dict(health_payload.get("onboarding") or {})
     items: list[dict[str, Any]] = []
+    if bool(onboarding.get("requires_explicit_runtime_pack")):
+        items.append(
+            {
+                "issue_id": "runtime_config_fallback",
+                "severity": "warn",
+                "source": "runtime_config",
+                "title": "Сервер ещё работает через neutral fallback",
+                "detail": "Опубликуйте runtime/server pack или закрепите bootstrap pack, чтобы сервер перестал зависеть от нейтрального fallback-конфига.",
+                "available_actions": [],
+            }
+        )
     if not bool((checks.get("health") or {}).get("ok")):
         items.append(
             {

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ogp_web.server_config import registry as server_config_registry
-from ogp_web.server_config import effective_server_pack
+from ogp_web.server_config import build_runtime_resolution_snapshot
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
 from ogp_web.services.law_version_service import resolve_active_law_version
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
@@ -17,23 +16,8 @@ ONBOARDING_STATES = (
     "production-ready",
 )
 
-_RESOLUTION_MODE_LABELS = {
-    "published_pack": "published pack",
-    "bootstrap_pack": "bootstrap pack",
-    "neutral_fallback": "neutral fallback",
-}
-
-
 def normalize_runtime_server_code(value: str) -> str:
     return str(value or "").strip().lower()
-
-
-def _pack_resolution_mode(pack: dict[str, Any], metadata: dict[str, Any]) -> str:
-    if pack.get("id") is not None:
-        return "published_pack"
-    if metadata:
-        return "bootstrap_pack"
-    return "neutral_fallback"
 
 
 def _next_required_state(highest_completed_state: str) -> str:
@@ -94,15 +78,16 @@ def _build_projection_bridge_summary(
 def _build_runtime_server_onboarding_payload(
     *,
     server: RuntimeServerRecord | None,
-    resolution_mode: str,
-    runtime_config: Any | None,
-    pack_metadata: dict[str, Any],
+    resolution: dict[str, Any],
     active_law_set: dict[str, Any] | None,
     bindings: list[dict[str, Any]],
     smoke_tests_passed: bool,
     smoke_tests_checked: bool,
 ) -> dict[str, Any]:
-    resolution_label = _RESOLUTION_MODE_LABELS.get(resolution_mode, resolution_mode.replace("_", " "))
+    resolution_mode = str(resolution.get("resolution_mode") or "neutral_fallback")
+    resolution_label = str(resolution.get("resolution_label") or resolution_mode.replace("_", " "))
+    runtime_config = resolution.get("runtime_config")
+    requires_explicit_runtime_pack = bool(resolution.get("requires_explicit_runtime_pack"))
     rollback_reference = (
         f"/api/admin/runtime-servers/{server.code}/deactivate"
         if server
@@ -125,15 +110,22 @@ def _build_runtime_server_onboarding_payload(
     feature_flags_defined = bool(frozenset(getattr(runtime_config, "feature_flags", frozenset()) or frozenset()))
     admin_visibility_defined = bool(server)
 
-    bootstrap_ok = bool(server) and identity_defined
+    bootstrap_ok = bool(server) and identity_defined and not requires_explicit_runtime_pack
     if not server:
         bootstrap_detail = "runtime server record is missing"
+    elif requires_explicit_runtime_pack:
+        bootstrap_detail = (
+            "server currently resolves through neutral fallback; publish or attach a bootstrap/runtime pack "
+            "before treating it as onboarding-ready"
+        )
     elif not identity_defined:
         bootstrap_detail = f"server resolves through {resolution_label}, but identity/capabilities are still undefined"
     else:
         bootstrap_detail = f"server identity and capabilities resolve through {resolution_label}"
 
     workflow_missing: list[str] = []
+    if requires_explicit_runtime_pack:
+        workflow_missing.append("published/bootstrap runtime pack")
     if not law_sources_defined:
         workflow_missing.append("law source configuration")
     if not law_set_defined:
@@ -187,9 +179,16 @@ def _build_runtime_server_onboarding_payload(
         "next_required_state": _next_required_state(highest_completed_state),
         "resolution_mode": resolution_mode,
         "resolution_label": resolution_label,
-        "uses_transitional_fallback": resolution_mode != "published_pack",
+        "uses_transitional_fallback": bool(resolution.get("uses_transitional_fallback")),
+        "requires_explicit_runtime_pack": requires_explicit_runtime_pack,
         "rollback_reference": rollback_reference,
         "smoke_tests_checked": smoke_tests_checked,
+        "resolution": {
+            "has_published_pack": bool(resolution.get("has_published_pack")),
+            "has_bootstrap_pack": bool(resolution.get("has_bootstrap_pack")),
+            "has_runtime_metadata": bool(resolution.get("has_runtime_metadata")),
+            "has_identity_capabilities": bool(resolution.get("has_identity_capabilities")),
+        },
         "states": states,
     }
 
@@ -209,21 +208,28 @@ def _collect_runtime_server_context(
     if active_law_set is None:
         active_law_set = next((item for item in law_sets if item.get("is_active")), None)
     bindings = law_sets_store.list_server_law_bindings(server_code=normalized_code)
-    active_law_version = resolve_active_law_version(server_code=normalized_code) if include_health else None
-    bundle_meta = load_law_bundle_meta(normalized_code) if include_health else None
+    if include_health:
+        try:
+            active_law_version = resolve_active_law_version(server_code=normalized_code)
+        except Exception:
+            active_law_version = None
+    else:
+        active_law_version = None
+    if include_health:
+        try:
+            bundle_meta = load_law_bundle_meta(normalized_code)
+        except Exception:
+            bundle_meta = None
+    else:
+        bundle_meta = None
     chunk_count = int(
         (bundle_meta.chunk_count if bundle_meta and bundle_meta.chunk_count is not None else None)
         or (active_law_version.chunk_count if active_law_version and active_law_version.chunk_count is not None else 0)
         or 0
     )
-    pack = effective_server_pack(normalized_code)
-    pack_metadata = dict(pack.get("metadata") or {}) if isinstance(pack, dict) else {}
-    resolution_mode = _pack_resolution_mode(pack if isinstance(pack, dict) else {}, pack_metadata)
-    base_config = server_config_registry._BASE_SERVER_CONFIGS.get(normalized_code)
-    runtime_config = server_config_registry._build_server_config_from_pack_or_base(
-        code=normalized_code,
+    resolution = build_runtime_resolution_snapshot(
+        server_code=normalized_code,
         title=str(server_row.title if server_row else normalized_code),
-        base_config=base_config,
     )
     return {
         "server_code": normalized_code,
@@ -234,10 +240,11 @@ def _collect_runtime_server_context(
         "active_law_version": active_law_version,
         "bundle_meta": bundle_meta,
         "chunk_count": chunk_count,
-        "pack": pack,
-        "pack_metadata": pack_metadata,
-        "resolution_mode": resolution_mode,
-        "runtime_config": runtime_config,
+        "resolution": resolution,
+        "pack": dict(resolution.get("pack") or {}),
+        "pack_metadata": dict(resolution.get("pack_metadata") or {}),
+        "resolution_mode": str(resolution.get("resolution_mode") or "neutral_fallback"),
+        "runtime_config": resolution.get("runtime_config"),
     }
 
 
@@ -258,9 +265,7 @@ def _build_runtime_server_item_payload(
     )
     payload["onboarding"] = _build_runtime_server_onboarding_payload(
         server=record,
-        resolution_mode=context["resolution_mode"],
-        runtime_config=context["runtime_config"],
-        pack_metadata=context["pack_metadata"],
+        resolution=context["resolution"],
         active_law_set=context["active_law_set"],
         bindings=context["bindings"],
         smoke_tests_passed=False,
@@ -369,9 +374,7 @@ def build_runtime_server_health_payload(
     chunk_count = context["chunk_count"]
     onboarding = _build_runtime_server_onboarding_payload(
         server=server,
-        resolution_mode=context["resolution_mode"],
-        runtime_config=context["runtime_config"],
-        pack_metadata=context["pack_metadata"],
+        resolution=context["resolution"],
         active_law_set=active_law_set,
         bindings=bindings,
         smoke_tests_passed=bool(server and server.is_active and active_law_version and chunk_count > 0),
@@ -406,6 +409,16 @@ def build_runtime_server_health_payload(
             ),
             "active_law_version_id": int(active_law_version.id) if active_law_version else None,
             "chunk_count": chunk_count,
+        },
+        "config_resolution": {
+            "ok": not bool(onboarding.get("requires_explicit_runtime_pack")),
+            "detail": (
+                f"resolution:{onboarding.get('resolution_mode')}"
+                if not bool(onboarding.get("requires_explicit_runtime_pack"))
+                else "neutral_fallback_requires_pack_publication"
+            ),
+            "resolution_mode": str(onboarding.get("resolution_mode") or "neutral_fallback"),
+            "requires_explicit_runtime_pack": bool(onboarding.get("requires_explicit_runtime_pack")),
         },
     }
     ready_count = sum(1 for item in checks.values() if item.get("ok"))

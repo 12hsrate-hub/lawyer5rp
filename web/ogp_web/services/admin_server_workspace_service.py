@@ -188,6 +188,17 @@ def _build_issues_payload(
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     checks = dict(health_payload.get("checks") or {})
+    onboarding = dict(health_payload.get("onboarding") or {})
+    if bool(onboarding.get("requires_explicit_runtime_pack")):
+        items.append(
+            {
+                "issue_id": "runtime_config_fallback",
+                "severity": "warn",
+                "source": "runtime_config",
+                "title": "Сервер ещё работает через neutral fallback",
+                "detail": "Опубликуйте runtime/server pack или закрепите bootstrap pack, чтобы сервер перестал зависеть от нейтрального fallback-конфига.",
+            }
+        )
     if not bool((checks.get("health") or {}).get("ok")):
         items.append(
             {
