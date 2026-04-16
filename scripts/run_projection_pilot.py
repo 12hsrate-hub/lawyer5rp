@@ -158,6 +158,7 @@ def run_projection_pilot(
     activated = activate_server_effective_law_projection_payload(
         projections_store=projections_store,
         runtime_law_sets_store=runtime_law_sets_store,
+        versions_store=versions_store,
         law_admin_service=law_admin_service,
         run_id=run_id,
         actor_user_id=int(actor_user_id),
