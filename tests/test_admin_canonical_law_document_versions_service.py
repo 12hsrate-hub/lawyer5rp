@@ -14,6 +14,9 @@ from ogp_web.services.admin_canonical_law_document_versions_service import (
     list_canonical_law_document_versions_payload,
     list_discovery_run_document_versions_payload,
 )
+from ogp_web.services.admin_canonical_law_document_fetch_service import (
+    fetch_discovery_run_document_versions_payload,
+)
 
 
 class _FakeDiscoveryStore:
@@ -117,6 +120,21 @@ class _FakeVersionsStore:
     def list_versions_for_document(self, *, canonical_law_document_id: int):
         return [item for item in self.items if int(item.canonical_law_document_id) == int(canonical_law_document_id)]
 
+    def get_version(self, *, version_id: int):
+        return next((row for row in self.items if int(row.id) == int(version_id)), None)
+
+    def update_fetch_result(self, **kwargs):
+        item = self.get_version(version_id=int(kwargs["version_id"]))
+        if item is None:
+            raise KeyError("canonical_law_document_version_not_found")
+        item.fetch_status = kwargs["fetch_status"]
+        item.content_checksum = kwargs.get("content_checksum", "")
+        item.raw_title = kwargs.get("raw_title", "")
+        item.body_text = kwargs.get("body_text", "")
+        item.metadata_json = dict(kwargs.get("metadata_json") or {})
+        item.updated_at = "2026-04-16T03:00:00+00:00"
+        return item
+
 
 def test_ingest_discovery_run_document_versions_payload_creates_seeded_versions():
     versions_store = _FakeVersionsStore()
@@ -170,3 +188,66 @@ def test_list_document_version_payloads():
         canonical_law_document_id=1,
     )
     assert by_document["count"] == 1
+
+
+def test_fetch_discovery_run_document_versions_payload_fetches_seeded_versions():
+    versions_store = _FakeVersionsStore()
+    ingest_discovery_run_document_versions_payload(
+        discovery_store=_FakeDiscoveryStore(),
+        documents_store=_FakeDocumentsStore(),
+        versions_store=versions_store,
+        run_id=5,
+    )
+
+    def _fetcher(url: str, timeout_sec: int):
+        assert url == "https://example.com/law/a"
+        assert timeout_sec == 12
+        return {
+            "status_code": 200,
+            "url": url,
+            "text": "<html><title>Fetched Code</title><body>Law body</body></html>",
+            "headers": {"content-type": "text/html; charset=utf-8"},
+        }
+
+    payload = fetch_discovery_run_document_versions_payload(
+        discovery_store=_FakeDiscoveryStore(),
+        versions_store=versions_store,
+        run_id=5,
+        timeout_sec=12,
+        fetcher=_fetcher,
+    )
+    assert payload["changed"] is True
+    assert payload["fetched_versions"] == 1
+    assert payload["failed_versions"] == 0
+    assert payload["items"][0]["fetch_status"] == "fetched"
+    assert payload["items"][0]["raw_title"] == "Fetched Code"
+
+
+def test_fetch_discovery_run_document_versions_payload_safe_rerun_reuses_fetched_versions():
+    versions_store = _FakeVersionsStore()
+    ingest_discovery_run_document_versions_payload(
+        discovery_store=_FakeDiscoveryStore(),
+        documents_store=_FakeDocumentsStore(),
+        versions_store=versions_store,
+        run_id=5,
+    )
+    fetch_discovery_run_document_versions_payload(
+        discovery_store=_FakeDiscoveryStore(),
+        versions_store=versions_store,
+        run_id=5,
+        fetcher=lambda url, timeout_sec: {
+            "status_code": 200,
+            "url": url,
+            "text": "<html><title>Fetched Code</title><body>Law body</body></html>",
+            "headers": {"content-type": "text/html"},
+        },
+    )
+    second = fetch_discovery_run_document_versions_payload(
+        discovery_store=_FakeDiscoveryStore(),
+        versions_store=versions_store,
+        run_id=5,
+        safe_rerun=True,
+        fetcher=lambda url, timeout_sec: (_ for _ in ()).throw(AssertionError("fetcher should not be called")),
+    )
+    assert second["changed"] is False
+    assert second["reused_versions"] == 1
