@@ -41,6 +41,74 @@ def _build_runtime_provenance_issue(runtime_provenance: dict[str, Any]) -> dict[
     }
 
 
+def _build_runtime_item_parity(
+    *,
+    law_sets_store: RuntimeLawSetsStore,
+    active_law_set_id: int | None,
+    projections_store: ServerEffectiveLawProjectionsStore | None,
+    server_code: str,
+) -> dict[str, Any]:
+    runtime_items: list[dict[str, Any]] = []
+    if active_law_set_id:
+        try:
+            detail = law_sets_store.get_law_set_detail(law_set_id=int(active_law_set_id))
+        except Exception:
+            detail = {}
+        runtime_items = [dict(item) for item in list((detail or {}).get("items") or []) if isinstance(item, dict)]
+    projection_items = []
+    if projections_store is not None:
+        try:
+            runs = projections_store.list_runs(server_code=server_code)
+        except Exception:
+            runs = []
+        current_run = runs[0] if runs else None
+        if current_run is not None:
+            try:
+                projection_items = list(projections_store.list_items(projection_run_id=int(current_run.id)) or [])
+            except Exception:
+                projection_items = []
+    runtime_keys = {
+        str(item.get("law_code") or "").strip().lower()
+        for item in runtime_items
+        if str(item.get("law_code") or "").strip()
+    }
+    projection_keys = {
+        str(getattr(item, "canonical_identity_key", "") or "").strip().lower()
+        for item in projection_items
+        if str(getattr(item, "canonical_identity_key", "") or "").strip()
+    }
+    shared = runtime_keys & projection_keys
+    runtime_only = runtime_keys - projection_keys
+    projection_only = projection_keys - runtime_keys
+    status = "aligned" if runtime_keys and projection_keys and not runtime_only and not projection_only else ("drift" if runtime_keys or projection_keys else "uninitialized")
+    return {
+        "status": status,
+        "runtime_only_count": len(runtime_only),
+        "projection_only_count": len(projection_only),
+        "shared_count": len(shared),
+    }
+
+
+def _build_runtime_item_parity_issue(runtime_item_parity: dict[str, Any]) -> dict[str, Any] | None:
+    if str((runtime_item_parity or {}).get("status") or "").strip().lower() != "drift":
+        return None
+    runtime_only_count = int((runtime_item_parity or {}).get("runtime_only_count") or 0)
+    projection_only_count = int((runtime_item_parity or {}).get("projection_only_count") or 0)
+    return {
+        "issue_id": "laws_runtime_item_parity",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Состав runtime law shell расходится с latest projection",
+        "detail": (
+            f"runtime_only={runtime_only_count}, projection_only={projection_only_count}. "
+            "Откройте вкладку «Законы», чтобы увидеть item parity и понять, какие law identities расходятся."
+        ),
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
 def build_server_audit_payload(
     *,
     server_code: str,
@@ -173,6 +241,13 @@ def build_server_issues_payload(
     checks = dict(health_payload.get("checks") or {})
     onboarding = dict(health_payload.get("onboarding") or {})
     runtime_provenance = dict(health_payload.get("runtime_provenance") or {})
+    runtime_alignment = dict(health_payload.get("runtime_alignment") or {})
+    runtime_item_parity = _build_runtime_item_parity(
+        law_sets_store=law_sets_store,
+        active_law_set_id=int(runtime_alignment.get("active_law_set_id") or 0) or None,
+        projections_store=projections_store,
+        server_code=normalized_server,
+    )
     items: list[dict[str, Any]] = []
     if bool(onboarding.get("requires_explicit_runtime_pack")):
         items.append(
@@ -212,6 +287,9 @@ def build_server_issues_payload(
     runtime_provenance_issue = _build_runtime_provenance_issue(runtime_provenance)
     if runtime_provenance_issue is not None:
         items.append(runtime_provenance_issue)
+    runtime_item_parity_issue = _build_runtime_item_parity_issue(runtime_item_parity)
+    if runtime_item_parity_issue is not None:
+        items.append(runtime_item_parity_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -280,7 +358,7 @@ def execute_server_issue_action_payload(
     normalized_server = normalize_runtime_server_code(server_code)
     normalized_issue = str(issue_id or "").strip().lower()
     normalized_action = str(action or "").strip().lower()
-    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance"} and normalized_action == "recheck":
+    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity"} and normalized_action == "recheck":
         result = build_server_laws_recheck_payload(
             server_code=normalized_server,
             runtime_servers_store=runtime_servers_store,

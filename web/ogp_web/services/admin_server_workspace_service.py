@@ -244,10 +244,29 @@ def _build_runtime_item_parity(
     }
 
 
+def _build_runtime_item_parity_issue(runtime_item_parity: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_item_parity or {}).get("status") or "").strip().lower()
+    if status != "drift":
+        return None
+    runtime_only_count = int((runtime_item_parity or {}).get("runtime_only_count") or 0)
+    projection_only_count = int((runtime_item_parity or {}).get("projection_only_count") or 0)
+    return {
+        "issue_id": "laws_runtime_item_parity",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Состав runtime law shell расходится с latest projection",
+        "detail": (
+            f"runtime_only={runtime_only_count}, projection_only={projection_only_count}. "
+            "Откройте вкладку «Законы», чтобы увидеть item parity и понять, какие law identities расходятся."
+        ),
+    }
+
+
 def _build_issues_payload(
     *,
     health_payload: dict[str, Any],
     dashboard_payload: dict[str, Any],
+    runtime_item_parity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     checks = dict(health_payload.get("checks") or {})
@@ -301,6 +320,9 @@ def _build_issues_payload(
                 ),
             }
         )
+    runtime_item_parity_issue = _build_runtime_item_parity_issue(dict(runtime_item_parity or {}))
+    if runtime_item_parity_issue is not None:
+        items.append(runtime_item_parity_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -434,7 +456,11 @@ def build_server_workspace_payload(
         "runtime_item_parity": runtime_item_parity,
         "health": (health_payload.get("checks") or {}).get("health", {}),
     }
-    issues_payload = _build_issues_payload(health_payload=health_payload, dashboard_payload=dashboard_payload)
+    issues_payload = _build_issues_payload(
+        health_payload=health_payload,
+        dashboard_payload=dashboard_payload,
+        runtime_item_parity=runtime_item_parity,
+    )
     readiness_payload = _build_readiness_payload(
         laws_ready=bool((health_payload.get("checks") or {}).get("health", {}).get("ok")),
         features_ready=int(features_payload["counts"]["effective"]) > 0,
