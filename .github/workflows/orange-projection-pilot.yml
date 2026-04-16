@@ -1,0 +1,88 @@
+name: Orange Projection Pilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_code:
+        description: Runtime server code
+        required: true
+        default: orange
+      actor_user_id:
+        description: Actor user id for rebuild audit writes
+        required: true
+        default: "1"
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - name: Check deploy secrets
+        id: check
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          missing=0
+
+          if [ -z "$DEPLOY_HOST" ]; then
+            echo "Missing secret: DEPLOY_HOST"
+            missing=1
+          fi
+
+          if [ -z "$DEPLOY_USER" ]; then
+            echo "Missing secret: DEPLOY_USER"
+            missing=1
+          fi
+
+          if [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "Missing secret: DEPLOY_SSH_KEY"
+            missing=1
+          fi
+
+          if [ "$missing" -eq 1 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+  run-pilot:
+    needs: preflight
+    runs-on: ubuntu-latest
+    if: ${{ needs.preflight.outputs.ready == 'true' }}
+
+    steps:
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Trust deploy host
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Run orange projection pilot
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          SERVER_CODE: ${{ github.event.inputs.server_code }}
+          ACTOR_USER_ID: ${{ github.event.inputs.actor_user_id }}
+        run: |
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" '
+            set -euo pipefail
+            git -C /srv/lawyer5rp-deploy/repo fetch origin
+            git -C /srv/lawyer5rp-deploy/repo checkout main
+            git -C /srv/lawyer5rp-deploy/repo reset --hard origin/main
+            cd /srv/lawyer5rp-deploy/repo
+            /srv/lawyer5rp.ru/web/.venv/bin/python scripts/run_projection_pilot.py \
+              --server "'"$SERVER_CODE"'" \
+              --actor-user-id "'"$ACTOR_USER_ID"'" \
+              --activated-by "github_actions:orange_projection_pilot"
+          '
