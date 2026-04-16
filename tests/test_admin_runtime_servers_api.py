@@ -990,6 +990,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(payload["overview"]["laws"]["promotion_candidate"]["status"], "blocked")
         self.assertEqual(payload["overview"]["laws"]["promotion_delta"]["status"], "attention")
         self.assertEqual(payload["overview"]["laws"]["promotion_blockers"]["status"], "blocked")
+        self.assertEqual(payload["overview"]["laws"]["activation_gap"]["status"], "open")
         self.assertEqual(payload["health"]["onboarding"]["resolution_mode"], "bootstrap_pack")
         issue_ids = {item.get("issue_id") for item in payload["issues"]["items"] if item.get("issue_id")}
         self.assertIn("laws_runtime_provenance", issue_ids)
@@ -999,6 +1000,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertIn("laws_promotion_candidate", issue_ids)
         self.assertIn("laws_promotion_delta", issue_ids)
         self.assertIn("laws_promotion_blockers", issue_ids)
+        self.assertIn("laws_activation_gap", issue_ids)
         self.assertEqual(payload["readiness"]["counters"]["stale_changes"], 1)
         self.assertIsInstance(payload["activity"], list)
 
@@ -1075,6 +1077,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertIn("laws_promotion_candidate", issue_ids)
             self.assertIn("laws_promotion_delta", issue_ids)
             self.assertIn("laws_promotion_blockers", issue_ids)
+            self.assertIn("laws_activation_gap", issue_ids)
 
             recheck = self.client.post("/api/admin/runtime-servers/blackberry/issues/laws_runtime_provenance/recheck")
             self.assertEqual(recheck.status_code, 200)
@@ -1122,6 +1125,12 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertTrue(blockers_recheck_payload["ok"])
             self.assertEqual(blockers_recheck_payload["issue_id"], "laws_promotion_blockers")
             self.assertEqual(blockers_recheck_payload["action"], "recheck")
+            activation_gap_recheck = self.client.post("/api/admin/runtime-servers/blackberry/issues/laws_activation_gap/recheck")
+            self.assertEqual(activation_gap_recheck.status_code, 200)
+            activation_gap_recheck_payload = activation_gap_recheck.json()
+            self.assertTrue(activation_gap_recheck_payload["ok"])
+            self.assertEqual(activation_gap_recheck_payload["issue_id"], "laws_activation_gap")
+            self.assertEqual(activation_gap_recheck_payload["action"], "recheck")
     def test_runtime_server_issues_endpoint_exposes_runtime_item_parity_warning_for_drift(self):
         self.runtime_law_sets_store.law_set_details[1]["items"] = [
             {
@@ -1265,6 +1274,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(summary.json()["promotion_candidate"]["status"], "blocked")
         self.assertEqual(summary.json()["promotion_delta"]["status"], "attention")
         self.assertEqual(summary.json()["promotion_blockers"]["status"], "blocked")
+        self.assertEqual(summary.json()["activation_gap"]["status"], "open")
         self.assertEqual(effective.json()["count"], 1)
         self.assertEqual(effective.json()["items"][0]["title"], "Уголовный кодекс v2")
         self.assertEqual(diff.json()["runtime_alignment"]["status"], "legacy_only")
@@ -1275,6 +1285,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(diff.json()["promotion_candidate"]["status"], "blocked")
         self.assertEqual(diff.json()["promotion_delta"]["status"], "attention")
         self.assertEqual(diff.json()["promotion_blockers"]["status"], "blocked")
+        self.assertEqual(diff.json()["activation_gap"]["status"], "open")
         self.assertEqual(diff.json()["summary"]["changed"], 1)
         self.assertEqual(diff.json()["summary"]["added"], 0)
 
@@ -1469,6 +1480,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(workspace.json()["overview"]["laws"]["promotion_candidate"]["status"], "ready")
         self.assertEqual(workspace.json()["overview"]["laws"]["promotion_delta"]["status"], "stable")
         self.assertEqual(workspace.json()["overview"]["laws"]["promotion_blockers"]["status"], "clear")
+        self.assertEqual(workspace.json()["overview"]["laws"]["activation_gap"]["status"], "closed")
         self.assertEqual(payload["onboarding"]["highest_completed_state"], "rollout-ready")
         self.assertEqual(payload["checks"]["health"]["active_law_version_id"], 88)
         self.assertEqual(payload["projection_bridge"]["run_id"], 4)

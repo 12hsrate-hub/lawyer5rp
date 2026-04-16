@@ -7,6 +7,7 @@ from ogp_web.services.admin_runtime_servers_service import (
     normalize_runtime_server_code,
 )
 from ogp_web.services.admin_server_laws_workspace_service import build_projection_bridge_readiness_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_activation_gap_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_promotion_blockers_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_promotion_candidate_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_promotion_delta_summary
@@ -496,6 +497,25 @@ def _build_promotion_blockers_issue(promotion_blockers: dict[str, Any]) -> dict[
     }
 
 
+def _build_activation_gap_issue(activation_gap: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((activation_gap or {}).get("status") or "").strip().lower()
+    if status in {"", "closed", "unknown"}:
+        return None
+    detail = (
+        f"{str((activation_gap or {}).get('detail') or '').strip()} "
+        f"active={str((activation_gap or {}).get('active_law_version_id') or '—')} "
+        f"projected={str((activation_gap or {}).get('projected_law_version_id') or '—')}. "
+        f"{str((activation_gap or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "laws_activation_gap",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Activation gap требует внимания",
+        "detail": detail,
+    }
+
+
 def _build_issues_payload(
     *,
     health_payload: dict[str, Any],
@@ -507,6 +527,7 @@ def _build_issues_payload(
     promotion_candidate: dict[str, Any] | None = None,
     promotion_delta: dict[str, Any] | None = None,
     promotion_blockers: dict[str, Any] | None = None,
+    activation_gap: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     checks = dict(health_payload.get("checks") or {})
@@ -581,6 +602,9 @@ def _build_issues_payload(
     promotion_blockers_issue = _build_promotion_blockers_issue(dict(promotion_blockers or {}))
     if promotion_blockers_issue is not None:
         items.append(promotion_blockers_issue)
+    activation_gap_issue = _build_activation_gap_issue(dict(activation_gap or {}))
+    if activation_gap_issue is not None:
+        items.append(activation_gap_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -728,6 +752,12 @@ def build_server_workspace_payload(
         runtime_version_parity=runtime_version_parity,
         projection_bridge_lifecycle=projection_bridge_lifecycle,
     )
+    activation_gap = build_activation_gap_summary(
+        projection_bridge_readiness=projection_bridge_readiness,
+        runtime_version_parity=runtime_version_parity,
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+        promotion_blockers=promotion_blockers,
+    )
     laws_summary = {
         "active_source_set_bindings": [
             {
@@ -751,6 +781,7 @@ def build_server_workspace_payload(
         "promotion_candidate": promotion_candidate,
         "promotion_delta": promotion_delta,
         "promotion_blockers": promotion_blockers,
+        "activation_gap": activation_gap,
         "health": (health_payload.get("checks") or {}).get("health", {}),
     }
     issues_payload = _build_issues_payload(
@@ -763,6 +794,7 @@ def build_server_workspace_payload(
         promotion_candidate=promotion_candidate,
         promotion_delta=promotion_delta,
         promotion_blockers=promotion_blockers,
+        activation_gap=activation_gap,
     )
     readiness_payload = _build_readiness_payload(
         laws_ready=bool((health_payload.get("checks") or {}).get("health", {}).get("ok")),

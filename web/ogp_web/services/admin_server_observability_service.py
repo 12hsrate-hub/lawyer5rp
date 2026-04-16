@@ -7,6 +7,7 @@ from ogp_web.services.admin_runtime_servers_service import (
     normalize_runtime_server_code,
 )
 from ogp_web.services.admin_server_laws_workspace_service import (
+    build_activation_gap_summary,
     build_projection_bridge_readiness_summary,
     build_promotion_blockers_summary,
     build_promotion_candidate_summary,
@@ -365,6 +366,28 @@ def _build_promotion_blockers_issue(promotion_blockers: dict[str, Any]) -> dict[
     }
 
 
+def _build_activation_gap_issue(activation_gap: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((activation_gap or {}).get("status") or "").strip().lower()
+    if status in {"", "closed", "unknown"}:
+        return None
+    detail = (
+        f"{str((activation_gap or {}).get('detail') or '').strip()} "
+        f"active={str((activation_gap or {}).get('active_law_version_id') or '—')} "
+        f"projected={str((activation_gap or {}).get('projected_law_version_id') or '—')}. "
+        f"{str((activation_gap or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "laws_activation_gap",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Activation gap требует внимания",
+        "detail": detail,
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
 def build_server_audit_payload(
     *,
     server_code: str,
@@ -534,6 +557,12 @@ def build_server_issues_payload(
         runtime_version_parity=runtime_version_parity,
         projection_bridge_lifecycle=projection_bridge_lifecycle,
     )
+    activation_gap = build_activation_gap_summary(
+        projection_bridge_readiness=projection_bridge_readiness,
+        runtime_version_parity=runtime_version_parity,
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+        promotion_blockers=promotion_blockers,
+    )
     items: list[dict[str, Any]] = []
     if bool(onboarding.get("requires_explicit_runtime_pack")):
         items.append(
@@ -594,6 +623,9 @@ def build_server_issues_payload(
     promotion_blockers_issue = _build_promotion_blockers_issue(promotion_blockers)
     if promotion_blockers_issue is not None:
         items.append(promotion_blockers_issue)
+    activation_gap_issue = _build_activation_gap_issue(activation_gap)
+    if activation_gap_issue is not None:
+        items.append(activation_gap_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -662,7 +694,7 @@ def execute_server_issue_action_payload(
     normalized_server = normalize_runtime_server_code(server_code)
     normalized_issue = str(issue_id or "").strip().lower()
     normalized_action = str(action or "").strip().lower()
-    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_blockers"} and normalized_action == "recheck":
+    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_blockers", "laws_activation_gap"} and normalized_action == "recheck":
         result = build_server_laws_recheck_payload(
             server_code=normalized_server,
             runtime_servers_store=runtime_servers_store,
