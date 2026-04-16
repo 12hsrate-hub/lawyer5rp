@@ -1,6 +1,6 @@
 # Orange Multi-Server RC Checklist
 
-Status: draft  
+Status: pre-window ready  
 Date: 2026-04-16
 
 ## Candidate
@@ -8,7 +8,7 @@ Date: 2026-04-16
 - Server: `orange`
 - Procedure scope: `runtime/admin/law/config surfaces only`
 - Owner: `platform-ops`
-- Planned rollout window: `next controlled production window after final pre-RC validation`
+- Planned rollout window: `next controlled production window after orange preflight sign-off on main@c1dabbb`
 - Claimed onboarding state: `rollout-ready`
 
 ## Preconditions
@@ -34,15 +34,17 @@ Date: 2026-04-16
 
 ## Evidence to attach
 
-- Deploy commit:
-- `/health` payload:
-- `orange` runtime server health payload:
-- `orange` document-builder bundle sample:
-- `orange` law set / law binding / rollback sample:
-- CI Runtime result:
-- UTF-8 check result:
-- Deploy Production workflow result:
-- Synthetic smoke result:
+- Known-good deployed baseline commit: `4f3b059`
+- Known-good deployed `/health` baseline: `status=ok` from Deploy Production run `24487474591`
+- RC transition package PR: `#307` — `https://github.com/12hsrate-hub/lawyer5rp/pull/307`
+- RC transition package merged commit: `c1dabbb451170008cedcb622951a14dd113b1908`
+- `orange` runtime server health payload: `capture during activation window`
+- `orange` document-builder bundle sample: `capture during activation window`
+- `orange` law set / law binding / rollback sample: `capture during activation window`
+- CI Runtime result: `success` — `https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487677670`
+- UTF-8 check result: `success` — `https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487677658`
+- Deploy Production workflow result: `success` — `https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487474591`
+- Synthetic smoke result: `pass` in Deploy Production run `24487474591`
 
 ## Exit criteria
 
@@ -54,16 +56,18 @@ Date: 2026-04-16
 
 - claimed_state: `rollout-ready`
 - completed_items:
-  - `bootstrap-ready` evidence recorded
-  - `workflow-ready` evidence recorded
-  - `rollout-ready` evidence recorded
-  - admin/runtime visibility confirmed
-  - smoke evidence collected
+  - `bootstrap-ready` regression evidence recorded via `tests/test_runtime_servers_store.py`, `tests/test_server_config_registry.py`, and `tests/test_admin_runtime_servers_service.py`
+  - `workflow-ready` regression evidence recorded via `tests/test_admin_runtime_servers_api.py` and `tests/test_admin_runtime_law_sets_api.py`
+  - pre-window `rollout-ready` evidence recorded via `tests/test_document_builder_bundle_service.py` plus `tests/test_web_api.py -k "selected_server or runtime_servers or document_builder_bundle"`
+  - admin/runtime visibility confirmed in targeted orange registry/runtime/law/document-builder regression coverage
+  - known-good production smoke evidence collected for baseline commit `4f3b059`; orange-specific activation-window smoke evidence is still pending capture during the RC window
 - skipped_items_with_justification:
   - `production-ready` is intentionally not claimed during first RC; it remains a manual sign-off state
   - second-server complaint runtime is intentionally out of scope for this RC
 - rollback_reference: `deactivate orange runtime server and revert to previous known-good main via Deploy Production`
 - validation_commands:
   - `python -m pytest tests/test_runtime_servers_store.py tests/test_server_config_registry.py tests/test_document_builder_bundle_service.py tests/test_admin_runtime_servers_service.py tests/test_admin_runtime_servers_api.py tests/test_admin_runtime_law_sets_api.py -q`
+  - result: `31 passed in 3.03s` on `main@c1dabbb`
   - `python -m pytest tests/test_web_api.py -q -k "selected_server or runtime_servers or document_builder_bundle"`
+  - result: `5 passed, 96 deselected in 1.25s` on `main@c1dabbb`
   - `gh workflow run "Deploy Production" --ref main`
