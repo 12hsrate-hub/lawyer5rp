@@ -18,7 +18,9 @@ The primary admin workspace is:
 Compatibility and secondary entrypoints remain available:
 
 - `/admin/dashboard`
+- `/admin/ops`
 - `/admin/users`
+- `/admin/audit`
 - `/admin/servers`
 - `/admin/laws`
 
@@ -27,8 +29,10 @@ Route policy:
 - `/admin/servers` is the default starting point for day-to-day admin work.
 - `/admin/servers/{server_code}` is the primary workspace for server-specific operations.
 - `/admin/laws` remains an advanced diagnostics and compatibility surface.
-- `/admin/dashboard` remains the global ops surface.
-- `/admin/users` remains the global user/audit surface.
+- `/admin/dashboard` remains the compatibility route for the global ops surface.
+- `/admin/ops` is the preferred secondary entrypoint for the global ops surface.
+- `/admin/users` remains the compatibility route for the global user/audit surface.
+- `/admin/audit` is the preferred secondary entrypoint for the global user/audit surface.
 - the primary top-level admin tab strip should point only to `/admin/servers`
 - global ops and global users/audit should appear as secondary links, not as competing primary tabs
 - `/admin/templates`, `/admin/features`, and `/admin/rules` are no longer primary entrypoints and should not be restored as top-level operator tabs.
@@ -51,7 +55,7 @@ Operational rule:
 
 ### Dashboard / Ops
 
-- Route entry: `/admin`, `/admin/dashboard`
+- Route entry: `/admin/ops`, `/admin/dashboard`
 - Primary concerns:
   - system totals
   - performance
@@ -61,7 +65,7 @@ Operational rule:
 
 ### Users and audit
 
-- Route entry: `/admin/users`
+- Route entry: `/admin/audit`, `/admin/users`
 - Primary concerns:
   - user moderation
   - role history
@@ -117,8 +121,12 @@ Advanced paths stay secondary and must not compete visually with the server-cent
 
 - `/admin/dashboard`
   - global operations, jobs, synthetic, rollout signals
+- `/admin/ops`
+  - preferred secondary entrypoint for global ops
 - `/admin/users`
   - global users, role history, event stream, AI/cost policy
+- `/admin/audit`
+  - preferred secondary entrypoint for global users and audit
 - `/admin/laws`
   - advanced law diagnostics and compatibility-backed internals
   - not a primary operator workspace

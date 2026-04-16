@@ -47,27 +47,27 @@
     {% if admin_focus == "servers" %}
     <div class="admin-section-toolbar">
       <span class="admin-badge admin-badge--success">Primary admin path</span>
-      <a class="ghost-button button-link" href="/admin/dashboard">Global ops</a>
-      <a class="ghost-button button-link" href="/admin/users">Global users / audit</a>
+      <a class="ghost-button button-link" href="/admin/ops">Global ops</a>
+      <a class="ghost-button button-link" href="/admin/audit">Global users / audit</a>
     </div>
     {% elif admin_focus == "dashboard" %}
     <div class="admin-section-toolbar">
       <span class="admin-badge admin-badge--warning">Secondary global surface</span>
       <a class="button-link primary-button" href="/admin/servers">Открыть server workspace</a>
-      <a class="ghost-button button-link" href="/admin/users">Global users / audit</a>
+      <a class="ghost-button button-link" href="/admin/audit">Global users / audit</a>
     </div>
     {% elif admin_focus == "users" %}
     <div class="admin-section-toolbar">
       <span class="admin-badge admin-badge--warning">Secondary global surface</span>
       <a class="button-link primary-button" href="/admin/servers">Открыть server workspace</a>
-      <a class="ghost-button button-link" href="/admin/dashboard">Global ops</a>
+      <a class="ghost-button button-link" href="/admin/ops">Global ops</a>
     </div>
     {% elif admin_focus == "laws" %}
     <div class="admin-section-toolbar">
       <span class="admin-badge admin-badge--warning">Compatibility seam · diagnostics only</span>
       <a class="ghost-button button-link" href="/admin/servers">Вернуться в server workspace</a>
-      <a class="ghost-button button-link" href="/admin/dashboard">Global ops</a>
-      <a class="ghost-button button-link" href="/admin/users">Global users / audit</a>
+      <a class="ghost-button button-link" href="/admin/ops">Global ops</a>
+      <a class="ghost-button button-link" href="/admin/audit">Global users / audit</a>
     </div>
     {% endif %}
     <nav class="legal-section-jump" aria-label="Навигация по разделам админ-панели">
