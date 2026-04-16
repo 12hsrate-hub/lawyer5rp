@@ -31,6 +31,7 @@ from ogp_web.schemas import (
     AdminEmailUpdatePayload,
     AdminExamScoreResetPayload,
     AdminLawSourcesPayload,
+    AdminLawSourceDiscoveryRunPayload,
     AdminLawSourceSetBackfillPayload,
     AdminLawSetPayload,
     AdminLawSetRebuildPayload,
@@ -149,6 +150,7 @@ from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
 from ogp_web.storage.law_source_discovery_store import LawSourceDiscoveryStore
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
 from ogp_web.services.admin_law_source_discovery_service import (
+    execute_source_set_discovery_payload,
     list_discovery_run_links_payload,
     list_source_set_discovery_runs_payload,
 )
@@ -632,6 +634,44 @@ async def admin_law_source_discovery_run_links(
         meta={"count": payload["count"], "run_id": int(run_id)},
     )
     return payload
+
+
+@router.post("/api/admin/law-source-sets/{source_set_key}/discovery-runs")
+async def admin_law_source_set_discovery_runs_execute(
+    source_set_key: str,
+    payload: AdminLawSourceDiscoveryRunPayload,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    discovery_store: LawSourceDiscoveryStore = Depends(get_law_source_discovery_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        result = execute_source_set_discovery_payload(
+            source_sets_store=source_sets_store,
+            discovery_store=discovery_store,
+            source_set_key=source_set_key,
+            source_set_revision_id=payload.source_set_revision_id,
+            trigger_mode=payload.trigger_mode,
+            safe_rerun=payload.safe_rerun,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_law_source_discovery_run_execute",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/law-source-sets/{str(source_set_key or '').strip().lower()}/discovery-runs",
+        method="POST",
+        status_code=200,
+        meta={
+            "run_id": (result.get("run") or {}).get("id"),
+            "source_set_key": (result.get("source_set") or {}).get("source_set_key"),
+            "changed": bool(result.get("changed")),
+        },
+    )
+    return result
 
 
 @router.post("/api/admin/runtime-servers/{server_code}/law-bindings")

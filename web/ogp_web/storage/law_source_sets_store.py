@@ -251,6 +251,24 @@ class LawSourceSetsStore:
         finally:
             conn.close()
 
+    def get_revision(self, *, revision_id: int) -> SourceSetRevisionRecord | None:
+        conn = self.backend.connect()
+        try:
+            row = conn.execute(
+                """
+                SELECT id, source_set_key, revision, status, container_urls_json,
+                       adapter_policy_json, metadata_json, created_at, published_at
+                FROM source_set_revisions
+                WHERE id = %s
+                """,
+                (int(revision_id),),
+            ).fetchone()
+            if row is None:
+                return None
+            return self._revision_from_row(dict(row))
+        finally:
+            conn.close()
+
     def create_revision(
         self,
         *,
