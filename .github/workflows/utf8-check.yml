@@ -3,6 +3,7 @@ name: UTF-8 Check
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   utf8-check:

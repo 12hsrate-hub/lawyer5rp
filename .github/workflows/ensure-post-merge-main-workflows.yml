@@ -7,6 +7,9 @@ on:
   pull_request_target:
     types:
       - closed
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
 
 permissions:
   actions: write
@@ -16,24 +19,51 @@ permissions:
 jobs:
   dispatch-missing-main-workflows:
     if: >
-      github.event.pull_request.merged == true &&
-      github.event.pull_request.base.ref == 'main' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.user.login == github.repository_owner
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.merged == true &&
+        github.event.pull_request.base.ref == 'main' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login == github.repository_owner
+      )
     runs-on: ubuntu-latest
     concurrency:
-      group: ensure-main-workflows-${{ github.event.pull_request.merge_commit_sha || github.sha }}
+      group: ensure-main-workflows-${{ github.event.pull_request.merge_commit_sha || github.ref_name || github.run_id }}
       cancel-in-progress: false
 
     steps:
-      - name: Wait for normal push workflows
+      - name: Wait for normal push workflows after merge events
+        if: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
         run: sleep 20
 
-      - name: Dispatch missing workflows for merge commit
+      - name: Resolve target main commit
+        id: target
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+
+          target_sha=""
+          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "pull_request_target" ]; then
+            target_sha="${MERGE_SHA:-}"
+          fi
+
+          if [ -z "$target_sha" ]; then
+            target_sha="$(gh api "repos/$REPOSITORY/branches/main" --jq '.commit.sha')"
+          fi
+
+          echo "sha=$target_sha" >> "$GITHUB_OUTPUT"
+          echo "Target main commit: $target_sha"
+
+      - name: Dispatch missing workflows for target commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           set -euo pipefail
 
@@ -45,16 +75,16 @@ jobs:
 
           for workflow in "${workflows[@]}"; do
             existing_run="$(
-              gh api "repos/$REPOSITORY/actions/workflows/$workflow/runs?per_page=30" \
-                --jq ".workflow_runs[] | select(.head_sha == \"$MERGE_SHA\") | .id" \
+              gh api "repos/$REPOSITORY/actions/workflows/$workflow/runs?per_page=50" \
+                --jq ".workflow_runs[] | select(.head_sha == \"$TARGET_SHA\") | .id" \
                 | head -n 1
             )"
 
             if [ -n "$existing_run" ]; then
-              echo "Workflow $workflow already has run $existing_run for $MERGE_SHA"
+              echo "Workflow $workflow already has run $existing_run for $TARGET_SHA"
               continue
             fi
 
-            echo "Dispatching missing workflow $workflow for merge commit $MERGE_SHA"
+            echo "Dispatching missing workflow $workflow for main commit $TARGET_SHA"
             gh workflow run "$workflow" --repo "$REPOSITORY" --ref main
           done
