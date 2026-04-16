@@ -1090,11 +1090,38 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
                 chunk_count=6,
             ),
         ):
+            workspace = self.client.get("/api/admin/runtime-servers/blackberry/workspace")
+            self.assertEqual(workspace.status_code, 200)
+            workspace_payload = workspace.json()
+            workspace_parity = workspace_payload["overview"]["laws"]["runtime_item_parity"]
+            self.assertEqual(workspace_parity["status"], "drift")
+            self.assertEqual(workspace_parity["runtime_only_sample"], ["koap"])
+            self.assertEqual(workspace_parity["projection_only_sample"], ["uk"])
+            self.assertIn("runtime_only: koap", workspace_parity["drift_summary"])
+            self.assertIn("projection_only: uk", workspace_parity["drift_summary"])
+
+            summary = self.client.get("/api/admin/runtime-servers/blackberry/laws/summary")
+            self.assertEqual(summary.status_code, 200)
+            summary_parity = summary.json()["runtime_item_parity"]
+            self.assertEqual(summary_parity["status"], "drift")
+            self.assertEqual(summary_parity["runtime_only_sample"], ["koap"])
+            self.assertEqual(summary_parity["projection_only_sample"], ["uk"])
+
+            diff = self.client.get("/api/admin/runtime-servers/blackberry/laws/diff")
+            self.assertEqual(diff.status_code, 200)
+            diff_parity = diff.json()["runtime_item_parity"]
+            self.assertEqual(diff_parity["status"], "drift")
+            self.assertEqual(diff_parity["runtime_only_sample"], ["koap"])
+            self.assertEqual(diff_parity["projection_only_sample"], ["uk"])
+
             issues = self.client.get("/api/admin/runtime-servers/blackberry/issues")
             self.assertEqual(issues.status_code, 200)
             payload = issues.json()
             issue_ids = {item["issue_id"] for item in payload["items"]}
             self.assertIn("laws_runtime_item_parity", issue_ids)
+            parity_issue = next(item for item in payload["items"] if item["issue_id"] == "laws_runtime_item_parity")
+            self.assertIn("runtime_only: koap", parity_issue["detail"])
+            self.assertIn("projection_only: uk", parity_issue["detail"])
 
             recheck = self.client.post("/api/admin/runtime-servers/blackberry/issues/laws_runtime_item_parity/recheck")
             self.assertEqual(recheck.status_code, 200)

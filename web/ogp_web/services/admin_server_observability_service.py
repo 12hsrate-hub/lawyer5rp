@@ -80,12 +80,26 @@ def _build_runtime_item_parity(
     shared = runtime_keys & projection_keys
     runtime_only = runtime_keys - projection_keys
     projection_only = projection_keys - runtime_keys
+    runtime_only_keys = sorted(runtime_only)
+    projection_only_keys = sorted(projection_only)
+    runtime_only_sample = runtime_only_keys[:3]
+    projection_only_sample = projection_only_keys[:3]
+    drift_parts: list[str] = []
+    if runtime_only_sample:
+        drift_parts.append(f"runtime_only: {', '.join(runtime_only_sample)}")
+    if projection_only_sample:
+        drift_parts.append(f"projection_only: {', '.join(projection_only_sample)}")
     status = "aligned" if runtime_keys and projection_keys and not runtime_only and not projection_only else ("drift" if runtime_keys or projection_keys else "uninitialized")
     return {
         "status": status,
         "runtime_only_count": len(runtime_only),
         "projection_only_count": len(projection_only),
         "shared_count": len(shared),
+        "runtime_only_keys": runtime_only_keys,
+        "projection_only_keys": projection_only_keys,
+        "runtime_only_sample": runtime_only_sample,
+        "projection_only_sample": projection_only_sample,
+        "drift_summary": "; ".join(drift_parts),
     }
 
 
@@ -94,15 +108,16 @@ def _build_runtime_item_parity_issue(runtime_item_parity: dict[str, Any]) -> dic
         return None
     runtime_only_count = int((runtime_item_parity or {}).get("runtime_only_count") or 0)
     projection_only_count = int((runtime_item_parity or {}).get("projection_only_count") or 0)
+    drift_summary = str((runtime_item_parity or {}).get("drift_summary") or "").strip()
+    detail = f"runtime_only={runtime_only_count}, projection_only={projection_only_count}."
+    if drift_summary:
+        detail = f"{detail} {drift_summary}."
     return {
         "issue_id": "laws_runtime_item_parity",
         "severity": "warn",
         "source": "laws",
         "title": "Состав runtime law shell расходится с latest projection",
-        "detail": (
-            f"runtime_only={runtime_only_count}, projection_only={projection_only_count}. "
-            "Откройте вкладку «Законы», чтобы увидеть item parity и понять, какие law identities расходятся."
-        ),
+        "detail": f"{detail} Откройте вкладку «Законы», чтобы увидеть item parity и понять, какие law identities расходятся.",
         "available_actions": [
             {"kind": "recheck", "label": "Проверить наполнение"},
         ],
