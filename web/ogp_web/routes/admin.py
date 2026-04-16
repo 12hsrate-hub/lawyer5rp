@@ -2089,12 +2089,11 @@ async def admin_law_sources_save(
 async def admin_law_sources_preview(
     payload: AdminLawSourcesPayload,
     user: AuthUser = Depends(requires_permission("manage_laws")),
-    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     target_server_code = _resolve_law_sources_server_code(user, user_store, payload.server_code)
-    result = preview_law_sources_payload(workflow_service=workflow_service, source_urls=payload.source_urls)
+    result = preview_law_sources_payload(source_urls=payload.source_urls)
     metrics_store.log_event(
         event_type="admin_law_sources_preview",
         username=user.username,

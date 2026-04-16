@@ -7,6 +7,7 @@ from fastapi import HTTPException, status
 from ogp_web.services.auth_service import AuthUser
 from ogp_web.services.job_status_service import enrich_job_status
 from ogp_web.services.law_admin_service import LawAdminService
+from ogp_web.services.law_sources_validation import validate_source_urls
 from ogp_web.services.server_context_service import resolve_user_server_permissions
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
@@ -264,10 +265,23 @@ def save_law_sources_payload(
 
 def preview_law_sources_payload(
     *,
-    workflow_service: ContentWorkflowService,
     source_urls: list[str],
 ) -> dict[str, Any]:
-    return LawAdminService(workflow_service).preview_sources(source_urls=source_urls)
+    return validate_law_sources_preview_payload(source_urls=source_urls)
+
+
+def validate_law_sources_preview_payload(*, source_urls: list[str]) -> dict[str, Any]:
+    validation = validate_source_urls(source_urls)
+    return {
+        "ok": True,
+        "accepted_urls": list(validation.accepted_urls),
+        "invalid_urls": list(validation.invalid_urls),
+        "invalid_details": list(validation.invalid_details),
+        "duplicate_count": validation.duplicate_count,
+        "duplicate_urls": list(validation.duplicate_urls),
+        "accepted_count": len(validation.accepted_urls),
+        "invalid_count": len(validation.invalid_urls),
+    }
 
 
 def list_law_sources_history_payload(

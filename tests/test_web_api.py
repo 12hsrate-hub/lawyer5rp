@@ -880,27 +880,19 @@ class WebApiTests(unittest.TestCase):
 
     def test_admin_law_sources_preview_reports_duplicates_and_invalid_urls(self):
         self._register_verify_and_login("12345", "admin-law-preview@example.com")
-
-        class DummyWorkflowService:
-            repository = object()
-
-        self.client.app.dependency_overrides[admin_route.get_content_workflow_service] = lambda: DummyWorkflowService()
-        try:
-            response = self.client.post(
-                "/api/admin/law-sources/preview",
-                json={
-                    "source_urls": [
-                        "https://example.com/law/a",
-                        "ftp://example.com/law/a",
-                        "https://example.com/law/a",
-                        "invalid-url",
-                        "http://example.com/law/b",
-                    ],
-                    "persist_sources": False,
-                },
-            )
-        finally:
-            self.client.app.dependency_overrides.pop(admin_route.get_content_workflow_service, None)
+        response = self.client.post(
+            "/api/admin/law-sources/preview",
+            json={
+                "source_urls": [
+                    "https://example.com/law/a",
+                    "ftp://example.com/law/a",
+                    "https://example.com/law/a",
+                    "invalid-url",
+                    "http://example.com/law/b",
+                ],
+                "persist_sources": False,
+            },
+        )
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -921,6 +913,32 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(payload["duplicate_count"], 1)
         self.assertEqual(payload["accepted_count"], 2)
         self.assertEqual(payload["invalid_count"], 2)
+
+    def test_admin_law_sources_preview_does_not_depend_on_workflow_service(self):
+        self._register_verify_and_login("12345", "admin-law-preview-nodeps@example.com")
+
+        def _broken_workflow_service():
+            raise AssertionError("workflow_service_should_not_be_used_for_preview")
+
+        self.client.app.dependency_overrides[admin_route.get_content_workflow_service] = _broken_workflow_service
+        try:
+            response = self.client.post(
+                "/api/admin/law-sources/preview",
+                json={
+                    "source_urls": [
+                        "https://example.com/law/a",
+                        "https://example.com/law/a/",
+                    ],
+                    "persist_sources": False,
+                },
+            )
+        finally:
+            self.client.app.dependency_overrides.pop(admin_route.get_content_workflow_service, None)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["accepted_urls"], ["https://example.com/law/a"])
+        self.assertEqual(payload["duplicate_count"], 1)
 
     def test_admin_law_sources_rebuild_rejects_invalid_urls_with_examples(self):
         self._register_verify_and_login("12345", "admin-law-rebuild@example.com")
