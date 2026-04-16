@@ -328,6 +328,49 @@ def _runtime_version_parity_summary(*, health_payload: dict[str, Any]) -> dict[s
     }
 
 
+def _projection_bridge_lifecycle_summary(*, health_payload: dict[str, Any]) -> dict[str, Any]:
+    projection_bridge = dict((health_payload or {}).get("projection_bridge") or {})
+    runtime_alignment = dict((health_payload or {}).get("runtime_alignment") or {})
+    runtime_provenance = dict((health_payload or {}).get("runtime_provenance") or {})
+    run_id = int(projection_bridge.get("run_id") or 0)
+    law_set_id = int(projection_bridge.get("law_set_id") or 0)
+    law_version_id = int(projection_bridge.get("law_version_id") or 0)
+    matches_active = bool(projection_bridge.get("matches_active_law_version"))
+    active_law_version_id = int(runtime_alignment.get("active_law_version_id") or 0)
+    runtime_mode = str(runtime_provenance.get("mode") or "").strip().lower()
+
+    if run_id <= 0:
+        status = "uninitialized"
+        detail = "No promoted projection lifecycle is available for this server yet."
+    elif law_version_id > 0 and matches_active:
+        status = "activated"
+        detail = "Projection bridge is activated and matches the current runtime law_version."
+    elif law_version_id > 0:
+        status = "drifted"
+        detail = "Projection bridge has an activation record, but it no longer matches the current runtime law_version."
+    elif law_set_id > 0:
+        status = "materialized"
+        detail = "Projection bridge materialized a runtime law_set shell, but no active runtime law_version is aligned yet."
+    else:
+        status = "preview_only"
+        detail = "Projection bridge currently exists only as a preview/decision run without materialization."
+
+    if runtime_mode == "materialized_shell_only" and law_set_id > 0 and law_version_id <= 0:
+        status = "materialized"
+    elif runtime_mode == "projection_drift" and law_version_id > 0 and active_law_version_id > 0 and law_version_id != active_law_version_id:
+        status = "drifted"
+
+    return {
+        "status": status,
+        "detail": detail,
+        "run_id": run_id or None,
+        "law_set_id": law_set_id or None,
+        "law_version_id": law_version_id or None,
+        "active_law_version_id": active_law_version_id or None,
+        "matches_active_law_version": matches_active if law_version_id > 0 else None,
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -369,6 +412,7 @@ def build_server_laws_summary_payload(
         projection_items=current_items,
     )
     runtime_version_parity = _runtime_version_parity_summary(health_payload=health_payload)
+    projection_bridge_lifecycle = _projection_bridge_lifecycle_summary(health_payload=health_payload)
     diff_summary = _diff_summary(current_items, previous_items)
     diff_summary["current_run_id"] = int(current_run.id) if current_run is not None else None
     diff_summary["baseline_run_id"] = int(previous_run.id) if previous_run is not None else None
@@ -382,6 +426,7 @@ def build_server_laws_summary_payload(
         "runtime_alignment": dict(health_payload.get("runtime_alignment") or {}),
         "runtime_item_parity": runtime_item_parity,
         "runtime_version_parity": runtime_version_parity,
+        "projection_bridge_lifecycle": projection_bridge_lifecycle,
         "latest_projection_run": _serialize_run(current_run),
         "fill_check": fill_summary,
         "diff": diff_summary,
@@ -520,6 +565,7 @@ def build_server_laws_diff_payload(
         projection_items=current_items,
     )
     runtime_version_parity = _runtime_version_parity_summary(health_payload=health_payload)
+    projection_bridge_lifecycle = _projection_bridge_lifecycle_summary(health_payload=health_payload)
     diff_summary = _diff_summary(current_items, previous_items)
     diff_summary["current_run_id"] = int(current_run.id) if current_run is not None else None
     diff_summary["baseline_run_id"] = int(previous_run.id) if previous_run is not None else None
@@ -530,5 +576,6 @@ def build_server_laws_diff_payload(
         "runtime_alignment": dict(health_payload.get("runtime_alignment") or {}),
         "runtime_item_parity": runtime_item_parity,
         "runtime_version_parity": runtime_version_parity,
+        "projection_bridge_lifecycle": projection_bridge_lifecycle,
         "summary": diff_summary,
     }
