@@ -2,7 +2,7 @@
 
 Use this during the observation window after `orange` is activated as the first staged multi-server RC candidate.
 
-Status: Checkpoint 1 active  
+Status: completed; accepted staged RC candidate
 Date: 2026-04-16
 
 ## Checkpoint cadence
@@ -17,28 +17,28 @@ Date: 2026-04-16
 - Date: `2026-04-16`
 - Operator: `platform-ops`
 - Candidate server: `orange`
-- Observation window checkpoint: `Checkpoint 1`
+- Observation window checkpoint: `Checkpoint 4 / final sign-off`
 
 ## 2. Stability checks
 
 - Runtime server state still expected: `yes — orange runtime server record remains present`
-- Activation state still expected: `yes — orange is active after explicit RC-window activation`
+- Activation state still expected: `yes — orange remains active with projection-backed runtime state`
 - Warning signals count: `0`
 - Neutral fallback unexpectedly used: `no`
 - Rollback events since previous check: `0`
 
 ## 3. Output / config quality
 
-- Runtime health still green: `yes — application /health remains status=ok`
-- Onboarding state still coherent: `yes — workflow-ready, next_required_state=rollout-ready, resolution_mode=published_pack`
+- Runtime health still green: `yes — application /health remains status=ok and runtime health summary is ready`
+- Onboarding state still coherent: `yes — rollout-ready, next_required_state=production-ready, resolution_mode=published_pack`
 - Document-builder sample still `orange`-owned: `yes — orange_appeal_admin_claim is present`
-- Law activation / rollback visibility intact: `yes — law_set_id=3, binding_count=1, active_law_version_id=203`
+- Law activation / rollback visibility intact: `yes — projection_run_id=1, law_set_id=4, active_law_version_id=247, chunk_count=1`
 - Selected-server switching still safe: `expected yes; no live regression observed at Checkpoint 1`
 
 ## 4. Async / operations
 
-- Deploy health remains green: `yes — baseline deploy run 24489154809 is green`
-- Synthetic smoke remains green: `yes — pass on deploy run 24489154809`
+- Deploy health remains green: `yes — accepted baseline deploy run 24494677193 is green`
+- Synthetic smoke remains green: `yes — pass on deploy run 24494677193`
 - New incidents: `none`
 
 ## 5. Decision for next checkpoint
@@ -46,10 +46,10 @@ Date: 2026-04-16
 - Keep current mode: `yes`
 - Escalate investigation: `no`
 - Roll back: `no`
-- Prepare broader rollout: `not yet; continue checkpoint cadence`
+- Prepare broader rollout: `not yet; rollout-ready accepted, production-ready remains manual`
 
 ## 6. Notes
 
-- Key findings: `RC window opened successfully by explicit orange activation; no immediate blocker observed at T+0`
+- Key findings: `orange completed the live projection pilot, active runtime advanced to law_version_id=247 with chunk_count=1, and rollout-ready is now confirmed`
 - Follow-up owner: `platform-ops`
-- Follow-up deadline: `Checkpoint 2 at T+15m`
+- Follow-up deadline: `manual production-ready evidence review when needed`
