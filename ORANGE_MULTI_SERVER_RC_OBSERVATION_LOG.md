@@ -2,7 +2,7 @@
 
 Use this during the observation window after `orange` is activated as the first staged multi-server RC candidate.
 
-Status: completed; accepted staged RC candidate
+Status: completed; production-ready accepted within current RC scope
 Date: 2026-04-16
 
 ## Checkpoint cadence
@@ -46,10 +46,10 @@ Date: 2026-04-16
 - Keep current mode: `yes`
 - Escalate investigation: `no`
 - Roll back: `no`
-- Prepare broader rollout: `not yet; rollout-ready accepted, production-ready remains manual`
+- Prepare broader rollout: `not yet; production-ready accepted only for the current RC scope`
 
 ## 6. Notes
 
-- Key findings: `orange completed the live projection pilot, active runtime advanced to law_version_id=247 with chunk_count=1, and rollout-ready is now confirmed`
+- Key findings: `orange completed the live projection pilot, active runtime advanced to law_version_id=247 with chunk_count=1, rollout-ready was confirmed, and manual production-ready sign-off was accepted within the current RC scope`
 - Follow-up owner: `platform-ops`
 - Follow-up deadline: `manual production-ready evidence review when needed`

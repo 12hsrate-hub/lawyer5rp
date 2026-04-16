@@ -1,6 +1,6 @@
 # Orange Multi-Server RC Checklist
 
-Status: accepted staged multi-server RC candidate
+Status: production-ready accepted within current RC scope
 Date: 2026-04-16
 
 ## Candidate
@@ -9,7 +9,7 @@ Date: 2026-04-16
 - Procedure scope: `runtime/admin/law/config surfaces only`
 - Owner: `platform-ops`
 - Planned rollout window: `opened on 2026-04-16T02:47:53Z; accepted after successful live projection pilot on main@3293acf`
-- Claimed onboarding state: `rollout-ready`
+- Claimed onboarding state: `production-ready (manual sign-off within current RC scope)`
 
 ## Preconditions
 
@@ -38,7 +38,7 @@ Date: 2026-04-16
 - Known-good deployed `/health` baseline: `status=ok` from Deploy Production run `24494677193`
 - RC transition package PR: `#307` — `https://github.com/12hsrate-hub/lawyer5rp/pull/307`
 - RC transition package merged commit: `c1dabbb451170008cedcb622951a14dd113b1908`
-- `orange` runtime server health payload: `live projection pilot run 24494653859: active_law_version_id=247, chunk_count=1, summary.is_ready=true, highest_completed_state=rollout-ready, next_required_state=production-ready, resolution_mode=published_pack, uses_transitional_fallback=false`
+- `orange` runtime server health payload: `live projection pilot run 24494653859: active_law_version_id=247, chunk_count=1, summary.is_ready=true, highest_completed_state=rollout-ready, next_required_state=production-ready, resolution_mode=published_pack, uses_transitional_fallback=false; production-ready remains manual/operator-confirmed`
 - `orange` document-builder bundle sample: `live enablement snapshot 2026-04-16T02:37:44Z: claim_kind_by_court_type.appeal includes orange_appeal_admin_claim and proves orange-owned metadata`
 - `orange` law set / law binding / rollback sample: `live projection pilot run 24494653859: approved projection run_id=1, materialized law_set_id=4, active law_version_id=247, rollback remains available through existing admin law-version flow`
 - CI Runtime result: `success` — `https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487677670`
@@ -54,7 +54,7 @@ Date: 2026-04-16
 
 ## Required evidence block
 
-- claimed_state: `rollout-ready`
+- claimed_state: `production-ready (manual/operator sign-off)`
 - completed_items:
   - `bootstrap-ready` regression evidence recorded via `tests/test_runtime_servers_store.py`, `tests/test_server_config_registry.py`, and `tests/test_admin_runtime_servers_service.py`
   - `workflow-ready` regression evidence recorded via `tests/test_admin_runtime_servers_api.py` and `tests/test_admin_runtime_law_sets_api.py`
@@ -64,9 +64,10 @@ Date: 2026-04-16
   - active orange runtime now resolves through projection provenance with `law_version_id=247` and `chunk_count=1`
   - known-good production smoke evidence collected for baseline commit `3293acf` via Deploy Production run `24494677193`
   - manual operator sign-off accepted `orange` as a staged multi-server RC candidate
+  - manual production-ready sign-off accepted the current `orange` RC scope as operator-safe to continue without an open runtime blocker
 - skipped_items_with_justification:
-  - `production-ready` is intentionally not claimed during first RC; it remains a manual sign-off state
   - second-server complaint runtime is intentionally out of scope for this RC
+  - broader multi-server parity beyond the current law/config/runtime/document-builder surfaces is intentionally not claimed by this production-ready sign-off
 - rollback_reference: `deactivate orange runtime server and revert to previous known-good main via Deploy Production`
 - validation_commands:
   - `python -m pytest tests/test_sync_server_bootstrap_pack.py tests/test_server_config_registry.py tests/test_document_builder_bundle_service.py tests/test_admin_runtime_servers_service.py tests/test_admin_runtime_servers_api.py -q`

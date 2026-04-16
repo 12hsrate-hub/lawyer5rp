@@ -2,7 +2,7 @@
 
 Use this record for the first multi-server RC candidate `orange`.
 
-Status: proceed; accepted staged RC candidate
+Status: proceed; production-ready accepted within current RC scope
 Date: 2026-04-16
 
 ## 1. Scope
@@ -64,8 +64,8 @@ Date: 2026-04-16
   - `hold`
   - `rollback`
 - Decision: `proceed`
-- Reason: `orange` completed the live projection pilot on production, reached active law_version_id=247 with chunk_count=1, and satisfied rollout-ready health requirements`
-- Required follow-up: `manual production-ready evidence remains separate; no further runtime blocker is open`
+- Reason: `orange` completed the live projection pilot on production, reached active law_version_id=247 with chunk_count=1, satisfied rollout-ready health requirements, and then received manual production-ready sign-off for the current RC scope`
+- Required follow-up: `no open runtime blocker remains; only broader future rollout work is deferred`
 
 ## 5. Observation window
 
@@ -83,12 +83,14 @@ Date: 2026-04-16
 
 - Final state:
   - `orange accepted as the first staged multi-server RC candidate`
+  - `production-ready accepted within the current RC scope`
 - Incidents seen:
   - `none blocking; one zero-chunk activation reuse gap was fixed before final acceptance`
 - Rollback used:
   - `no`
 - Notes:
-  - `rollout-ready is confirmed; production-ready remains manual/evidence-based and intentionally narrower than a blanket platform claim`
+  - `production-ready sign-off is manual/evidence-based and intentionally narrower than a blanket platform claim`
+  - `second-server complaint runtime remains out of scope`
 
 ## 7. Scale-out readiness
 
