@@ -4957,6 +4957,7 @@ if (serverWorkspaceHost && window.OGPAdminServerWorkspace?.bootServerWorkspace) 
     escapeHtml,
     errorsHost,
     clearMessage,
+    showMessage,
     setStateError,
     setStateIdle,
     formatHttpError,
