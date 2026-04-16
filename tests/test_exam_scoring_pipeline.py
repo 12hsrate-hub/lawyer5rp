@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from shared import ogp_ai
 
 
@@ -105,3 +107,135 @@ def test_exam_score_cache_key_changes_with_rubric_metadata():
     )
 
     assert base_key != changed_key
+
+
+@pytest.mark.parametrize(
+    ("user_answer", "expected_min"),
+    [
+        ("Это 23 ПК п.в), п.б)", 82),
+        ("ст.23 ПК", 55),
+        ("23ПК", 55),
+    ],
+)
+def test_exact_ref_partial_and_compact_reference_get_reasonable_floor(user_answer: str, expected_min: int):
+    item = ogp_ai._canonicalize_exam_item(
+        {
+            "column": "F",
+            "question_type": "exact_ref",
+            "user_answer": user_answer,
+            "correct_answer": 'п. "в" ст. 23 Процессуального Кодекса (ПК)',
+        }
+    )
+    calibrated = ogp_ai._calibrate_exam_result(item, {"score": 20, "rationale": "low"})
+    assert int(calibrated["score"]) >= expected_min
+
+
+def test_exact_ref_wrong_reference_does_not_get_partial_exact_floor():
+    item = ogp_ai._canonicalize_exam_item(
+        {
+            "column": "F",
+            "question_type": "exact_ref",
+            "user_answer": "ст.24 АК",
+            "correct_answer": 'п. "в" ст. 23 ПК',
+        }
+    )
+    calibrated = ogp_ai._calibrate_exam_result(item, {"score": 20, "rationale": "low"})
+    assert int(calibrated["score"]) == 20
+
+
+def test_standard_question_partial_key_points_not_collapsing_to_zero_like_band():
+    item = ogp_ai._canonicalize_exam_item(
+        {
+            "column": "G",
+            "question_type": "standard",
+            "user_answer": "обязан назвать основания при обыске/досмотре, по остановке ТС сотрудник объявляет требование",
+            "correct_answer": "ч.2 ст.3 ДК и ч.4 ст.29 ПК",
+            "key_points": ["остановке ТС", "обыске либо досмотре", "ч. 2 ст. 3 ДК"],
+        }
+    )
+    calibrated = ogp_ai._calibrate_exam_result(item, {"score": 10, "rationale": "low"})
+    assert int(calibrated["score"]) >= 45
+
+
+def test_abbreviations_and_compact_legal_notation_are_normalized_for_matching():
+    item = ogp_ai._canonicalize_exam_item(
+        {
+            "column": "H",
+            "question_type": "standard",
+            "user_answer": "когда задержан по приказу губера вице-губера ЗПВС ПВС ЗГП ГП и по решению суда",
+            "correct_answer": "когда задержан по приказу губернатора, вице-губернатора, председателя ВС, зампреда ВС, генпрокурора, замгенпрокурора и по решению суда",
+            "key_points": ["приказу губернатора", "председатель", "генерального прокурора", "решению суда"],
+        }
+    )
+    calibrated = ogp_ai._calibrate_exam_result(item, {"score": 25, "rationale": "low"})
+    assert int(calibrated["score"]) >= 45
+
+
+def test_compact_article_part_notation_keeps_partial_credit_for_principle_plus_exception():
+    item = ogp_ai._canonicalize_exam_item(
+        {
+            "column": "I",
+            "question_type": "standard",
+            "user_answer": "невиновен пока не доказано, 16ч4 ПК - боло-розыск",
+            "correct_answer": "презумпция невиновности по ст. 6 ПК и исключение bolo-розыск по ст. 16 ч. 4 ПК",
+            "key_points": ["невиновен пока не доказано", "ст. 16 ч. 4 ПК", "bolo-розыск"],
+        }
+    )
+    calibrated = ogp_ai._calibrate_exam_result(item, {"score": 30, "rationale": "low"})
+    assert int(calibrated["score"]) >= 60
+
+
+def test_correct_core_action_with_nonfatal_extra_details_gets_moderate_penalty_only():
+    item = ogp_ai._canonicalize_exam_item(
+        {
+            "column": "J",
+            "question_type": "standard",
+            "user_answer": "16ч3 попросить разрешения на ношение, затем проверить и уже потом решать по задержанию",
+            "correct_answer": "запросить документы/основание по ч.3 ст.16 ПК, не переходить сразу к задержанию",
+            "key_points": ["ч.3 ст.16", "запросить документы", "не переходить сразу к задержанию"],
+        }
+    )
+    calibrated = ogp_ai._calibrate_exam_result(item, {"score": 25, "rationale": "low"})
+    assert int(calibrated["score"]) >= 55
+
+
+def test_correct_main_conclusion_with_imperfect_explanation_gets_partial_credit():
+    item = ogp_ai._canonicalize_exam_item(
+        {
+            "column": "K",
+            "question_type": "standard",
+            "user_answer": "ч1 после штрафа на протяжении 3-х дней можно выписывать ч2. после ареста 20 дней.",
+            "correct_answer": "ч.1 ст.48 АК, так как через 4 дня после штрафа рецидива нет",
+            "key_points": ["ч.1 ст.48", "через 4 дня", "рецидива нет"],
+        }
+    )
+    calibrated = ogp_ai._calibrate_exam_result(item, {"score": 35, "rationale": "low"})
+    assert int(calibrated["score"]) >= 45
+
+
+def test_list_all_one_correct_variant_with_omissions_gets_non_trivial_partial_credit():
+    item = ogp_ai._canonicalize_exam_item(
+        {
+            "column": "L",
+            "question_type": "list_all",
+            "user_answer": "72 часа через суд, остальное не помню",
+            "correct_answer": "48 часов через ОГП; 72 часа через суд; 7 дней в исключительных случаях",
+            "key_points": ["48 часов через ОГП", "72 часа через суд", "7 дней в исключительных случаях"],
+        }
+    )
+    calibrated = ogp_ai._calibrate_exam_result(item, {"score": 10, "rationale": "low"})
+    assert int(calibrated["score"]) >= 35
+
+
+def test_reference_only_without_required_content_gets_partial_but_not_high_score():
+    item = ogp_ai._canonicalize_exam_item(
+        {
+            "column": "M",
+            "question_type": "standard",
+            "user_answer": "ст.6 ПК",
+            "correct_answer": "презумпция невиновности + исключение bolo-розыск (ст.16 ч.4 ПК)",
+            "key_points": ["презумпция невиновности", "исключение bolo-розыск"],
+        }
+    )
+    calibrated = ogp_ai._calibrate_exam_result(item, {"score": 25, "rationale": "low"})
+    assert 25 <= int(calibrated["score"]) <= 45
