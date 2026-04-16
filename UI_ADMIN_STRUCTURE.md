@@ -30,6 +30,20 @@ Route policy:
 - `/admin/dashboard` remains the global ops surface.
 - `/admin/users` remains the global user/audit surface.
 - `/admin/templates`, `/admin/features`, and `/admin/rules` are no longer primary entrypoints and should not be restored as top-level operator tabs.
+- `/admin/laws` must not be used as the primary onboarding or day-to-day configuration entrypoint for a server.
+
+## Migration policy
+
+The current migration mode is:
+
+- `new admin = primary`
+- `old law-centric surface = advanced / compatibility`
+
+Operational rule:
+
+- start normal admin work from `/admin/servers`
+- open `/admin/servers/{server_code}` for server-specific setup and maintenance
+- use `/admin/laws` only when raw law diagnostics or compatibility-backed internals are explicitly needed
 
 ## Domain map
 
@@ -75,6 +89,10 @@ Route policy:
   - legacy/runtime detail
   - compatibility-backed law workflows
   - source-set and binding internals
+- Not for:
+  - initial server onboarding
+  - everyday server setup
+  - primary feature/template/access work
 
 ## Current operating model
 
@@ -101,6 +119,7 @@ Advanced paths stay secondary and must not compete visually with the server-cent
   - global users, role history, event stream, AI/cost policy
 - `/admin/laws`
   - advanced law diagnostics and compatibility-backed internals
+  - not a primary operator workspace
 
 ## Boundary rules
 
@@ -109,6 +128,7 @@ Advanced paths stay secondary and must not compete visually with the server-cent
 - Do not restore old law-centric or catalog-centric screens as equal primary paths.
 - Prefer server-centric UX for any operator-facing addition that is server-scoped.
 - Keep diagnostics and compatibility entrypoints reachable, but visually secondary.
+- Do not direct a new operator to `/admin/laws` when `/admin/servers/{server_code}` already covers the task.
 
 ## Rendering rules
 
