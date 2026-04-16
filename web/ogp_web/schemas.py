@@ -591,6 +591,24 @@ class AdminRuntimeServerPayload(BaseModel):
             raise ValueError("server_title_required")
         return normalized
 
+
+class AdminUserRoleAssignmentPayload(BaseModel):
+    role_code: str = ""
+    server_code: str = ""
+
+    @field_validator("role_code")
+    @classmethod
+    def validate_role_code(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            raise ValueError("role_code_required")
+        return normalized
+
+    @field_validator("server_code")
+    @classmethod
+    def validate_server_code(cls, value: str) -> str:
+        return str(value or "").strip().lower()
+
 class AdminCatalogWorkflowPayload(BaseModel):
     action: str = ""
     change_request_id: int = 0
