@@ -135,6 +135,23 @@ window.OGPAdminServerWorkspace = {
       return "admin-badge--muted";
     }
 
+    function statusLabel(status) {
+      const normalized = String(status || "").trim().toLowerCase();
+      if (normalized === "ready") return "Готов";
+      if (normalized === "error") return "Есть ошибки";
+      if (normalized === "update_required") return "Требует обновления";
+      if (normalized === "partial") return "Настроен частично";
+      if (normalized === "not_configured") return "Не настроен";
+      return normalized || "unknown";
+    }
+
+    function issueSeverityClass(severity) {
+      const normalized = String(severity || "").trim().toLowerCase();
+      if (normalized === "error") return "admin-badge--danger";
+      if (normalized === "warn" || normalized === "warning") return "admin-badge--warning";
+      return "admin-badge--muted";
+    }
+
     function renderSummary() {
       const summaryHost = document.getElementById("admin-server-workspace-summary");
       if (!(summaryHost instanceof HTMLElement)) {
@@ -143,6 +160,8 @@ window.OGPAdminServerWorkspace = {
       const readiness = state.workspace?.readiness || {};
       const counters = readiness.counters || {};
       const health = state.workspace?.health?.summary || {};
+      const issues = state.issuesData || state.workspace?.issues || {};
+      const latestAudit = Array.isArray(state.auditData?.items) ? state.auditData.items[0] : null;
       summaryHost.innerHTML = `
         <div class="legal-field">
           <span class="legal-field__label">Сервер</span>
@@ -151,7 +170,7 @@ window.OGPAdminServerWorkspace = {
         </div>
         <div class="legal-field">
           <span class="legal-field__label">Общая готовность</span>
-          <div><span class="admin-badge ${badgeClass(readiness.overall_status)}">${escapeHtml(String(readiness.overall_status || "unknown"))}</span></div>
+          <div><span class="admin-badge ${badgeClass(readiness.overall_status)}">${escapeHtml(statusLabel(readiness.overall_status))}</span></div>
           <div class="admin-user-cell__secondary">errors: ${escapeHtml(String(counters.errors || 0))} • warnings: ${escapeHtml(String(counters.warnings || 0))}</div>
         </div>
         <div class="legal-field">
@@ -160,11 +179,22 @@ window.OGPAdminServerWorkspace = {
           <div class="admin-user-cell__secondary">${escapeHtml(String(health.ready_count || 0))}/${escapeHtml(String(health.total_count || 0))} checks</div>
         </div>
         <div class="legal-field">
+          <span class="legal-field__label">Сигналы</span>
+          <div><strong>${escapeHtml(String(issues.unresolved_count || 0))}</strong></div>
+          <div class="admin-user-cell__secondary">errors: ${escapeHtml(String(issues.error_count || 0))} • warnings: ${escapeHtml(String(issues.warning_count || 0))}</div>
+        </div>
+        <div class="legal-field">
+          <span class="legal-field__label">Последнее изменение</span>
+          <div><strong>${escapeHtml(String(latestAudit?.title || "—"))}</strong></div>
+          <div class="admin-user-cell__secondary">${escapeHtml(String(latestAudit?.created_at || "—"))}</div>
+        </div>
+        <div class="legal-field">
           <span class="legal-field__label">Быстрые действия</span>
           <div class="admin-section-toolbar">
             <button type="button" class="ghost-button" data-server-workspace-switch="laws">Законы</button>
             <button type="button" class="ghost-button" data-server-workspace-switch="features">Функции</button>
             <button type="button" class="ghost-button" data-server-workspace-switch="templates">Шаблоны</button>
+            <button type="button" class="ghost-button" data-server-workspace-switch="errors">Проблемы</button>
             <a class="ghost-button button-link" href="/admin/users">Users</a>
           </div>
         </div>
@@ -179,25 +209,88 @@ window.OGPAdminServerWorkspace = {
       const readiness = state.workspace?.readiness || {};
       const blocks = readiness.blocks || {};
       const dashboard = state.workspace?.overview?.dashboard || {};
+      const issues = state.issuesData || state.workspace?.issues || {};
+      const auditItems = Array.isArray(state.auditData?.items) ? state.auditData.items : [];
       const activityItems = Array.isArray(state.workspace?.activity) ? state.workspace.activity.slice(0, 8) : [];
+      const warningSignals = Array.isArray(dashboard.release?.warning_signals) ? dashboard.release.warning_signals : [];
+      const recentIssues = Array.isArray(issues.items) ? issues.items.slice(0, 4) : [];
+      const recentChanges = auditItems
+        .filter((item) => ["workflow_audit", "content_audit", "law_projection"].includes(String(item.kind || "")))
+        .slice(0, 5);
+      const blockCards = [
+        {
+          key: "laws",
+          title: "Законы",
+          status: blocks.laws?.status,
+          detail: `bindings: ${escapeHtml(String(state.lawsSummary?.bindings?.length || state.workspace?.overview?.laws?.binding_count || 0))} • effective: ${escapeHtml(String(state.lawsEffective?.summary?.count || 0))}`,
+        },
+        {
+          key: "features",
+          title: "Функции",
+          status: blocks.features?.status,
+          detail: `effective: ${escapeHtml(String(state.featuresData?.counts?.effective || 0))} • overrides: ${escapeHtml(String(state.featuresData?.counts?.server || 0))}`,
+        },
+        {
+          key: "templates",
+          title: "Шаблоны вывода",
+          status: blocks.templates?.status,
+          detail: `effective: ${escapeHtml(String(state.templatesData?.counts?.effective || 0))} • overrides: ${escapeHtml(String(state.templatesData?.counts?.server || 0))}`,
+        },
+        {
+          key: "access",
+          title: "Доступ",
+          status: Number(issues.error_count || 0) > 0 ? "partial" : "ready",
+          detail: `users: ${escapeHtml(String(getAccessItems().length || 0))} • roles: ${escapeHtml(String(state.rolesData?.items?.length || 0))}`,
+        },
+      ];
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
             <span class="legal-field__label">Обзор сервера</span>
-            <p class="legal-section__description">Короткая сводка по готовности, обновлениям и последней активности.</p>
+            <p class="legal-section__description">Понятная сводка по готовности сервера, последним изменениям и проблемам без сырой технички по умолчанию.</p>
           </div>
         </div>
+        ${
+          recentIssues.length
+            ? `<div class="legal-subcard">
+                <span class="legal-field__label">Требует внимания</span>
+                <div class="admin-section-toolbar">
+                  ${recentIssues.map((item) => `<span class="admin-badge ${issueSeverityClass(item.severity)}">${escapeHtml(String(item.title || item.issue_id || "issue"))}</span>`).join("")}
+                </div>
+                <p class="legal-section__description">Откройте вкладку «Ошибки / Проблемы», чтобы увидеть детали и доступные безопасные действия.</p>
+              </div>`
+            : '<div class="legal-subcard"><span class="legal-field__label">Требует внимания</span><p class="legal-section__description">Сейчас критичных сигналов по серверу не найдено.</p></div>'
+        }
         <div class="legal-field-grid legal-field-grid--two">
-          ${["laws", "features", "templates"].map((key) => `
+          ${blockCards.map((card) => `
             <div class="legal-field">
-              <span class="legal-field__label">${escapeHtml(key)}</span>
-              <div><span class="admin-badge ${badgeClass(blocks[key]?.status)}">${escapeHtml(String(blocks[key]?.status || "unknown"))}</span></div>
+              <span class="legal-field__label">${escapeHtml(card.title)}</span>
+              <div><span class="admin-badge ${badgeClass(card.status)}">${escapeHtml(statusLabel(card.status))}</span></div>
+              <div class="admin-user-cell__secondary">${card.detail}</div>
             </div>
           `).join("")}
           <div class="legal-field">
             <span class="legal-field__label">Последние обновления</span>
             <div class="admin-user-cell__secondary">publish batches: ${escapeHtml(String((dashboard.content?.publish_batches || []).length || 0))}</div>
             <div class="admin-user-cell__secondary">warning signals: ${escapeHtml(String((dashboard.release?.warning_signals || []).length || 0))}</div>
+          </div>
+        </div>
+        <div class="legal-field-grid legal-field-grid--two">
+          <div class="legal-subcard">
+            <span class="legal-field__label">Последние изменения</span>
+            ${
+              recentChanges.length
+                ? `<ul class="legal-section__description">${recentChanges.map((item) => `<li><strong>${escapeHtml(String(item.title || item.kind || "change"))}</strong> • ${escapeHtml(String(item.created_at || "—"))}${item.description ? ` • ${escapeHtml(String(item.description || ""))}` : ""}</li>`).join("")}</ul>`
+                : '<p class="legal-section__description">Пока нет recent changes для этого сервера.</p>'
+            }
+          </div>
+          <div class="legal-subcard">
+            <span class="legal-field__label">Предупреждения</span>
+            ${
+              warningSignals.length
+                ? `<ul class="legal-section__description">${warningSignals.slice(0, 5).map((item) => `<li>${escapeHtml(String(item || ""))}</li>`).join("")}</ul>`
+                : '<p class="legal-section__description">Сейчас release warning signals не зафиксированы.</p>'
+            }
           </div>
         </div>
         <div class="legal-subcard">
