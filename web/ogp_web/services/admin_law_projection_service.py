@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
+from urllib.parse import urlsplit
 from typing import Any
 
 from ogp_web.storage.canonical_law_document_versions_store import (
@@ -10,6 +11,7 @@ from ogp_web.storage.canonical_law_document_versions_store import (
     CanonicalLawDocumentVersionsStore,
 )
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore, ServerSourceSetBindingRecord
+from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
 from ogp_web.storage.server_effective_law_projections_store import (
     ServerEffectiveLawProjectionsStore,
 )
@@ -68,6 +70,19 @@ def _version_sort_key(binding: ServerSourceSetBindingRecord, version: CanonicalL
         str(version.source_set_key or "").strip().lower(),
         -int(version.id),
     )
+
+
+def _source_name_for_url(url: str) -> str:
+    normalized_url = str(url or "").strip()
+    host = str(urlsplit(normalized_url).netloc or "").strip().lower()
+    if host:
+        return f"Projection source {host}"
+    return "Projection source"
+
+
+def _next_materialization_name(*, run_id: int, previous_attempts: int) -> str:
+    attempt = int(previous_attempts) + 1
+    return f"Projection candidate #{int(run_id)}.{attempt}"
 
 
 def _contributors_payload(
@@ -191,6 +206,126 @@ def decide_server_effective_law_projection_payload(
             "summary_json": dict(updated.summary_json),
             "created_at": updated.created_at,
         },
+    }
+
+
+def materialize_server_effective_law_projection_payload(
+    *,
+    projections_store: ServerEffectiveLawProjectionsStore,
+    runtime_law_sets_store: RuntimeLawSetsStore,
+    run_id: int,
+    materialized_by: str,
+    safe_rerun: bool = True,
+) -> dict[str, Any]:
+    if int(run_id) <= 0:
+        raise ValueError("server_effective_law_projection_run_id_required")
+    run = projections_store.get_run(run_id=int(run_id))
+    if run is None:
+        raise KeyError("server_effective_law_projection_run_not_found")
+    if str(run.status or "").strip().lower() != "approved":
+        raise ValueError("server_effective_law_projection_run_not_approved")
+
+    summary_json = dict(run.summary_json or {})
+    materialization = dict(summary_json.get("materialization") or {})
+    if safe_rerun and int(materialization.get("law_set_id") or 0) > 0:
+        return {
+            "ok": True,
+            "changed": False,
+            "reused_law_set": True,
+            "run": {
+                "id": run.id,
+                "server_code": run.server_code,
+                "trigger_mode": run.trigger_mode,
+                "status": run.status,
+                "summary_json": summary_json,
+                "created_at": run.created_at,
+            },
+            "materialization": materialization,
+        }
+
+    items = projections_store.list_items(projection_run_id=int(run_id))
+    if not items:
+        raise ValueError("server_effective_law_projection_items_missing")
+
+    sources_by_url = {
+        str(source.url or "").strip(): source
+        for source in runtime_law_sets_store.list_sources()
+        if str(source.url or "").strip()
+    }
+    runtime_items: list[dict[str, Any]] = []
+    created_source_ids: list[int] = []
+    for item in items:
+        normalized_url = str(item.normalized_url or "").strip()
+        if not normalized_url:
+            raise ValueError("server_effective_law_projection_item_url_required")
+        source = sources_by_url.get(normalized_url)
+        if source is None:
+            source = runtime_law_sets_store.create_source(
+                name=_source_name_for_url(normalized_url),
+                kind="url",
+                url=normalized_url,
+            )
+            sources_by_url[normalized_url] = source
+            created_source_ids.append(int(source.id))
+        runtime_items.append(
+            {
+                "law_code": str(item.canonical_identity_key or "").strip(),
+                "effective_from": "",
+                "priority": int(item.precedence_rank or 100),
+                "source_id": int(source.id),
+            }
+        )
+
+    previous_attempts = int(summary_json.get("materialization_attempts") or 0)
+    law_set_name = _next_materialization_name(run_id=int(run.id), previous_attempts=previous_attempts)
+    created_law_set = runtime_law_sets_store.create_law_set(
+        server_code=run.server_code,
+        name=law_set_name,
+    )
+    law_set_id = int(created_law_set.get("id") or 0)
+    materialized_items = runtime_law_sets_store.replace_law_set_items(
+        law_set_id=law_set_id,
+        items=runtime_items,
+    )
+    updated_law_set = runtime_law_sets_store.update_law_set(
+        law_set_id=law_set_id,
+        name=law_set_name,
+        is_active=False,
+    )
+    materialization_payload = {
+        "law_set_id": law_set_id,
+        "law_set_name": str(updated_law_set.get("name") or law_set_name),
+        "item_count": len(materialized_items),
+        "created_source_ids": created_source_ids,
+        "materialized_by": str(materialized_by or "").strip(),
+    }
+    summary_json.update(
+        {
+            "materialization": materialization_payload,
+            "materialization_attempts": previous_attempts + 1,
+        }
+    )
+    updated_run = projections_store.update_run_status(
+        run_id=int(run.id),
+        status=run.status,
+        summary_json=summary_json,
+    )
+    return {
+        "ok": True,
+        "changed": True,
+        "reused_law_set": False,
+        "run": {
+            "id": updated_run.id,
+            "server_code": updated_run.server_code,
+            "trigger_mode": updated_run.trigger_mode,
+            "status": updated_run.status,
+            "summary_json": dict(updated_run.summary_json),
+            "created_at": updated_run.created_at,
+        },
+        "law_set": dict(updated_law_set),
+        "items": list(materialized_items),
+        "count": len(materialized_items),
+        "materialization": materialization_payload,
     }
 
 
