@@ -508,7 +508,58 @@ def build_promotion_candidate_summary(
         },
     }
 
+def build_promotion_delta_summary(
+    *,
+    diff_summary: dict[str, Any],
+    fill_summary: dict[str, Any],
+    latest_projection_run: dict[str, Any] | None = None,
+    projection_bridge_readiness: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    diff = dict(diff_summary or {})
+    fill = dict(fill_summary or {})
+    run = dict(latest_projection_run or {})
+    readiness = dict(projection_bridge_readiness or {})
+    selected_count = int(run.get("selected_count") or fill.get("count") or 0)
+    added = int(diff.get("added") or 0)
+    removed = int(diff.get("removed") or 0)
+    changed = int(diff.get("changed") or 0)
+    unchanged = int(diff.get("unchanged") or 0)
+    missing_content = int(fill.get("missing_content") or 0)
+    error_count = int(fill.get("error_count") or 0)
+    with_content = int(fill.get("with_content") or 0)
 
+    readiness_status = str(readiness.get("status") or "").strip().lower()
+
+    if selected_count <= 0 and readiness_status == "action_required":
+        status = "attention"
+        detail = str(readiness.get("detail") or "Projection bridge still requires attention.")
+    elif selected_count <= 0 and readiness_status == "ready":
+        status = "stable"
+        detail = "Projection bridge looks stable in the current read model."
+    elif selected_count <= 0:
+        status = "empty"
+        detail = "Latest projection does not currently select any laws."
+    elif added > 0 or removed > 0 or changed > 0 or missing_content > 0 or error_count > 0:
+        status = "attention"
+        detail = "Latest projection candidate has changes or content gaps that deserve review."
+    else:
+        status = "stable"
+        detail = "Latest projection candidate has no visible delta or content gaps."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "counts": {
+            "selected_count": selected_count,
+            "added": added,
+            "removed": removed,
+            "changed": changed,
+            "unchanged": unchanged,
+            "with_content": with_content,
+            "missing_content": missing_content,
+            "error_count": error_count,
+        },
+    }
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -568,6 +619,12 @@ def build_server_laws_summary_payload(
         runtime_version_parity=runtime_version_parity,
         latest_projection_run=_serialize_run(current_run) or {},
     )
+    promotion_delta = build_promotion_delta_summary(
+        diff_summary=diff_summary,
+        fill_summary=fill_summary,
+        latest_projection_run=_serialize_run(current_run) or {},
+        projection_bridge_readiness=bridge_readiness,
+    )
     return {
         "server_code": normalized_server,
         "bindings": bindings,
@@ -581,6 +638,7 @@ def build_server_laws_summary_payload(
         "projection_bridge_lifecycle": projection_bridge_lifecycle,
         "projection_bridge_readiness": bridge_readiness,
         "promotion_candidate": promotion_candidate,
+        "promotion_delta": promotion_delta,
         "latest_projection_run": _serialize_run(current_run),
         "fill_check": fill_summary,
         "diff": diff_summary,
@@ -737,6 +795,12 @@ def build_server_laws_diff_payload(
         runtime_version_parity=runtime_version_parity,
         latest_projection_run=_serialize_run(current_run) or {},
     )
+    promotion_delta = build_promotion_delta_summary(
+        diff_summary=diff_summary,
+        fill_summary={},
+        latest_projection_run=_serialize_run(current_run) or {},
+        projection_bridge_readiness=bridge_readiness,
+    )
     return {
         "server_code": normalized_server,
         "current_run": _serialize_run(current_run),
@@ -747,5 +811,6 @@ def build_server_laws_diff_payload(
         "projection_bridge_lifecycle": projection_bridge_lifecycle,
         "projection_bridge_readiness": bridge_readiness,
         "promotion_candidate": promotion_candidate,
+        "promotion_delta": promotion_delta,
         "summary": diff_summary,
     }

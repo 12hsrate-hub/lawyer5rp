@@ -9,6 +9,7 @@ from ogp_web.services.admin_runtime_servers_service import (
 from ogp_web.services.admin_server_laws_workspace_service import (
     build_projection_bridge_readiness_summary,
     build_promotion_candidate_summary,
+    build_promotion_delta_summary,
     build_server_laws_recheck_payload,
 )
 from ogp_web.services.content_workflow_service import ContentWorkflowService
@@ -314,7 +315,29 @@ def _build_promotion_candidate_issue(promotion_candidate: dict[str, Any]) -> dic
         ],
     }
 
-
+def _build_promotion_delta_issue(promotion_delta: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((promotion_delta or {}).get("status") or "").strip().lower()
+    if status in {"", "stable", "empty"}:
+        return None
+    counts = dict((promotion_delta or {}).get("counts") or {})
+    detail = (
+        f"{str((promotion_delta or {}).get('detail') or '').strip()} "
+        f"added={int(counts.get('added') or 0)}, "
+        f"removed={int(counts.get('removed') or 0)}, "
+        f"changed={int(counts.get('changed') or 0)}, "
+        f"missing={int(counts.get('missing_content') or 0)}, "
+        f"errors={int(counts.get('error_count') or 0)}."
+    ).strip()
+    return {
+        "issue_id": "laws_promotion_delta",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Promotion delta требует внимания",
+        "detail": detail,
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
 def build_server_audit_payload(
     *,
     server_code: str,
@@ -470,6 +493,12 @@ def build_server_issues_payload(
         runtime_version_parity=runtime_version_parity,
         latest_projection_run={},
     )
+    promotion_delta = build_promotion_delta_summary(
+        diff_summary={},
+        fill_summary={},
+        latest_projection_run={},
+        projection_bridge_readiness=projection_bridge_readiness,
+    )
     items: list[dict[str, Any]] = []
     if bool(onboarding.get("requires_explicit_runtime_pack")):
         items.append(
@@ -524,6 +553,9 @@ def build_server_issues_payload(
     promotion_candidate_issue = _build_promotion_candidate_issue(promotion_candidate)
     if promotion_candidate_issue is not None:
         items.append(promotion_candidate_issue)
+    promotion_delta_issue = _build_promotion_delta_issue(promotion_delta)
+    if promotion_delta_issue is not None:
+        items.append(promotion_delta_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -592,7 +624,7 @@ def execute_server_issue_action_payload(
     normalized_server = normalize_runtime_server_code(server_code)
     normalized_issue = str(issue_id or "").strip().lower()
     normalized_action = str(action or "").strip().lower()
-    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate"} and normalized_action == "recheck":
+    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta"} and normalized_action == "recheck":
         result = build_server_laws_recheck_payload(
             server_code=normalized_server,
             runtime_servers_store=runtime_servers_store,

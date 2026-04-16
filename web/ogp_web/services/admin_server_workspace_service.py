@@ -8,6 +8,7 @@ from ogp_web.services.admin_runtime_servers_service import (
 )
 from ogp_web.services.admin_server_laws_workspace_service import build_projection_bridge_readiness_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_promotion_candidate_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_promotion_delta_summary
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
@@ -451,7 +452,26 @@ def _build_promotion_candidate_issue(promotion_candidate: dict[str, Any]) -> dic
         "detail": detail,
     }
 
-
+def _build_promotion_delta_issue(promotion_delta: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((promotion_delta or {}).get("status") or "").strip().lower()
+    if status in {"", "stable", "empty"}:
+        return None
+    counts = dict((promotion_delta or {}).get("counts") or {})
+    detail = (
+        f"{str((promotion_delta or {}).get('detail') or '').strip()} "
+        f"added={int(counts.get('added') or 0)}, "
+        f"removed={int(counts.get('removed') or 0)}, "
+        f"changed={int(counts.get('changed') or 0)}, "
+        f"missing={int(counts.get('missing_content') or 0)}, "
+        f"errors={int(counts.get('error_count') or 0)}."
+    ).strip()
+    return {
+        "issue_id": "laws_promotion_delta",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Promotion delta требует внимания",
+        "detail": detail,
+    }
 def _build_issues_payload(
     *,
     health_payload: dict[str, Any],
@@ -461,6 +481,7 @@ def _build_issues_payload(
     projection_bridge_lifecycle: dict[str, Any] | None = None,
     projection_bridge_readiness: dict[str, Any] | None = None,
     promotion_candidate: dict[str, Any] | None = None,
+    promotion_delta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     checks = dict(health_payload.get("checks") or {})
@@ -529,6 +550,9 @@ def _build_issues_payload(
     promotion_candidate_issue = _build_promotion_candidate_issue(dict(promotion_candidate or {}))
     if promotion_candidate_issue is not None:
         items.append(promotion_candidate_issue)
+    promotion_delta_issue = _build_promotion_delta_issue(dict(promotion_delta or {}))
+    if promotion_delta_issue is not None:
+        items.append(promotion_delta_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -662,6 +686,12 @@ def build_server_workspace_payload(
         runtime_version_parity=runtime_version_parity,
         latest_projection_run={},
     )
+    promotion_delta = build_promotion_delta_summary(
+        diff_summary={},
+        fill_summary={},
+        latest_projection_run={},
+        projection_bridge_readiness=projection_bridge_readiness,
+    )
     laws_summary = {
         "active_source_set_bindings": [
             {
@@ -683,6 +713,7 @@ def build_server_workspace_payload(
         "projection_bridge_lifecycle": projection_bridge_lifecycle,
         "projection_bridge_readiness": projection_bridge_readiness,
         "promotion_candidate": promotion_candidate,
+        "promotion_delta": promotion_delta,
         "health": (health_payload.get("checks") or {}).get("health", {}),
     }
     issues_payload = _build_issues_payload(
@@ -693,6 +724,7 @@ def build_server_workspace_payload(
         projection_bridge_lifecycle=projection_bridge_lifecycle,
         projection_bridge_readiness=projection_bridge_readiness,
         promotion_candidate=promotion_candidate,
+        promotion_delta=promotion_delta,
     )
     readiness_payload = _build_readiness_payload(
         laws_ready=bool((health_payload.get("checks") or {}).get("health", {}).get("ok")),
