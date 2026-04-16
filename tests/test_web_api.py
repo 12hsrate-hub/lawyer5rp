@@ -2888,6 +2888,15 @@ class WebApiTests(unittest.TestCase):
         self.assertNotIn("law-model", response.text)
         self.assertNotIn("laws-root-url", response.text)
 
+    def test_court_claim_test_page_available_for_tester_with_in_development_state(self):
+        self._register_verify_and_login("tester", "tester_court_claim_page@example.com")
+        response = self.client.get("/court-claim-test")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("court-claim-form", response.text)
+        self.assertIn("Тестовый раздел", response.text)
+        self.assertIn("Форма находится в разработке", response.text)
+        self.assertIn("court-claim-in-development", response.text)
+
     def test_law_qa_test_endpoint_forbidden_for_user_without_tester_access(self):
         self._register_verify_and_login("plainlawuser", "plainlawuser@example.com")
 

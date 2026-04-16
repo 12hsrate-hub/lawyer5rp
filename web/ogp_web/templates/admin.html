@@ -45,9 +45,6 @@
       <a class="segmented-tabs__item{% if admin_focus == 'users' %} is-active{% endif %}" href="/admin/users">Пользователи и аудит</a>
       <a class="segmented-tabs__item{% if admin_focus == 'servers' %} is-active{% endif %}" href="/admin/servers">Серверы</a>
       <a class="segmented-tabs__item{% if admin_focus == 'laws' %} is-active{% endif %}" href="/admin/laws">Законы</a>
-      <a class="segmented-tabs__item{% if admin_focus == 'templates' %} is-active{% endif %}" href="/admin/templates">Шаблоны</a>
-      <a class="segmented-tabs__item{% if admin_focus == 'features' %} is-active{% endif %}" href="/admin/features">Функции</a>
-      <a class="segmented-tabs__item{% if admin_focus == 'rules' %} is-active{% endif %}" href="/admin/rules">Правила</a>
     </nav>
     <nav class="legal-section-jump" aria-label="Навигация по разделам админ-панели">
       {% if admin_focus in ["dashboard", "users"] %}

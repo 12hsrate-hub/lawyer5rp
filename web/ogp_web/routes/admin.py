@@ -4,7 +4,7 @@ import logging
 import os
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from datetime import datetime, timezone
 
 from ogp_web.dependencies import get_content_workflow_service
@@ -356,29 +356,20 @@ async def admin_laws_page(request: Request, user: AuthUser = Depends(require_adm
 
 @router.get("/admin/templates", response_class=HTMLResponse)
 async def admin_templates_page(request: Request, user: AuthUser = Depends(require_admin_user)):
-    return templates.TemplateResponse(
-        request,
-        "admin.html",
-        _admin_template_payload(request, user, admin_focus="templates"),
-    )
+    _ = user
+    return RedirectResponse(url="/admin/servers", status_code=status.HTTP_302_FOUND)
 
 
 @router.get("/admin/features", response_class=HTMLResponse)
 async def admin_features_page(request: Request, user: AuthUser = Depends(require_admin_user)):
-    return templates.TemplateResponse(
-        request,
-        "admin.html",
-        _admin_template_payload(request, user, admin_focus="features"),
-    )
+    _ = user
+    return RedirectResponse(url="/admin/servers", status_code=status.HTTP_302_FOUND)
 
 
 @router.get("/admin/rules", response_class=HTMLResponse)
 async def admin_rules_page(request: Request, user: AuthUser = Depends(require_admin_user)):
-    return templates.TemplateResponse(
-        request,
-        "admin.html",
-        _admin_template_payload(request, user, admin_focus="rules"),
-    )
+    _ = user
+    return RedirectResponse(url="/admin/servers", status_code=status.HTTP_302_FOUND)
 
 
 

@@ -114,6 +114,13 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("exam-import", response.text)
 
+    def test_court_claim_test_page_preserves_in_development_marker(self):
+        response = self.client.get("/court-claim-test")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Тестовый раздел", response.text)
+        self.assertIn("Форма находится в разработке", response.text)
+        self.assertIn("court-claim-in-development", response.text)
+
     def test_login_redirects_authenticated_user(self):
         response = self.client.get("/login", follow_redirects=False)
         self.assertEqual(response.status_code, 302)
@@ -218,6 +225,9 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn('id="admin-law-modal"', response.text)
         self.assertIn('id="admin-law-modal-body"', response.text)
         self.assertIn('id="admin-law-modal-save"', response.text)
+        self.assertNotIn('href="/admin/templates"', response.text)
+        self.assertNotIn('href="/admin/features"', response.text)
+        self.assertNotIn('href="/admin/rules"', response.text)
 
     def test_law_qa_test_page_renders_sources_panel(self):
         response = self.client.get("/law-qa-test")
@@ -248,7 +258,7 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn("Activation State", response.text)
         self.assertIn("Linked Configuration", response.text)
 
-    def test_admin_templates_page_contains_template_domain_map(self):
+    def test_admin_templates_page_redirects_to_servers(self):
         self.client.post("/api/auth/logout")
         response = self.client.post(
             "/api/auth/register",
@@ -259,14 +269,11 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.client.get(f"{split.path}?{split.query}")
         self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
 
-        response = self.client.get("/admin/templates")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('href="#admin-template-domain-map"', response.text)
-        self.assertIn("Template Domain Map", response.text)
-        self.assertIn("Document Templates", response.text)
-        self.assertIn("Preview and Versions", response.text)
+        response = self.client.get("/admin/templates", follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["location"], "/admin/servers")
 
-    def test_admin_features_page_contains_capability_domain_map(self):
+    def test_admin_features_page_redirects_to_servers(self):
         self.client.post("/api/auth/logout")
         response = self.client.post(
             "/api/auth/register",
@@ -277,14 +284,11 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.client.get(f"{split.path}?{split.query}")
         self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
 
-        response = self.client.get("/admin/features")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('href="#admin-feature-domain-map"', response.text)
-        self.assertIn("Capability Domain Map", response.text)
-        self.assertIn("Capabilities", response.text)
-        self.assertIn("Scenario Impact", response.text)
+        response = self.client.get("/admin/features", follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["location"], "/admin/servers")
 
-    def test_admin_rules_page_contains_rule_domain_map(self):
+    def test_admin_rules_page_redirects_to_servers(self):
         self.client.post("/api/auth/logout")
         response = self.client.post(
             "/api/auth/register",
@@ -295,12 +299,9 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.client.get(f"{split.path}?{split.query}")
         self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
 
-        response = self.client.get("/admin/rules")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('href="#admin-rule-domain-map"', response.text)
-        self.assertIn("Rule Domain Map", response.text)
-        self.assertIn("Validation Rules", response.text)
-        self.assertIn("Publishing Gate", response.text)
+        response = self.client.get("/admin/rules", follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["location"], "/admin/servers")
 
     def test_granted_tester_redirected_from_test_pages(self):
         response = self.client.post(
