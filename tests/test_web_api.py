@@ -40,6 +40,7 @@ from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
 from tests.temp_helpers import make_temporary_directory
+from tests.second_server_fixtures import orange_published_pack
 from tests.test_web_storage import (
     FakeAdminMetricsPostgresBackend,
     FakeExamAnswersPostgresBackend,
@@ -1419,6 +1420,26 @@ class WebApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("недоступен", " ".join(response.json().get("detail") or []).lower())
+
+    def test_profile_selected_server_accepts_active_second_server_candidate(self):
+        self._register_verify_and_login("tester_switch_orange", "draft-switch-orange@example.com")
+        with patch("ogp_web.server_config.registry._load_codes_from_config_repo", return_value=None), patch(
+            "ogp_web.server_config.registry._load_server_rows_from_db",
+            return_value=[
+                {"code": "blackberry", "title": "BlackBerry", "is_active": True},
+                {"code": "orange", "title": "Orange City", "is_active": True},
+            ],
+        ), patch(
+            "ogp_web.server_config.registry._load_effective_pack_from_db",
+            side_effect=lambda *, server_code, at_timestamp=None: orange_published_pack() if server_code == "orange" else None,
+        ):
+            response = self.client.patch("/api/profile/selected-server", json={"server_code": "orange"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["server_code"], "orange")
+        self.assertIn("Обновите страницу", payload["message"])
+        self.assertIsInstance(payload.get("switch_actions"), list)
 
     def test_complaint_draft_accepts_envelope_payload_and_flattens_document(self):
         self._register_verify_and_login("tester_envelope", "draft-envelope@example.com")
