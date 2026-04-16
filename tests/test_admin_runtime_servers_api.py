@@ -950,7 +950,11 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertIn("users", payload["overview"])
         self.assertIn("access", payload["overview"])
         self.assertEqual(payload["overview"]["laws"]["binding_count"], 1)
+        self.assertEqual(payload["overview"]["laws"]["runtime_provenance"]["mode"], "legacy_runtime_shell")
         self.assertEqual(payload["health"]["onboarding"]["resolution_mode"], "bootstrap_pack")
+        issue_ids = {item.get("issue_id") for item in payload["issues"]["items"] if item.get("issue_id")}
+        self.assertIn("laws_runtime_provenance", issue_ids)
+        self.assertEqual(payload["readiness"]["counters"]["stale_changes"], 1)
         self.assertIsInstance(payload["activity"], list)
 
     def test_runtime_server_activity_endpoint_returns_items(self):
@@ -1000,6 +1004,33 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         payload = issues.json()
         issue_ids = {item["issue_id"] for item in payload["items"]}
         self.assertIn("runtime_config_fallback", issue_ids)
+
+    def test_runtime_server_issues_endpoint_exposes_runtime_provenance_warning_for_legacy_shell(self):
+        with patch.object(
+            admin_runtime_servers_service,
+            "resolve_active_law_version",
+            return_value=ResolvedLawVersion(
+                id=91,
+                server_code="blackberry",
+                generated_at_utc="2026-04-16T00:00:00+00:00",
+                effective_from="2026-04-16",
+                effective_to="",
+                fingerprint="bb-runtime-provenance-fp",
+                chunk_count=6,
+            ),
+        ):
+            issues = self.client.get("/api/admin/runtime-servers/blackberry/issues")
+            self.assertEqual(issues.status_code, 200)
+            payload = issues.json()
+            issue_ids = {item["issue_id"] for item in payload["items"]}
+            self.assertIn("laws_runtime_provenance", issue_ids)
+
+            recheck = self.client.post("/api/admin/runtime-servers/blackberry/issues/laws_runtime_provenance/recheck")
+            self.assertEqual(recheck.status_code, 200)
+            recheck_payload = recheck.json()
+            self.assertTrue(recheck_payload["ok"])
+            self.assertEqual(recheck_payload["issue_id"], "laws_runtime_provenance")
+            self.assertEqual(recheck_payload["action"], "recheck")
 
     def test_runtime_server_access_endpoints_support_roles_permissions_assign_and_revoke(self):
         self.user_store.register("moderator1", "moderator1@example.com", "Password123!")

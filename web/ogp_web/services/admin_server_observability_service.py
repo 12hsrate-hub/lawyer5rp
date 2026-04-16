@@ -17,6 +17,30 @@ from ogp_web.storage.runtime_servers_store import RuntimeServersStore
 from ogp_web.storage.server_effective_law_projections_store import ServerEffectiveLawProjectionsStore
 
 
+def _build_runtime_provenance_issue(runtime_provenance: dict[str, Any]) -> dict[str, Any] | None:
+    runtime_mode = str((runtime_provenance or {}).get("mode") or "").strip().lower()
+    if runtime_mode not in {"projection_drift", "legacy_runtime_shell", "materialized_shell_only"}:
+        return None
+    title = {
+        "projection_drift": "Runtime law shell расходится с projection bridge",
+        "legacy_runtime_shell": "Runtime law shell ещё не переведён на projection-backed provenance",
+        "materialized_shell_only": "Materialized law shell ещё не активирован в runtime",
+    }.get(runtime_mode, "Runtime law shell требует внимания")
+    return {
+        "issue_id": "laws_runtime_provenance",
+        "severity": "warn",
+        "source": "laws",
+        "title": title,
+        "detail": str(
+            runtime_provenance.get("detail")
+            or "Current runtime law shell still depends on the compatibility promotion bridge."
+        ),
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
 def build_server_audit_payload(
     *,
     server_code: str,
@@ -148,6 +172,7 @@ def build_server_issues_payload(
     dashboard_payload = dashboard_service.get_dashboard(username=username, server_id=normalized_server)
     checks = dict(health_payload.get("checks") or {})
     onboarding = dict(health_payload.get("onboarding") or {})
+    runtime_provenance = dict(health_payload.get("runtime_provenance") or {})
     items: list[dict[str, Any]] = []
     if bool(onboarding.get("requires_explicit_runtime_pack")):
         items.append(
@@ -184,6 +209,9 @@ def build_server_issues_payload(
                 "available_actions": [],
             }
         )
+    runtime_provenance_issue = _build_runtime_provenance_issue(runtime_provenance)
+    if runtime_provenance_issue is not None:
+        items.append(runtime_provenance_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -252,7 +280,7 @@ def execute_server_issue_action_payload(
     normalized_server = normalize_runtime_server_code(server_code)
     normalized_issue = str(issue_id or "").strip().lower()
     normalized_action = str(action or "").strip().lower()
-    if normalized_issue == "laws_runtime_health" and normalized_action == "recheck":
+    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance"} and normalized_action == "recheck":
         result = build_server_laws_recheck_payload(
             server_code=normalized_server,
             runtime_servers_store=runtime_servers_store,
