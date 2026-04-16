@@ -134,37 +134,12 @@ class LawAdminServiceHelpersTests(unittest.TestCase):
         fake_import.assert_not_called()
 
     def test_rollback_active_version_switches_target(self):
-        class _FakeConn:
-            def __init__(self):
-                self.queries = []
-                self.committed = False
-
-            def execute(self, query, params=()):
-                self.queries.append((query, params))
-                return self
-
-            def commit(self):
-                self.committed = True
-
-            def rollback(self):
-                self.committed = False
-
-            def close(self):
-                return None
-
-        class _FakeBackend:
-            def __init__(self, conn):
-                self.conn = conn
-
-            def connect(self):
-                return self.conn
-
-        fake_conn = _FakeConn()
         service = LawAdminService(
-            workflow_service=types.SimpleNamespace(repository=types.SimpleNamespace(backend=_FakeBackend(fake_conn)))
+            workflow_service=types.SimpleNamespace(repository=types.SimpleNamespace(backend=types.SimpleNamespace()))
         )
         with patch("ogp_web.services.law_admin_service.list_recent_law_versions") as fake_list, \
-            patch("ogp_web.services.law_admin_service.resolve_active_law_version") as fake_active:
+            patch("ogp_web.services.law_admin_service.resolve_active_law_version") as fake_active, \
+            patch.object(service.law_versions_repository, "rollback_active_version") as fake_rollback:
             fake_list.return_value = (
                 types.SimpleNamespace(id=11),
                 types.SimpleNamespace(id=10),
@@ -174,8 +149,7 @@ class LawAdminServiceHelpersTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["rolled_back_to_version_id"], 10)
-        self.assertTrue(fake_conn.committed)
-        self.assertEqual(len(fake_conn.queries), 2)
+        fake_rollback.assert_called_once_with(server_code="blackberry", target_version_id=10)
 
     def test_describe_sources_dependencies_uses_shared_law_qa_server_list(self):
         repository = types.SimpleNamespace()

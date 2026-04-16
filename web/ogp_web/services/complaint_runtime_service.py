@@ -209,13 +209,11 @@ class ComplaintRuntimeService:
     ) -> None:
         try:
             validation_repo = ValidationRepository(store.backend)
-            conn = store.backend.connect()
-            user_row = conn.execute("SELECT id FROM users WHERE username = %s", (user.username,)).fetchone()
-            conn.close()
-            if user_row is not None:
+            user_id = store.get_user_id(user.username)
+            if user_id is not None:
                 qa_run = validation_repo.create_law_qa_run(
                     server_id=effective_server_code,
-                    user_id=int(user_row["id"]),
+                    user_id=int(user_id),
                     question=question,
                     answer_text=result.text,
                     used_sources=list(getattr(result, "used_sources", []) or []),
