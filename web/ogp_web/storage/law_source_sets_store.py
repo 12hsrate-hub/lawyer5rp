@@ -238,6 +238,43 @@ class LawSourceSetsStore:
         finally:
             conn.close()
 
+    def update_source_set(
+        self,
+        *,
+        source_set_key: str,
+        title: str,
+        description: str = "",
+    ) -> SourceSetRecord:
+        normalized_key = self._normalize_key(source_set_key)
+        normalized_title = self._normalize_text(title)
+        normalized_description = self._normalize_text(description)
+        if not normalized_key:
+            raise ValueError("source_set_key_required")
+        if not normalized_title:
+            raise ValueError("source_set_title_required")
+        conn = self.backend.connect()
+        try:
+            row = conn.execute(
+                """
+                UPDATE source_sets
+                SET title = %s,
+                    description = %s,
+                    updated_at = NOW()
+                WHERE source_set_key = %s
+                RETURNING source_set_key, title, description, scope, created_at, updated_at
+                """,
+                (normalized_title, normalized_description, normalized_key),
+            ).fetchone()
+            if row is None:
+                raise KeyError("source_set_not_found")
+            conn.commit()
+            return self._source_set_from_row(dict(row))
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
     def list_revisions(self, *, source_set_key: str) -> list[SourceSetRevisionRecord]:
         normalized_key = self._normalize_key(source_set_key)
         conn = self.backend.connect()
@@ -349,6 +386,25 @@ class LawSourceSetsStore:
         finally:
             conn.close()
 
+    def get_binding(self, *, binding_id: int) -> ServerSourceSetBindingRecord | None:
+        conn = self.backend.connect()
+        try:
+            row = conn.execute(
+                """
+                SELECT id, server_code, source_set_key, priority, is_active,
+                       include_law_keys_json, exclude_law_keys_json, pin_policy_json,
+                       metadata_json, created_at, updated_at
+                FROM server_source_set_bindings
+                WHERE id = %s
+                """,
+                (int(binding_id),),
+            ).fetchone()
+            if row is None:
+                return None
+            return self._binding_from_row(dict(row))
+        finally:
+            conn.close()
+
     def create_binding(
         self,
         *,
@@ -402,6 +458,83 @@ class LawSourceSetsStore:
                     self._serialize_json_value(list(normalized_exclude)),
                     self._serialize_json_value(normalized_pin_policy),
                     self._serialize_json_value(normalized_metadata),
+                ),
+            ).fetchone()
+            conn.commit()
+            return self._binding_from_row(dict(row))
+        except Exception as exc:
+            conn.rollback()
+            if self._is_unique_violation(exc, "server_source_set_bindings_server_code_source_set_key_key"):
+                raise ValueError("server_source_set_binding_already_exists") from exc
+            raise
+        finally:
+            conn.close()
+
+    def update_binding(
+        self,
+        *,
+        binding_id: int,
+        server_code: str,
+        source_set_key: str,
+        priority: int = 100,
+        is_active: bool = True,
+        include_law_keys: list[str] | tuple[str, ...] | None = None,
+        exclude_law_keys: list[str] | tuple[str, ...] | None = None,
+        pin_policy_json: dict[str, Any] | None = None,
+        metadata_json: dict[str, Any] | None = None,
+    ) -> ServerSourceSetBindingRecord:
+        normalized_server = self._normalize_key(server_code)
+        normalized_key = self._normalize_key(source_set_key)
+        normalized_include = self._normalize_optional_string_list(include_law_keys)
+        normalized_exclude = self._normalize_optional_string_list(exclude_law_keys)
+        normalized_pin_policy = self._normalize_json_object(pin_policy_json)
+        normalized_metadata = self._normalize_json_object(metadata_json)
+        if not normalized_server:
+            raise ValueError("server_code_required")
+        if not normalized_key:
+            raise ValueError("source_set_key_required")
+        conn = self.backend.connect()
+        try:
+            current_row = conn.execute(
+                "SELECT id, server_code FROM server_source_set_bindings WHERE id = %s",
+                (int(binding_id),),
+            ).fetchone()
+            if current_row is None:
+                raise KeyError("server_source_set_binding_not_found")
+            current_server_code = self._normalize_key((current_row or {}).get("server_code"))
+            if current_server_code != normalized_server:
+                raise ValueError("server_source_set_binding_server_mismatch")
+            source_row = conn.execute(
+                "SELECT source_set_key FROM source_sets WHERE source_set_key = %s",
+                (normalized_key,),
+            ).fetchone()
+            if source_row is None:
+                raise KeyError("source_set_not_found")
+            row = conn.execute(
+                """
+                UPDATE server_source_set_bindings
+                SET source_set_key = %s,
+                    priority = %s,
+                    is_active = %s,
+                    include_law_keys_json = %s,
+                    exclude_law_keys_json = %s,
+                    pin_policy_json = %s,
+                    metadata_json = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING id, server_code, source_set_key, priority, is_active,
+                          include_law_keys_json, exclude_law_keys_json, pin_policy_json,
+                          metadata_json, created_at, updated_at
+                """,
+                (
+                    normalized_key,
+                    int(priority),
+                    bool(is_active),
+                    self._serialize_json_value(list(normalized_include)),
+                    self._serialize_json_value(list(normalized_exclude)),
+                    self._serialize_json_value(normalized_pin_policy),
+                    self._serialize_json_value(normalized_metadata),
+                    int(binding_id),
                 ),
             ).fetchone()
             conn.commit()

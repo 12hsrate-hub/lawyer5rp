@@ -76,8 +76,12 @@
       {% endif %}
       {% if admin_focus == "laws" %}
       <a class="legal-section-jump__link" href="#admin-law-domain-map">Law Domain Map</a>
-      <a class="legal-section-jump__link" href="#law-sources-server-select">Law Sources</a>
+      <a class="legal-section-jump__link" href="#law-source-sets-host">Source Sets</a>
+      <a class="legal-section-jump__link" href="#law-source-set-revisions-host">Revisions</a>
+      <a class="legal-section-jump__link" href="#server-source-set-bindings-host">Source-Set Bindings</a>
+      <a class="legal-section-jump__link" href="#law-canonical-pipeline-host">Canonical Pipeline</a>
       <a class="legal-section-jump__link" href="#law-sets-host">Law Sets</a>
+      <a class="legal-section-jump__link" href="#law-source-registry-host">Source Registry</a>
       <a class="legal-section-jump__link" href="#server-law-bindings-host">Server Bindings</a>
       {% endif %}
       {% if admin_focus == "templates" %}
@@ -717,6 +721,10 @@
         <div id="admin-law-domain-map-content" class="admin-collapsible__content">
           <div class="legal-field-grid legal-field-grid--two">
             <div class="legal-field">
+              <span class="legal-field__label">Canonical Source Sets</span>
+              <div class="admin-user-cell__secondary">Reusable global source containers with append-only revisions and server bindings.</div>
+            </div>
+            <div class="legal-field">
               <span class="legal-field__label">Law Sources</span>
               <div class="admin-user-cell__secondary">Input URLs, validation checks, rebuild tasks, and active indexed law version.</div>
             </div>
@@ -933,6 +941,20 @@
       <div class="modal-actions">
         <button type="button" id="admin-catalog-cancel" class="ghost-button">Закрыть</button>
         <button type="button" id="admin-catalog-save" class="primary-button">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="admin-law-modal" class="modal-backdrop" hidden>
+    <div class="modal-card modal-card--wide legal-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-law-modal-title">
+      <button type="button" id="admin-law-modal-close" class="modal-close" aria-label="Закрыть">×</button>
+      <h2 id="admin-law-modal-title">Форма закона</h2>
+      <p id="admin-law-modal-description" class="legal-section__description"></p>
+      <div id="admin-law-modal-body"></div>
+      <div id="admin-law-modal-errors" class="errors legal-message ui-state ui-state--idle" hidden></div>
+      <div class="modal-actions">
+        <button type="button" id="admin-law-modal-cancel" class="ghost-button">Отмена</button>
+        <button type="button" id="admin-law-modal-save" class="primary-button">Сохранить</button>
       </div>
     </div>
   </div>

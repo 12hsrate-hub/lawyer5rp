@@ -190,6 +190,10 @@ window.OGPAdminLawRuntimeController = {
       },
 
       async createLawSetFlow() {
+        if (typeof deps.openRuntimeLawSetForm === "function") {
+          await deps.openRuntimeLawSetForm();
+          return;
+        }
         const activeLawServerCode = String(deps.getActiveLawServerCode?.() || "").trim().toLowerCase();
         if (!activeLawServerCode) {
           deps.setStateError?.(deps.errorsHost, "Select a server first.");
@@ -226,6 +230,15 @@ window.OGPAdminLawRuntimeController = {
       },
 
       async editLawSetFlow(lawSetId, currentName, currentIsActive) {
+        if (typeof deps.openRuntimeLawSetForm === "function") {
+          const existingLawSet = (deps.getLawSetOptions?.() || []).find((item) => Number(item?.id || 0) === Number(lawSetId || 0)) || {
+            id: lawSetId,
+            name: currentName,
+            is_active: currentIsActive,
+          };
+          await deps.openRuntimeLawSetForm(existingLawSet);
+          return;
+        }
         const name = String(window.prompt("Law set name", currentName || "") || "").trim();
         if (!name) {
           return;
@@ -418,6 +431,7 @@ window.OGPAdminLawRuntimeController = {
       async loadCatalogContext() {
         await this.loadLawServerOptions();
         await deps.loadLawSourcesManager?.();
+        await deps.loadCanonicalLawAdminSurface?.();
         await this.loadLawSets();
         await deps.loadLawSourceRegistry?.();
         await this.loadServerLawBindings();
@@ -435,6 +449,7 @@ window.OGPAdminLawRuntimeController = {
         if (target.id === "law-sources-server-select") {
           deps.setActiveLawServerCode?.(String(target.value || "").trim().toLowerCase());
           await deps.loadLawSourcesManager?.();
+          await deps.loadCanonicalLawAdminSurface?.();
           await this.loadLawSets();
           await this.loadServerLawBindings();
           return true;

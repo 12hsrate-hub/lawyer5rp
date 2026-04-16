@@ -184,4 +184,193 @@ window.OGPAdminRuntimeLaws = {
       </table>
     `;
   },
+
+  renderSourceSetsTable(items, { selectedKey = "", search = "" } = {}) {
+    const escapeHtml = window.OGPWeb?.escapeHtml || ((value) => String(value ?? ""));
+    const normalizedSearch = String(search || "").trim().toLowerCase();
+    const filtered = items.filter((item) => {
+      if (!normalizedSearch) {
+        return true;
+      }
+      const haystack = [item?.source_set_key, item?.title, item?.description]
+        .map((value) => String(value || "").toLowerCase())
+        .join(" ");
+      return haystack.includes(normalizedSearch);
+    });
+    return `
+      <table class="legal-table admin-table admin-table--compact">
+        <thead><tr><th>Key</th><th>Title</th><th>Scope</th><th>Updated</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${filtered.length ? filtered.map((item) => `
+            <tr ${String(item?.source_set_key || "") === String(selectedKey || "") ? 'class="is-selected"' : ""}>
+              <td><code>${escapeHtml(String(item?.source_set_key || "—"))}</code></td>
+              <td>${escapeHtml(String(item?.title || "—"))}<br><span class="admin-user-cell__secondary">${escapeHtml(String(item?.description || ""))}</span></td>
+              <td>${escapeHtml(String(item?.scope || "global"))}</td>
+              <td>${escapeHtml(String(item?.updated_at || "—"))}</td>
+              <td>
+                <button type="button" class="ghost-button" data-source-set-select="${escapeHtml(String(item?.source_set_key || ""))}">Открыть</button>
+                <button type="button" class="ghost-button" data-source-set-edit="${escapeHtml(String(item?.source_set_key || ""))}">Изменить</button>
+              </td>
+            </tr>
+          `).join("") : '<tr><td colspan="5" class="legal-section__description">Source sets пока не созданы.</td></tr>'}
+        </tbody>
+      </table>
+    `;
+  },
+
+  renderSourceSetRevisionsPanel(payload, { selectedRevisionId = 0 } = {}) {
+    const escapeHtml = window.OGPWeb?.escapeHtml || ((value) => String(value ?? ""));
+    const sourceSet = payload?.source_set || null;
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    if (!sourceSet) {
+      return '<p class="legal-section__description">Выберите source set, чтобы увидеть revisions и container links.</p>';
+    }
+    return `
+      <div class="admin-catalog-preview">
+        <div class="admin-catalog-preview__header">
+          <h4 class="admin-catalog-preview__title">${escapeHtml(String(sourceSet.title || sourceSet.source_set_key || "Source set"))}</h4>
+          <span class="admin-badge admin-badge--muted">${escapeHtml(String(payload?.count || 0))} revisions</span>
+        </div>
+        <p class="legal-section__description">${escapeHtml(String(sourceSet.description || "Без описания."))}</p>
+        <table class="legal-table admin-table admin-table--compact">
+          <thead><tr><th>Revision</th><th>Status</th><th>Container links</th><th>Policy</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${items.length ? items.map((item) => `
+              <tr ${Number(item?.id || 0) === Number(selectedRevisionId || 0) ? 'class="is-selected"' : ""}>
+                <td>#${escapeHtml(String(item?.revision || item?.id || "—"))}</td>
+                <td>${escapeHtml(String(item?.status || "draft"))}</td>
+                <td>${(Array.isArray(item?.container_urls) ? item.container_urls : []).map((url) => `<div class="admin-user-cell__secondary">${escapeHtml(String(url || ""))}</div>`).join("") || "—"}</td>
+                <td><pre class="legal-field__hint">${escapeHtml(JSON.stringify(item?.adapter_policy_json || {}, null, 2))}</pre></td>
+                <td>
+                  <button type="button" class="ghost-button" data-source-set-revision-select="${escapeHtml(String(item?.id || ""))}">Выбрать</button>
+                  <button type="button" class="ghost-button" data-source-set-discovery-run="${escapeHtml(String(item?.id || ""))}">Discovery</button>
+                </td>
+              </tr>
+            `).join("") : '<tr><td colspan="5" class="legal-section__description">Revisions пока нет.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
+  },
+
+  renderServerSourceSetBindingsTable(items) {
+    const escapeHtml = window.OGPWeb?.escapeHtml || ((value) => String(value ?? ""));
+    return `
+      <table class="legal-table admin-table admin-table--compact">
+        <thead><tr><th>Priority</th><th>Source set</th><th>Status</th><th>Overrides</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${items.length ? items.map((item) => `
+            <tr>
+              <td>${escapeHtml(String(item?.priority || 0))}</td>
+              <td><code>${escapeHtml(String(item?.source_set_key || "—"))}</code></td>
+              <td>${item?.is_active ? "active" : "disabled"}</td>
+              <td>
+                <div class="admin-user-cell__secondary">include: ${escapeHtml(String((item?.include_law_keys || []).join(", ") || "—"))}</div>
+                <div class="admin-user-cell__secondary">exclude: ${escapeHtml(String((item?.exclude_law_keys || []).join(", ") || "—"))}</div>
+              </td>
+              <td>
+                <button type="button" class="ghost-button" data-server-source-set-binding-edit="${escapeHtml(String(item?.id || ""))}">Изменить</button>
+                <button type="button" class="ghost-button" data-server-source-set-binding-toggle="${escapeHtml(String(item?.id || ""))}" data-server-source-set-binding-active="${item?.is_active ? "1" : "0"}">${item?.is_active ? "Отключить" : "Включить"}</button>
+              </td>
+            </tr>
+          `).join("") : '<tr><td colspan="5" class="legal-section__description">Для выбранного сервера нет source-set bindings.</td></tr>'}
+        </tbody>
+      </table>
+    `;
+  },
+
+  renderCanonicalPipelineMarkup(state = {}) {
+    const escapeHtml = window.OGPWeb?.escapeHtml || ((value) => String(value ?? ""));
+    const discoveryRuns = Array.isArray(state.discoveryRuns?.items) ? state.discoveryRuns.items : [];
+    const links = Array.isArray(state.discoveryLinks?.items) ? state.discoveryLinks.items : [];
+    const documents = Array.isArray(state.discoveryDocuments?.items) ? state.discoveryDocuments.items : [];
+    const versions = Array.isArray(state.documentVersions?.items) ? state.documentVersions.items : [];
+    const projectionRuns = Array.isArray(state.projectionRuns?.items) ? state.projectionRuns.items : [];
+    const projectionItems = Array.isArray(state.projectionItems?.items) ? state.projectionItems.items : [];
+    const selectedRun = state.selectedDiscoveryRunId ? `run #${state.selectedDiscoveryRunId}` : "не выбран";
+    const selectedProjectionRun = state.selectedProjectionRunId ? `run #${state.selectedProjectionRunId}` : "не выбран";
+    return `
+      <div class="legal-field-grid legal-field-grid--two">
+        <div class="legal-subcard">
+          <div class="admin-section-toolbar">
+            <strong>Discovery runs</strong>
+            <span class="admin-badge admin-badge--muted">${escapeHtml(String(discoveryRuns.length))}</span>
+          </div>
+          <table class="legal-table admin-table admin-table--compact">
+            <thead><tr><th>ID</th><th>Status</th><th>Summary</th><th>Actions</th></tr></thead>
+            <tbody>
+              ${discoveryRuns.length ? discoveryRuns.map((item) => `
+                <tr>
+                  <td>#${escapeHtml(String(item?.id || "—"))}</td>
+                  <td>${escapeHtml(String(item?.status || "—"))}</td>
+                  <td>${escapeHtml(String((item?.summary_json || {}).result || (item?.summary_json || {}).summary || "—"))}</td>
+                  <td>
+                    <button type="button" class="ghost-button" data-discovery-run-select="${escapeHtml(String(item?.id || ""))}">Открыть</button>
+                    <button type="button" class="ghost-button" data-discovery-run-ingest-docs="${escapeHtml(String(item?.id || ""))}">Documents</button>
+                    <button type="button" class="ghost-button" data-discovery-run-ingest-versions="${escapeHtml(String(item?.id || ""))}">Versions</button>
+                    <button type="button" class="ghost-button" data-discovery-run-fetch="${escapeHtml(String(item?.id || ""))}">Fetch</button>
+                    <button type="button" class="ghost-button" data-discovery-run-parse="${escapeHtml(String(item?.id || ""))}">Parse</button>
+                  </td>
+                </tr>
+              `).join("") : '<tr><td colspan="4" class="legal-section__description">Discovery runs пока нет.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+        <div class="legal-subcard">
+          <strong>Selected discovery</strong>
+          <p class="legal-section__description">Текущий selection: ${escapeHtml(selectedRun)}</p>
+          <div class="admin-user-cell__secondary">links: ${escapeHtml(String(links.length))}, documents: ${escapeHtml(String(documents.length))}, versions: ${escapeHtml(String(versions.length))}</div>
+          <details ${links.length ? "open" : ""}>
+            <summary>Discovered links</summary>
+            <pre class="legal-field__hint">${escapeHtml(JSON.stringify(links, null, 2))}</pre>
+          </details>
+          <details ${documents.length ? "open" : ""}>
+            <summary>Canonical documents</summary>
+            <pre class="legal-field__hint">${escapeHtml(JSON.stringify(documents, null, 2))}</pre>
+          </details>
+          <details ${versions.length ? "open" : ""}>
+            <summary>Document versions</summary>
+            <pre class="legal-field__hint">${escapeHtml(JSON.stringify(versions, null, 2))}</pre>
+          </details>
+        </div>
+        <div class="legal-subcard">
+          <div class="admin-section-toolbar">
+            <strong>Projection runs</strong>
+            <span class="admin-badge admin-badge--muted">${escapeHtml(String(projectionRuns.length))}</span>
+          </div>
+          <table class="legal-table admin-table admin-table--compact">
+            <thead><tr><th>ID</th><th>Status</th><th>Decision</th><th>Actions</th></tr></thead>
+            <tbody>
+              ${projectionRuns.length ? projectionRuns.map((item) => `
+                <tr>
+                  <td>#${escapeHtml(String(item?.id || "—"))}</td>
+                  <td>${escapeHtml(String(item?.status || "—"))}</td>
+                  <td>${escapeHtml(String((item?.summary_json || {}).decision_status || "—"))}</td>
+                  <td>
+                    <button type="button" class="ghost-button" data-projection-run-select="${escapeHtml(String(item?.id || ""))}">Открыть</button>
+                    <button type="button" class="ghost-button" data-projection-run-approve="${escapeHtml(String(item?.id || ""))}">Approve</button>
+                    <button type="button" class="ghost-button" data-projection-run-hold="${escapeHtml(String(item?.id || ""))}">Hold</button>
+                    <button type="button" class="ghost-button" data-projection-run-materialize="${escapeHtml(String(item?.id || ""))}">Materialize</button>
+                    <button type="button" class="ghost-button" data-projection-run-activate="${escapeHtml(String(item?.id || ""))}">Activate</button>
+                  </td>
+                </tr>
+              `).join("") : '<tr><td colspan="4" class="legal-section__description">Projection runs пока нет.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+        <div class="legal-subcard">
+          <strong>Projection status</strong>
+          <p class="legal-section__description">Текущий selection: ${escapeHtml(selectedProjectionRun)}</p>
+          <details ${projectionItems.length ? "open" : ""}>
+            <summary>Projection items</summary>
+            <pre class="legal-field__hint">${escapeHtml(JSON.stringify(projectionItems, null, 2))}</pre>
+          </details>
+          <details ${state.projectionStatus ? "open" : ""}>
+            <summary>Projection status / runtime alignment</summary>
+            <pre class="legal-field__hint">${escapeHtml(JSON.stringify(state.projectionStatus || {}, null, 2))}</pre>
+          </details>
+        </div>
+      </div>
+    `;
+  },
 };
