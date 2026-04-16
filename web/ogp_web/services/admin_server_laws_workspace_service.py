@@ -231,6 +231,7 @@ def build_server_laws_summary_payload(
         "binding_count": len(bindings),
         "health": dict((health_payload.get("checks") or {}).get("health") or {}),
         "projection_bridge": dict(health_payload.get("projection_bridge") or {}),
+        "runtime_provenance": dict(health_payload.get("runtime_provenance") or {}),
         "latest_projection_run": _serialize_run(current_run),
         "fill_check": fill_summary,
         "diff": diff_summary,
