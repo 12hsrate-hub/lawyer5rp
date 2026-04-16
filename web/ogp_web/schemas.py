@@ -642,6 +642,19 @@ class AdminCanonicalLawDocumentVersionIngestPayload(BaseModel):
     safe_rerun: bool = True
 
 
+class AdminCanonicalLawDocumentVersionFetchPayload(BaseModel):
+    safe_rerun: bool = True
+    timeout_sec: int = 15
+
+    @field_validator("timeout_sec")
+    @classmethod
+    def validate_timeout_sec(cls, value: int) -> int:
+        normalized = int(value or 0)
+        if normalized < 1 or normalized > 60:
+            raise ValueError("canonical_law_document_fetch_timeout_invalid")
+        return normalized
+
+
 class AdminLawSourceRegistryPayload(BaseModel):
     name: str = ""
     kind: str = "url"

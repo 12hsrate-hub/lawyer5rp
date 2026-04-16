@@ -139,6 +139,21 @@ class _FakeVersionsStore:
     def list_versions_for_document(self, *, canonical_law_document_id: int):
         return [item for item in self.items if int(item.canonical_law_document_id) == int(canonical_law_document_id)]
 
+    def get_version(self, *, version_id: int):
+        return next((row for row in self.items if int(row.id) == int(version_id)), None)
+
+    def update_fetch_result(self, **kwargs):
+        item = self.get_version(version_id=int(kwargs["version_id"]))
+        if item is None:
+            raise KeyError("canonical_law_document_version_not_found")
+        item.fetch_status = kwargs["fetch_status"]
+        item.content_checksum = kwargs.get("content_checksum", "")
+        item.raw_title = kwargs.get("raw_title", "")
+        item.body_text = kwargs.get("body_text", "")
+        item.metadata_json = dict(kwargs.get("metadata_json") or {})
+        item.updated_at = "2026-04-16T03:00:00+00:00"
+        return item
+
 
 class AdminCanonicalLawDocumentVersionsApiTests(unittest.TestCase):
     def setUp(self):
@@ -162,6 +177,12 @@ class AdminCanonicalLawDocumentVersionsApiTests(unittest.TestCase):
         app.dependency_overrides[get_law_source_discovery_store] = lambda: self.discovery_store
         app.dependency_overrides[get_canonical_law_documents_store] = lambda: self.documents_store
         app.dependency_overrides[get_canonical_law_document_versions_store] = lambda: self.versions_store
+        app.state.canonical_law_document_version_fetcher = lambda url, timeout_sec: {
+            "status_code": 200,
+            "url": url,
+            "text": "<html><title>Fetched Code</title><body>Law body</body></html>",
+            "headers": {"content-type": "text/html; charset=utf-8"},
+        }
         self.client = TestClient(app, base_url="https://testserver")
         reset_rate_limit(self.client.app.state.rate_limiter)
         self._register_and_login_admin("12345", "admin@example.com")
@@ -199,6 +220,15 @@ class AdminCanonicalLawDocumentVersionsApiTests(unittest.TestCase):
         by_doc = self.client.get("/api/admin/canonical-law-documents/1/versions")
         self.assertEqual(by_doc.status_code, 200)
         self.assertEqual(by_doc.json()["count"], 1)
+
+        fetched = self.client.post(
+            "/api/admin/law-source-discovery-runs/5/fetch-document-versions",
+            json={"safe_rerun": True, "timeout_sec": 10},
+        )
+        self.assertEqual(fetched.status_code, 200)
+        self.assertEqual(fetched.json()["fetched_versions"], 1)
+        self.assertEqual(fetched.json()["items"][0]["fetch_status"], "fetched")
+        self.assertEqual(fetched.json()["items"][0]["raw_title"], "Fetched Code")
 
     def test_admin_canonical_law_document_versions_missing_run(self):
         response = self.client.post("/api/admin/law-source-discovery-runs/999/ingest-document-versions", json={"safe_rerun": True})
