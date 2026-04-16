@@ -1,6 +1,6 @@
 # Orange Multi-Server RC Evidence
 
-Status: pre-window ready  
+Status: live preflight hold  
 Date: 2026-04-16
 
 ## Scope
@@ -83,10 +83,17 @@ Date: 2026-04-16
 - Deploy smoke result for RC window:
 - Synthetic smoke result for RC window:
 - `orange` admin health payload snapshot:
-  - paste `/api/admin/runtime-servers/orange/health` payload here after activation
+  - live preflight captured pre-activation at `2026-04-16T02:12:19Z`
+  - result: no payload available because `orange` runtime server record is missing in production
 - `orange` document-builder sample:
-  - paste a representative `document_builder` payload sample for `orange` here after activation
+  - live preflight captured pre-activation at `2026-04-16T02:12:19Z`
+  - result: bundle resolves, but only to base `court_claim` schema
+  - evidence:
+    - `server = orange`
+    - `claim_kind_by_court_type = {}`
+    - no orange-specific document-builder metadata was present
 - `orange` law rollback sample:
-  - paste rollback route/service evidence for `orange` here after activation
+  - live preflight captured pre-activation at `2026-04-16T02:12:19Z`
+  - result: no law rollback evidence available because `orange` has no runtime law sets, bindings, or active law version in production
 - Observation window status:
-  - link the corresponding checkpoint entries from `ORANGE_MULTI_SERVER_RC_OBSERVATION_LOG.md`
+  - RC window not opened; preflight ended in `hold`

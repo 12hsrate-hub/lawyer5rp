@@ -2,7 +2,7 @@
 
 Use this record for the first multi-server RC candidate `orange`.
 
-Status: pre-window ready  
+Status: hold after live preflight  
 Date: 2026-04-16
 
 ## 1. Scope
@@ -18,26 +18,39 @@ Date: 2026-04-16
 
 ## 2. Preflight result
 
-- Orange checklist reviewed: `pending execution-window confirmation`
-- Runtime server record exists: `pending execution-window confirmation`
-- Published/bootstrap-backed config path verified: `pre-window regression evidence present; execution-window payload capture pending`
-- Warning signals clear: `pending execution-window confirmation`
+- Orange checklist reviewed: `yes — live preflight executed at 2026-04-16T02:12:19Z`
+- Runtime server record exists: `no — orange is missing from production runtime server storage`
+- Published/bootstrap-backed config path verified: `no — cannot verify live runtime path while orange runtime server record is missing`
+- Warning signals clear: `no — live preflight found missing runtime server, missing law evidence, and missing orange-owned document-builder metadata`
 - Fallback path understood: `yes`
 - Rollback path confirmed: `yes — deactivate orange; code-wide fallback to main@4b6049e via Deploy Production if needed`
-- Admin/runtime visibility available: `pre-window regression evidence present; execution-window payload capture pending`
-- Law set / law binding / active version evidence available: `pre-window regression evidence present; execution-window payload capture pending`
-- Document-builder sample available: `pre-window regression evidence present; activation-window sample pending`
+- Admin/runtime visibility available: `no — /api/admin/runtime-servers/orange/health has no live server payload because orange is absent`
+- Law set / law binding / active version evidence available: `no — live preflight found zero orange law sets, zero bindings, and no active law version`
+- Document-builder sample available: `yes — sample captured, but it shows only base court_claim fallback and does not prove orange-owned metadata`
 
 ## 3. Evidence
 
 - Dashboard runtime snapshot:
-  - paste orange runtime/admin snapshot here during the RC window
+  - live preflight timestamp: `2026-04-16T02:12:19Z`
+  - orange runtime server record: `missing`
+  - orange activation state: `not available because server record is missing`
 - Runtime server health payload:
-  - paste `/api/admin/runtime-servers/orange/health` payload here during the RC window
+  - live preflight result: `unavailable`
+  - reason: orange runtime server record is missing, so no operator-readable health payload can be captured
 - Document-builder payload sample:
-  - paste a representative orange document-builder payload here during the RC window
+  - live preflight result: captured pre-activation
+  - summary:
+    - `server = orange`
+    - `document_type = court_claim`
+    - `choice_sets.claim_kind_by_court_type = {}`
+    - `validators.required_fields_by_claim_kind = {}`
+    - sample does not show orange-owned metadata and therefore does not satisfy RC proof
 - Law set / binding / rollback sample:
-  - paste orange law evidence here during the RC window
+  - live preflight result:
+    - law sets: `[]`
+    - bindings: `[]`
+    - active law version: `null`
+    - rollback handle cannot be evidenced because no orange law runtime state exists
 - Deploy workflow:
   - baseline known-good deploy run: `24487921717`
   - RC window deploy run: `pending`
@@ -54,8 +67,9 @@ Date: 2026-04-16
   - `proceed`
   - `hold`
   - `rollback`
-- Reason:
-- Required follow-up:
+- Decision: `hold`
+- Reason: `orange` is not present as a production runtime server; no live health payload, no law runtime evidence, and no orange-owned document-builder metadata could be confirmed
+- Required follow-up: `create and verify the orange runtime server record, publish/verify its live config-owned metadata, seed law set/binding/active version state, then rerun live preflight before activation`
 
 ## 5. Observation window
 
