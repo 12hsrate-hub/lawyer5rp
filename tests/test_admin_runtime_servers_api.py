@@ -983,9 +983,11 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(payload["overview"]["laws"]["runtime_provenance"]["mode"], "legacy_runtime_shell")
         self.assertEqual(payload["overview"]["laws"]["runtime_alignment"]["status"], "legacy_only")
         self.assertEqual(payload["overview"]["laws"]["runtime_item_parity"]["status"], "aligned")
+        self.assertEqual(payload["overview"]["laws"]["runtime_version_parity"]["status"], "legacy_only")
         self.assertEqual(payload["health"]["onboarding"]["resolution_mode"], "bootstrap_pack")
         issue_ids = {item.get("issue_id") for item in payload["issues"]["items"] if item.get("issue_id")}
         self.assertIn("laws_runtime_provenance", issue_ids)
+        self.assertIn("laws_runtime_version_parity", issue_ids)
         self.assertEqual(payload["readiness"]["counters"]["stale_changes"], 1)
         self.assertIsInstance(payload["activity"], list)
 
@@ -1056,6 +1058,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             payload = issues.json()
             issue_ids = {item["issue_id"] for item in payload["items"]}
             self.assertIn("laws_runtime_provenance", issue_ids)
+            self.assertIn("laws_runtime_version_parity", issue_ids)
 
             recheck = self.client.post("/api/admin/runtime-servers/blackberry/issues/laws_runtime_provenance/recheck")
             self.assertEqual(recheck.status_code, 200)
@@ -1063,6 +1066,13 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertTrue(recheck_payload["ok"])
             self.assertEqual(recheck_payload["issue_id"], "laws_runtime_provenance")
             self.assertEqual(recheck_payload["action"], "recheck")
+
+            parity_recheck = self.client.post("/api/admin/runtime-servers/blackberry/issues/laws_runtime_version_parity/recheck")
+            self.assertEqual(parity_recheck.status_code, 200)
+            parity_recheck_payload = parity_recheck.json()
+            self.assertTrue(parity_recheck_payload["ok"])
+            self.assertEqual(parity_recheck_payload["issue_id"], "laws_runtime_version_parity")
+            self.assertEqual(parity_recheck_payload["action"], "recheck")
 
     def test_runtime_server_issues_endpoint_exposes_runtime_item_parity_warning_for_drift(self):
         self.runtime_law_sets_store.law_set_details[1]["items"] = [
@@ -1200,10 +1210,12 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(summary.json()["runtime_provenance"]["mode"], "legacy_runtime_shell")
         self.assertEqual(summary.json()["runtime_alignment"]["status"], "legacy_only")
         self.assertEqual(summary.json()["runtime_item_parity"]["status"], "aligned")
+        self.assertEqual(summary.json()["runtime_version_parity"]["status"], "legacy_only")
         self.assertEqual(effective.json()["count"], 1)
         self.assertEqual(effective.json()["items"][0]["title"], "Уголовный кодекс v2")
         self.assertEqual(diff.json()["runtime_alignment"]["status"], "legacy_only")
         self.assertEqual(diff.json()["runtime_item_parity"]["status"], "aligned")
+        self.assertEqual(diff.json()["runtime_version_parity"]["status"], "legacy_only")
         self.assertEqual(diff.json()["summary"]["changed"], 1)
         self.assertEqual(diff.json()["summary"]["added"], 0)
 
@@ -1374,6 +1386,25 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertTrue(payload["runtime_provenance"]["is_projection_backed"])
         self.assertEqual(payload["runtime_alignment"]["status"], "aligned")
         self.assertTrue(payload["runtime_alignment"]["matches_active_law_version"])
+        with patch(
+            "ogp_web.server_config.registry._load_effective_pack_from_db",
+            side_effect=lambda *, server_code, at_timestamp=None: orange_published_pack() if server_code == "orange" else None,
+        ), patch.object(
+            admin_runtime_servers_service,
+            "resolve_active_law_version",
+            return_value=ResolvedLawVersion(
+                id=88,
+                server_code="orange",
+                generated_at_utc="2026-04-16T00:00:00+00:00",
+                effective_from="2026-04-16",
+                effective_to="",
+                fingerprint="orange-fp",
+                chunk_count=9,
+            ),
+        ):
+            workspace = self.client.get("/api/admin/runtime-servers/orange/workspace")
+        self.assertEqual(workspace.status_code, 200)
+        self.assertEqual(workspace.json()["overview"]["laws"]["runtime_version_parity"]["status"], "aligned")
         self.assertEqual(payload["onboarding"]["highest_completed_state"], "rollout-ready")
         self.assertEqual(payload["checks"]["health"]["active_law_version_id"], 88)
         self.assertEqual(payload["projection_bridge"]["run_id"], 4)

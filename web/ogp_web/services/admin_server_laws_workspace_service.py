@@ -272,6 +272,62 @@ def _runtime_item_parity_summary(
     }
 
 
+def _runtime_version_parity_summary(*, health_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_alignment = dict((health_payload or {}).get("runtime_alignment") or {})
+    projection_bridge = dict((health_payload or {}).get("projection_bridge") or {})
+    active_law_set_id = int(runtime_alignment.get("active_law_set_id") or 0)
+    active_law_version_id = int(runtime_alignment.get("active_law_version_id") or 0)
+    projected_law_set_id = int(runtime_alignment.get("projected_law_set_id") or 0)
+    projected_law_version_id = int(runtime_alignment.get("projected_law_version_id") or 0)
+    projection_run_id = int(runtime_alignment.get("projection_run_id") or projection_bridge.get("run_id") or 0)
+
+    if projected_law_version_id > 0 and active_law_version_id > 0 and projected_law_version_id == active_law_version_id:
+        status = "aligned"
+        detail = "Promoted projection law_version matches the current active runtime law_version."
+    elif projected_law_version_id > 0 and active_law_version_id > 0:
+        status = "drift"
+        detail = "Promoted projection law_version and active runtime law_version differ."
+    elif active_law_version_id > 0:
+        status = "legacy_only"
+        detail = "Active runtime law_version exists without a promoted projection law_version."
+    elif projected_law_version_id > 0 or projected_law_set_id > 0 or projection_run_id > 0:
+        status = "pending_activation"
+        detail = "Promoted projection exists, but there is no active runtime law_version yet."
+    else:
+        status = "uninitialized"
+        detail = "There is not enough runtime/projection version data to compare law_version parity."
+
+    drift_summary = ""
+    if status in {"drift", "legacy_only", "pending_activation"}:
+        drift_parts: list[str] = []
+        if active_law_version_id > 0:
+            drift_parts.append(f"active_version={active_law_version_id}")
+        if projected_law_version_id > 0:
+            drift_parts.append(f"projected_version={projected_law_version_id}")
+        if active_law_set_id > 0:
+            drift_parts.append(f"active_law_set={active_law_set_id}")
+        if projected_law_set_id > 0:
+            drift_parts.append(f"projected_law_set={projected_law_set_id}")
+        drift_summary = "; ".join(drift_parts)
+
+    return {
+        "status": status,
+        "detail": detail,
+        "active_law_set_id": active_law_set_id or None,
+        "active_law_version_id": active_law_version_id or None,
+        "projected_law_set_id": projected_law_set_id or None,
+        "projected_law_version_id": projected_law_version_id or None,
+        "projection_run_id": projection_run_id or None,
+        "matches_active_law_version": (
+            projected_law_version_id > 0 and active_law_version_id > 0 and projected_law_version_id == active_law_version_id
+        ),
+        "matches_active_law_set": (
+            projected_law_set_id > 0 and active_law_set_id > 0 and projected_law_set_id == active_law_set_id
+        ),
+        "drift_summary": drift_summary,
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -312,6 +368,7 @@ def build_server_laws_summary_payload(
         active_runtime_items=active_runtime_items,
         projection_items=current_items,
     )
+    runtime_version_parity = _runtime_version_parity_summary(health_payload=health_payload)
     diff_summary = _diff_summary(current_items, previous_items)
     diff_summary["current_run_id"] = int(current_run.id) if current_run is not None else None
     diff_summary["baseline_run_id"] = int(previous_run.id) if previous_run is not None else None
@@ -324,6 +381,7 @@ def build_server_laws_summary_payload(
         "runtime_provenance": dict(health_payload.get("runtime_provenance") or {}),
         "runtime_alignment": dict(health_payload.get("runtime_alignment") or {}),
         "runtime_item_parity": runtime_item_parity,
+        "runtime_version_parity": runtime_version_parity,
         "latest_projection_run": _serialize_run(current_run),
         "fill_check": fill_summary,
         "diff": diff_summary,
@@ -461,6 +519,7 @@ def build_server_laws_diff_payload(
         active_runtime_items=active_runtime_items,
         projection_items=current_items,
     )
+    runtime_version_parity = _runtime_version_parity_summary(health_payload=health_payload)
     diff_summary = _diff_summary(current_items, previous_items)
     diff_summary["current_run_id"] = int(current_run.id) if current_run is not None else None
     diff_summary["baseline_run_id"] = int(previous_run.id) if previous_run is not None else None
@@ -470,5 +529,6 @@ def build_server_laws_diff_payload(
         "baseline_run": _serialize_run(previous_run),
         "runtime_alignment": dict(health_payload.get("runtime_alignment") or {}),
         "runtime_item_parity": runtime_item_parity,
+        "runtime_version_parity": runtime_version_parity,
         "summary": diff_summary,
     }
