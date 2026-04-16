@@ -6,12 +6,12 @@ Date: 2026-04-14
 ## Execution Status
 
 - Execution checkpoint: `2026-04-15`
-- Active phase: `Phase K`
-- Active task: `select next non-cosmetic phase target after K`
+- Active phase: `Phase L`
+- Active task: `prepare orange as the first staged multi-server release candidate`
 - Status: `in_progress`
-- Last completed phase: `Phase J`
+- Last completed phase: `Phase K`
 - Inventory slices completed: `6`
-- Next slice: `choose the next real post-K execution target`
+- Next slice: `record RC operator artifacts and finalize orange release-evidence regression coverage`
 - Last updated: `2026-04-16`
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
@@ -300,6 +300,13 @@ Date: 2026-04-14
 - jobs seam note: `docs/seams/2026-04/jobs-runtime-boundary-shrink.md`
 - `Phase K` is accepted
 - complaint, exam-import, and jobs runtime-boundary seams are now reduced to service-owned orchestration with route-level compatibility wrappers only where tests still rely on route symbols
+- `Phase L` is opened
+- the next execution track is the first staged multi-server RC rather than another governance cleanup wave
+- `RC-01` is deployed and prevents DB-created runtime servers from becoming runtime-addressable too early
+- `RC-02` is deployed and proves a non-`blackberry` published-pack-backed second-server path through registry/admin/law/document-builder regression coverage
+- `GOV-06` is deployed and moves the narrow complaint/law raw-SQL hotspots behind storage helpers
+- current RC candidate recommendation is `orange`
+- second-server complaint runtime remains explicitly out of scope for the first RC
 - Phase C progress:
   - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.

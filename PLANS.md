@@ -6,10 +6,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 
 ## Current Execution State
 
-- Current phase: `Phase K — complaint/exam/jobs runtime boundary decomposition wave 1`
-- Current task: `select next non-cosmetic phase target after K`
-- Active execution phase override: `Phase J is accepted; Phase K is now opened as the next execution phase`
-- Current micro-step: `Phase K accepted after K.2/K.3 bounded route-service extraction bundle`
+- Current phase: `Phase L — first multi-server RC transition`
+- Current task: `prepare orange as the first staged multi-server release candidate`
+- Active execution phase override: `Phase K is accepted; RC-01, RC-02, and GOV-06 are deployed; move to bounded RC execution`
+- Current micro-step: `record orange RC operator artifacts and tighten the last release-evidence regressions`
 - Overall status: `in_progress`
 - Last updated: `2026-04-16`
 - Execution override update:
@@ -156,6 +156,17 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - compatibility seam note recorded: [docs/seams/2026-04/jobs-runtime-boundary-shrink.md](docs/seams/2026-04/jobs-runtime-boundary-shrink.md)
 - `K.3` is accepted: `routes/jobs.py` is now a thin transport/auth facade over the bounded jobs runtime service rather than another route-local orchestration seam.
 - `Phase K` is accepted: complaint, exam-import, and jobs runtime-boundary seams were all shrunk without changing public route contracts, and further work in this area would drift into thin-wrapper cleanup rather than removing a real orchestration layer.
+- `Phase L` is opened for the first staged multi-server RC transition.
+- `RC-01` is deployed: newly created runtime servers now start inactive by default, so DB-created servers no longer become runtime-addressable too early.
+- `RC-02` is deployed: a non-`blackberry` second-server regression pack now proves published-pack-backed multi-server behavior for admin/runtime/law/document-builder surfaces.
+- `GOV-06` is deployed: the narrow complaint user lookup and law rollback SQL hotspots now sit behind storage helpers.
+- first RC scope is now fixed as `blackberry + existing production flow` plus one additional non-`blackberry` runtime server candidate, with second-server complaint runtime explicitly out of scope.
+- recommended first RC candidate: `orange`
+- immediate Phase L deliverables:
+  - concrete RC checklist instance
+  - operator-facing RC evidence note
+  - first cutover record and observation log instance
+  - final selected-server/runtime safety regression for the active RC candidate
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
