@@ -73,6 +73,7 @@ const lawModalErrors = document.getElementById("admin-law-modal-errors");
 const lawModalSaveButton = document.getElementById("admin-law-modal-save");
 const lawModalCancelButton = document.getElementById("admin-law-modal-cancel");
 const catalogHost = document.getElementById("admin-catalog");
+const serverWorkspaceHost = document.getElementById("admin-server-workspace");
 
 const {
   apiFetch,
@@ -4948,17 +4949,31 @@ resetActionModalFields();
 resetCatalogModalState();
 resetLawModalState();
 initCollapsibles();
-Promise.all([
-  loadAdminOverview(),
-  loadAdminPerformance(),
-  loadAdminAsyncJobs(),
-  loadLawJobsOverview(),
-  loadExamImportOps(),
-  loadPilotRollout(),
-  loadRecentGeneratedDocuments(),
-  loadAiPipeline(),
-  loadRoleHistory(),
-  loadCatalog(),
-]).then(() => {
-  scheduleLiveRefresh();
-});
+if (serverWorkspaceHost && window.OGPAdminServerWorkspace?.bootServerWorkspace) {
+  window.OGPAdminServerWorkspace.bootServerWorkspace({
+    host: serverWorkspaceHost,
+    apiFetch,
+    parsePayload,
+    escapeHtml,
+    errorsHost,
+    clearMessage,
+    setStateError,
+    setStateIdle,
+    formatHttpError,
+  });
+} else {
+  Promise.all([
+    loadAdminOverview(),
+    loadAdminPerformance(),
+    loadAdminAsyncJobs(),
+    loadLawJobsOverview(),
+    loadExamImportOps(),
+    loadPilotRollout(),
+    loadRecentGeneratedDocuments(),
+    loadAiPipeline(),
+    loadRoleHistory(),
+    loadCatalog(),
+  ]).then(() => {
+    scheduleLiveRefresh();
+  });
+}

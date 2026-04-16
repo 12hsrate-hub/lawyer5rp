@@ -174,6 +174,7 @@ window.OGPAdminRuntimeLaws = {
                 <td>${item.is_active ? "active" : "disabled"}</td>
                 <td>${escapeHtml(String(item.onboarding?.highest_completed_state || "not-ready"))}<br><span class="admin-user-cell__secondary">${escapeHtml(String(item.onboarding?.resolution_label || "unknown"))}</span></td>
                 <td>
+                  <a class="ghost-button button-link" href="/admin/servers/${escapeHtml(String(item.code || ""))}">Workspace</a>
                   <button type="button" class="ghost-button" data-runtime-server-edit="${escapeHtml(String(item.code || ""))}" data-runtime-server-title="${escapeHtml(String(item.title || ""))}">Изменить</button>
                   <button type="button" class="ghost-button" data-runtime-server-toggle="${escapeHtml(String(item.code || ""))}" data-runtime-server-active="${item.is_active ? "1" : "0"}">${item.is_active ? "Деактивировать" : "Активировать"}</button>
                 </td>

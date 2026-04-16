@@ -12,6 +12,7 @@
   <script src="{{ url_for('static', path='shared/admin_actions.js') }}?v={{ static_asset_version }}" defer></script>
   <script src="{{ url_for('static', path='shared/admin_runtime_laws.js') }}?v={{ static_asset_version }}" defer></script>
   <script src="{{ url_for('static', path='shared/admin_law_runtime_controller.js') }}?v={{ static_asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='shared/admin_server_workspace.js') }}?v={{ static_asset_version }}" defer></script>
   <script src="{{ url_for('static', path='shared/admin_user_details.js') }}?v={{ static_asset_version }}" defer></script>
   <script src="{{ url_for('static', path='pages/admin.js') }}?v={{ static_asset_version }}" defer></script>
 {% endblock %}
@@ -68,8 +69,18 @@
       <a class="legal-section-jump__link" href="#admin-catalog-content">Configuration Catalog</a>
       {% endif %}
       {% if admin_focus == "servers" %}
+      {% if admin_server_code %}
+      <a class="legal-section-jump__link" href="#admin-server-overview-tab">Обзор</a>
+      <a class="legal-section-jump__link" href="#admin-server-laws-tab">Законы</a>
+      <a class="legal-section-jump__link" href="#admin-server-features-tab">Функции</a>
+      <a class="legal-section-jump__link" href="#admin-server-templates-tab">Шаблоны</a>
+      <a class="legal-section-jump__link" href="#admin-server-users-tab">Пользователи</a>
+      <a class="legal-section-jump__link" href="#admin-server-audit-tab">Аудит</a>
+      <a class="legal-section-jump__link" href="#admin-server-errors-tab">Ошибки</a>
+      {% else %}
       <a class="legal-section-jump__link" href="#admin-server-domain-map">Server Domain Map</a>
       <a class="legal-section-jump__link" href="#admin-catalog-content">Runtime Inventory</a>
+      {% endif %}
       {% endif %}
       {% if admin_focus == "laws" %}
       <a class="legal-section-jump__link" href="#admin-law-domain-map">Law Domain Map</a>
@@ -95,6 +106,12 @@
         <div>
           {% if admin_focus in ["servers", "laws", "templates", "features", "rules"] %}
           <p class="legal-section__eyebrow">Configuration Admin</p>
+          {% if admin_focus == "servers" and admin_server_code %}
+          <h1 class="legal-section__title">Server workspace: {{ admin_server_code }}</h1>
+          <p class="legal-section__description">
+            Server-centric рабочее место: overview, readiness, законы, функции, шаблоны, доступы и операционные сигналы.
+          </p>
+          {% else %}
           <h1 class="legal-section__title">Runtime and configuration workspace</h1>
           <p class="legal-section__description">
             {% if admin_focus == "laws" %}
@@ -103,6 +120,7 @@
             Read-only domain view for runtime inventory, catalog-backed configuration, and publication context.
             {% endif %}
           </p>
+          {% endif %}
           {% else %}
           <p class="legal-section__eyebrow">Администрирование</p>
           <h1 class="legal-section__title">Панель ресурсов и активности</h1>
@@ -115,6 +133,42 @@
 
       <div id="admin-errors" class="errors legal-message ui-state ui-state--idle" hidden></div>
       <div id="admin-message" class="success-box legal-message ui-state ui-state--idle" hidden></div>
+
+      {% if admin_focus == "servers" and admin_server_code %}
+      <section id="admin-server-workspace" class="legal-subcard" data-server-code="{{ admin_server_code }}">
+        <div class="admin-section-toolbar">
+          <div>
+            <span class="legal-field__label">Карточка сервера</span>
+            <p class="legal-section__description">Основной путь: Сервер → Законы → Функции → Шаблоны вывода.</p>
+          </div>
+          <div>
+            <a class="ghost-button button-link" href="/admin/servers">К списку серверов</a>
+            <button type="button" id="admin-server-workspace-refresh" class="primary-button">Обновить workspace</button>
+          </div>
+        </div>
+        <nav class="segmented-tabs segmented-tabs--section" aria-label="Вкладки сервера">
+          <button type="button" class="segmented-tabs__item is-active" id="admin-server-overview-tab" data-server-workspace-tab="overview">Обзор</button>
+          <button type="button" class="segmented-tabs__item" id="admin-server-laws-tab" data-server-workspace-tab="laws">Законы</button>
+          <button type="button" class="segmented-tabs__item" id="admin-server-features-tab" data-server-workspace-tab="features">Функции</button>
+          <button type="button" class="segmented-tabs__item" id="admin-server-templates-tab" data-server-workspace-tab="templates">Шаблоны вывода</button>
+          <button type="button" class="segmented-tabs__item" id="admin-server-users-tab" data-server-workspace-tab="users">Пользователи</button>
+          <button type="button" class="segmented-tabs__item" data-server-workspace-tab="access">Роли / Доступ</button>
+          <button type="button" class="segmented-tabs__item" id="admin-server-audit-tab" data-server-workspace-tab="audit">Аудит</button>
+          <button type="button" class="segmented-tabs__item" id="admin-server-errors-tab" data-server-workspace-tab="errors">Ошибки / Проблемы</button>
+          <button type="button" class="segmented-tabs__item" data-server-workspace-tab="diagnostics">Диагностика</button>
+        </nav>
+        <div id="admin-server-workspace-summary" class="legal-field-grid legal-field-grid--two"></div>
+        <section id="admin-server-workspace-panel-overview" class="legal-subcard"></section>
+        <section id="admin-server-workspace-panel-laws" class="legal-subcard" hidden></section>
+        <section id="admin-server-workspace-panel-features" class="legal-subcard" hidden></section>
+        <section id="admin-server-workspace-panel-templates" class="legal-subcard" hidden></section>
+        <section id="admin-server-workspace-panel-users" class="legal-subcard" hidden></section>
+        <section id="admin-server-workspace-panel-access" class="legal-subcard" hidden></section>
+        <section id="admin-server-workspace-panel-audit" class="legal-subcard" hidden></section>
+        <section id="admin-server-workspace-panel-errors" class="legal-subcard" hidden></section>
+        <section id="admin-server-workspace-panel-diagnostics" class="legal-subcard" hidden></section>
+      </section>
+      {% endif %}
 
       {% if admin_focus in ["dashboard", "users"] %}
       <section id="admin-section-filters" class="legal-subcard admin-collapsible" data-collapsible-section="filters">
@@ -604,7 +658,7 @@
       </section>
       {% endif %}
 
-      {% if admin_focus in ["servers", "laws", "templates", "features", "rules"] %}
+      {% if admin_focus in ["servers", "laws", "templates", "features", "rules"] and not (admin_focus == "servers" and admin_server_code) %}
       <section id="admin-domain-summary" class="legal-subcard admin-collapsible" data-collapsible-section="domain-summary">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>

@@ -20,7 +20,14 @@ os.environ.setdefault("OGP_SKIP_DEFAULT_APP_INIT", "1")
 from fastapi.testclient import TestClient
 
 from ogp_web.app import create_app
-from ogp_web.dependencies import get_content_workflow_service, get_runtime_law_sets_store, get_runtime_servers_store, get_server_effective_law_projections_store
+from ogp_web.dependencies import (
+    get_admin_dashboard_service,
+    get_content_workflow_service,
+    get_law_source_sets_store,
+    get_runtime_law_sets_store,
+    get_runtime_servers_store,
+    get_server_effective_law_projections_store,
+)
 import ogp_web.routes.admin as admin_route
 from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
 import ogp_web.services.admin_runtime_servers_service as admin_runtime_servers_service
@@ -258,6 +265,39 @@ class _FakeProjectionsStore:
         ]
 
 
+class _FakeLawSourceSetsStore:
+    def list_bindings(self, *, server_code: str):
+        if server_code != "blackberry":
+            return []
+        return [
+            type(
+                "_Binding",
+                (),
+                {
+                    "id": 11,
+                    "server_code": server_code,
+                    "source_set_key": "legacy-blackberry-default",
+                    "priority": 100,
+                    "is_active": True,
+                },
+            )()
+        ]
+
+
+class _FakeAdminDashboardService:
+    def get_dashboard(self, *, username: str, server_id: str):
+        _ = username
+        return {
+            "release": {"warning_signals": []},
+            "generation_law_qa": {},
+            "jobs": {"dlq_count": 0},
+            "validation": {},
+            "content": {"recent_audit_activity": [{"entity_type": "content_item", "entity_id": "42", "action": "publish", "created_at": "2026-04-16T10:00:00+00:00"}], "publish_batches": []},
+            "integrity": {"status": "ok"},
+            "synthetic": {"failed_scenarios": []},
+        }
+
+
 class AdminRuntimeServersApiTests(unittest.TestCase):
     def setUp(self):
         self.tmpdir = make_temporary_directory()
@@ -277,9 +317,14 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.runtime_store = _FakeRuntimeServersStore()
         self.runtime_law_sets_store = _FakeRuntimeLawSetsStore()
         self.projections_store = _FakeProjectionsStore()
+        self.source_sets_store = _FakeLawSourceSetsStore()
+        self.workflow_service = _FakeContentWorkflowService()
         app.dependency_overrides[get_runtime_servers_store] = lambda: self.runtime_store
         app.dependency_overrides[get_runtime_law_sets_store] = lambda: self.runtime_law_sets_store
         app.dependency_overrides[get_server_effective_law_projections_store] = lambda: self.projections_store
+        app.dependency_overrides[get_law_source_sets_store] = lambda: self.source_sets_store
+        app.dependency_overrides[get_admin_dashboard_service] = lambda: _FakeAdminDashboardService()
+        app.dependency_overrides[get_content_workflow_service] = lambda: self.workflow_service
         self.client = TestClient(app, base_url="https://testserver")
         reset_rate_limit(self.client.app.state.rate_limiter)
         self._register_and_login_admin("12345", "admin@example.com")
@@ -402,6 +447,44 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertEqual(payload_after["checks"]["health"]["active_law_version_id"], 77)
             self.assertEqual(payload_after["onboarding"]["highest_completed_state"], "not-ready")
             self.assertEqual(payload_after["onboarding"]["next_required_state"], "bootstrap-ready")
+
+    def test_runtime_server_workspace_endpoint_returns_server_centric_summary(self):
+        with patch.object(
+            admin_runtime_servers_service,
+            "resolve_active_law_version",
+            return_value=ResolvedLawVersion(
+                id=91,
+                server_code="blackberry",
+                generated_at_utc="2026-04-16T00:00:00+00:00",
+                effective_from="2026-04-16",
+                effective_to="",
+                fingerprint="bb-workspace-fp",
+                chunk_count=6,
+            ),
+        ):
+            response = self.client.get("/api/admin/runtime-servers/blackberry/workspace")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["server"]["code"], "blackberry")
+        self.assertIn(payload["readiness"]["overall_status"], {"not_configured", "partial", "ready", "error"})
+        self.assertIn("laws", payload["overview"])
+        self.assertIn("features", payload["overview"])
+        self.assertIn("templates", payload["overview"])
+        self.assertIn("users", payload["overview"])
+        self.assertIn("access", payload["overview"])
+        self.assertEqual(payload["overview"]["laws"]["binding_count"], 1)
+        self.assertIsInstance(payload["activity"], list)
+
+    def test_runtime_server_activity_endpoint_returns_items(self):
+        response = self.client.get("/api/admin/runtime-servers/blackberry/activity")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["server_code"], "blackberry")
+        self.assertIn("items", payload)
 
     def test_second_server_published_pack_health_endpoint_reports_release_candidate_state(self):
         self.runtime_store.rows["orange"] = {
