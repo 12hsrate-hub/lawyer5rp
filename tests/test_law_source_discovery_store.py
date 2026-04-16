@@ -45,6 +45,11 @@ class _Connection:
             ]
             rows.sort(key=lambda item: (str(item["created_at"]), int(item["id"])), reverse=True)
             return _Cursor(rows=rows)
+        if normalized.startswith("SELECT r.id, r.source_set_revision_id, rev.source_set_key, rev.revision, r.trigger_mode, r.status, r.summary_json, r.error_summary, r.created_at, r.started_at, r.finished_at FROM source_discovery_runs AS r JOIN source_set_revisions AS rev ON rev.id = r.source_set_revision_id WHERE r.source_set_revision_id = %s ORDER BY r.created_at DESC, r.id DESC"):
+            source_set_revision_id = int(params[0])
+            rows = [row for row in self.runs if int(row["source_set_revision_id"]) == source_set_revision_id]
+            rows.sort(key=lambda item: (str(item["created_at"]), int(item["id"])), reverse=True)
+            return _Cursor(rows=rows)
         if normalized.startswith("SELECT r.id, r.source_set_revision_id, rev.source_set_key, rev.revision, r.trigger_mode, r.status, r.summary_json, r.error_summary, r.created_at, r.started_at, r.finished_at FROM source_discovery_runs AS r JOIN source_set_revisions AS rev ON rev.id = r.source_set_revision_id WHERE r.id = %s"):
             run_id = int(params[0])
             row = next((item for item in self.runs if int(item["id"]) == run_id), None)
@@ -149,6 +154,8 @@ def test_law_source_discovery_store_creates_runs_and_links():
 
     listed_runs = store.list_runs(source_set_key="orange-core")
     assert [item.id for item in listed_runs] == [run.id]
+    revision_runs = store.list_runs_for_revision(source_set_revision_id=7)
+    assert [item.id for item in revision_runs] == [run.id]
     listed_links = store.list_links(source_discovery_run_id=run.id)
     assert [item.normalized_url for item in listed_links] == ["https://example.com/law/a"]
 

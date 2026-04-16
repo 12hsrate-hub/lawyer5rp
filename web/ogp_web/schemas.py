@@ -620,6 +620,20 @@ class AdminLawSourceSetBackfillPayload(BaseModel):
         return str(value or "").strip().lower()
 
 
+class AdminLawSourceDiscoveryRunPayload(BaseModel):
+    source_set_revision_id: int | None = None
+    trigger_mode: str = "manual"
+    safe_rerun: bool = True
+
+    @field_validator("trigger_mode")
+    @classmethod
+    def validate_trigger_mode(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower() or "manual"
+        if normalized not in {"manual", "replay"}:
+            raise ValueError("source_discovery_trigger_mode_invalid")
+        return normalized
+
+
 class AdminLawSourceRegistryPayload(BaseModel):
     name: str = ""
     kind: str = "url"

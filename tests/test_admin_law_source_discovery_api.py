@@ -40,6 +40,10 @@ class _FakeLawSourceSetsStore:
         def __init__(self, **kwargs):
             self.__dict__.update(kwargs)
 
+    class _Revision:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
     def get_source_set(self, *, source_set_key: str):
         if source_set_key != "orange-core":
             return None
@@ -52,8 +56,32 @@ class _FakeLawSourceSetsStore:
             updated_at="2026-04-16T00:00:00+00:00",
         )
 
+    def get_revision(self, *, revision_id: int):
+        if int(revision_id) != 7:
+            return None
+        return self._Revision(
+            id=7,
+            source_set_key="orange-core",
+            revision=2,
+            status="published",
+            container_urls=("https://example.com/topic/1",),
+            adapter_policy_json={"extractor": "forum_topic"},
+            metadata_json={"promotion_mode": "hybrid"},
+            created_at="2026-04-16T00:05:00+00:00",
+            published_at="2026-04-16T00:06:00+00:00",
+        )
+
+    def list_revisions(self, *, source_set_key: str):
+        if source_set_key != "orange-core":
+            return []
+        return [self.get_revision(revision_id=7)]
+
 
 class _FakeLawSourceDiscoveryStore:
+    def __init__(self):
+        self.created_runs = []
+        self.created_links = []
+
     class _Run:
         def __init__(self, **kwargs):
             self.__dict__.update(kwargs)
@@ -65,6 +93,8 @@ class _FakeLawSourceDiscoveryStore:
     def list_runs(self, *, source_set_key: str):
         if source_set_key != "orange-core":
             return []
+        if self.created_runs:
+            return list(self.created_runs)
         return [
             self._Run(
                 id=5,
@@ -80,6 +110,13 @@ class _FakeLawSourceDiscoveryStore:
                 finished_at="2026-04-16T00:10:05+00:00",
             )
         ]
+
+    def list_runs_for_revision(self, *, source_set_revision_id: int):
+        if self.created_runs:
+            return [item for item in self.created_runs if int(item.source_set_revision_id) == int(source_set_revision_id)]
+        if int(source_set_revision_id) == 7:
+            return []
+        return []
 
     def get_run(self, *, run_id: int):
         if int(run_id) != 5:
@@ -99,6 +136,8 @@ class _FakeLawSourceDiscoveryStore:
         )
 
     def list_links(self, *, source_discovery_run_id: int):
+        if self.created_links and int(source_discovery_run_id) == 1:
+            return list(self.created_links)
         if int(source_discovery_run_id) != 5:
             return []
         return [
@@ -117,6 +156,35 @@ class _FakeLawSourceDiscoveryStore:
                 updated_at="2026-04-16T00:10:02+00:00",
             )
         ]
+
+    def create_run(self, *, source_set_revision_id: int, trigger_mode: str = "manual", status: str = "pending", summary_json=None, error_summary: str = ""):
+        run = self._Run(
+            id=1,
+            source_set_revision_id=source_set_revision_id,
+            source_set_key="orange-core",
+            revision=2,
+            trigger_mode=trigger_mode,
+            status=status,
+            summary_json=dict(summary_json or {}),
+            error_summary=error_summary,
+            created_at="2026-04-16T00:20:00+00:00",
+            started_at=None,
+            finished_at=None,
+        )
+        self.created_runs = [run]
+        return run
+
+    def create_link(self, **kwargs):
+        link = self._Link(
+            id=len(self.created_links) + 1,
+            first_seen_at="2026-04-16T00:20:00+00:00",
+            last_seen_at="2026-04-16T00:20:00+00:00",
+            created_at="2026-04-16T00:20:00+00:00",
+            updated_at="2026-04-16T00:20:00+00:00",
+            **kwargs,
+        )
+        self.created_links.append(link)
+        return link
 
 
 class AdminLawSourceDiscoveryApiTests(unittest.TestCase):
@@ -170,6 +238,16 @@ class AdminLawSourceDiscoveryApiTests(unittest.TestCase):
         self.assertEqual(links.status_code, 200)
         self.assertEqual(links.json()["count"], 1)
         self.assertEqual(links.json()["items"][0]["normalized_url"], "https://example.com/law/a")
+
+    def test_admin_law_source_discovery_execute_endpoint(self):
+        response = self.client.post(
+            "/api/admin/law-source-sets/orange-core/discovery-runs",
+            json={"source_set_revision_id": 7, "trigger_mode": "manual", "safe_rerun": True},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["changed"])
+        self.assertEqual(response.json()["run"]["status"], "succeeded")
+        self.assertEqual(response.json()["run"]["summary_json"]["discovered_links"], 1)
 
     def test_admin_law_source_discovery_missing_resources(self):
         missing_source_set = self.client.get("/api/admin/law-source-sets/missing/discovery-runs")
