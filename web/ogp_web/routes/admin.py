@@ -354,6 +354,12 @@ async def admin_page(request: Request, user: AuthUser = Depends(requires_permiss
 
 @router.get("/admin/dashboard", response_class=HTMLResponse)
 async def admin_dashboard_page(request: Request, user: AuthUser = Depends(requires_permission("view_analytics"))):
+    _ = request, user
+    return RedirectResponse(url="/admin/ops", status_code=status.HTTP_302_FOUND)
+
+
+@router.get("/admin/ops", response_class=HTMLResponse)
+async def admin_ops_page(request: Request, user: AuthUser = Depends(requires_permission("view_analytics"))):
     return templates.TemplateResponse(
         request,
         "admin.html",
@@ -361,25 +367,19 @@ async def admin_dashboard_page(request: Request, user: AuthUser = Depends(requir
     )
 
 
-@router.get("/admin/ops", response_class=HTMLResponse)
-async def admin_ops_page(request: Request, user: AuthUser = Depends(requires_permission("view_analytics"))):
-    _ = request, user
-    return RedirectResponse(url="/admin/dashboard", status_code=status.HTTP_302_FOUND)
-
-
 @router.get("/admin/users", response_class=HTMLResponse)
 async def admin_users_page(request: Request, user: AuthUser = Depends(requires_permission("manage_servers"))):
+    _ = request, user
+    return RedirectResponse(url="/admin/audit", status_code=status.HTTP_302_FOUND)
+
+
+@router.get("/admin/audit", response_class=HTMLResponse)
+async def admin_audit_page(request: Request, user: AuthUser = Depends(requires_permission("manage_servers"))):
     return templates.TemplateResponse(
         request,
         "admin.html",
         _admin_template_payload(request, user, admin_focus="users"),
     )
-
-
-@router.get("/admin/audit", response_class=HTMLResponse)
-async def admin_audit_page(request: Request, user: AuthUser = Depends(requires_permission("manage_servers"))):
-    _ = request, user
-    return RedirectResponse(url="/admin/users", status_code=status.HTTP_302_FOUND)
 
 
 @router.get("/admin/servers", response_class=HTMLResponse)
