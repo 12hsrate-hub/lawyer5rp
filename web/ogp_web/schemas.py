@@ -638,6 +638,10 @@ class AdminCanonicalLawDocumentIngestPayload(BaseModel):
     safe_rerun: bool = True
 
 
+class AdminCanonicalLawDocumentVersionIngestPayload(BaseModel):
+    safe_rerun: bool = True
+
+
 class AdminLawSourceRegistryPayload(BaseModel):
     name: str = ""
     kind: str = "url"

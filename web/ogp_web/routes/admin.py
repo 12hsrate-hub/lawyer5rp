@@ -13,6 +13,7 @@ from ogp_web.dependencies import (
     get_admin_ai_pipeline_service,
     get_admin_dashboard_service,
     get_canonical_law_documents_store,
+    get_canonical_law_document_versions_store,
     get_law_source_discovery_store,
     get_law_source_sets_store,
     get_admin_metrics_store,
@@ -29,6 +30,7 @@ from ogp_web.schemas import (
     AdminCatalogRollbackPayload,
     AdminCatalogWorkflowPayload,
     AdminCanonicalLawDocumentIngestPayload,
+    AdminCanonicalLawDocumentVersionIngestPayload,
     AdminDeactivatePayload,
     AdminEmailUpdatePayload,
     AdminExamScoreResetPayload,
@@ -150,11 +152,17 @@ from ogp_web.storage.user_store import UserStore
 from ogp_web.storage.runtime_servers_store import RuntimeServerRecord, RuntimeServersStore
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
 from ogp_web.storage.canonical_law_documents_store import CanonicalLawDocumentsStore
+from ogp_web.storage.canonical_law_document_versions_store import CanonicalLawDocumentVersionsStore
 from ogp_web.storage.law_source_discovery_store import LawSourceDiscoveryStore
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
 from ogp_web.services.admin_canonical_law_documents_service import (
     ingest_discovery_run_documents_payload,
     list_discovery_run_documents_payload,
+)
+from ogp_web.services.admin_canonical_law_document_versions_service import (
+    ingest_discovery_run_document_versions_payload,
+    list_canonical_law_document_versions_payload,
+    list_discovery_run_document_versions_payload,
 )
 from ogp_web.services.admin_law_source_discovery_service import (
     execute_source_set_discovery_payload,
@@ -674,6 +682,64 @@ async def admin_law_source_discovery_run_documents(
     return payload
 
 
+@router.get("/api/admin/law-source-discovery-runs/{run_id}/document-versions")
+async def admin_law_source_discovery_run_document_versions(
+    run_id: int,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    discovery_store: LawSourceDiscoveryStore = Depends(get_law_source_discovery_store),
+    versions_store: CanonicalLawDocumentVersionsStore = Depends(get_canonical_law_document_versions_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    _ = user
+    try:
+        payload = list_discovery_run_document_versions_payload(
+            discovery_store=discovery_store,
+            versions_store=versions_store,
+            run_id=run_id,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_law_source_discovery_run_document_versions_list",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/law-source-discovery-runs/{int(run_id)}/document-versions",
+        method="GET",
+        status_code=200,
+        meta={"count": payload["count"], "run_id": int(run_id)},
+    )
+    return payload
+
+
+@router.get("/api/admin/canonical-law-documents/{canonical_law_document_id}/versions")
+async def admin_canonical_law_document_versions(
+    canonical_law_document_id: int,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    versions_store: CanonicalLawDocumentVersionsStore = Depends(get_canonical_law_document_versions_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    _ = user
+    try:
+        payload = list_canonical_law_document_versions_payload(
+            versions_store=versions_store,
+            canonical_law_document_id=canonical_law_document_id,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    metrics_store.log_event(
+        event_type="admin_canonical_law_document_versions_list",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/canonical-law-documents/{int(canonical_law_document_id)}/versions",
+        method="GET",
+        status_code=200,
+        meta={"count": payload["count"], "canonical_law_document_id": int(canonical_law_document_id)},
+    )
+    return payload
+
+
 @router.post("/api/admin/law-source-sets/{source_set_key}/discovery-runs")
 async def admin_law_source_set_discovery_runs_execute(
     source_set_key: str,
@@ -744,6 +810,45 @@ async def admin_law_source_discovery_run_ingest_documents(
             "run_id": int(run_id),
             "changed": bool(result.get("changed")),
             "created_documents": int(result.get("created_documents") or 0),
+        },
+    )
+    return result
+
+
+@router.post("/api/admin/law-source-discovery-runs/{run_id}/ingest-document-versions")
+async def admin_law_source_discovery_run_ingest_document_versions(
+    run_id: int,
+    payload: AdminCanonicalLawDocumentVersionIngestPayload,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    discovery_store: LawSourceDiscoveryStore = Depends(get_law_source_discovery_store),
+    documents_store: CanonicalLawDocumentsStore = Depends(get_canonical_law_documents_store),
+    versions_store: CanonicalLawDocumentVersionsStore = Depends(get_canonical_law_document_versions_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        result = ingest_discovery_run_document_versions_payload(
+            discovery_store=discovery_store,
+            documents_store=documents_store,
+            versions_store=versions_store,
+            run_id=run_id,
+            safe_rerun=payload.safe_rerun,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_law_source_discovery_run_ingest_document_versions",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/law-source-discovery-runs/{int(run_id)}/ingest-document-versions",
+        method="POST",
+        status_code=200,
+        meta={
+            "count": result["count"],
+            "run_id": int(run_id),
+            "changed": bool(result.get("changed")),
+            "created_versions": int(result.get("created_versions") or 0),
         },
     )
     return result
