@@ -19,7 +19,7 @@ os.environ.setdefault("OGP_SKIP_DEFAULT_APP_INIT", "1")
 from fastapi.testclient import TestClient
 
 from ogp_web.app import create_app
-from ogp_web.dependencies import get_content_workflow_service, get_law_source_sets_store
+from ogp_web.dependencies import get_content_workflow_service, get_law_source_sets_store, get_server_effective_law_projections_store
 from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
@@ -108,6 +108,31 @@ class _FakeWorkflowService:
     repository = object()
 
 
+class _FakeProjectionRun:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class _FakeProjectionsStore:
+    def list_runs(self, *, server_code: str):
+        if server_code not in {"orange", "blackberry"}:
+            return []
+        return [
+            _FakeProjectionRun(
+                id=4,
+                server_code=server_code,
+                trigger_mode="manual",
+                status="approved",
+                summary_json={
+                    "decision_status": "approved",
+                    "materialization": {"law_set_id": 2},
+                    "activation": {"law_version_id": 88},
+                },
+                created_at="2026-04-16T06:00:00+00:00",
+            )
+        ]
+
+
 class AdminLawSourcesApiTests(unittest.TestCase):
     def setUp(self):
         self.tmpdir = make_temporary_directory()
@@ -125,8 +150,10 @@ class AdminLawSourcesApiTests(unittest.TestCase):
         )
         app = create_app(self.user_store, self.exam_store, self.admin_store, self.task_registry)
         self.store = _FakeLawSourceSetsStore()
+        self.projections_store = _FakeProjectionsStore()
         app.dependency_overrides[get_law_source_sets_store] = lambda: self.store
         app.dependency_overrides[get_content_workflow_service] = lambda: _FakeWorkflowService()
+        app.dependency_overrides[get_server_effective_law_projections_store] = lambda: self.projections_store
         self.client = TestClient(app, base_url="https://testserver")
         reset_rate_limit(self.client.app.state.rate_limiter)
         self._register_and_login_admin("12345", "admin@example.com")
@@ -192,6 +219,35 @@ class AdminLawSourcesApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("server_has_no_law_qa_sources", " ".join(response.json().get("detail") or []))
+
+    def test_admin_law_sources_status_prefers_projection_bridge_when_present(self):
+        from unittest.mock import patch
+
+        with patch(
+            "ogp_web.services.admin_law_sources_service.LawAdminService.get_effective_sources",
+            return_value=type(
+                "Snapshot",
+                (),
+                {
+                    "source_urls": ("https://example.com/law/a",),
+                    "source_origin": "content_workflow",
+                    "manifest_item": {"id": 11},
+                    "manifest_version": {"id": 12},
+                    "active_law_version": {"id": 88},
+                    "bundle_meta": {"chunk_count": 9},
+                },
+            )(),
+        ):
+            response = self.client.get("/api/admin/law-sources")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["server_code"], "blackberry")
+        self.assertEqual(payload["primary_explanation"], "projection_bridge")
+        self.assertEqual(payload["projection_bridge"]["run_id"], 4)
+        self.assertEqual(payload["projection_bridge"]["law_set_id"], 2)
+        self.assertEqual(payload["projection_bridge"]["law_version_id"], 88)
+        self.assertTrue(payload["projection_bridge"]["matches_active_law_version"])
 
 
 if __name__ == "__main__":
