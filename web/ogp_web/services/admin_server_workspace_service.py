@@ -6,6 +6,7 @@ from ogp_web.services.admin_runtime_servers_service import (
     build_runtime_server_health_payload,
     normalize_runtime_server_code,
 )
+from ogp_web.services.admin_server_laws_workspace_service import build_projection_bridge_readiness_summary
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
@@ -407,6 +408,27 @@ def _build_projection_bridge_lifecycle_issue(projection_bridge_lifecycle: dict[s
     }
 
 
+def _build_projection_bridge_readiness_issue(projection_bridge_readiness: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((projection_bridge_readiness or {}).get("status") or "").strip().lower()
+    if status in {"", "ready"}:
+        return None
+    blockers = ", ".join(str(item) for item in list((projection_bridge_readiness or {}).get("blockers") or []) if str(item).strip())
+    detail = str((projection_bridge_readiness or {}).get("detail") or "").strip()
+    next_step = str((projection_bridge_readiness or {}).get("next_step") or "").strip()
+    composed = detail
+    if blockers:
+        composed = f"{composed} blockers={blockers}."
+    if next_step:
+        composed = f"{composed} {next_step}".strip()
+    return {
+        "issue_id": "laws_projection_bridge_readiness",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Projection bridge readiness требует внимания",
+        "detail": composed,
+    }
+
+
 def _build_issues_payload(
     *,
     health_payload: dict[str, Any],
@@ -414,6 +436,7 @@ def _build_issues_payload(
     runtime_item_parity: dict[str, Any] | None = None,
     runtime_version_parity: dict[str, Any] | None = None,
     projection_bridge_lifecycle: dict[str, Any] | None = None,
+    projection_bridge_readiness: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     checks = dict(health_payload.get("checks") or {})
@@ -476,6 +499,9 @@ def _build_issues_payload(
     projection_bridge_lifecycle_issue = _build_projection_bridge_lifecycle_issue(dict(projection_bridge_lifecycle or {}))
     if projection_bridge_lifecycle_issue is not None:
         items.append(projection_bridge_lifecycle_issue)
+    projection_bridge_readiness_issue = _build_projection_bridge_readiness_issue(dict(projection_bridge_readiness or {}))
+    if projection_bridge_readiness_issue is not None:
+        items.append(projection_bridge_readiness_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -592,6 +618,16 @@ def build_server_workspace_payload(
     )
     runtime_version_parity = _build_runtime_version_parity(health_payload=health_payload)
     projection_bridge_lifecycle = _build_projection_bridge_lifecycle(health_payload=health_payload)
+    bridge_binding_count = len(source_set_bindings)
+    if bridge_binding_count <= 0:
+        bridge_binding_count = int(((health_payload.get("checks") or {}).get("bindings") or {}).get("count") or 0)
+    projection_bridge_readiness = build_projection_bridge_readiness_summary(
+        binding_count=bridge_binding_count,
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+        runtime_version_parity=runtime_version_parity,
+        fill_summary={},
+        latest_projection_run={},
+    )
     laws_summary = {
         "active_source_set_bindings": [
             {
@@ -611,6 +647,7 @@ def build_server_workspace_payload(
         "runtime_item_parity": runtime_item_parity,
         "runtime_version_parity": runtime_version_parity,
         "projection_bridge_lifecycle": projection_bridge_lifecycle,
+        "projection_bridge_readiness": projection_bridge_readiness,
         "health": (health_payload.get("checks") or {}).get("health", {}),
     }
     issues_payload = _build_issues_payload(
@@ -619,6 +656,7 @@ def build_server_workspace_payload(
         runtime_item_parity=runtime_item_parity,
         runtime_version_parity=runtime_version_parity,
         projection_bridge_lifecycle=projection_bridge_lifecycle,
+        projection_bridge_readiness=projection_bridge_readiness,
     )
     readiness_payload = _build_readiness_payload(
         laws_ready=bool((health_payload.get("checks") or {}).get("health", {}).get("ok")),

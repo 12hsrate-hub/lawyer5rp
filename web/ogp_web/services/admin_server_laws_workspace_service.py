@@ -371,6 +371,80 @@ def _projection_bridge_lifecycle_summary(*, health_payload: dict[str, Any]) -> d
     }
 
 
+def build_projection_bridge_readiness_summary(
+    *,
+    binding_count: int,
+    projection_bridge_lifecycle: dict[str, Any],
+    runtime_version_parity: dict[str, Any],
+    fill_summary: dict[str, Any] | None = None,
+    latest_projection_run: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    lifecycle_status = str((projection_bridge_lifecycle or {}).get("status") or "").strip().lower()
+    version_status = str((runtime_version_parity or {}).get("status") or "").strip().lower()
+    fill = dict(fill_summary or {})
+    run = dict(latest_projection_run or {})
+    selected_count = int(run.get("selected_count") or fill.get("count") or 0)
+    with_content = int(fill.get("with_content") or 0)
+    missing_content = int(fill.get("missing_content") or 0)
+    error_count = int(fill.get("error_count") or 0)
+    blockers: list[str] = []
+    next_step = ""
+
+    if int(binding_count or 0) <= 0:
+        status = "not_configured"
+        blockers.append("no_bindings")
+        next_step = "Добавьте source set bindings для сервера."
+        detail = "Server has no active source set bindings, so projection bridge cannot become ready."
+    elif lifecycle_status == "uninitialized":
+        status = "action_required"
+        blockers.append("preview_missing")
+        next_step = "Запустите безопасный preview, чтобы создать projection run."
+        detail = "No promoted projection lifecycle exists yet for this server."
+    elif lifecycle_status == "preview_only":
+        status = "action_required"
+        blockers.append("activation_pending")
+        next_step = "Проверьте preview и продолжайте bridge через materialize/activate path, когда это допустимо."
+        detail = "Projection preview exists, but the bridge has not been materialized or activated yet."
+    elif lifecycle_status == "materialized":
+        status = "action_required"
+        blockers.append("activation_pending")
+        next_step = "Проверьте materialized shell и завершите activation bridge, когда это допустимо."
+        detail = "Projection bridge materialized a runtime shell, but no active runtime law_version is aligned yet."
+    elif lifecycle_status == "drifted" or version_status in {"drift", "legacy_only", "pending_activation"}:
+        status = "action_required"
+        blockers.append("runtime_drift")
+        next_step = "Сверьте active runtime shell с latest promoted projection и выполните безопасный recheck."
+        detail = "Runtime and promoted projection no longer align cleanly."
+    elif error_count > 0:
+        status = "action_required"
+        blockers.append("content_errors")
+        next_step = "Исправьте fetch/parse errors перед дальнейшим bridge-продвижением."
+        detail = "Projection items still contain content errors."
+    elif selected_count > 0 and missing_content > 0:
+        status = "action_required"
+        blockers.append("content_missing")
+        next_step = "Проверьте наполнение и добейтесь content-ready состояния для selected laws."
+        detail = "Some selected projection items still have missing content."
+    else:
+        status = "ready"
+        next_step = "Bridge выглядит готовым для дальнейшей controlled promotion."
+        detail = "Projection bridge readiness signals are green."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "blockers": blockers,
+        "next_step": next_step,
+        "counters": {
+            "binding_count": int(binding_count or 0),
+            "selected_count": selected_count,
+            "with_content": with_content,
+            "missing_content": missing_content,
+            "error_count": error_count,
+        },
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -413,6 +487,13 @@ def build_server_laws_summary_payload(
     )
     runtime_version_parity = _runtime_version_parity_summary(health_payload=health_payload)
     projection_bridge_lifecycle = _projection_bridge_lifecycle_summary(health_payload=health_payload)
+    bridge_readiness = build_projection_bridge_readiness_summary(
+        binding_count=len(bindings),
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+        runtime_version_parity=runtime_version_parity,
+        fill_summary=fill_summary,
+        latest_projection_run=_serialize_run(current_run) or {},
+    )
     diff_summary = _diff_summary(current_items, previous_items)
     diff_summary["current_run_id"] = int(current_run.id) if current_run is not None else None
     diff_summary["baseline_run_id"] = int(previous_run.id) if previous_run is not None else None
@@ -427,6 +508,7 @@ def build_server_laws_summary_payload(
         "runtime_item_parity": runtime_item_parity,
         "runtime_version_parity": runtime_version_parity,
         "projection_bridge_lifecycle": projection_bridge_lifecycle,
+        "projection_bridge_readiness": bridge_readiness,
         "latest_projection_run": _serialize_run(current_run),
         "fill_check": fill_summary,
         "diff": diff_summary,
@@ -566,6 +648,13 @@ def build_server_laws_diff_payload(
     )
     runtime_version_parity = _runtime_version_parity_summary(health_payload=health_payload)
     projection_bridge_lifecycle = _projection_bridge_lifecycle_summary(health_payload=health_payload)
+    bridge_readiness = build_projection_bridge_readiness_summary(
+        binding_count=int(((health_payload.get("checks") or {}).get("bindings") or {}).get("count") or 0),
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+        runtime_version_parity=runtime_version_parity,
+        fill_summary={},
+        latest_projection_run=_serialize_run(current_run) or {},
+    )
     diff_summary = _diff_summary(current_items, previous_items)
     diff_summary["current_run_id"] = int(current_run.id) if current_run is not None else None
     diff_summary["baseline_run_id"] = int(previous_run.id) if previous_run is not None else None
@@ -577,5 +666,6 @@ def build_server_laws_diff_payload(
         "runtime_item_parity": runtime_item_parity,
         "runtime_version_parity": runtime_version_parity,
         "projection_bridge_lifecycle": projection_bridge_lifecycle,
+        "projection_bridge_readiness": bridge_readiness,
         "summary": diff_summary,
     }
