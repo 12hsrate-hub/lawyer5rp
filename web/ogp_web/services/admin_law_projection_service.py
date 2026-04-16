@@ -167,6 +167,64 @@ def list_server_effective_law_projection_items_payload(
     }
 
 
+def get_server_effective_law_projection_status_payload(
+    *,
+    projections_store: ServerEffectiveLawProjectionsStore,
+    runtime_law_sets_store: RuntimeLawSetsStore,
+    active_law_version: Any,
+    run_id: int,
+) -> dict[str, Any]:
+    if int(run_id) <= 0:
+        raise ValueError("server_effective_law_projection_run_id_required")
+    run = projections_store.get_run(run_id=int(run_id))
+    if run is None:
+        raise KeyError("server_effective_law_projection_run_not_found")
+    items = projections_store.list_items(projection_run_id=int(run_id))
+    summary_json = dict(run.summary_json or {})
+    materialization = dict(summary_json.get("materialization") or {})
+    activation = dict(summary_json.get("activation") or {})
+    law_set_id = int(materialization.get("law_set_id") or 0)
+    law_set_detail = None
+    if law_set_id > 0:
+        law_set_detail = runtime_law_sets_store.get_law_set_detail(law_set_id=law_set_id)
+    active_payload = None
+    if active_law_version is not None:
+        active_payload = {
+            "id": int(active_law_version.id),
+            "server_code": str(active_law_version.server_code or ""),
+            "generated_at_utc": str(active_law_version.generated_at_utc or ""),
+            "effective_from": str(active_law_version.effective_from or ""),
+            "effective_to": str(active_law_version.effective_to or ""),
+            "fingerprint": str(active_law_version.fingerprint or ""),
+            "chunk_count": int(active_law_version.chunk_count or 0),
+        }
+    materialized_item_count = len((law_set_detail or {}).get("items") or [])
+    projection_item_count = len(items)
+    runtime_alignment = {
+        "projection_item_count": projection_item_count,
+        "materialized_item_count": materialized_item_count,
+        "item_count_matches_materialization": law_set_detail is not None and materialized_item_count == projection_item_count,
+        "activation_law_version_matches_active": bool(active_payload)
+        and int(activation.get("law_version_id") or 0) > 0
+        and int(activation.get("law_version_id") or 0) == int(active_payload.get("id") or 0),
+    }
+    return {
+        "run": {
+            "id": run.id,
+            "server_code": run.server_code,
+            "trigger_mode": run.trigger_mode,
+            "status": run.status,
+            "summary_json": summary_json,
+            "created_at": run.created_at,
+        },
+        "materialization": materialization,
+        "activation": activation,
+        "law_set_detail": law_set_detail,
+        "active_law_version": active_payload,
+        "runtime_alignment": runtime_alignment,
+    }
+
+
 def decide_server_effective_law_projection_payload(
     *,
     projections_store: ServerEffectiveLawProjectionsStore,

@@ -191,6 +191,7 @@ from ogp_web.services.admin_law_source_sets_service import (
 from ogp_web.services.admin_law_projection_service import (
     activate_server_effective_law_projection_payload,
     decide_server_effective_law_projection_payload,
+    get_server_effective_law_projection_status_payload,
     list_server_effective_law_projection_items_payload,
     list_server_effective_law_projection_runs_payload,
     materialize_server_effective_law_projection_payload,
@@ -811,6 +812,45 @@ async def admin_law_projection_run_items(
         method="GET",
         status_code=200,
         meta={"count": payload["count"], "run_id": int(run_id)},
+    )
+    return payload
+
+
+@router.get("/api/admin/law-projection-runs/{run_id}/status")
+async def admin_law_projection_run_status(
+    run_id: int,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    runtime_law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    _ = user
+    try:
+        run = projections_store.get_run(run_id=run_id)
+        if run is None:
+            raise KeyError("server_effective_law_projection_run_not_found")
+        payload = get_server_effective_law_projection_status_payload(
+            projections_store=projections_store,
+            runtime_law_sets_store=runtime_law_sets_store,
+            active_law_version=resolve_active_law_version(server_code=run.server_code),
+            run_id=run_id,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_law_projection_run_status",
+        username=user.username,
+        server_code=str((payload.get("run") or {}).get("server_code") or user.server_code),
+        path=f"/api/admin/law-projection-runs/{int(run_id)}/status",
+        method="GET",
+        status_code=200,
+        meta={
+            "run_id": int(run_id),
+            "law_set_id": int((payload.get("materialization") or {}).get("law_set_id") or 0),
+            "active_law_version_id": int((payload.get("active_law_version") or {}).get("id") or 0),
+        },
     )
     return payload
 

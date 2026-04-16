@@ -257,6 +257,26 @@ class _FakeRuntimeLawSetsStore:
             source_urls.append(str(source.url))
         return str(item["server_code"]), list(source_urls)
 
+    def get_law_set_detail(self, *, law_set_id: int):
+        item = next(row for row in self.law_sets if int(row["id"]) == int(law_set_id))
+        stored_items = self.items_by_law_set.get(int(law_set_id), [])
+        detail_items = []
+        for index, law_item in enumerate(stored_items, start=1):
+            source = next(source for source in self.sources if int(source.id) == int(law_item["source_id"]))
+            detail_items.append(
+                {
+                    "id": index,
+                    "law_set_id": int(law_set_id),
+                    "law_code": law_item["law_code"],
+                    "effective_from": law_item.get("effective_from", ""),
+                    "priority": law_item["priority"],
+                    "source_id": law_item["source_id"],
+                    "source_name": source.name,
+                    "source_url": source.url,
+                }
+            )
+        return {"law_set": dict(item), "items": detail_items}
+
 
 class AdminLawProjectionApiTests(unittest.TestCase):
     def setUp(self):
@@ -349,6 +369,30 @@ class AdminLawProjectionApiTests(unittest.TestCase):
         self.assertEqual(activated.json()["activation"]["law_version_id"], 91)
         self.assertFalse(fake_rebuild.call_args.kwargs["persist_sources"])
 
+        with patch(
+            "ogp_web.routes.admin.resolve_active_law_version",
+            return_value=type(
+                "_ActiveVersion",
+                (),
+                {
+                    "id": 91,
+                    "server_code": "orange",
+                    "generated_at_utc": "2026-04-16T06:20:00+00:00",
+                    "effective_from": "2026-04-16T06:20:00+00:00",
+                    "effective_to": "",
+                    "fingerprint": "runtime-fingerprint",
+                    "chunk_count": 2,
+                },
+            )(),
+        ):
+            status_payload = self.client.get("/api/admin/law-projection-runs/1/status")
+        self.assertEqual(status_payload.status_code, 200)
+        self.assertEqual(status_payload.json()["materialization"]["law_set_id"], 1)
+        self.assertEqual(status_payload.json()["activation"]["law_version_id"], 91)
+        self.assertEqual(status_payload.json()["active_law_version"]["id"], 91)
+        self.assertTrue(status_payload.json()["runtime_alignment"]["item_count_matches_materialization"])
+        self.assertTrue(status_payload.json()["runtime_alignment"]["activation_law_version_matches_active"])
+
         with patch("ogp_web.routes.admin.LawAdminService.rebuild_index") as fake_rebuild_again:
             reused_activation = self.client.post("/api/admin/law-projection-runs/1/activate-runtime", json={"safe_rerun": True})
         self.assertEqual(reused_activation.status_code, 200)
@@ -364,6 +408,9 @@ class AdminLawProjectionApiTests(unittest.TestCase):
         response = self.client.get("/api/admin/law-projection-runs/999/items")
         self.assertEqual(response.status_code, 404)
         self.assertIn("server_effective_law_projection_run_not_found", " ".join(response.json().get("detail") or []))
+        status_response = self.client.get("/api/admin/law-projection-runs/999/status")
+        self.assertEqual(status_response.status_code, 404)
+        self.assertIn("server_effective_law_projection_run_not_found", " ".join(status_response.json().get("detail") or []))
 
     def test_admin_law_projection_materialize_requires_approved_run(self):
         preview = self.client.post(
