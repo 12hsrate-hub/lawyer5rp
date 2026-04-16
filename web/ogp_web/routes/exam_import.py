@@ -156,39 +156,16 @@ async def sync_exam_import(
     store: ExamAnswersStore = Depends(get_exam_answers_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ExamImportResponse:
-
-    try:
-        rows = await _run_sync_io(fetch_exam_sheet_rows, force_refresh=True)
-        stats = await _run_sync_io(store.import_rows, rows)
-    except Exception as exc:
-        logger.exception("Exam import sync failed for user=%s", user.username)
-        metrics_store.log_event(
-            event_type="exam_import_sync_error",
-            username=user.username,
-            path="/api/exam-import/sync",
-            method="POST",
-            status_code=502,
-            meta={"error": str(exc), "error_type": exc.__class__.__name__},
-        )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=[
-                "Не удалось обновить данные из Google Sheets.",
-                f"Тип ошибки: {exc.__class__.__name__}",
-                f"Полная ошибка: {exc}",
-            ],
-        ) from exc
-
-    return ExamImportResponse(
-        sheet_url=EXAM_SHEET_URL,
-        total_rows=stats["total_rows"],
-        imported_count=len(rows),
-        inserted_count=stats["inserted_count"],
-        updated_count=stats["updated_count"],
-        skipped_count=int(stats.get("skipped_count", 0)),
-        scored_count=0,
-        latest_entries=await _run_sync_io(_build_entries_response, store),
+    payload = await _run_sync_io(
+        EXAM_IMPORT_RUNTIME_SERVICE.build_sync_import_response,
+        user=user,
+        store=store,
+        metrics_store=metrics_store,
+        exam_sheet_url=EXAM_SHEET_URL,
+        fetch_rows=fetch_exam_sheet_rows,
+        build_entries_response=_build_entries_response,
     )
+    return ExamImportResponse(**payload)
 
 
 @router.get("/api/exam-import/entries")
@@ -254,20 +231,17 @@ async def create_exam_import_score_task(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     task_registry: ExamImportTaskRegistry = Depends(get_exam_import_task_registry),
 ) -> ExamImportTaskStatus:
-
-    try:
-        record = task_registry.create_task(
-            task_type="bulk_score",
-            runner=lambda progress_callback: _build_bulk_scoring_result(
-                user=user,
-                store=store,
-                metrics_store=metrics_store,
-                progress_callback=progress_callback,
-            ),
-        )
-    except ExamImportTaskCapacityError as exc:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=[str(exc)]) from exc
-    return ExamImportTaskStatus(**enrich_job_status(record.to_dict(), subsystem="exam_import"))
+    payload = EXAM_IMPORT_RUNTIME_SERVICE.create_task_status(
+        task_registry=task_registry,
+        task_type="bulk_score",
+        runner=lambda progress_callback: _build_bulk_scoring_result(
+            user=user,
+            store=store,
+            metrics_store=metrics_store,
+            progress_callback=progress_callback,
+        ),
+    )
+    return ExamImportTaskStatus(**payload)
 
 
 @router.post("/api/exam-import/rescore-failed/tasks", response_model=ExamImportTaskStatus)
@@ -277,20 +251,17 @@ async def create_exam_import_failed_rescore_task(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     task_registry: ExamImportTaskRegistry = Depends(get_exam_import_task_registry),
 ) -> ExamImportTaskStatus:
-
-    try:
-        record = task_registry.create_task(
-            task_type="bulk_rescore_failed",
-            runner=lambda progress_callback: _build_failed_rescoring_result(
-                user=user,
-                store=store,
-                metrics_store=metrics_store,
-                progress_callback=progress_callback,
-            ),
-        )
-    except ExamImportTaskCapacityError as exc:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=[str(exc)]) from exc
-    return ExamImportTaskStatus(**enrich_job_status(record.to_dict(), subsystem="exam_import"))
+    payload = EXAM_IMPORT_RUNTIME_SERVICE.create_task_status(
+        task_registry=task_registry,
+        task_type="bulk_rescore_failed",
+        runner=lambda progress_callback: _build_failed_rescoring_result(
+            user=user,
+            store=store,
+            metrics_store=metrics_store,
+            progress_callback=progress_callback,
+        ),
+    )
+    return ExamImportTaskStatus(**payload)
 
 
 @router.post("/api/exam-import/rows/{source_row}/score/tasks", response_model=ExamImportTaskStatus)
@@ -301,24 +272,19 @@ async def create_exam_import_row_score_task(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     task_registry: ExamImportTaskRegistry = Depends(get_exam_import_task_registry),
 ) -> ExamImportTaskStatus:
-
-    if await _run_sync_io(store.get_entry, source_row) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Строка не найдена в базе импорта."])
-
-    try:
-        record = task_registry.create_task(
-            task_type="row_score",
+    await _run_sync_io(EXAM_IMPORT_RUNTIME_SERVICE.require_entry, store=store, source_row=source_row)
+    payload = EXAM_IMPORT_RUNTIME_SERVICE.create_task_status(
+        task_registry=task_registry,
+        task_type="row_score",
+        source_row=source_row,
+        runner=lambda progress_callback: _build_row_scoring_result(
             source_row=source_row,
-            runner=lambda progress_callback: _build_row_scoring_result(
-                source_row=source_row,
-                user=user,
-                store=store,
-                metrics_store=metrics_store,
-            ),
-        )
-    except ExamImportTaskCapacityError as exc:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=[str(exc)]) from exc
-    return ExamImportTaskStatus(**enrich_job_status(record.to_dict(), subsystem="exam_import"))
+            user=user,
+            store=store,
+            metrics_store=metrics_store,
+        ),
+    )
+    return ExamImportTaskStatus(**payload)
 
 
 @router.get("/api/exam-import/tasks/{task_id}", response_model=ExamImportTaskStatus)
@@ -327,11 +293,8 @@ async def get_exam_import_task(
     user: AuthUser = Depends(requires_permission("exam_import")),
     task_registry: ExamImportTaskRegistry = Depends(get_exam_import_task_registry),
 ) -> ExamImportTaskStatus:
-
-    record = task_registry.get_task(task_id)
-    if record is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Задача проверки не найдена."])
-    return ExamImportTaskStatus(**enrich_job_status(record.to_dict(), subsystem="exam_import"))
+    payload = EXAM_IMPORT_RUNTIME_SERVICE.get_task_status(task_registry=task_registry, task_id=task_id)
+    return ExamImportTaskStatus(**payload)
 
 
 @router.get("/api/exam-import/rows/{source_row}", response_model=ExamImportDetail)
@@ -340,14 +303,14 @@ async def exam_import_detail(
     user: AuthUser = Depends(requires_permission("exam_import")),
     store: ExamAnswersStore = Depends(get_exam_answers_store),
 ) -> ExamImportDetail:
-
-    entry = await _run_sync_io(store.get_entry, source_row)
-    if entry is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Строка не найдена в базе импорта."])
-    if entry.get("exam_scores"):
-        _fill_question_g_fields(entry)
-    entry["exam_scores"] = [ExamAnswerScore(**item).model_dump() for item in (entry.get("exam_scores") or [])]
-    return ExamImportDetail(**_normalize_entry(entry))
+    entry = await _run_sync_io(EXAM_IMPORT_RUNTIME_SERVICE.require_entry, store=store, source_row=source_row)
+    payload = EXAM_IMPORT_RUNTIME_SERVICE.build_entry_detail(
+        entry=entry,
+        fill_question_g_fields=_fill_question_g_fields,
+        normalize_entry=_normalize_entry,
+        score_serializer=lambda item: ExamAnswerScore(**item).model_dump(),
+    )
+    return ExamImportDetail(**payload)
 
 
 @router.delete("/api/exam-import/rows/{source_row}/scores", response_model=ExamImportDetail)
@@ -356,19 +319,12 @@ async def clear_exam_import_row_scores(
     user: AuthUser = Depends(requires_permission("exam_import")),
     store: ExamAnswersStore = Depends(get_exam_answers_store),
 ) -> ExamImportDetail:
-
-    entry = await _run_sync_io(store.get_entry, source_row)
-    if entry is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Строка не найдена в базе импорта."])
-
-    cleared = await _run_sync_io(store.clear_scores_for_row, source_row)
-    if not cleared:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Строка не найдена в базе импорта."])
-
-    refreshed = await _run_sync_io(store.get_entry, source_row)
-    if refreshed is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=["Строка не найдена в базе импорта."])
-    if refreshed.get("exam_scores"):
-        _fill_question_g_fields(refreshed)
-    refreshed["exam_scores"] = [ExamAnswerScore(**item).model_dump() for item in (refreshed.get("exam_scores") or [])]
-    return ExamImportDetail(**_normalize_entry(refreshed))
+    payload = await _run_sync_io(
+        EXAM_IMPORT_RUNTIME_SERVICE.clear_row_scores_and_build_detail,
+        store=store,
+        source_row=source_row,
+        fill_question_g_fields=_fill_question_g_fields,
+        normalize_entry=_normalize_entry,
+        score_serializer=lambda item: ExamAnswerScore(**item).model_dump(),
+    )
+    return ExamImportDetail(**payload)

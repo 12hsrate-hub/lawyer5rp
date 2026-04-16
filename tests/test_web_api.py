@@ -29,6 +29,7 @@ from ogp_web.routes import admin as admin_route
 from ogp_web.routes import complaint as complaint_route
 from ogp_web.routes import admin as admin_route
 from ogp_web.routes import exam_import as exam_import_route
+from ogp_web.routes import jobs as jobs_route
 from ogp_web.services import ai_service
 from ogp_web.services import admin_ai_pipeline_service
 from ogp_web.services.admin_task_ops_service import AdminTaskOpsService
@@ -1108,6 +1109,128 @@ class WebApiTests(unittest.TestCase):
         self.assertIsInstance(payload["failed_entries"], list)
         self.assertIsInstance(payload["recent_failures"], list)
         self.assertIsInstance(payload["recent_row_failures"], list)
+
+    def test_jobs_list_route_uses_jobs_runtime_service(self):
+        self._register_verify_and_login("jobs_reader", "jobs-reader@example.com")
+
+        class DummyJobsRuntimeService:
+            def list_jobs(self, *, request, store, user, limit: int):
+                self.server_code = user.server_code
+                self.limit = limit
+                return {
+                    "items": [
+                        {
+                            "id": 11,
+                            "status": "queued",
+                            "raw_status": "queued",
+                            "canonical_status": "queued",
+                        }
+                    ]
+                }
+
+        service = DummyJobsRuntimeService()
+        self.client.app.dependency_overrides[jobs_route.get_jobs_runtime_service] = lambda: service
+        try:
+            response = self.client.get("/api/jobs?limit=7")
+        finally:
+            self.client.app.dependency_overrides.pop(jobs_route.get_jobs_runtime_service, None)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(service.server_code, "blackberry")
+        self.assertEqual(service.limit, 7)
+        self.assertEqual(payload["items"][0]["id"], 11)
+
+    def test_generate_async_route_uses_jobs_runtime_service_payload(self):
+        self._register_verify_and_login("jobs_generate", "jobs-generate@example.com")
+
+        class DummyJobsRuntimeService:
+            def create_document_generation_job(self, **kwargs):
+                self.kwargs = kwargs
+                return {
+                    "job_id": 71,
+                    "status": "queued",
+                    "raw_status": "queued",
+                    "canonical_status": "queued",
+                }
+
+        service = DummyJobsRuntimeService()
+        self.client.app.dependency_overrides[jobs_route.get_jobs_runtime_service] = lambda: service
+        try:
+            response = self.client.post(
+                "/api/documents/15/generate-async",
+                json={"content_json": {"body": "hello"}, "idempotency_key": "doc-job", "publish_batch_id": 9},
+            )
+        finally:
+            self.client.app.dependency_overrides.pop(jobs_route.get_jobs_runtime_service, None)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["job_id"], 71)
+        self.assertEqual(service.kwargs["document_id"], 15)
+        self.assertEqual(service.kwargs["content_json"], {"body": "hello"})
+        self.assertEqual(service.kwargs["idempotency_key"], "doc-job")
+        self.assertEqual(service.kwargs["publish_batch_id"], 9)
+
+    def test_admin_reindex_route_uses_jobs_runtime_service_defaults(self):
+        self._register_verify_and_login("jobs_reindex", "jobs-reindex@example.com")
+
+        class DummyPermissionSet:
+            def has(self, permission: str) -> bool:
+                return str(permission or "").strip().lower() == "manage_servers"
+
+        class DummyJobsRuntimeService:
+            def create_reindex_job(self, **kwargs):
+                self.kwargs = kwargs
+                return {
+                    "job_id": 91,
+                    "status": "queued",
+                    "raw_status": "queued",
+                    "canonical_status": "queued",
+                }
+
+        service = DummyJobsRuntimeService()
+        self.client.app.dependency_overrides[jobs_route.get_jobs_runtime_service] = lambda: service
+        try:
+            with patch("ogp_web.dependencies.build_permission_set", return_value=DummyPermissionSet()):
+                response = self.client.post("/api/admin/reindex", json={"scope": "all"})
+        finally:
+            self.client.app.dependency_overrides.pop(jobs_route.get_jobs_runtime_service, None)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["job_id"], 91)
+        self.assertEqual(service.kwargs["scope"], "all")
+
+    def test_admin_import_route_uses_jobs_runtime_service_validation(self):
+        self._register_verify_and_login("jobs_import", "jobs-import@example.com")
+
+        class DummyPermissionSet:
+            def has(self, permission: str) -> bool:
+                return str(permission or "").strip().lower() == "manage_servers"
+
+        class DummyJobsRuntimeService:
+            def create_import_job(self, **kwargs):
+                self.kwargs = kwargs
+                return {
+                    "job_id": 101,
+                    "status": "queued",
+                    "raw_status": "queued",
+                    "canonical_status": "queued",
+                }
+
+        service = DummyJobsRuntimeService()
+        self.client.app.dependency_overrides[jobs_route.get_jobs_runtime_service] = lambda: service
+        try:
+            with patch("ogp_web.dependencies.build_permission_set", return_value=DummyPermissionSet()):
+                response = self.client.post("/api/admin/import", json={"source": "sheet"})
+        finally:
+            self.client.app.dependency_overrides.pop(jobs_route.get_jobs_runtime_service, None)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["job_id"], 101)
+        self.assertEqual(service.kwargs["source"], "sheet")
 
     def test_law_sources_preview_forbidden_for_user_without_manage_laws_permission(self):
         self._register_verify_and_login("plainuser_preview", "plainuser-preview@example.com")

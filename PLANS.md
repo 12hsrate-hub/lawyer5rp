@@ -6,10 +6,10 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 
 ## Current Execution State
 
-- Current phase: `Phase K — complaint runtime boundary decomposition wave 1`
-- Current task: `K.2 exam import route orchestration extraction`
+- Current phase: `Phase K — complaint/exam/jobs runtime boundary decomposition wave 1`
+- Current task: `select next non-cosmetic phase target after K`
 - Active execution phase override: `Phase J is accepted; Phase K is now opened as the next execution phase`
-- Current micro-step: `K.2a exam import scoring wrapper extraction`
+- Current micro-step: `Phase K accepted after K.2/K.3 bounded route-service extraction bundle`
 - Overall status: `in_progress`
 - Last updated: `2026-04-16`
 - Execution override update:
@@ -147,7 +147,15 @@ Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared
 - `K.2` target: move bounded exam-import route orchestration into dedicated runtime helpers/services without changing scoring/task contracts.
 - `K.2a` is now complete locally: scoring wrapper lock plus proxy-scoring monkeypatch orchestration for bulk scoring, row scoring, and failed rescoring now converge behind `exam_import_runtime_service.py`, while `routes/exam_import.py` keeps thin compatibility wrappers so existing monkeypatch-based API tests stay stable.
 - compatibility seam note recorded: [docs/seams/2026-04/exam-import-runtime-boundary-shrink.md](docs/seams/2026-04/exam-import-runtime-boundary-shrink.md)
-- next step inside `K.2`: decide whether task-registry orchestration and sync/error wiring in `exam_import.py` still remove a real route-local orchestration layer, or whether the remaining route code is already mostly thin task/read wrappers.
+- `K.2b` is now complete locally: exam-import task creation/status orchestration now converges behind `exam_import_runtime_service.py`, including `ExamImportTaskRegistry.create_task(...)` wiring, `ExamImportTaskCapacityError -> HTTP 429` translation, row-existence prechecks, and canonical exam-import task payload shaping.
+- `K.2c` is now complete locally: exam-import sync/detail/clear orchestration now converges behind `exam_import_runtime_service.py`, including sync exception mapping, entry fetch/404/normalize/fill, and clear-and-refetch response assembly.
+- `K.2` is accepted: the remaining exam-import route code is now mostly transport/auth, sync read wrappers, and response-model serialization rather than another high-value orchestration seam.
+- `K.3` target: move bounded jobs route/service orchestration into dedicated runtime helpers/services without changing async-job contracts.
+- `K.3a` is now complete locally: `AsyncJobService` construction, actor resolution, and service-error translation now converge behind `jobs_runtime_service.py` instead of staying route-local in `routes/jobs.py`.
+- `K.3b` is now complete locally: job create/retry/cancel/list orchestration now converges behind `jobs_runtime_service.py`, including payload assembly, idempotency defaults, actor resolution, and canonical async-job payload shaping.
+- compatibility seam note recorded: [docs/seams/2026-04/jobs-runtime-boundary-shrink.md](docs/seams/2026-04/jobs-runtime-boundary-shrink.md)
+- `K.3` is accepted: `routes/jobs.py` is now a thin transport/auth facade over the bounded jobs runtime service rather than another route-local orchestration seam.
+- `Phase K` is accepted: complaint, exam-import, and jobs runtime-boundary seams were all shrunk without changing public route contracts, and further work in this area would drift into thin-wrapper cleanup rather than removing a real orchestration layer.
 - Notes:
   - `PLANS.md` is the single canonical execution plan.
   - Progress must be recorded here after each completed micro-task.
