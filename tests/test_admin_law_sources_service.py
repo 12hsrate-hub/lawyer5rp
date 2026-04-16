@@ -19,6 +19,7 @@ from fastapi import HTTPException
 
 from ogp_web.services.admin_law_sources_service import (
     backfill_law_sources_source_set_payload,
+    build_law_sources_status_payload,
     require_law_sources_task_status_payload,
     resolve_law_sources_target_server_code,
 )
@@ -109,6 +110,31 @@ class _FakeLawSourceSetsStore:
         return _FakeBinding(**row)
 
 
+class _FakeProjectionRun:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class _FakeProjectionsStore:
+    def list_runs(self, *, server_code: str):
+        if server_code not in {"orange", "blackberry"}:
+            return []
+        return [
+            _FakeProjectionRun(
+                id=4,
+                server_code=server_code,
+                trigger_mode="manual",
+                status="approved",
+                summary_json={
+                    "decision_status": "approved",
+                    "materialization": {"law_set_id": 2},
+                    "activation": {"law_version_id": 88},
+                },
+                created_at="2026-04-16T06:00:00+00:00",
+            )
+        ]
+
+
 class AdminLawSourcesServiceTests(unittest.TestCase):
     def test_resolve_law_sources_target_server_code_allows_same_server(self):
         user = AuthUser(username="tester", email="tester@example.com", server_code="blackberry")
@@ -161,6 +187,36 @@ class AdminLawSourcesServiceTests(unittest.TestCase):
                 task_loader=lambda task_id: {"task_id": task_id, "scope": "law_sources_rebuild", "server_code": "orange", "status": "running"},
             )
         self.assertEqual(server_exc.exception.status_code, 403)
+
+    def test_build_law_sources_status_payload_prefers_projection_bridge_when_present(self):
+        from unittest.mock import patch
+
+        with patch(
+            "ogp_web.services.admin_law_sources_service.LawAdminService.get_effective_sources",
+            return_value=type(
+                "Snapshot",
+                (),
+                {
+                    "source_urls": ("https://example.com/law/a",),
+                    "source_origin": "content_workflow",
+                    "manifest_item": {"id": 11},
+                    "manifest_version": {"id": 12},
+                    "active_law_version": {"id": 88},
+                    "bundle_meta": {"chunk_count": 9},
+                },
+            )(),
+        ):
+            payload = build_law_sources_status_payload(
+                workflow_service=type("WF", (), {"repository": object()})(),
+                server_code="orange",
+                projections_store=_FakeProjectionsStore(),
+            )
+
+        self.assertEqual(payload["primary_explanation"], "projection_bridge")
+        self.assertEqual(payload["projection_bridge"]["run_id"], 4)
+        self.assertEqual(payload["projection_bridge"]["law_set_id"], 2)
+        self.assertEqual(payload["projection_bridge"]["law_version_id"], 88)
+        self.assertTrue(payload["projection_bridge"]["matches_active_law_version"])
 
     def test_backfill_law_sources_source_set_payload_creates_legacy_bridge_rows(self):
         store = _FakeLawSourceSetsStore()

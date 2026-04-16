@@ -1898,6 +1898,7 @@ async def admin_law_sources_status(
     server_code: str = Query(default="", description="Runtime server code override"),
     user: AuthUser = Depends(requires_permission("manage_laws")),
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
@@ -1910,7 +1911,11 @@ async def admin_law_sources_status(
         method="GET",
         status_code=200,
     )
-    return build_law_sources_status_payload(workflow_service=workflow_service, server_code=target_server_code)
+    return build_law_sources_status_payload(
+        workflow_service=workflow_service,
+        server_code=target_server_code,
+        projections_store=projections_store,
+    )
 
 
 @router.post("/api/admin/law-sources/sync")
