@@ -348,11 +348,8 @@ def _admin_template_payload(request: Request, user: AuthUser, *, admin_focus: st
 
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request, user: AuthUser = Depends(requires_permission("manage_servers"))):
-    return templates.TemplateResponse(
-        request,
-        "admin.html",
-        _admin_template_payload(request, user, admin_focus="dashboard"),
-    )
+    _ = request, user
+    return RedirectResponse(url="/admin/servers", status_code=status.HTTP_302_FOUND)
 
 
 @router.get("/admin/dashboard", response_class=HTMLResponse)

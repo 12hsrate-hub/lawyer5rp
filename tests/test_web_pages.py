@@ -158,6 +158,21 @@ class WebPagesSmokeTests(unittest.TestCase):
         response = self.client.get("/admin")
         self.assertEqual(response.status_code, 403)
 
+    def test_admin_root_redirects_admin_to_servers_workspace(self):
+        self.client.post("/api/auth/logout")
+        response = self.client.post(
+            "/api/auth/register",
+            json={"username": "12345", "email": "admin@example.com", "password": "Password123!"},
+        )
+        verify_url = response.json()["verification_url"]
+        split = urlsplit(verify_url)
+        self.client.get(f"{split.path}?{split.query}")
+        self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
+
+        response = self.client.get("/admin", follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["location"], "/admin/servers")
+
     def test_admin_dashboard_uses_segmented_item_tabs(self):
         self.client.post("/api/auth/logout")
         response = self.client.post(
@@ -217,11 +232,14 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn('href="#server-source-set-bindings-host"', response.text)
         self.assertIn('href="#law-main-check-host"', response.text)
         self.assertIn('href="#law-legacy-runtime-panel"', response.text)
-        self.assertIn("Повседневная настройка source sets", response.text)
+        self.assertIn("Advanced / compatibility workspace", response.text)
         self.assertIn("Main Check", response.text)
         self.assertIn("Legacy / Runtime", response.text)
         self.assertIn("Source Sets", response.text)
         self.assertIn("Server Bindings", response.text)
+        self.assertIn("Законы · Advanced", response.text)
+        self.assertIn("Advanced / Compatibility", response.text)
+        self.assertIn("Основной рабочий путь теперь начинается с", response.text)
         self.assertNotIn('href="#law-canonical-pipeline-host"', response.text)
         self.assertIn('id="admin-law-modal"', response.text)
         self.assertIn('id="admin-law-modal-body"', response.text)
@@ -254,6 +272,7 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn("Configuration Catalog", response.text)
         self.assertIn("Runtime and configuration workspace", response.text)
         self.assertIn("Runtime inventory, active server state, and linked configuration bundles.", response.text)
+        self.assertIn("Серверы · Основное", response.text)
         self.assertIn('href="#admin-server-domain-map"', response.text)
         self.assertIn("Server Domain Map", response.text)
         self.assertIn("Activation State", response.text)
@@ -275,6 +294,8 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn('id="admin-server-workspace"', response.text)
         self.assertIn('data-server-code="blackberry"', response.text)
         self.assertIn("Server workspace: blackberry", response.text)
+        self.assertIn("официальный основной путь", response.text)
+        self.assertIn("Серверы · Основное", response.text)
         self.assertIn('data-server-workspace-tab="overview"', response.text)
         self.assertIn('data-server-workspace-tab="laws"', response.text)
         self.assertIn('data-server-workspace-tab="features"', response.text)

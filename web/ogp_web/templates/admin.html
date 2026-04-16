@@ -44,8 +44,8 @@
     <nav class="segmented-tabs segmented-tabs--section" aria-label="Режим админки">
       <a class="segmented-tabs__item{% if admin_focus == 'dashboard' %} is-active{% endif %}" href="/admin/dashboard">Сводка</a>
       <a class="segmented-tabs__item{% if admin_focus == 'users' %} is-active{% endif %}" href="/admin/users">Пользователи и аудит</a>
-      <a class="segmented-tabs__item{% if admin_focus == 'servers' %} is-active{% endif %}" href="/admin/servers">Серверы</a>
-      <a class="segmented-tabs__item{% if admin_focus == 'laws' %} is-active{% endif %}" href="/admin/laws">Законы</a>
+      <a class="segmented-tabs__item{% if admin_focus == 'servers' %} is-active{% endif %}" href="/admin/servers">Серверы · Основное</a>
+      <a class="segmented-tabs__item{% if admin_focus == 'laws' %} is-active{% endif %}" href="/admin/laws">Законы · Advanced</a>
     </nav>
     <nav class="legal-section-jump" aria-label="Навигация по разделам админ-панели">
       {% if admin_focus in ["dashboard", "users"] %}
@@ -109,13 +109,13 @@
           {% if admin_focus == "servers" and admin_server_code %}
           <h1 class="legal-section__title">Server workspace: {{ admin_server_code }}</h1>
           <p class="legal-section__description">
-            Server-centric рабочее место: overview, readiness, законы, функции, шаблоны, доступы и операционные сигналы.
+            Server-centric рабочее место и официальный основной путь для повседневной настройки сервера: readiness, законы, функции, шаблоны, доступы и операционные сигналы.
           </p>
           {% else %}
           <h1 class="legal-section__title">Runtime and configuration workspace</h1>
           <p class="legal-section__description">
             {% if admin_focus == "laws" %}
-            Повседневная настройка source sets, revisions и server bindings с быстрым доступом к проверке результата.
+            Advanced / compatibility workspace для source sets, revisions, server bindings и low-level law diagnostics. Для повседневной работы используйте /admin/servers и карточку конкретного сервера.
             {% else %}
             Read-only domain view for runtime inventory, catalog-backed configuration, and publication context.
             {% endif %}
@@ -139,7 +139,7 @@
         <div class="admin-section-toolbar">
           <div>
             <span class="legal-field__label">Карточка сервера</span>
-            <p class="legal-section__description">Основной путь: Сервер → Законы → Функции → Шаблоны вывода.</p>
+            <p class="legal-section__description">Основной путь: Сервер → Законы → Функции → Шаблоны вывода. Старые law-centric surfaces остаются только как advanced / compatibility.</p>
           </div>
           <div>
             <a class="ghost-button button-link" href="/admin/servers">К списку серверов</a>
@@ -754,6 +754,14 @@
       {% endif %}
 
       {% if admin_focus == "laws" %}
+      <section class="legal-subcard">
+        <div class="legal-subcard__header">
+          <div>
+            <span class="legal-field__label">Advanced / Compatibility</span>
+            <p class="legal-section__description">Этот экран остаётся для raw law diagnostics, legacy/runtime detail и low-level operator сценариев. Основной рабочий путь теперь начинается с <a class="button-link ghost-button" href="/admin/servers">/admin/servers</a> и карточки конкретного сервера.</p>
+          </div>
+        </div>
+      </section>
       <section id="admin-law-domain-map" class="legal-subcard admin-collapsible" data-collapsible-section="law-domain-map">
         <div class="legal-subcard__header admin-collapsible__header">
           <div>
