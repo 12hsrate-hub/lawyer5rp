@@ -45,8 +45,13 @@
       <a class="segmented-tabs__item{% if admin_focus == 'dashboard' %} is-active{% endif %}" href="/admin/dashboard">Сводка · Ops</a>
       <a class="segmented-tabs__item{% if admin_focus == 'users' %} is-active{% endif %}" href="/admin/users">Пользователи и аудит · Global</a>
       <a class="segmented-tabs__item{% if admin_focus == 'servers' %} is-active{% endif %}" href="/admin/servers">Серверы · Основное</a>
-      <a class="segmented-tabs__item{% if admin_focus == 'laws' %} is-active{% endif %}" href="/admin/laws">Законы · Диагностика</a>
     </nav>
+    {% if admin_focus == "laws" %}
+    <div class="admin-section-toolbar">
+      <span class="admin-badge admin-badge--warning">Advanced diagnostics only</span>
+      <a class="ghost-button button-link" href="/admin/servers">Вернуться в server workspace</a>
+    </div>
+    {% endif %}
     <nav class="legal-section-jump" aria-label="Навигация по разделам админ-панели">
       {% if admin_focus in ["dashboard", "users"] %}
       <a class="legal-section-jump__link" href="#admin-section-filters">Фильтры</a>
