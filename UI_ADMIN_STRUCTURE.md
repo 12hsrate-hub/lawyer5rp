@@ -29,10 +29,10 @@ Route policy:
 - `/admin/servers` is the default starting point for day-to-day admin work.
 - `/admin/servers/{server_code}` is the primary workspace for server-specific operations.
 - `/admin/laws` remains an advanced diagnostics and compatibility surface.
-- `/admin/dashboard` remains the compatibility route for the global ops surface.
-- `/admin/ops` is the preferred secondary entrypoint for the global ops surface.
-- `/admin/users` remains the compatibility route for the global user/audit surface.
-- `/admin/audit` is the preferred secondary entrypoint for the global user/audit surface.
+- `/admin/ops` is the canonical secondary entrypoint for the global ops surface.
+- `/admin/dashboard` remains a compatibility redirect to `/admin/ops`.
+- `/admin/audit` is the canonical secondary entrypoint for the global user/audit surface.
+- `/admin/users` remains a compatibility redirect to `/admin/audit`.
 - the primary top-level admin tab strip should point only to `/admin/servers`
 - global ops and global users/audit should appear as secondary links, not as competing primary tabs
 - `/admin/templates`, `/admin/features`, and `/admin/rules` are no longer primary entrypoints and should not be restored as top-level operator tabs.
@@ -55,7 +55,8 @@ Operational rule:
 
 ### Dashboard / Ops
 
-- Route entry: `/admin/ops`, `/admin/dashboard`
+- Route entry: `/admin/ops`
+- Compatibility redirect: `/admin/dashboard`
 - Primary concerns:
   - system totals
   - performance
@@ -65,7 +66,8 @@ Operational rule:
 
 ### Users and audit
 
-- Route entry: `/admin/audit`, `/admin/users`
+- Route entry: `/admin/audit`
+- Compatibility redirect: `/admin/users`
 - Primary concerns:
   - user moderation
   - role history
@@ -119,14 +121,14 @@ Advanced paths stay secondary and must not compete visually with the server-cent
 
 ### Secondary surfaces
 
-- `/admin/dashboard`
-  - global operations, jobs, synthetic, rollout signals
 - `/admin/ops`
-  - preferred secondary entrypoint for global ops
-- `/admin/users`
-  - global users, role history, event stream, AI/cost policy
+  - canonical secondary entrypoint for global ops
+- `/admin/dashboard`
+  - compatibility redirect to `/admin/ops`
 - `/admin/audit`
-  - preferred secondary entrypoint for global users and audit
+  - canonical secondary entrypoint for global users and audit
+- `/admin/users`
+  - compatibility redirect to `/admin/audit`
 - `/admin/laws`
   - advanced law diagnostics and compatibility-backed internals
   - not a primary operator workspace

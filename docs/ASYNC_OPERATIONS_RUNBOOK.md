@@ -18,7 +18,7 @@ Primary operator surface:
 - `/admin/ops`
 
 Compatibility route:
-- `/admin/dashboard`
+- `/admin/dashboard` → redirects to `/admin/ops`
 
 Primary ops endpoints:
 - `/api/admin/async-jobs/overview`
@@ -30,7 +30,7 @@ Primary ops endpoints:
 
 ## What To Check First
 
-1. Open `/admin/ops` (or `/admin/dashboard`, if you are using the compatibility route).
+1. Open `/admin/ops`.
 2. Review three blocks in order:
    - `Async Jobs`
    - `Law rebuild tasks`

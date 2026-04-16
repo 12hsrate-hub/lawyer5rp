@@ -173,7 +173,7 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["location"], "/admin/servers")
 
-    def test_admin_dashboard_uses_secondary_global_navigation(self):
+    def test_admin_ops_uses_secondary_global_navigation(self):
         self.client.post("/api/auth/logout")
         response = self.client.post(
             "/api/auth/register",
@@ -184,7 +184,7 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.client.get(f"{split.path}?{split.query}")
         self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
 
-        response = self.client.get("/admin/dashboard")
+        response = self.client.get("/admin/ops")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Серверы · Основное", response.text)
         self.assertIn("Global ops workspace", response.text)
@@ -340,7 +340,7 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["location"], "/admin/servers")
 
-    def test_admin_ops_alias_redirects_to_dashboard(self):
+    def test_admin_dashboard_redirects_to_ops(self):
         self.client.post("/api/auth/logout")
         response = self.client.post(
             "/api/auth/register",
@@ -351,11 +351,11 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.client.get(f"{split.path}?{split.query}")
         self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
 
-        response = self.client.get("/admin/ops", follow_redirects=False)
+        response = self.client.get("/admin/dashboard", follow_redirects=False)
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers["location"], "/admin/dashboard")
+        self.assertEqual(response.headers["location"], "/admin/ops")
 
-    def test_admin_audit_alias_redirects_to_users(self):
+    def test_admin_users_redirects_to_audit(self):
         self.client.post("/api/auth/logout")
         response = self.client.post(
             "/api/auth/register",
@@ -366,9 +366,26 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.client.get(f"{split.path}?{split.query}")
         self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
 
-        response = self.client.get("/admin/audit", follow_redirects=False)
+        response = self.client.get("/admin/users", follow_redirects=False)
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers["location"], "/admin/users")
+        self.assertEqual(response.headers["location"], "/admin/audit")
+
+    def test_admin_audit_renders_global_users_and_audit_surface(self):
+        self.client.post("/api/auth/logout")
+        response = self.client.post(
+            "/api/auth/register",
+            json={"username": "12345", "email": "admin@example.com", "password": "Password123!"},
+        )
+        verify_url = response.json()["verification_url"]
+        split = urlsplit(verify_url)
+        self.client.get(f"{split.path}?{split.query}")
+        self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
+
+        response = self.client.get("/admin/audit")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Global users and audit", response.text)
+        self.assertIn("Secondary global surface", response.text)
+        self.assertIn('href="/admin/ops"', response.text)
 
     def test_admin_features_page_redirects_to_servers(self):
         self.client.post("/api/auth/logout")
