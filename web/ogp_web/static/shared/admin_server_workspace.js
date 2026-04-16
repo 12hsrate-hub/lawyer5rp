@@ -371,6 +371,7 @@ window.OGPAdminServerWorkspace = {
         const projection = laws.latest_projection_run || {};
         const runtimeProvenance = laws.runtime_provenance || {};
         const runtimeAlignment = laws.runtime_alignment || state.lawsDiff?.runtime_alignment || {};
+        const runtimeItemParity = laws.runtime_item_parity || state.lawsDiff?.runtime_item_parity || {};
         const effective = state.lawsEffective || {};
       const effectiveItems = Array.isArray(effective.items) ? effective.items.slice(0, 12) : [];
       const fillSummary = laws.fill_check || effective.summary || {};
@@ -410,6 +411,11 @@ window.OGPAdminServerWorkspace = {
               <span class="legal-field__label">Runtime alignment</span>
               <div><strong>${escapeHtml(String(runtimeAlignment.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeAlignment.detail || "Active runtime shell and promoted projection alignment is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Item parity</span>
+              <div><strong>${escapeHtml(String(runtimeItemParity.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">runtime: ${escapeHtml(String(runtimeItemParity.runtime_count || 0))} • projection: ${escapeHtml(String(runtimeItemParity.projection_count || 0))} • shared: ${escapeHtml(String(runtimeItemParity.shared_count || 0))}</div>
             </div>
           </div>
         <div class="legal-subcard">

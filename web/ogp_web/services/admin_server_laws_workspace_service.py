@@ -191,6 +191,75 @@ def _effective_items_payload(
     }
 
 
+def _active_runtime_law_items_payload(
+    *,
+    law_sets_store: RuntimeLawSetsStore,
+    active_law_set_id: int | None,
+) -> list[dict[str, Any]]:
+    if not active_law_set_id:
+        return []
+    try:
+        detail = law_sets_store.get_law_set_detail(law_set_id=int(active_law_set_id))
+    except Exception:
+        return []
+    items = detail.get("items") if isinstance(detail, dict) else []
+    payload_items: list[dict[str, Any]] = []
+    for item in items or []:
+        law_code = str((item or {}).get("law_code") or "").strip().lower()
+        if not law_code:
+            continue
+        payload_items.append(
+            {
+                "law_code": law_code,
+                "priority": int((item or {}).get("priority") or 0),
+                "effective_from": str((item or {}).get("effective_from") or ""),
+                "source_name": str((item or {}).get("source_name") or ""),
+                "source_url": str((item or {}).get("source_url") or ""),
+            }
+        )
+    return payload_items
+
+
+def _runtime_item_parity_summary(
+    *,
+    active_runtime_items: list[dict[str, Any]],
+    projection_items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    active_keys = {
+        str(item.get("law_code") or "").strip().lower()
+        for item in active_runtime_items
+        if str(item.get("law_code") or "").strip()
+    }
+    projected_keys = {
+        str(getattr(item, "canonical_identity_key", "") or "").strip().lower()
+        for item in projection_items
+        if str(getattr(item, "canonical_identity_key", "") or "").strip()
+    }
+    shared = active_keys & projected_keys
+    runtime_only = active_keys - projected_keys
+    projection_only = projected_keys - active_keys
+    if active_keys and projected_keys and not runtime_only and not projection_only:
+        status = "aligned"
+        detail = "Active runtime law shell matches the latest projection by law identity."
+    elif active_keys or projected_keys:
+        status = "drift"
+        detail = "Active runtime law shell and latest projection differ by law identity."
+    else:
+        status = "uninitialized"
+        detail = "There is not enough runtime or projection data to compare law identity sets."
+    return {
+        "status": status,
+        "detail": detail,
+        "runtime_count": len(active_keys),
+        "projection_count": len(projected_keys),
+        "shared_count": len(shared),
+        "runtime_only_count": len(runtime_only),
+        "projection_only_count": len(projection_only),
+        "runtime_only_keys": sorted(runtime_only),
+        "projection_only_keys": sorted(projection_only),
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -222,6 +291,15 @@ def build_server_laws_summary_payload(
     )
     current_items = projections_store.list_items(projection_run_id=int(current_run.id)) if current_run is not None else []
     previous_items = projections_store.list_items(projection_run_id=int(previous_run.id)) if previous_run is not None else []
+    active_law_set_id = int(((health_payload.get("runtime_alignment") or {}).get("active_law_set_id") or 0))
+    active_runtime_items = _active_runtime_law_items_payload(
+        law_sets_store=law_sets_store,
+        active_law_set_id=active_law_set_id or None,
+    )
+    runtime_item_parity = _runtime_item_parity_summary(
+        active_runtime_items=active_runtime_items,
+        projection_items=current_items,
+    )
     diff_summary = _diff_summary(current_items, previous_items)
     diff_summary["current_run_id"] = int(current_run.id) if current_run is not None else None
     diff_summary["baseline_run_id"] = int(previous_run.id) if previous_run is not None else None
@@ -233,6 +311,7 @@ def build_server_laws_summary_payload(
         "projection_bridge": dict(health_payload.get("projection_bridge") or {}),
         "runtime_provenance": dict(health_payload.get("runtime_provenance") or {}),
         "runtime_alignment": dict(health_payload.get("runtime_alignment") or {}),
+        "runtime_item_parity": runtime_item_parity,
         "latest_projection_run": _serialize_run(current_run),
         "fill_check": fill_summary,
         "diff": diff_summary,
@@ -361,6 +440,15 @@ def build_server_laws_diff_payload(
     current_run, previous_run = _latest_projection_runs(projections_store, server_code=normalized_server)
     current_items = projections_store.list_items(projection_run_id=int(current_run.id)) if current_run is not None else []
     previous_items = projections_store.list_items(projection_run_id=int(previous_run.id)) if previous_run is not None else []
+    active_law_set_id = int(((health_payload.get("runtime_alignment") or {}).get("active_law_set_id") or 0))
+    active_runtime_items = _active_runtime_law_items_payload(
+        law_sets_store=law_sets_store,
+        active_law_set_id=active_law_set_id or None,
+    )
+    runtime_item_parity = _runtime_item_parity_summary(
+        active_runtime_items=active_runtime_items,
+        projection_items=current_items,
+    )
     diff_summary = _diff_summary(current_items, previous_items)
     diff_summary["current_run_id"] = int(current_run.id) if current_run is not None else None
     diff_summary["baseline_run_id"] = int(previous_run.id) if previous_run is not None else None
@@ -369,5 +457,6 @@ def build_server_laws_diff_payload(
         "current_run": _serialize_run(current_run),
         "baseline_run": _serialize_run(previous_run),
         "runtime_alignment": dict(health_payload.get("runtime_alignment") or {}),
+        "runtime_item_parity": runtime_item_parity,
         "summary": diff_summary,
     }

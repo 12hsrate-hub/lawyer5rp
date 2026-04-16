@@ -458,6 +458,23 @@ class _FakeRuntimeLawSetsStore:
                 }
             ]
         }
+        self.law_set_details = {
+            1: {
+                "law_set": dict(self.law_sets[1]),
+                "items": [
+                    {
+                        "id": 1,
+                        "law_set_id": 1,
+                        "law_code": "uk",
+                        "effective_from": "",
+                        "priority": 100,
+                        "source_id": 1,
+                        "source_name": "UK source",
+                        "source_url": "https://example.com/laws/uk",
+                    }
+                ],
+            }
+        }
 
     def list_law_sets(self, *, server_code: str):
         return [row for row in self.law_sets.values() if row["server_code"] == server_code]
@@ -470,7 +487,20 @@ class _FakeRuntimeLawSetsStore:
 
     def replace_law_set_items(self, *, law_set_id: int, items):
         self.law_sets[law_set_id]["item_count"] = len(items)
+        self.law_set_details[law_set_id] = {
+            "law_set": dict(self.law_sets[law_set_id]),
+            "items": list(items),
+        }
         return list(items)
+
+    def get_law_set_detail(self, *, law_set_id: int):
+        detail = self.law_set_details.get(int(law_set_id))
+        if detail is None:
+            raise KeyError("law_set_not_found")
+        return {
+            "law_set": dict(detail["law_set"]),
+            "items": [dict(item) for item in detail["items"]],
+        }
 
     def list_server_law_bindings(self, *, server_code: str):
         return list(self.bindings.get(server_code, []))
@@ -952,6 +982,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(payload["overview"]["laws"]["binding_count"], 1)
         self.assertEqual(payload["overview"]["laws"]["runtime_provenance"]["mode"], "legacy_runtime_shell")
         self.assertEqual(payload["overview"]["laws"]["runtime_alignment"]["status"], "legacy_only")
+        self.assertEqual(payload["overview"]["laws"]["runtime_item_parity"]["status"], "aligned")
         self.assertEqual(payload["health"]["onboarding"]["resolution_mode"], "bootstrap_pack")
         issue_ids = {item.get("issue_id") for item in payload["issues"]["items"] if item.get("issue_id")}
         self.assertIn("laws_runtime_provenance", issue_ids)
@@ -1102,9 +1133,11 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(summary.json()["binding_count"], 1)
         self.assertEqual(summary.json()["runtime_provenance"]["mode"], "legacy_runtime_shell")
         self.assertEqual(summary.json()["runtime_alignment"]["status"], "legacy_only")
+        self.assertEqual(summary.json()["runtime_item_parity"]["status"], "aligned")
         self.assertEqual(effective.json()["count"], 1)
         self.assertEqual(effective.json()["items"][0]["title"], "Уголовный кодекс v2")
         self.assertEqual(diff.json()["runtime_alignment"]["status"], "legacy_only")
+        self.assertEqual(diff.json()["runtime_item_parity"]["status"], "aligned")
         self.assertEqual(diff.json()["summary"]["changed"], 1)
         self.assertEqual(diff.json()["summary"]["added"], 0)
 
