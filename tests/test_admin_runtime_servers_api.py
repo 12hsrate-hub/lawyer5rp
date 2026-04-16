@@ -1064,6 +1064,45 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertEqual(recheck_payload["issue_id"], "laws_runtime_provenance")
             self.assertEqual(recheck_payload["action"], "recheck")
 
+    def test_runtime_server_issues_endpoint_exposes_runtime_item_parity_warning_for_drift(self):
+        self.runtime_law_sets_store.law_set_details[1]["items"] = [
+            {
+                "id": 1,
+                "law_set_id": 1,
+                "law_code": "koap",
+                "effective_from": "",
+                "priority": 100,
+                "source_id": 1,
+                "source_name": "KoAP source",
+                "source_url": "https://example.com/laws/koap",
+            }
+        ]
+        with patch.object(
+            admin_runtime_servers_service,
+            "resolve_active_law_version",
+            return_value=ResolvedLawVersion(
+                id=91,
+                server_code="blackberry",
+                generated_at_utc="2026-04-16T00:00:00+00:00",
+                effective_from="2026-04-16",
+                effective_to="",
+                fingerprint="bb-runtime-item-parity-fp",
+                chunk_count=6,
+            ),
+        ):
+            issues = self.client.get("/api/admin/runtime-servers/blackberry/issues")
+            self.assertEqual(issues.status_code, 200)
+            payload = issues.json()
+            issue_ids = {item["issue_id"] for item in payload["items"]}
+            self.assertIn("laws_runtime_item_parity", issue_ids)
+
+            recheck = self.client.post("/api/admin/runtime-servers/blackberry/issues/laws_runtime_item_parity/recheck")
+            self.assertEqual(recheck.status_code, 200)
+            recheck_payload = recheck.json()
+            self.assertTrue(recheck_payload["ok"])
+            self.assertEqual(recheck_payload["issue_id"], "laws_runtime_item_parity")
+            self.assertEqual(recheck_payload["action"], "recheck")
+
     def test_runtime_server_access_endpoints_support_roles_permissions_assign_and_revoke(self):
         self.user_store.register("moderator1", "moderator1@example.com", "Password123!")
         self.user_store.set_selected_server_code("moderator1", "blackberry")
