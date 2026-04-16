@@ -718,6 +718,68 @@ def build_activation_gap_summary(
     }
 
 
+def build_runtime_shell_debt_summary(
+    *,
+    runtime_provenance: dict[str, Any],
+    runtime_version_parity: dict[str, Any],
+    projection_bridge_lifecycle: dict[str, Any],
+    onboarding: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    provenance = dict(runtime_provenance or {})
+    version_parity = dict(runtime_version_parity or {})
+    lifecycle = dict(projection_bridge_lifecycle or {})
+    onboarding_payload = dict(onboarding or {})
+
+    provenance_mode = str(provenance.get("mode") or "").strip().lower()
+    version_status = str(version_parity.get("status") or "").strip().lower()
+    lifecycle_status = str(lifecycle.get("status") or "").strip().lower()
+    resolution_mode = str(onboarding_payload.get("resolution_mode") or "").strip().lower()
+
+    reasons: list[str] = []
+    if provenance_mode in {"legacy_runtime_shell", "materialized_shell_only", "projection_drift"}:
+        reasons.append(provenance_mode)
+    if version_status in {"legacy_only", "pending_activation", "drift"}:
+        reasons.append(version_status)
+    if lifecycle_status in {"preview_only", "materialized", "drifted"}:
+        reasons.append(lifecycle_status)
+    if resolution_mode in {"neutral_fallback", "bootstrap_pack"}:
+        reasons.append(resolution_mode)
+
+    deduped_reasons: list[str] = []
+    seen: set[str] = set()
+    for reason in reasons:
+        normalized = str(reason or "").strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped_reasons.append(normalized)
+
+    if not deduped_reasons:
+        status = "low"
+        detail = "Runtime shell debt looks low in the current read model."
+        next_step = "Legacy runtime shell dependence is not currently a visible blocker."
+    elif provenance_mode == "legacy_runtime_shell" or version_status == "legacy_only":
+        status = "high"
+        detail = "Runtime still depends heavily on the legacy shell path."
+        next_step = "Сведите зависимость к projection-backed runtime shell и controlled activation path."
+    else:
+        status = "medium"
+        detail = "Runtime still carries compatibility shell debt that deserves follow-up."
+        next_step = "Сведите activation/provenance drift и проверьте shell dependence через безопасный recheck."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "reason_count": len(deduped_reasons),
+        "reasons": deduped_reasons[:8],
+        "provenance_mode": provenance_mode,
+        "version_status": version_status,
+        "lifecycle_status": lifecycle_status,
+        "resolution_mode": resolution_mode,
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -797,6 +859,12 @@ def build_server_laws_summary_payload(
         projection_bridge_lifecycle=projection_bridge_lifecycle,
         promotion_blockers=promotion_blockers,
     )
+    runtime_shell_debt = build_runtime_shell_debt_summary(
+        runtime_provenance=dict(health_payload.get("runtime_provenance") or {}),
+        runtime_version_parity=runtime_version_parity,
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+        onboarding=dict(health_payload.get("onboarding") or {}),
+    )
     return {
         "server_code": normalized_server,
         "bindings": bindings,
@@ -813,6 +881,7 @@ def build_server_laws_summary_payload(
         "promotion_delta": promotion_delta,
         "promotion_blockers": promotion_blockers,
         "activation_gap": activation_gap,
+        "runtime_shell_debt": runtime_shell_debt,
         "latest_projection_run": _serialize_run(current_run),
         "fill_check": fill_summary,
         "diff": diff_summary,
@@ -989,6 +1058,12 @@ def build_server_laws_diff_payload(
         projection_bridge_lifecycle=projection_bridge_lifecycle,
         promotion_blockers=promotion_blockers,
     )
+    runtime_shell_debt = build_runtime_shell_debt_summary(
+        runtime_provenance=dict(health_payload.get("runtime_provenance") or {}),
+        runtime_version_parity=runtime_version_parity,
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+        onboarding=dict(health_payload.get("onboarding") or {}),
+    )
     return {
         "server_code": normalized_server,
         "current_run": _serialize_run(current_run),
@@ -1002,5 +1077,6 @@ def build_server_laws_diff_payload(
         "promotion_delta": promotion_delta,
         "promotion_blockers": promotion_blockers,
         "activation_gap": activation_gap,
+        "runtime_shell_debt": runtime_shell_debt,
         "summary": diff_summary,
     }

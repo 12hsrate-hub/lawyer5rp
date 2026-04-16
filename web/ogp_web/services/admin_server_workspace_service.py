@@ -11,6 +11,7 @@ from ogp_web.services.admin_server_laws_workspace_service import build_activatio
 from ogp_web.services.admin_server_laws_workspace_service import build_promotion_blockers_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_promotion_candidate_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_promotion_delta_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_runtime_shell_debt_summary
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
@@ -516,6 +517,26 @@ def _build_activation_gap_issue(activation_gap: dict[str, Any]) -> dict[str, Any
     }
 
 
+def _build_runtime_shell_debt_issue(runtime_shell_debt: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_shell_debt or {}).get("status") or "").strip().lower()
+    if status in {"", "low"}:
+        return None
+    reasons = ", ".join(str(item).strip() for item in list((runtime_shell_debt or {}).get("reasons") or [])[:4] if str(item).strip())
+    detail = (
+        f"{str((runtime_shell_debt or {}).get('detail') or '').strip()} "
+        f"reasons={int((runtime_shell_debt or {}).get('reason_count') or 0)}"
+        f"{f' • sample={reasons}' if reasons else ''}. "
+        f"{str((runtime_shell_debt or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "laws_runtime_shell_debt",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Runtime shell debt требует внимания",
+        "detail": detail,
+    }
+
+
 def _build_issues_payload(
     *,
     health_payload: dict[str, Any],
@@ -528,6 +549,7 @@ def _build_issues_payload(
     promotion_delta: dict[str, Any] | None = None,
     promotion_blockers: dict[str, Any] | None = None,
     activation_gap: dict[str, Any] | None = None,
+    runtime_shell_debt: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     checks = dict(health_payload.get("checks") or {})
@@ -605,6 +627,9 @@ def _build_issues_payload(
     activation_gap_issue = _build_activation_gap_issue(dict(activation_gap or {}))
     if activation_gap_issue is not None:
         items.append(activation_gap_issue)
+    runtime_shell_debt_issue = _build_runtime_shell_debt_issue(dict(runtime_shell_debt or {}))
+    if runtime_shell_debt_issue is not None:
+        items.append(runtime_shell_debt_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -758,6 +783,12 @@ def build_server_workspace_payload(
         projection_bridge_lifecycle=projection_bridge_lifecycle,
         promotion_blockers=promotion_blockers,
     )
+    runtime_shell_debt = build_runtime_shell_debt_summary(
+        runtime_provenance=runtime_provenance,
+        runtime_version_parity=runtime_version_parity,
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+        onboarding=dict(health_payload.get("onboarding") or {}),
+    )
     laws_summary = {
         "active_source_set_bindings": [
             {
@@ -782,6 +813,7 @@ def build_server_workspace_payload(
         "promotion_delta": promotion_delta,
         "promotion_blockers": promotion_blockers,
         "activation_gap": activation_gap,
+        "runtime_shell_debt": runtime_shell_debt,
         "health": (health_payload.get("checks") or {}).get("health", {}),
     }
     issues_payload = _build_issues_payload(
@@ -795,6 +827,7 @@ def build_server_workspace_payload(
         promotion_delta=promotion_delta,
         promotion_blockers=promotion_blockers,
         activation_gap=activation_gap,
+        runtime_shell_debt=runtime_shell_debt,
     )
     readiness_payload = _build_readiness_payload(
         laws_ready=bool((health_payload.get("checks") or {}).get("health", {}).get("ok")),

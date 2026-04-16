@@ -12,6 +12,7 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_promotion_blockers_summary,
     build_promotion_candidate_summary,
     build_promotion_delta_summary,
+    build_runtime_shell_debt_summary,
     build_server_laws_recheck_payload,
 )
 from ogp_web.services.content_workflow_service import ContentWorkflowService
@@ -388,6 +389,29 @@ def _build_activation_gap_issue(activation_gap: dict[str, Any]) -> dict[str, Any
     }
 
 
+def _build_runtime_shell_debt_issue(runtime_shell_debt: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_shell_debt or {}).get("status") or "").strip().lower()
+    if status in {"", "low"}:
+        return None
+    reasons = ", ".join(str(item).strip() for item in list((runtime_shell_debt or {}).get("reasons") or [])[:4] if str(item).strip())
+    detail = (
+        f"{str((runtime_shell_debt or {}).get('detail') or '').strip()} "
+        f"reasons={int((runtime_shell_debt or {}).get('reason_count') or 0)}"
+        f"{f' • sample={reasons}' if reasons else ''}. "
+        f"{str((runtime_shell_debt or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "laws_runtime_shell_debt",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Runtime shell debt требует внимания",
+        "detail": detail,
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
 def build_server_audit_payload(
     *,
     server_code: str,
@@ -563,6 +587,12 @@ def build_server_issues_payload(
         projection_bridge_lifecycle=projection_bridge_lifecycle,
         promotion_blockers=promotion_blockers,
     )
+    runtime_shell_debt = build_runtime_shell_debt_summary(
+        runtime_provenance=runtime_provenance,
+        runtime_version_parity=runtime_version_parity,
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+        onboarding=onboarding,
+    )
     items: list[dict[str, Any]] = []
     if bool(onboarding.get("requires_explicit_runtime_pack")):
         items.append(
@@ -626,6 +656,9 @@ def build_server_issues_payload(
     activation_gap_issue = _build_activation_gap_issue(activation_gap)
     if activation_gap_issue is not None:
         items.append(activation_gap_issue)
+    runtime_shell_debt_issue = _build_runtime_shell_debt_issue(runtime_shell_debt)
+    if runtime_shell_debt_issue is not None:
+        items.append(runtime_shell_debt_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -694,7 +727,7 @@ def execute_server_issue_action_payload(
     normalized_server = normalize_runtime_server_code(server_code)
     normalized_issue = str(issue_id or "").strip().lower()
     normalized_action = str(action or "").strip().lower()
-    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_blockers", "laws_activation_gap"} and normalized_action == "recheck":
+    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_blockers", "laws_activation_gap", "laws_runtime_shell_debt"} and normalized_action == "recheck":
         result = build_server_laws_recheck_payload(
             server_code=normalized_server,
             runtime_servers_store=runtime_servers_store,
