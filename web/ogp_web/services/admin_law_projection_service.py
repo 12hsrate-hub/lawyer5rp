@@ -469,7 +469,12 @@ def activate_server_effective_law_projection_payload(
     if law_set_id <= 0:
         raise ValueError("server_effective_law_projection_materialization_missing")
     activation = dict(summary_json.get("activation") or {})
-    if safe_rerun and int(activation.get("law_set_id") or 0) == law_set_id and int(activation.get("law_version_id") or 0) > 0:
+    if (
+        safe_rerun
+        and int(activation.get("law_set_id") or 0) == law_set_id
+        and int(activation.get("law_version_id") or 0) > 0
+        and int(activation.get("chunk_count") or 0) > 0
+    ):
         return {
             "ok": True,
             "changed": False,
