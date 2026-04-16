@@ -256,6 +256,62 @@ def _build_runtime_item_parity(
     }
 
 
+def _build_runtime_version_parity(*, health_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_alignment = dict((health_payload or {}).get("runtime_alignment") or {})
+    projection_bridge = dict((health_payload or {}).get("projection_bridge") or {})
+    active_law_set_id = int(runtime_alignment.get("active_law_set_id") or 0)
+    active_law_version_id = int(runtime_alignment.get("active_law_version_id") or 0)
+    projected_law_set_id = int(runtime_alignment.get("projected_law_set_id") or 0)
+    projected_law_version_id = int(runtime_alignment.get("projected_law_version_id") or 0)
+    projection_run_id = int(runtime_alignment.get("projection_run_id") or projection_bridge.get("run_id") or 0)
+
+    if projected_law_version_id > 0 and active_law_version_id > 0 and projected_law_version_id == active_law_version_id:
+        status = "aligned"
+        detail = "Promoted projection law_version matches the current active runtime law_version."
+    elif projected_law_version_id > 0 and active_law_version_id > 0:
+        status = "drift"
+        detail = "Promoted projection law_version and active runtime law_version differ."
+    elif active_law_version_id > 0:
+        status = "legacy_only"
+        detail = "Active runtime law_version exists without a promoted projection law_version."
+    elif projected_law_version_id > 0 or projected_law_set_id > 0 or projection_run_id > 0:
+        status = "pending_activation"
+        detail = "Promoted projection exists, but there is no active runtime law_version yet."
+    else:
+        status = "uninitialized"
+        detail = "There is not enough runtime/projection version data to compare law_version parity."
+
+    drift_summary = ""
+    if status in {"drift", "legacy_only", "pending_activation"}:
+        drift_parts: list[str] = []
+        if active_law_version_id > 0:
+            drift_parts.append(f"active_version={active_law_version_id}")
+        if projected_law_version_id > 0:
+            drift_parts.append(f"projected_version={projected_law_version_id}")
+        if active_law_set_id > 0:
+            drift_parts.append(f"active_law_set={active_law_set_id}")
+        if projected_law_set_id > 0:
+            drift_parts.append(f"projected_law_set={projected_law_set_id}")
+        drift_summary = "; ".join(drift_parts)
+
+    return {
+        "status": status,
+        "detail": detail,
+        "active_law_set_id": active_law_set_id or None,
+        "active_law_version_id": active_law_version_id or None,
+        "projected_law_set_id": projected_law_set_id or None,
+        "projected_law_version_id": projected_law_version_id or None,
+        "projection_run_id": projection_run_id or None,
+        "matches_active_law_version": (
+            projected_law_version_id > 0 and active_law_version_id > 0 and projected_law_version_id == active_law_version_id
+        ),
+        "matches_active_law_set": (
+            projected_law_set_id > 0 and active_law_set_id > 0 and projected_law_set_id == active_law_set_id
+        ),
+        "drift_summary": drift_summary,
+    }
+
+
 def _build_runtime_item_parity_issue(runtime_item_parity: dict[str, Any]) -> dict[str, Any] | None:
     status = str((runtime_item_parity or {}).get("status") or "").strip().lower()
     if status != "drift":
@@ -275,11 +331,29 @@ def _build_runtime_item_parity_issue(runtime_item_parity: dict[str, Any]) -> dic
     }
 
 
+def _build_runtime_version_parity_issue(runtime_version_parity: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_version_parity or {}).get("status") or "").strip().lower()
+    if status not in {"drift", "legacy_only", "pending_activation"}:
+        return None
+    drift_summary = str((runtime_version_parity or {}).get("drift_summary") or "").strip()
+    detail = drift_summary or str((runtime_version_parity or {}).get("detail") or "").strip()
+    if not detail:
+        detail = "Runtime and promoted projection law_version parity requires attention."
+    return {
+        "issue_id": "laws_runtime_version_parity",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Runtime law_version parity требует внимания",
+        "detail": f"{detail}. Откройте вкладку «Законы», чтобы проверить version/projection parity перед дальнейшими действиями.",
+    }
+
+
 def _build_issues_payload(
     *,
     health_payload: dict[str, Any],
     dashboard_payload: dict[str, Any],
     runtime_item_parity: dict[str, Any] | None = None,
+    runtime_version_parity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     checks = dict(health_payload.get("checks") or {})
@@ -336,6 +410,9 @@ def _build_issues_payload(
     runtime_item_parity_issue = _build_runtime_item_parity_issue(dict(runtime_item_parity or {}))
     if runtime_item_parity_issue is not None:
         items.append(runtime_item_parity_issue)
+    runtime_version_parity_issue = _build_runtime_version_parity_issue(dict(runtime_version_parity or {}))
+    if runtime_version_parity_issue is not None:
+        items.append(runtime_version_parity_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -450,6 +527,7 @@ def build_server_workspace_payload(
         projections_store=projections_store,
         server_code=normalized_server,
     )
+    runtime_version_parity = _build_runtime_version_parity(health_payload=health_payload)
     laws_summary = {
         "active_source_set_bindings": [
             {
@@ -467,12 +545,14 @@ def build_server_workspace_payload(
         "runtime_provenance": runtime_provenance,
         "runtime_alignment": runtime_alignment,
         "runtime_item_parity": runtime_item_parity,
+        "runtime_version_parity": runtime_version_parity,
         "health": (health_payload.get("checks") or {}).get("health", {}),
     }
     issues_payload = _build_issues_payload(
         health_payload=health_payload,
         dashboard_payload=dashboard_payload,
         runtime_item_parity=runtime_item_parity,
+        runtime_version_parity=runtime_version_parity,
     )
     readiness_payload = _build_readiness_payload(
         laws_ready=bool((health_payload.get("checks") or {}).get("health", {}).get("ok")),

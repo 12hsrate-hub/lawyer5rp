@@ -372,6 +372,7 @@ window.OGPAdminServerWorkspace = {
         const runtimeProvenance = laws.runtime_provenance || {};
         const runtimeAlignment = laws.runtime_alignment || state.lawsDiff?.runtime_alignment || {};
         const runtimeItemParity = laws.runtime_item_parity || state.lawsDiff?.runtime_item_parity || {};
+        const runtimeVersionParity = laws.runtime_version_parity || state.lawsDiff?.runtime_version_parity || {};
         const effective = state.lawsEffective || {};
       const effectiveItems = Array.isArray(effective.items) ? effective.items.slice(0, 12) : [];
       const fillSummary = laws.fill_check || effective.summary || {};
@@ -416,6 +417,11 @@ window.OGPAdminServerWorkspace = {
               <span class="legal-field__label">Item parity</span>
               <div><strong>${escapeHtml(String(runtimeItemParity.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">runtime: ${escapeHtml(String(runtimeItemParity.runtime_count || 0))} • projection: ${escapeHtml(String(runtimeItemParity.projection_count || 0))} • shared: ${escapeHtml(String(runtimeItemParity.shared_count || 0))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Version parity</span>
+              <div><strong>${escapeHtml(String(runtimeVersionParity.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">active: ${escapeHtml(String(runtimeVersionParity.active_law_version_id || "—"))} • projected: ${escapeHtml(String(runtimeVersionParity.projected_law_version_id || "—"))}</div>
             </div>
           </div>
         <div class="legal-subcard">
