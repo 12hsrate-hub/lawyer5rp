@@ -780,6 +780,51 @@ def build_runtime_shell_debt_summary(
     }
 
 
+def build_runtime_convergence_summary(
+    *,
+    promotion_blockers: dict[str, Any],
+    activation_gap: dict[str, Any],
+    runtime_shell_debt: dict[str, Any],
+) -> dict[str, Any]:
+    blockers = dict(promotion_blockers or {})
+    gap = dict(activation_gap or {})
+    shell_debt = dict(runtime_shell_debt or {})
+
+    blockers_status = str(blockers.get("status") or "").strip().lower()
+    gap_status = str(gap.get("status") or "").strip().lower()
+    shell_debt_status = str(shell_debt.get("status") or "").strip().lower()
+
+    if blockers_status == "clear" and gap_status == "closed" and shell_debt_status == "low":
+        status = "converged"
+        detail = "Server looks close to a fully projection-backed runtime state."
+        next_step = "Runtime convergence looks healthy."
+    elif blockers_status == "blocked":
+        status = "blocked"
+        detail = "Upstream promotion blockers still prevent runtime convergence."
+        next_step = str(blockers.get("next_step") or "Сначала снимите promotion blockers.").strip()
+    elif gap_status in {"open", "drift", "blocked"}:
+        status = "activation_pending"
+        detail = "Runtime convergence is still waiting on activation-side alignment."
+        next_step = str(gap.get("next_step") or "Сначала закройте activation gap.").strip()
+    elif shell_debt_status in {"high", "medium"}:
+        status = "compatibility_mode"
+        detail = "Runtime still converges through compatibility shell debt."
+        next_step = str(shell_debt.get("next_step") or "Продолжайте сжимать legacy runtime shell dependence.").strip()
+    else:
+        status = "advancing"
+        detail = "Runtime is moving toward convergence, but some compatibility signals remain."
+        next_step = "Проверьте blockers, activation gap и shell debt."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "blockers_status": blockers_status,
+        "activation_gap_status": gap_status,
+        "shell_debt_status": shell_debt_status,
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -865,6 +910,11 @@ def build_server_laws_summary_payload(
         projection_bridge_lifecycle=projection_bridge_lifecycle,
         onboarding=dict(health_payload.get("onboarding") or {}),
     )
+    runtime_convergence = build_runtime_convergence_summary(
+        promotion_blockers=promotion_blockers,
+        activation_gap=activation_gap,
+        runtime_shell_debt=runtime_shell_debt,
+    )
     return {
         "server_code": normalized_server,
         "bindings": bindings,
@@ -882,6 +932,7 @@ def build_server_laws_summary_payload(
         "promotion_blockers": promotion_blockers,
         "activation_gap": activation_gap,
         "runtime_shell_debt": runtime_shell_debt,
+        "runtime_convergence": runtime_convergence,
         "latest_projection_run": _serialize_run(current_run),
         "fill_check": fill_summary,
         "diff": diff_summary,
@@ -1064,6 +1115,11 @@ def build_server_laws_diff_payload(
         projection_bridge_lifecycle=projection_bridge_lifecycle,
         onboarding=dict(health_payload.get("onboarding") or {}),
     )
+    runtime_convergence = build_runtime_convergence_summary(
+        promotion_blockers=promotion_blockers,
+        activation_gap=activation_gap,
+        runtime_shell_debt=runtime_shell_debt,
+    )
     return {
         "server_code": normalized_server,
         "current_run": _serialize_run(current_run),
@@ -1078,5 +1134,6 @@ def build_server_laws_diff_payload(
         "promotion_blockers": promotion_blockers,
         "activation_gap": activation_gap,
         "runtime_shell_debt": runtime_shell_debt,
+        "runtime_convergence": runtime_convergence,
         "summary": diff_summary,
     }

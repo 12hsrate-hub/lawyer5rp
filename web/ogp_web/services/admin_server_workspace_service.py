@@ -11,6 +11,7 @@ from ogp_web.services.admin_server_laws_workspace_service import build_activatio
 from ogp_web.services.admin_server_laws_workspace_service import build_promotion_blockers_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_promotion_candidate_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_promotion_delta_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_runtime_convergence_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_shell_debt_summary
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -537,6 +538,26 @@ def _build_runtime_shell_debt_issue(runtime_shell_debt: dict[str, Any]) -> dict[
     }
 
 
+def _build_runtime_convergence_issue(runtime_convergence: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_convergence or {}).get("status") or "").strip().lower()
+    if status in {"", "converged"}:
+        return None
+    detail = (
+        f"{str((runtime_convergence or {}).get('detail') or '').strip()} "
+        f"blockers={str((runtime_convergence or {}).get('blockers_status') or 'unknown')} "
+        f"activation_gap={str((runtime_convergence or {}).get('activation_gap_status') or 'unknown')} "
+        f"shell_debt={str((runtime_convergence or {}).get('shell_debt_status') or 'unknown')}. "
+        f"{str((runtime_convergence or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "laws_runtime_convergence",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Runtime convergence требует внимания",
+        "detail": detail,
+    }
+
+
 def _build_issues_payload(
     *,
     health_payload: dict[str, Any],
@@ -550,6 +571,7 @@ def _build_issues_payload(
     promotion_blockers: dict[str, Any] | None = None,
     activation_gap: dict[str, Any] | None = None,
     runtime_shell_debt: dict[str, Any] | None = None,
+    runtime_convergence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     checks = dict(health_payload.get("checks") or {})
@@ -630,6 +652,9 @@ def _build_issues_payload(
     runtime_shell_debt_issue = _build_runtime_shell_debt_issue(dict(runtime_shell_debt or {}))
     if runtime_shell_debt_issue is not None:
         items.append(runtime_shell_debt_issue)
+    runtime_convergence_issue = _build_runtime_convergence_issue(dict(runtime_convergence or {}))
+    if runtime_convergence_issue is not None:
+        items.append(runtime_convergence_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -789,6 +814,11 @@ def build_server_workspace_payload(
         projection_bridge_lifecycle=projection_bridge_lifecycle,
         onboarding=dict(health_payload.get("onboarding") or {}),
     )
+    runtime_convergence = build_runtime_convergence_summary(
+        promotion_blockers=promotion_blockers,
+        activation_gap=activation_gap,
+        runtime_shell_debt=runtime_shell_debt,
+    )
     laws_summary = {
         "active_source_set_bindings": [
             {
@@ -814,6 +844,7 @@ def build_server_workspace_payload(
         "promotion_blockers": promotion_blockers,
         "activation_gap": activation_gap,
         "runtime_shell_debt": runtime_shell_debt,
+        "runtime_convergence": runtime_convergence,
         "health": (health_payload.get("checks") or {}).get("health", {}),
     }
     issues_payload = _build_issues_payload(
@@ -828,6 +859,7 @@ def build_server_workspace_payload(
         promotion_blockers=promotion_blockers,
         activation_gap=activation_gap,
         runtime_shell_debt=runtime_shell_debt,
+        runtime_convergence=runtime_convergence,
     )
     readiness_payload = _build_readiness_payload(
         laws_ready=bool((health_payload.get("checks") or {}).get("health", {}).get("ok")),

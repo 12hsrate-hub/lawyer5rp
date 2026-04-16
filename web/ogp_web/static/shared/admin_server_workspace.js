@@ -380,6 +380,7 @@ window.OGPAdminServerWorkspace = {
         const promotionBlockers = laws.promotion_blockers || state.lawsDiff?.promotion_blockers || {};
         const activationGap = laws.activation_gap || state.lawsDiff?.activation_gap || {};
         const runtimeShellDebt = laws.runtime_shell_debt || state.lawsDiff?.runtime_shell_debt || {};
+        const runtimeConvergence = laws.runtime_convergence || state.lawsDiff?.runtime_convergence || {};
         const effective = state.lawsEffective || {};
       const effectiveItems = Array.isArray(effective.items) ? effective.items.slice(0, 12) : [];
       const fillSummary = laws.fill_check || effective.summary || {};
@@ -464,6 +465,11 @@ window.OGPAdminServerWorkspace = {
               <span class="legal-field__label">Runtime shell debt</span>
               <div><strong>${escapeHtml(String(runtimeShellDebt.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeShellDebt.detail || "Runtime shell debt summary is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Runtime convergence</span>
+              <div><strong>${escapeHtml(String(runtimeConvergence.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeConvergence.detail || "Runtime convergence summary is not available yet."))}</div>
             </div>
         </div>
         <div class="legal-subcard">
