@@ -2,7 +2,7 @@
 
 Use this during the observation window after `orange` is activated as the first staged multi-server RC candidate.
 
-Status: pre-window ready  
+Status: Checkpoint 1 active  
 Date: 2026-04-16
 
 ## Checkpoint cadence
@@ -14,42 +14,42 @@ Date: 2026-04-16
 
 ## 1. Session metadata
 
-- Date: `fill per checkpoint`
+- Date: `2026-04-16`
 - Operator: `platform-ops`
 - Candidate server: `orange`
-- Observation window checkpoint: `Checkpoint 1 / 2 / 3 / 4`
+- Observation window checkpoint: `Checkpoint 1`
 
 ## 2. Stability checks
 
-- Runtime server state still expected:
-- Activation state still expected:
-- Warning signals count:
-- Neutral fallback unexpectedly used:
-- Rollback events since previous check:
+- Runtime server state still expected: `yes — orange runtime server record remains present`
+- Activation state still expected: `yes — orange is active after explicit RC-window activation`
+- Warning signals count: `0`
+- Neutral fallback unexpectedly used: `no`
+- Rollback events since previous check: `0`
 
 ## 3. Output / config quality
 
-- Runtime health still green:
-- Onboarding state still coherent:
-- Document-builder sample still `orange`-owned:
-- Law activation / rollback visibility intact:
-- Selected-server switching still safe:
+- Runtime health still green: `yes — application /health remains status=ok`
+- Onboarding state still coherent: `yes — workflow-ready, next_required_state=rollout-ready, resolution_mode=published_pack`
+- Document-builder sample still `orange`-owned: `yes — orange_appeal_admin_claim is present`
+- Law activation / rollback visibility intact: `yes — law_set_id=3, binding_count=1, active_law_version_id=203`
+- Selected-server switching still safe: `expected yes; no live regression observed at Checkpoint 1`
 
 ## 4. Async / operations
 
-- Deploy health remains green:
-- Synthetic smoke remains green:
-- New incidents:
+- Deploy health remains green: `yes — baseline deploy run 24489154809 is green`
+- Synthetic smoke remains green: `yes — pass on deploy run 24489154809`
+- New incidents: `none`
 
 ## 5. Decision for next checkpoint
 
-- Keep current mode:
-- Escalate investigation:
-- Roll back:
-- Prepare broader rollout:
+- Keep current mode: `yes`
+- Escalate investigation: `no`
+- Roll back: `no`
+- Prepare broader rollout: `not yet; continue checkpoint cadence`
 
 ## 6. Notes
 
-- Key findings:
-- Follow-up owner:
-- Follow-up deadline:
+- Key findings: `RC window opened successfully by explicit orange activation; no immediate blocker observed at T+0`
+- Follow-up owner: `platform-ops`
+- Follow-up deadline: `Checkpoint 2 at T+15m`

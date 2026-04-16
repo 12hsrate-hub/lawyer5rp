@@ -1,6 +1,6 @@
 # Orange Multi-Server RC Checklist
 
-Status: preflight-ready pending RC window  
+Status: RC window open; Checkpoint 1 in progress  
 Date: 2026-04-16
 
 ## Candidate
@@ -8,7 +8,7 @@ Date: 2026-04-16
 - Server: `orange`
 - Procedure scope: `runtime/admin/law/config surfaces only`
 - Owner: `platform-ops`
-- Planned rollout window: `next controlled production window after orange activation sign-off on main@9b687b2`
+- Planned rollout window: `opened on 2026-04-16T02:47:53Z after live orange preflight pass on main@916811f`
 - Claimed onboarding state: `workflow-ready pre-activation; rollout-ready verified after activation`
 
 ## Preconditions
@@ -34,17 +34,17 @@ Date: 2026-04-16
 
 ## Evidence to attach
 
-- Known-good deployed baseline commit: `9b687b2`
-- Known-good deployed `/health` baseline: `status=ok` from Deploy Production run `24488945906`
+- Known-good deployed baseline commit: `916811f`
+- Known-good deployed `/health` baseline: `status=ok` from Deploy Production run `24489154809`
 - RC transition package PR: `#307` — `https://github.com/12hsrate-hub/lawyer5rp/pull/307`
 - RC transition package merged commit: `c1dabbb451170008cedcb622951a14dd113b1908`
-- `orange` runtime server health payload: `live enablement snapshot 2026-04-16T02:37:44Z: server exists, is_active=false, highest_completed_state=workflow-ready, next_required_state=rollout-ready, resolution_mode=published_pack, uses_transitional_fallback=false`
+- `orange` runtime server health payload: `live preflight rerun 2026-04-16T02:47:53Z: pre-activation payload passed with server exists, is_active=false, highest_completed_state=workflow-ready, next_required_state=rollout-ready, resolution_mode=published_pack, uses_transitional_fallback=false; post-activation T+0 payload kept workflow-ready with activation=active`
 - `orange` document-builder bundle sample: `live enablement snapshot 2026-04-16T02:37:44Z: claim_kind_by_court_type.appeal includes orange_appeal_admin_claim and proves orange-owned metadata`
-- `orange` law set / law binding / rollback sample: `live enablement snapshot 2026-04-16T02:37:44Z: published law_set_id=3, one binding via source_id=1, active_law_version_id=199, rollback remains available through existing admin law-version flow`
+- `orange` law set / law binding / rollback sample: `live preflight rerun 2026-04-16T02:47:53Z: published law_set_id=3, one binding via source_id=1, active_law_version_id=203, rollback remains available through existing admin law-version flow`
 - CI Runtime result: `success` — `https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487677670`
 - UTF-8 check result: `success` — `https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487677658`
-- Deploy Production workflow result: `success` — `https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24488945906`
-- Synthetic smoke result: `pass` in Deploy Production run `24488945906`
+- Deploy Production workflow result: `success` — `https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24489154809`
+- Synthetic smoke result: `pass` in Deploy Production run `24489154809`
 
 ## Exit criteria
 
@@ -60,7 +60,7 @@ Date: 2026-04-16
   - `workflow-ready` regression evidence recorded via `tests/test_admin_runtime_servers_api.py` and `tests/test_admin_runtime_law_sets_api.py`
   - live orange enablement completed in production: runtime server row created inactive, published pack synced, published law set and binding seeded, active law version generated, and server returned to inactive state
   - admin/runtime visibility confirmed in targeted orange registry/runtime/law/document-builder regression coverage and live production snapshot
-  - known-good production smoke evidence collected for baseline commit `9b687b2`; orange-specific activation-window smoke evidence is still pending capture during the RC window
+  - known-good production smoke evidence collected for baseline commit `916811f`; activation-window RC opening used explicit orange activation on top of that baseline with no new code deploy required
 - skipped_items_with_justification:
   - `production-ready` is intentionally not claimed during first RC; it remains a manual sign-off state
   - second-server complaint runtime is intentionally out of scope for this RC

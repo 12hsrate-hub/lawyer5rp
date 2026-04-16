@@ -1,6 +1,6 @@
 # Orange Multi-Server RC Evidence
 
-Status: preflight-ready pending RC window  
+Status: RC window open; Checkpoint 1 active  
 Date: 2026-04-16
 
 ## Scope
@@ -60,10 +60,10 @@ Date: 2026-04-16
   - `success`
   - https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487677658
 - Current known-good deployed baseline:
-  - commit `9b687b2`
-  - Deploy Production run `24488945906`
-  - https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24488945906
-- Baseline production verification from run `24488945906`:
+  - commit `916811f`
+  - Deploy Production run `24489154809`
+  - https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24489154809
+- Baseline production verification from run `24489154809`:
   - `/health`: `status=ok`
   - deploy smoke: `passed`
   - synthetic smoke: `pass`
@@ -82,12 +82,12 @@ Date: 2026-04-16
 ## Live enablement snapshot
 
 - Snapshot time:
-  - `2026-04-16T02:37:44Z`
+  - `2026-04-16T02:47:53Z`
 - Current production baseline:
   - `/health = status=ok`
 - `orange` runtime server:
   - exists
-  - `is_active = false`
+  - `is_active = false` at preflight pass
   - title = `Orange`
 - `orange` admin health snapshot:
   - `highest_completed_state = workflow-ready`
@@ -97,7 +97,7 @@ Date: 2026-04-16
 - `orange` law runtime state:
   - published `law_set_id = 3`
   - binding count = `1`
-  - active `law_version_id = 199`
+  - active `law_version_id = 203`
   - rollback path remains the existing admin law-version flow
 - `orange` document-builder sample:
   - `claim_kind_by_court_type.appeal[0].value = orange_appeal_admin_claim`
@@ -108,21 +108,27 @@ Date: 2026-04-16
 ## Evidence to fill during RC rollout
 
 - Deploy Production run for RC window:
+- Deploy Production run for RC window:
+  - none required; RC window opened by explicit `orange` activation on deployed baseline `916811f`
 - `/health` result for RC window:
+  - `status=ok` at `2026-04-16T02:48:44Z`
 - Deploy smoke result for RC window:
+  - inherited green baseline from deploy run `24489154809`
 - Synthetic smoke result for RC window:
+  - inherited green baseline from deploy run `24489154809`
 - `orange` admin health payload snapshot:
-  - live enablement captured pre-activation at `2026-04-16T02:37:44Z`
+  - live preflight rerun captured pre-activation at `2026-04-16T02:47:53Z`
   - result: payload is operator-readable; `workflow-ready`, `published_pack`, inactive
+  - post-activation Checkpoint 1: activation became `active`; highest state remained `workflow-ready`; next state remained `rollout-ready`
 - `orange` document-builder sample:
-  - live enablement captured pre-activation at `2026-04-16T02:37:44Z`
+  - live preflight rerun captured pre-activation at `2026-04-16T02:47:53Z`
   - result: bundle resolves with orange-owned metadata
   - evidence:
     - `server = orange`
     - `claim_kind_by_court_type.appeal[0].value = orange_appeal_admin_claim`
     - orange-specific document-builder metadata is present
 - `orange` law rollback sample:
-  - live enablement captured pre-activation at `2026-04-16T02:37:44Z`
+  - live preflight rerun captured pre-activation at `2026-04-16T02:47:53Z`
   - result: published law set, binding, and active law version are present; rollback path is now explainable
 - Observation window status:
-  - RC window not opened; orange is ready for a fresh live preflight and activation decision
+  - RC window opened on `2026-04-16T02:47:53Z`; Checkpoint 1 is active

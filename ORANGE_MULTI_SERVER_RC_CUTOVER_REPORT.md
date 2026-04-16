@@ -2,12 +2,12 @@
 
 Use this record for the first multi-server RC candidate `orange`.
 
-Status: hold after live preflight  
+Status: proceed; RC window open  
 Date: 2026-04-16
 
 ## 1. Scope
 
-- Date: `next controlled production window after orange preflight sign-off on main@4b6049e`
+- Date: `2026-04-16T02:47:53Z RC window opened on main@916811f`
 - Operator: `platform-ops`
 - Server: `orange`
 - Procedure scope: `runtime/admin/law/config surfaces only`
@@ -18,48 +18,48 @@ Date: 2026-04-16
 
 ## 2. Preflight result
 
-- Orange checklist reviewed: `yes — live preflight executed at 2026-04-16T02:12:19Z`
-- Runtime server record exists: `no — orange is missing from production runtime server storage`
-- Published/bootstrap-backed config path verified: `no — cannot verify live runtime path while orange runtime server record is missing`
-- Warning signals clear: `no — live preflight found missing runtime server, missing law evidence, and missing orange-owned document-builder metadata`
+- Orange checklist reviewed: `yes — live preflight rerun executed at 2026-04-16T02:47:53Z`
+- Runtime server record exists: `yes — orange exists in production runtime server storage`
+- Published/bootstrap-backed config path verified: `yes — orange resolves through published_pack in live runtime`
+- Warning signals clear: `yes — no live pre-activation blockers remained at rerun time`
 - Fallback path understood: `yes`
-- Rollback path confirmed: `yes — deactivate orange; code-wide fallback to main@4b6049e via Deploy Production if needed`
-- Admin/runtime visibility available: `no — /api/admin/runtime-servers/orange/health has no live server payload because orange is absent`
-- Law set / law binding / active version evidence available: `no — live preflight found zero orange law sets, zero bindings, and no active law version`
-- Document-builder sample available: `yes — sample captured, but it shows only base court_claim fallback and does not prove orange-owned metadata`
+- Rollback path confirmed: `yes — deactivate orange; code-wide fallback to main@916811f via Deploy Production if needed`
+- Admin/runtime visibility available: `yes — operator-readable orange health payload is available pre- and post-activation`
+- Law set / law binding / active version evidence available: `yes — published law_set_id=3, binding count=1, active law_version_id=203`
+- Document-builder sample available: `yes — sample proves orange-owned metadata via orange_appeal_admin_claim`
 
 ## 3. Evidence
 
 - Dashboard runtime snapshot:
-  - live preflight timestamp: `2026-04-16T02:12:19Z`
-  - orange runtime server record: `missing`
-  - orange activation state: `not available because server record is missing`
+  - live preflight rerun timestamp: `2026-04-16T02:47:53Z`
+  - orange runtime server record: `present`
+  - orange activation state before GO: `inactive`
+  - orange activation state after GO: `active`
 - Runtime server health payload:
-  - live preflight result: `unavailable`
-  - reason: orange runtime server record is missing, so no operator-readable health payload can be captured
+  - pre-activation result: `highest_completed_state=workflow-ready`, `next_required_state=rollout-ready`, `resolution_mode=published_pack`, `uses_transitional_fallback=false`
+  - post-activation Checkpoint 1: `highest_completed_state=workflow-ready`, `next_required_state=rollout-ready`, `activation=active`
 - Document-builder payload sample:
-  - live preflight result: captured pre-activation
+  - live preflight result: captured pre-activation and verified again at Checkpoint 1
   - summary:
     - `server = orange`
     - `document_type = court_claim`
-    - `choice_sets.claim_kind_by_court_type = {}`
-    - `validators.required_fields_by_claim_kind = {}`
-    - sample does not show orange-owned metadata and therefore does not satisfy RC proof
+    - `choice_sets.claim_kind_by_court_type.appeal[0].value = orange_appeal_admin_claim`
+    - sample shows orange-owned metadata and satisfies RC proof
 - Law set / binding / rollback sample:
   - live preflight result:
-    - law sets: `[]`
-    - bindings: `[]`
-    - active law version: `null`
-    - rollback handle cannot be evidenced because no orange law runtime state exists
+    - law sets: `[3]`
+    - bindings: `1`
+    - active law version: `203`
+    - rollback handle: existing admin law-version rollback flow remains available
 - Deploy workflow:
-  - baseline known-good deploy run: `24487921717`
-  - RC window deploy run: `pending`
+  - baseline known-good deploy run: `24489154809`
+  - RC window deploy run: `not needed; activation opened RC window on current deploy baseline`
 - Health output:
-  - baseline: `status=ok` on main@`4b6049e`
-  - RC window: `pending`
+  - baseline: `status=ok` on main@`916811f`
+  - RC window: `status=ok` at `2026-04-16T02:48:44Z`
 - Synthetic smoke output:
-  - baseline: `pass` on deploy run `24487921717`
-  - RC window: `pending`
+  - baseline: `pass` on deploy run `24489154809`
+  - RC window: `inherited green baseline from deploy run 24489154809`
 
 ## 4. Decision
 
@@ -67,13 +67,13 @@ Date: 2026-04-16
   - `proceed`
   - `hold`
   - `rollback`
-- Decision: `hold`
-- Reason: `orange` is not present as a production runtime server; no live health payload, no law runtime evidence, and no orange-owned document-builder metadata could be confirmed
-- Required follow-up: `create and verify the orange runtime server record, publish/verify its live config-owned metadata, seed law set/binding/active version state, then rerun live preflight before activation`
+- Decision: `proceed`
+- Reason: `orange` passed the live preflight rerun while inactive and met the pre-activation GO gate for opening the RC window`
+- Required follow-up: `continue observation checkpoint cadence; verify rollout-ready evidence after activation without expanding scope`
 
 ## 5. Observation window
 
-- Window start: `pending RC activation`
+- Window start: `2026-04-16T02:47:53Z`
 - Window end: `pending RC sign-off`
 - Expected checks:
   - runtime health
