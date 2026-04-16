@@ -43,6 +43,12 @@ _BATCH_SCORING_CHUNK_SIZE = 12
 _RETRY_BATCH_SCORING_CHUNK_SIZE = 4
 _EXAM_RUBRIC_VERSION = "gta5rp_legal_v3"
 _EXAM_EMPTY_MARKERS = {"", "-", "—", "нет ответа", "n/a", "none", "null"}
+_EXAM_ABBREVIATION_EXPANSIONS: dict[str, str] = {
+    "зпвс": "заместитель председателя верховного суда",
+    "пвс": "председатель верховного суда",
+    "згп": "заместитель генерального прокурора",
+    "гп": "генеральный прокурор",
+}
 _NEGATION_WINDOW_PATTERN = re.compile(
     r"(?:\bне\b(?:\s+\w+){0,2}|\bnot\b(?:\s+\w+){0,2}|\bнельзя\b|\bзапрещено\b|\bнедопустимо\b)[\s:,-]{0,6}$",
     flags=re.IGNORECASE,
@@ -622,7 +628,12 @@ def extract_principal_fields(
 def _normalize_exam_answer(value: str) -> str:
     normalized = unicodedata.normalize("NFKC", str(value or ""))
     normalized = _normalize_exam_text_soft(normalized)
+    normalized = re.sub(r"(?<=\d)(?=[A-Za-zА-Яа-я])", " ", normalized)
+    normalized = re.sub(r"(?<=[A-Za-zА-Яа-я])(?=\d)", " ", normalized)
+    normalized = re.sub(r"\b(\d+)\s*ч\s*(\d+)\b", r"\1 ч \2", normalized, flags=re.IGNORECASE)
     normalized = re.sub(r"[^\w\s]+", " ", normalized.lower())
+    for token, expanded in _EXAM_ABBREVIATION_EXPANSIONS.items():
+        normalized = re.sub(rf"(?<!\w){re.escape(token)}(?!\w)", f"{token} {expanded}", normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
     return normalized
 
@@ -719,15 +730,32 @@ def _contains_explicit_negative_context(*, text: str, term_start: int) -> bool:
 
 
 def _contains_rule_term(answer: str, term: str) -> bool:
-    normalized_answer = _normalize_exam_text_soft(answer).lower()
-    normalized_term = _normalize_exam_text_soft(term).lower()
+    normalized_answer = _normalize_exam_answer(answer)
+    normalized_term = _normalize_exam_answer(term)
     if not normalized_term:
         return False
     pattern = re.compile(rf"(?<!\w){re.escape(normalized_term)}(?!\w)")
+    had_phrase_match = False
     for match in pattern.finditer(normalized_answer):
+        had_phrase_match = True
         if _contains_explicit_negative_context(text=normalized_answer, term_start=match.start()):
             continue
         return True
+    if had_phrase_match:
+        return False
+    answer_tokens = [token for token in normalized_answer.split() if token]
+    term_tokens = [token for token in normalized_term.split() if token]
+    if not answer_tokens or not term_tokens:
+        return False
+    answer_token_set = set(answer_tokens)
+    filtered_term_tokens = [token for token in term_tokens if len(token) > 2 or token.isdigit()]
+    if filtered_term_tokens and all(token in answer_token_set for token in filtered_term_tokens):
+        return True
+    term_numbers = set(re.findall(r"\d+", normalized_term))
+    answer_numbers = set(re.findall(r"\d+", normalized_answer))
+    if term_numbers and term_numbers.issubset(answer_numbers):
+        if ("ст" in term_tokens and "ст" in answer_token_set) or ("ч" in term_tokens and "ч" in answer_token_set):
+            return True
     return False
 
 
@@ -800,6 +828,112 @@ def _precheck_exam_item(item: dict[str, object]) -> dict[str, object]:
         "auto_decision": "llm",
         "semantic_hint_hits": marker_hits[:_PRECHECK_MIN_MARKER_HITS],
     }
+
+
+_LEGAL_CODE_TOKEN_MAP: dict[str, str] = {
+    "пк": "ПК",
+    "процессуаль": "ПК",
+    "ак": "АК",
+    "административ": "АК",
+    "дк": "ДК",
+    "дорож": "ДК",
+}
+
+
+def _extract_reference_components(value: str) -> dict[str, set[str]]:
+    normalized = _normalize_exam_answer(value)
+    tokens = normalized.split()
+    code_hits: set[str] = set()
+    for token in tokens:
+        for prefix, alias in _LEGAL_CODE_TOKEN_MAP.items():
+            if token.startswith(prefix):
+                code_hits.add(alias)
+    articles = set(re.findall(r"\bст(?:атья)?\s*(\d+(?:\.\d+)?)\b", normalized))
+    if not articles and code_hits:
+        articles = set(re.findall(r"\b\d+(?:\.\d+)?\b", normalized))
+    return {
+        "articles": articles,
+        "parts": set(re.findall(r"\bч(?:асть)?\s*(\d+)\b", normalized)),
+        "points": set(re.findall(r"\bп(?:ункт)?\s*([а-яa-z0-9]+)\b", normalized)),
+        "codes": code_hits,
+    }
+
+
+def _count_key_point_hits(candidate: str, key_points: list[str]) -> int:
+    return sum(1 for term in key_points if _contains_rule_term(candidate, str(term)))
+
+
+def _calibrate_exam_result(item: dict[str, object], result: dict[str, object]) -> dict[str, object]:
+    if not isinstance(result, dict):
+        return result
+    score = _coerce_exam_score(result.get("score", 1))
+    question_type = str(item.get("question_type") or "standard").strip().lower() or "standard"
+    candidate = str(item.get("candidate_raw") or item.get("candidate") or "")
+    reference = str(item.get("reference_raw") or item.get("reference") or "")
+    key_points = [str(point) for point in (item.get("key_points") or []) if str(point).strip()]
+    must_not_include = [str(point) for point in (item.get("must_not_include") or []) if str(point).strip()]
+
+    floor = 1
+    if question_type == "exact_ref":
+        user_ref = _extract_reference_components(candidate)
+        expected_ref = _extract_reference_components(reference)
+        article_match = bool(user_ref["articles"] & expected_ref["articles"])
+        code_match = bool(user_ref["codes"] & expected_ref["codes"])
+        required_parts = expected_ref["parts"]
+        required_points = expected_ref["points"]
+        part_ok = not required_parts or bool(user_ref["parts"] & required_parts)
+        point_ok = not required_points or bool(user_ref["points"] & required_points)
+        if article_match and code_match and part_ok and point_ok:
+            floor = max(floor, 82)
+        elif article_match and code_match:
+            floor = max(floor, 55)
+        elif article_match:
+            floor = max(floor, 40)
+
+    if key_points:
+        key_hits = _count_key_point_hits(candidate, key_points)
+        key_ratio = key_hits / len(key_points)
+        if question_type == "list_all":
+            if key_hits >= 1:
+                floor = max(floor, 30 + int(round(25 * key_ratio)))
+        else:
+            if key_ratio >= 0.66:
+                floor = max(floor, 60)
+            elif key_ratio >= 0.4:
+                floor = max(floor, 45)
+            elif key_hits >= 1:
+                floor = max(floor, 45)
+
+    candidate_tokens = set(_tokenize_exam_answer(candidate))
+    reference_tokens = set(_tokenize_exam_answer(reference))
+    if candidate_tokens and reference_tokens:
+        jaccard = _token_jaccard(candidate_tokens, reference_tokens)
+        candidate_numbers = _extract_numeric_tokens(candidate)
+        reference_numbers = _extract_numeric_tokens(reference)
+        if candidate_numbers & reference_numbers:
+            if jaccard >= 0.15:
+                floor = max(floor, 55)
+            elif jaccard >= 0.08:
+                floor = max(floor, 45)
+
+    user_ref = _extract_reference_components(candidate)
+    expected_ref = _extract_reference_components(reference)
+    if len(expected_ref["parts"]) == 1 and bool(user_ref["parts"] & expected_ref["parts"]):
+        floor = max(floor, 45)
+
+    if must_not_include:
+        must_hits = _count_key_point_hits(candidate, must_not_include)
+        if must_hits:
+            floor = min(floor, 72)
+
+    if floor > score:
+        adjusted = dict(result)
+        adjusted["score"] = floor
+        rationale = str(adjusted.get("rationale") or "").strip()
+        note = "Добавлен частичный зачет за корректное смысловое ядро при неполной/сокращенной формулировке."
+        adjusted["rationale"] = f"{rationale} {note}".strip()
+        return _normalize_exam_result(adjusted, fallback_rationale=DEFAULT_EXAM_RATIONALE)
+    return _normalize_exam_result(result, fallback_rationale=DEFAULT_EXAM_RATIONALE)
 
 
 def _build_exam_batches_by_budget(items: list[dict[str, object]], *, hard_item_limit: int) -> list[list[dict[str, object]]]:
@@ -921,6 +1055,20 @@ def _score_exam_answer_cached_or_estimated(
     must_not_include: list[str] | None = None,
     fatal_errors: list[str] | None = None,
 ) -> tuple[dict[str, object], bool]:
+    canonical_item = _canonicalize_exam_item(
+        {
+            "column": column,
+            "question": question,
+            "exam_type": exam_type,
+            "question_type": question_type,
+            "rubric_version": rubric_version,
+            "user_answer": user_answer,
+            "correct_answer": correct_answer,
+            "key_points": list(key_points or []),
+            "must_not_include": list(must_not_include or []),
+            "fatal_errors": list(fatal_errors or []),
+        }
+    )
     use_heuristic = _should_try_exam_heuristic(
         user_answer=user_answer,
         correct_answer=correct_answer,
@@ -932,7 +1080,7 @@ def _score_exam_answer_cached_or_estimated(
     )
     heuristic = _estimate_exam_score_without_llm(user_answer=user_answer, correct_answer=correct_answer) if use_heuristic else None
     if heuristic is not None:
-        return heuristic, False
+        return _calibrate_exam_result(canonical_item, heuristic), False
 
     cache_key = _build_exam_score_cache_key(
         cache,
@@ -949,7 +1097,7 @@ def _score_exam_answer_cached_or_estimated(
     )
     cached = cache.get(cache_key)
     if isinstance(cached, dict):
-        return _normalize_exam_result(cached, fallback_rationale=DEFAULT_EXAM_RATIONALE), False
+        return _calibrate_exam_result(canonical_item, _normalize_exam_result(cached, fallback_rationale=DEFAULT_EXAM_RATIONALE)), False
 
     response = client.responses.create(
         model=OPENAI_EXAM_SCORING_MODEL,
@@ -968,7 +1116,7 @@ def _score_exam_answer_cached_or_estimated(
         ),
     )
     payload = _extract_json_object(extract_response_text(response))
-    result = _normalize_exam_result(payload, fallback_rationale=DEFAULT_EXAM_RATIONALE)
+    result = _calibrate_exam_result(canonical_item, _normalize_exam_result(payload, fallback_rationale=DEFAULT_EXAM_RATIONALE))
     cache.set(cache_key, result)
     return result, True
 
@@ -1239,7 +1387,7 @@ def score_exam_answers_batch_with_proxy_fallback(
         )
         heuristic = _estimate_exam_score_without_llm(user_answer=user_answer, correct_answer=correct_answer) if use_heuristic else None
         if heuristic is not None:
-            exact_results[column] = heuristic
+            exact_results[column] = _calibrate_exam_result(canonical_item, heuristic)
             stats["heuristic_count"] += 1
             continue
 
@@ -1260,7 +1408,10 @@ def score_exam_answers_batch_with_proxy_fallback(
         )
         cached = cache.get(cache_key)
         if isinstance(cached, dict):
-            exact_results[column] = _normalize_exam_result(cached, fallback_rationale=DEFAULT_EXAM_RATIONALE)
+            exact_results[column] = _calibrate_exam_result(
+                canonical_item,
+                _normalize_exam_result(cached, fallback_rationale=DEFAULT_EXAM_RATIONALE),
+            )
             stats["cache_hit_count"] += 1
             continue
         pending_items.append(canonical_item)
@@ -1336,7 +1487,8 @@ def score_exam_answers_batch_with_proxy_fallback(
                 column = str(item["column"])
                 payload = raw_by_column.get(_normalize_exam_column_key(column))
                 normalized_result = _normalize_exam_result(payload, fallback_rationale=DEFAULT_INVALID_BATCH_RATIONALE)
-                chunk_results[column] = normalized_result
+                calibrated_result = _calibrate_exam_result(item, normalized_result)
+                chunk_results[column] = calibrated_result
                 per_item_cache_key = _build_exam_score_cache_key(
                     cache,
                     user_answer=str(item.get("candidate_raw") or item.get("candidate") or ""),
@@ -1350,7 +1502,7 @@ def score_exam_answers_batch_with_proxy_fallback(
                     must_not_include=[str(point).strip() for point in (item.get("must_not_include") or []) if str(point).strip()],
                     fatal_errors=[str(point).strip() for point in (item.get("fatal_errors") or []) if str(point).strip()],
                 )
-                cache.set(per_item_cache_key, normalized_result)
+                cache.set(per_item_cache_key, calibrated_result)
             cache.set(cache_key, chunk_results)
             all_results.update(chunk_results)
         return all_results
