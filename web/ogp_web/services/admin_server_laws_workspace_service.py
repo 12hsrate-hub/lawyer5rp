@@ -666,6 +666,58 @@ def build_promotion_blockers_summary(
     }
 
 
+def build_activation_gap_summary(
+    *,
+    projection_bridge_readiness: dict[str, Any],
+    runtime_version_parity: dict[str, Any],
+    projection_bridge_lifecycle: dict[str, Any],
+    promotion_blockers: dict[str, Any],
+) -> dict[str, Any]:
+    readiness = dict(projection_bridge_readiness or {})
+    version_parity = dict(runtime_version_parity or {})
+    lifecycle = dict(projection_bridge_lifecycle or {})
+    blockers = dict(promotion_blockers or {})
+
+    readiness_status = str(readiness.get("status") or "").strip().lower()
+    version_status = str(version_parity.get("status") or "").strip().lower()
+    lifecycle_status = str(lifecycle.get("status") or "").strip().lower()
+
+    if lifecycle_status == "activated" and version_status == "aligned":
+        status = "closed"
+        detail = "Latest promoted projection matches the active runtime shell."
+        next_step = "Activation gap is closed."
+    elif lifecycle_status in {"preview_only", "materialized"} or version_status in {"legacy_only", "pending_activation"}:
+        status = "open"
+        detail = "Latest promoted projection still has not reached the active runtime shell."
+        next_step = str(readiness.get("next_step") or "Нужен controlled activation step после проверки кандидата.").strip()
+    elif lifecycle_status == "drifted" or version_status == "drift":
+        status = "drift"
+        detail = "Active runtime shell no longer matches the promoted projection baseline."
+        next_step = "Сверьте active runtime shell и promoted projection, затем выполните безопасный recheck."
+    elif readiness_status == "not_configured":
+        status = "not_ready"
+        detail = str(readiness.get("detail") or "Projection bridge is not configured yet.")
+        next_step = str(readiness.get("next_step") or "Сначала завершите настройку bindings и preview.").strip()
+    elif str(blockers.get("status") or "").strip().lower() == "blocked":
+        status = "blocked"
+        detail = "Activation gap is still masked by upstream promotion blockers."
+        next_step = str(blockers.get("next_step") or "Сначала снимите promotion blockers.").strip()
+    else:
+        status = "unknown"
+        detail = "Activation gap could not be classified from the current read model."
+        next_step = "Проверьте runtime parity и bridge lifecycle."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "active_law_version_id": version_parity.get("active_law_version_id"),
+        "projected_law_version_id": version_parity.get("projected_law_version_id"),
+        "lifecycle_status": lifecycle_status,
+        "version_status": version_status,
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -739,6 +791,12 @@ def build_server_laws_summary_payload(
         runtime_version_parity=runtime_version_parity,
         projection_bridge_lifecycle=projection_bridge_lifecycle,
     )
+    activation_gap = build_activation_gap_summary(
+        projection_bridge_readiness=bridge_readiness,
+        runtime_version_parity=runtime_version_parity,
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+        promotion_blockers=promotion_blockers,
+    )
     return {
         "server_code": normalized_server,
         "bindings": bindings,
@@ -754,6 +812,7 @@ def build_server_laws_summary_payload(
         "promotion_candidate": promotion_candidate,
         "promotion_delta": promotion_delta,
         "promotion_blockers": promotion_blockers,
+        "activation_gap": activation_gap,
         "latest_projection_run": _serialize_run(current_run),
         "fill_check": fill_summary,
         "diff": diff_summary,
@@ -924,6 +983,12 @@ def build_server_laws_diff_payload(
         runtime_version_parity=runtime_version_parity,
         projection_bridge_lifecycle=projection_bridge_lifecycle,
     )
+    activation_gap = build_activation_gap_summary(
+        projection_bridge_readiness=bridge_readiness,
+        runtime_version_parity=runtime_version_parity,
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+        promotion_blockers=promotion_blockers,
+    )
     return {
         "server_code": normalized_server,
         "current_run": _serialize_run(current_run),
@@ -936,5 +1001,6 @@ def build_server_laws_diff_payload(
         "promotion_candidate": promotion_candidate,
         "promotion_delta": promotion_delta,
         "promotion_blockers": promotion_blockers,
+        "activation_gap": activation_gap,
         "summary": diff_summary,
     }
