@@ -82,6 +82,14 @@ class _Connection:
             self.next_item_id += 1
             self.items.append(row)
             return _Cursor(one=row)
+        if normalized.startswith("UPDATE server_effective_law_projection_runs SET status = %s, summary_json = %s::jsonb WHERE id = %s RETURNING id, server_code, trigger_mode, status, summary_json, created_at"):
+            status, summary_json, run_id = params
+            row = next((row for row in self.runs if int(row["id"]) == int(run_id)), None)
+            if row is None:
+                return _Cursor(one=None)
+            row["status"] = str(status)
+            row["summary_json"] = dict(summary_json)
+            return _Cursor(one=row)
         raise AssertionError(f"Unsupported query: {normalized}")
 
     def commit(self):
@@ -121,3 +129,15 @@ def test_server_effective_law_projections_store_creates_and_lists_runs_and_items
     assert item.id == 1
     assert store.list_runs(server_code="orange")[0].id == 1
     assert store.list_items(projection_run_id=run.id)[0].selected_document_version_id == 5
+
+
+def test_server_effective_law_projections_store_updates_run_status():
+    store = ServerEffectiveLawProjectionsStore(_Backend())
+    run = store.create_projection_run(server_code="orange", summary_json={"selected_count": 1})
+    updated = store.update_run_status(
+        run_id=run.id,
+        status="approved",
+        summary_json={"selected_count": 1, "decision_status": "approved"},
+    )
+    assert updated.status == "approved"
+    assert updated.summary_json["decision_status"] == "approved"

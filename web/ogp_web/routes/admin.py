@@ -35,6 +35,7 @@ from ogp_web.schemas import (
     AdminCanonicalLawDocumentVersionIngestPayload,
     AdminCanonicalLawDocumentVersionParsePayload,
     AdminLawProjectionRunPayload,
+    AdminLawProjectionDecisionPayload,
     AdminDeactivatePayload,
     AdminEmailUpdatePayload,
     AdminExamScoreResetPayload,
@@ -186,6 +187,7 @@ from ogp_web.services.admin_law_source_sets_service import (
     list_source_sets_payload,
 )
 from ogp_web.services.admin_law_projection_service import (
+    decide_server_effective_law_projection_payload,
     list_server_effective_law_projection_items_payload,
     list_server_effective_law_projection_runs_payload,
     preview_server_effective_law_projection_payload,
@@ -1038,6 +1040,70 @@ async def admin_runtime_server_law_projection_preview(
             "run_id": (result.get("run") or {}).get("id"),
             "reused_run": bool(result.get("reused_run")),
         },
+    )
+    return result
+
+
+@router.post("/api/admin/law-projection-runs/{run_id}/approve")
+async def admin_law_projection_run_approve(
+    run_id: int,
+    payload: AdminLawProjectionDecisionPayload,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        result = decide_server_effective_law_projection_payload(
+            projections_store=projections_store,
+            run_id=run_id,
+            status="approved",
+            decided_by=user.username,
+            reason=payload.reason,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_law_projection_run_approve",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/law-projection-runs/{int(run_id)}/approve",
+        method="POST",
+        status_code=200,
+        meta={"run_id": int(run_id), "status": "approved"},
+    )
+    return result
+
+
+@router.post("/api/admin/law-projection-runs/{run_id}/hold")
+async def admin_law_projection_run_hold(
+    run_id: int,
+    payload: AdminLawProjectionDecisionPayload,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        result = decide_server_effective_law_projection_payload(
+            projections_store=projections_store,
+            run_id=run_id,
+            status="held",
+            decided_by=user.username,
+            reason=payload.reason,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_law_projection_run_hold",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/law-projection-runs/{int(run_id)}/hold",
+        method="POST",
+        status_code=200,
+        meta={"run_id": int(run_id), "status": "held"},
     )
     return result
 

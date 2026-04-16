@@ -152,6 +152,48 @@ def list_server_effective_law_projection_items_payload(
     }
 
 
+def decide_server_effective_law_projection_payload(
+    *,
+    projections_store: ServerEffectiveLawProjectionsStore,
+    run_id: int,
+    status: str,
+    decided_by: str,
+    reason: str = "",
+) -> dict[str, Any]:
+    if int(run_id) <= 0:
+        raise ValueError("server_effective_law_projection_run_id_required")
+    run = projections_store.get_run(run_id=int(run_id))
+    if run is None:
+        raise KeyError("server_effective_law_projection_run_not_found")
+    normalized_status = str(status or "").strip().lower()
+    if normalized_status not in {"approved", "held"}:
+        raise ValueError("server_effective_law_projection_status_invalid")
+    updated_summary = dict(run.summary_json or {})
+    updated_summary.update(
+        {
+            "decision_status": normalized_status,
+            "decision_reason": str(reason or "").strip(),
+            "decided_by": str(decided_by or "").strip(),
+        }
+    )
+    updated = projections_store.update_run_status(
+        run_id=int(run_id),
+        status=normalized_status,
+        summary_json=updated_summary,
+    )
+    return {
+        "ok": True,
+        "run": {
+            "id": updated.id,
+            "server_code": updated.server_code,
+            "trigger_mode": updated.trigger_mode,
+            "status": updated.status,
+            "summary_json": dict(updated.summary_json),
+            "created_at": updated.created_at,
+        },
+    }
+
+
 def preview_server_effective_law_projection_payload(
     *,
     source_sets_store: LawSourceSetsStore,
