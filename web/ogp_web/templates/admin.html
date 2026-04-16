@@ -42,8 +42,8 @@
     </header>
     {% include "partials/page_nav.html" %}
     <nav class="segmented-tabs segmented-tabs--section" aria-label="Режим админки">
-      <a class="segmented-tabs__item{% if admin_focus == 'dashboard' %} is-active{% endif %}" href="/admin/dashboard">Сводка</a>
-      <a class="segmented-tabs__item{% if admin_focus == 'users' %} is-active{% endif %}" href="/admin/users">Пользователи и аудит</a>
+      <a class="segmented-tabs__item{% if admin_focus == 'dashboard' %} is-active{% endif %}" href="/admin/dashboard">Сводка · Ops</a>
+      <a class="segmented-tabs__item{% if admin_focus == 'users' %} is-active{% endif %}" href="/admin/users">Пользователи и аудит · Global</a>
       <a class="segmented-tabs__item{% if admin_focus == 'servers' %} is-active{% endif %}" href="/admin/servers">Серверы · Основное</a>
       <a class="segmented-tabs__item{% if admin_focus == 'laws' %} is-active{% endif %}" href="/admin/laws">Законы · Диагностика</a>
     </nav>
@@ -121,9 +121,15 @@
           {% endif %}
           {% else %}
           <p class="legal-section__eyebrow">Администрирование</p>
-          <h1 class="legal-section__title">Панель ресурсов и активности</h1>
+          <h1 class="legal-section__title">{% if admin_focus == "dashboard" %}Global ops workspace{% elif admin_focus == "users" %}Global users and audit{% else %}Панель ресурсов и активности{% endif %}</h1>
           <p class="legal-section__description">
+            {% if admin_focus == "dashboard" %}
+            Глобальная сводка по операциям, jobs, synthetic checks и rollout-сигналам. Для повседневной работы по конкретному серверу используйте /admin/servers.
+            {% elif admin_focus == "users" %}
+            Глобальное управление пользователями, аудитом и историей ролей. Настройка конкретного сервера начинается с /admin/servers и карточки сервера.
+            {% else %}
             Здесь собрана сводка по пользователям, запросам к API, AI-операциям, оцениванию экзамена и итоговым документам.
+            {% endif %}
           </p>
           {% endif %}
         </div>
@@ -131,6 +137,26 @@
 
       <div id="admin-errors" class="errors legal-message ui-state ui-state--idle" hidden></div>
       <div id="admin-message" class="success-box legal-message ui-state ui-state--idle" hidden></div>
+
+      {% if admin_focus in ["dashboard", "users"] %}
+      <section class="legal-subcard">
+        <div class="legal-subcard__header">
+          <div>
+            <span class="legal-field__label">{% if admin_focus == "dashboard" %}Global ops{% else %}Global admin surface{% endif %}</span>
+            <p class="legal-section__description">
+              {% if admin_focus == "dashboard" %}
+              Этот экран предназначен для глобальных ops и platform-wide сигналов. Основной рабочий путь по серверу начинается с <a class="button-link ghost-button" href="/admin/servers">/admin/servers</a>.
+              {% else %}
+              Этот экран предназначен для глобального user/admin контроля. Для server-centric настройки используйте <a class="button-link ghost-button" href="/admin/servers">/admin/servers</a> и карточку конкретного сервера.
+              {% endif %}
+            </p>
+          </div>
+          <div class="admin-section-toolbar">
+            <a class="button-link primary-button" href="/admin/servers">Открыть server workspace</a>
+          </div>
+        </div>
+      </section>
+      {% endif %}
 
       {% if admin_focus == "servers" and admin_server_code %}
       <section id="admin-server-workspace" class="legal-subcard" data-server-code="{{ admin_server_code }}">

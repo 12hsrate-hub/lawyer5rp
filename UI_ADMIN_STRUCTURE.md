@@ -1,28 +1,39 @@
 # UI_ADMIN_STRUCTURE.md
 
-Status: draft  
-Date: 2026-04-14  
-Phase: `Phase C`
+Status: active
+Date: 2026-04-16
+Phase: `Server-centric MVP`
 
 ## Purpose
 
-Define the first read-only split of the admin UI so the runtime/configuration surface is navigable by domain before editable workflows are expanded.
+Define the current admin information architecture after the server-centric workspace became the primary operator path.
 
-## Active scope
+## Primary entrypoints
 
-This first pass covers the catalog-oriented admin pages:
+The primary admin workspace is:
 
 - `/admin/servers`
-- `/admin/laws`
-- `/admin/templates`
-- `/admin/features`
-- `/admin/rules`
+- `/admin/servers/{server_code}`
 
-The goal is separation by domain boundary, not a full frontend rewrite.
+Compatibility and secondary entrypoints remain available:
+
+- `/admin/dashboard`
+- `/admin/users`
+- `/admin/servers`
+- `/admin/laws`
+
+Route policy:
+
+- `/admin/servers` is the default starting point for day-to-day admin work.
+- `/admin/servers/{server_code}` is the primary workspace for server-specific operations.
+- `/admin/laws` remains an advanced diagnostics and compatibility surface.
+- `/admin/dashboard` remains the global ops surface.
+- `/admin/users` remains the global user/audit surface.
+- `/admin/templates`, `/admin/features`, and `/admin/rules` are no longer primary entrypoints and should not be restored as top-level operator tabs.
 
 ## Domain map
 
-### Dashboard
+### Dashboard / Ops
 
 - Route entry: `/admin`, `/admin/dashboard`
 - Primary concerns:
@@ -41,93 +52,81 @@ The goal is separation by domain boundary, not a full frontend rewrite.
   - event stream
   - cost / model policy / AI pipeline visibility
 
-### Runtime and catalog domain
+### Server-centric workspace
 
 - Route entry:
   - `/admin/servers`
-  - `/admin/laws`
-  - `/admin/templates`
-  - `/admin/features`
-  - `/admin/rules`
+  - `/admin/servers/{server_code}`
 - Primary concerns:
-  - runtime server inventory
-  - law source and law-set bindings
-  - catalog entities and versions
-  - publication state
-  - audit trail
+  - overview and readiness
+  - server laws
+  - server features
+  - output templates
+  - users and access
+  - audit and issues
+  - diagnostics handoff
 
-## First read-only slice
+### Compatibility / advanced law domain
 
-The first vertical slice is the runtime and catalog domain because it is directly tied to the migration pilot `blackberry + complaint`.
+- Route entry:
+  - `/admin/laws`
+- Primary concerns:
+  - raw law diagnostics
+  - legacy/runtime detail
+  - compatibility-backed law workflows
+  - source-set and binding internals
 
-### Read-only modules inside the slice
+## Current operating model
 
-1. Domain summary
-   - What this page controls
-   - Which entities are in scope
-   - Whether the current pass is read-only or workflow-enabled
-2. Runtime inventory
-   - Server list
-   - Active/inactive state
-   - Health snapshot
-3. Catalog inventory
-   - Entity list
-   - Current status
-   - Version history preview
-4. Publication and audit context
-   - Draft/published state
-   - Last change metadata
-   - Rollback availability
+The current operator happy path is:
 
-### Explicit subdomain splits inside the slice
+1. `/admin/servers`
+2. open `/admin/servers/{server_code}`
+3. work through:
+   - `Законы`
+   - `Функции`
+   - `Шаблоны вывода`
+   - `Пользователи`
+   - `Роли / Доступ`
+   - `Аудит`
+   - `Ошибки / Проблемы`
 
-The catalog slice is now separated in the page shell into the following read-only subdomains:
+Advanced paths stay secondary and must not compete visually with the server-centric workspace.
 
-- `Servers`
-  - runtime inventory
-  - activation state
-  - health checks
-  - linked configuration boundary
-- `Laws`
-  - law sources
-  - law sets
-  - source registry
-  - server bindings
-- `Templates`
-  - document templates
-  - preview and version context
-- `Features`
-  - capability configuration
-  - scenario impact labels
-- `Rules`
-  - validation rules
-  - publishability and runtime gating context
+### Secondary surfaces
 
-These splits are represented in the page shell before any new mutation workflows are introduced.
+- `/admin/dashboard`
+  - global operations, jobs, synthetic, rollout signals
+- `/admin/users`
+  - global users, role history, event stream, AI/cost policy
+- `/admin/laws`
+  - advanced law diagnostics and compatibility-backed internals
 
 ## Boundary rules
 
-- Keep existing route contracts and admin APIs unchanged in Phase C.
-- Do not expand mutation logic while splitting read-only structure.
-- Preserve existing catalog modal flows until Phase D replaces them with explicit draft/publish workflows.
-- Prefer `admin_focus` domain separation over adding more conditionals inside one mega-section.
+- Keep runtime behavior unchanged.
+- Keep canonical law-domain architecture unchanged.
+- Do not restore old law-centric or catalog-centric screens as equal primary paths.
+- Prefer server-centric UX for any operator-facing addition that is server-scoped.
+- Keep diagnostics and compatibility entrypoints reachable, but visually secondary.
 
-## Rendering rules for the first pass
+## Rendering rules
 
-- Each catalog-oriented page must expose:
-  - a clear page-domain summary
-  - visible boundary labels for runtime inventory vs catalog inventory
-  - explicit migration note when a section is still backed by legacy workflow internals
+- Each admin surface must clearly indicate whether it is:
+  - primary workspace
+  - global ops/global admin
+  - advanced diagnostics / compatibility
+- Server-specific work must point users back to `/admin/servers/{server_code}`.
 - Raw internal identifiers should not be the primary visible label.
 - User-facing copy should prefer domain language from `docs/ADMIN_GLOSSARY.md`.
 
-## What Phase C does not do
+## What this structure does not do
 
 - No full component-library rewrite
-- No replacement of existing admin mutation handlers
-- No new backend orchestration paths
-- No cross-domain admin shell redesign
+- No deletion of legacy backend seams that still back compatibility flows
+- No return to flat per-server law source modeling
+- No requirement that every global screen be moved into the server card if it is truly global by nature
 
 ## Next structural step
 
-After the read-only page shells are stable, the next step is to move from page-level domain guidance to clearer per-domain read-only section contracts and then editable workflows in Phase D.
+After primary/advanced policy is fully stable, the next step is to continue progressive redirect and compatibility reduction without breaking raw diagnostic access.

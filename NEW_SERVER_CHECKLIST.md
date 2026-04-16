@@ -21,6 +21,7 @@ Required:
 Required:
 - feature flags / rollout defaults are defined
 - admin visibility exists
+- server workspace path is confirmed in `/admin/servers/{server_code}`
 - smoke tests passed
 
 ### production-ready
