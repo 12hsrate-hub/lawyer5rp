@@ -12,6 +12,7 @@ from ogp_web.dependencies import (
     get_admin_analytics_service,
     get_admin_ai_pipeline_service,
     get_admin_dashboard_service,
+    get_law_source_discovery_store,
     get_law_source_sets_store,
     get_admin_metrics_store,
     get_admin_task_ops_service,
@@ -145,7 +146,12 @@ from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
 from ogp_web.storage.runtime_servers_store import RuntimeServerRecord, RuntimeServersStore
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
+from ogp_web.storage.law_source_discovery_store import LawSourceDiscoveryStore
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
+from ogp_web.services.admin_law_source_discovery_service import (
+    list_discovery_run_links_payload,
+    list_source_set_discovery_runs_payload,
+)
 from ogp_web.services.admin_law_source_sets_service import (
     list_server_source_set_bindings_payload,
     list_source_set_revisions_payload,
@@ -567,6 +573,63 @@ async def admin_law_source_set_revisions(
         method="GET",
         status_code=200,
         meta={"count": payload["count"], "source_set_key": payload["source_set"]["source_set_key"]},
+    )
+    return payload
+
+
+@router.get("/api/admin/law-source-sets/{source_set_key}/discovery-runs")
+async def admin_law_source_set_discovery_runs(
+    source_set_key: str,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    discovery_store: LawSourceDiscoveryStore = Depends(get_law_source_discovery_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    _ = user
+    try:
+        payload = list_source_set_discovery_runs_payload(
+            source_sets_store=source_sets_store,
+            discovery_store=discovery_store,
+            source_set_key=source_set_key,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_law_source_discovery_runs_list",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/law-source-sets/{str(source_set_key or '').strip().lower()}/discovery-runs",
+        method="GET",
+        status_code=200,
+        meta={"count": payload["count"], "source_set_key": payload["source_set"]["source_set_key"]},
+    )
+    return payload
+
+
+@router.get("/api/admin/law-source-discovery-runs/{run_id}/links")
+async def admin_law_source_discovery_run_links(
+    run_id: int,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    discovery_store: LawSourceDiscoveryStore = Depends(get_law_source_discovery_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    _ = user
+    try:
+        payload = list_discovery_run_links_payload(discovery_store=discovery_store, run_id=run_id)
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_law_source_discovery_run_links_list",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/law-source-discovery-runs/{int(run_id)}/links",
+        method="GET",
+        status_code=200,
+        meta={"count": payload["count"], "run_id": int(run_id)},
     )
     return payload
 
