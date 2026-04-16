@@ -168,6 +168,46 @@ class CanonicalLawDocumentVersionsStore:
             (int(canonical_law_document_id),),
         )
 
+    def list_parsed_versions_for_source_sets(self, *, source_set_keys: list[str] | tuple[str, ...]) -> list[CanonicalLawDocumentVersionRecord]:
+        normalized_keys = [str(item or "").strip().lower() for item in source_set_keys if str(item or "").strip()]
+        if not normalized_keys:
+            return []
+        placeholders = ", ".join(["%s"] * len(normalized_keys))
+        return self._fetch_records(
+            f"""
+            SELECT
+                v.id,
+                v.canonical_law_document_id,
+                d.canonical_identity_key,
+                d.display_title,
+                v.source_discovery_run_id,
+                v.discovered_law_link_id,
+                rev.source_set_key,
+                l.source_set_revision_id,
+                rev.revision,
+                l.normalized_url,
+                l.source_container_url,
+                v.fetch_status,
+                v.parse_status,
+                v.content_checksum,
+                v.raw_title,
+                v.parsed_title,
+                v.body_text,
+                v.metadata_json,
+                v.created_at,
+                v.updated_at
+            FROM canonical_law_document_versions AS v
+            JOIN canonical_law_documents AS d ON d.id = v.canonical_law_document_id
+            JOIN discovered_law_links AS l ON l.id = v.discovered_law_link_id
+            JOIN source_set_revisions AS rev ON rev.id = l.source_set_revision_id
+            WHERE rev.source_set_key IN ({placeholders})
+              AND v.fetch_status = 'fetched'
+              AND v.parse_status = 'parsed'
+            ORDER BY v.updated_at DESC, v.id DESC
+            """,
+            tuple(normalized_keys),
+        )
+
     def get_version_by_discovered_link(self, *, discovered_law_link_id: int) -> CanonicalLawDocumentVersionRecord | None:
         records = self._fetch_records(
             """

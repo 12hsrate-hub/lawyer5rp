@@ -16,6 +16,7 @@ from ogp_web.dependencies import (
     get_canonical_law_document_versions_store,
     get_law_source_discovery_store,
     get_law_source_sets_store,
+    get_server_effective_law_projections_store,
     get_admin_metrics_store,
     get_admin_task_ops_service,
     get_exam_answers_store,
@@ -33,6 +34,7 @@ from ogp_web.schemas import (
     AdminCanonicalLawDocumentVersionFetchPayload,
     AdminCanonicalLawDocumentVersionIngestPayload,
     AdminCanonicalLawDocumentVersionParsePayload,
+    AdminLawProjectionRunPayload,
     AdminDeactivatePayload,
     AdminEmailUpdatePayload,
     AdminExamScoreResetPayload,
@@ -157,6 +159,7 @@ from ogp_web.storage.canonical_law_documents_store import CanonicalLawDocumentsS
 from ogp_web.storage.canonical_law_document_versions_store import CanonicalLawDocumentVersionsStore
 from ogp_web.storage.law_source_discovery_store import LawSourceDiscoveryStore
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
+from ogp_web.storage.server_effective_law_projections_store import ServerEffectiveLawProjectionsStore
 from ogp_web.services.admin_canonical_law_documents_service import (
     ingest_discovery_run_documents_payload,
     list_discovery_run_documents_payload,
@@ -181,6 +184,11 @@ from ogp_web.services.admin_law_source_sets_service import (
     list_server_source_set_bindings_payload,
     list_source_set_revisions_payload,
     list_source_sets_payload,
+)
+from ogp_web.services.admin_law_projection_service import (
+    list_server_effective_law_projection_items_payload,
+    list_server_effective_law_projection_runs_payload,
+    preview_server_effective_law_projection_payload,
 )
 from ogp_web.web import page_context, templates
 
@@ -748,6 +756,59 @@ async def admin_canonical_law_document_versions(
     return payload
 
 
+@router.get("/api/admin/runtime-servers/{server_code}/law-projection-runs")
+async def admin_runtime_server_law_projection_runs(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    _ = user
+    payload = list_server_effective_law_projection_runs_payload(
+        projections_store=projections_store,
+        server_code=server_code,
+    )
+    metrics_store.log_event(
+        event_type="admin_runtime_server_law_projection_runs_list",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/runtime-servers/{str(server_code or '').strip().lower()}/law-projection-runs",
+        method="GET",
+        status_code=200,
+        meta={"count": payload["count"], "server_code": payload["server_code"]},
+    )
+    return payload
+
+
+@router.get("/api/admin/law-projection-runs/{run_id}/items")
+async def admin_law_projection_run_items(
+    run_id: int,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    _ = user
+    try:
+        payload = list_server_effective_law_projection_items_payload(
+            projections_store=projections_store,
+            run_id=run_id,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_law_projection_run_items_list",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/law-projection-runs/{int(run_id)}/items",
+        method="GET",
+        status_code=200,
+        meta={"count": payload["count"], "run_id": int(run_id)},
+    )
+    return payload
+
+
 @router.post("/api/admin/law-source-sets/{source_set_key}/discovery-runs")
 async def admin_law_source_set_discovery_runs_execute(
     source_set_key: str,
@@ -937,6 +998,45 @@ async def admin_law_source_discovery_run_parse_document_versions(
             "changed": bool(result.get("changed")),
             "parsed_versions": int(result.get("parsed_versions") or 0),
             "failed_versions": int(result.get("failed_versions") or 0),
+        },
+    )
+    return result
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/law-projection-runs")
+async def admin_runtime_server_law_projection_preview(
+    server_code: str,
+    payload: AdminLawProjectionRunPayload,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    versions_store: CanonicalLawDocumentVersionsStore = Depends(get_canonical_law_document_versions_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        result = preview_server_effective_law_projection_payload(
+            source_sets_store=source_sets_store,
+            versions_store=versions_store,
+            projections_store=projections_store,
+            server_code=server_code,
+            trigger_mode=payload.trigger_mode,
+            safe_rerun=payload.safe_rerun,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_runtime_server_law_projection_preview",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/runtime-servers/{str(server_code or '').strip().lower()}/law-projection-runs",
+        method="POST",
+        status_code=200,
+        meta={
+            "count": result["count"],
+            "run_id": (result.get("run") or {}).get("id"),
+            "reused_run": bool(result.get("reused_run")),
         },
     )
     return result
