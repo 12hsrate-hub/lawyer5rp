@@ -15,6 +15,9 @@
   - row scoring
 
 Primary operator surface:
+- `/admin/ops`
+
+Compatibility route:
 - `/admin/dashboard`
 
 Primary ops endpoints:
@@ -27,7 +30,7 @@ Primary ops endpoints:
 
 ## What To Check First
 
-1. Open `/admin/dashboard`.
+1. Open `/admin/ops` (or `/admin/dashboard`, if you are using the compatibility route).
 2. Review three blocks in order:
    - `Async Jobs`
    - `Law rebuild tasks`

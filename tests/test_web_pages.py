@@ -191,7 +191,7 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn("Global ops", response.text)
         self.assertIn("Открыть server workspace", response.text)
         self.assertIn("Secondary global surface", response.text)
-        self.assertIn('href="/admin/users"', response.text)
+        self.assertIn('href="/admin/audit"', response.text)
         self.assertIn("Async Jobs", response.text)
         self.assertIn("Law rebuild tasks", response.text)
         self.assertIn('id="admin-law-jobs"', response.text)
@@ -241,8 +241,8 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn("Advanced / Compatibility", response.text)
         self.assertIn("Compatibility seam · diagnostics only", response.text)
         self.assertIn("Вернуться в server workspace", response.text)
-        self.assertIn('href="/admin/dashboard"', response.text)
-        self.assertIn('href="/admin/users"', response.text)
+        self.assertIn('href="/admin/ops"', response.text)
+        self.assertIn('href="/admin/audit"', response.text)
         self.assertIn("Основной рабочий путь начинается с", response.text)
         self.assertIn("Открыть server workspace", response.text)
         self.assertIn("Статус миграции", response.text)
@@ -311,8 +311,8 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn("официальный основной путь", response.text)
         self.assertIn("Серверы · Основное", response.text)
         self.assertIn("Primary admin path", response.text)
-        self.assertIn('href="/admin/dashboard"', response.text)
-        self.assertIn('href="/admin/users"', response.text)
+        self.assertIn('href="/admin/ops"', response.text)
+        self.assertIn('href="/admin/audit"', response.text)
         self.assertIn('data-server-workspace-tab="overview"', response.text)
         self.assertIn('data-server-workspace-tab="laws"', response.text)
         self.assertIn('data-server-workspace-tab="features"', response.text)
@@ -339,6 +339,36 @@ class WebPagesSmokeTests(unittest.TestCase):
         response = self.client.get("/admin/templates", follow_redirects=False)
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["location"], "/admin/servers")
+
+    def test_admin_ops_alias_redirects_to_dashboard(self):
+        self.client.post("/api/auth/logout")
+        response = self.client.post(
+            "/api/auth/register",
+            json={"username": "12345", "email": "admin@example.com", "password": "Password123!"},
+        )
+        verify_url = response.json()["verification_url"]
+        split = urlsplit(verify_url)
+        self.client.get(f"{split.path}?{split.query}")
+        self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
+
+        response = self.client.get("/admin/ops", follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["location"], "/admin/dashboard")
+
+    def test_admin_audit_alias_redirects_to_users(self):
+        self.client.post("/api/auth/logout")
+        response = self.client.post(
+            "/api/auth/register",
+            json={"username": "12345", "email": "admin@example.com", "password": "Password123!"},
+        )
+        verify_url = response.json()["verification_url"]
+        split = urlsplit(verify_url)
+        self.client.get(f"{split.path}?{split.query}")
+        self.client.post("/api/auth/login", json={"username": "12345", "password": "Password123!"})
+
+        response = self.client.get("/admin/audit", follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["location"], "/admin/users")
 
     def test_admin_features_page_redirects_to_servers(self):
         self.client.post("/api/auth/logout")
