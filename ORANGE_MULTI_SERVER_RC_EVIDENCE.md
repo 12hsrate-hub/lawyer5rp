@@ -1,6 +1,6 @@
 # Orange Multi-Server RC Evidence
 
-Status: accepted staged multi-server RC candidate
+Status: production-ready accepted within current RC scope
 Date: 2026-04-16
 
 ## Scope
@@ -15,7 +15,7 @@ Date: 2026-04-16
   - document-builder config-owned behavior
 - Out of scope:
   - second-server complaint runtime
-  - `production-ready` auto-proof
+  - blanket platform-wide `production-ready` auto-proof
 
 ## Required proof points
 
@@ -106,8 +106,10 @@ Date: 2026-04-16
   - bundle resolves from orange-owned metadata, not base fallback
 - scope confirmation:
   - second-server complaint runtime remains out of scope
- - operator sign-off:
-   - `orange` accepted as a staged multi-server RC candidate
+  - broader multi-server parity outside the current RC surfaces remains out of scope
+- operator sign-off:
+  - `orange` accepted as a staged multi-server RC candidate
+  - `production-ready` accepted manually for the current RC scope because runtime health, rollback visibility, provenance explainability, and deploy/smoke evidence are all present
 
 ## RC rollout evidence
 
@@ -142,4 +144,5 @@ Date: 2026-04-16
     - active `law_version_id = 247`
     - rollback path remains explainable through existing admin rollback flow
 - Observation window status:
-  - technical rollout-ready accepted; remaining `production-ready` evidence is manual/operator-based
+  - technical rollout-ready accepted
+  - manual `production-ready` sign-off completed on `2026-04-16`
