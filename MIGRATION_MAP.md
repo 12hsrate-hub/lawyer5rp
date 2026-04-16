@@ -555,7 +555,7 @@ Date: 2026-04-14
 - `web/ogp_web/storage/admin_dashboard_repository.py`
 
 **Confirmed route -> service -> storage map**
-- Admin HTML shells (`/admin`, `/admin/dashboard`, `/admin/users`, `/admin/servers`, `/admin/laws`, `/admin/templates`, `/admin/features`, `/admin/rules`) in `admin.py` are still page-entry wrappers over one broad admin surface.
+- Admin HTML shells (`/admin`, `/admin/dashboard`, `/admin/ops`, `/admin/users`, `/admin/audit`, `/admin/servers`, `/admin/laws`, `/admin/templates`, `/admin/features`, `/admin/rules`) in `admin.py` are still page-entry wrappers over one broad admin surface, but the intended operator path is now `/admin/servers` first, with `/admin/ops` and `/admin/audit` as secondary global entrypoints and `/admin/laws` as advanced compatibility diagnostics.
 - Runtime server and runtime law-set endpoints (`/api/admin/runtime-servers*`, `/api/admin/law-sets*`, `/api/admin/runtime-servers/{server_code}/law-bindings`) primarily use `RuntimeServersStore`, `RuntimeLawSetsStore`, and `AdminMetricsStore`.
 - Catalog and publication workflow endpoints (`/api/admin/catalog/*`, `/api/admin/change-requests/{id}/review`, rollback/workflow actions) primarily use `ContentWorkflowService` -> `ContentWorkflowRepository`, with legacy fallback context from `AdminCatalogStore` and law-specific publication flows from `LawAdminService`.
 - Dashboard/overview/quality/performance endpoints (`/api/admin/dashboard*`, `/api/admin/overview`, `/api/admin/ai-pipeline`, `/api/admin/performance`, `/api/admin/users*`, `/api/admin/role-history`, CSV exports) primarily use `AdminDashboardService` -> `AdminDashboardRepository`, `AdminMetricsStore`, `ExamAnswersStore`, and `SyntheticRunnerService`.
