@@ -184,6 +184,14 @@ class _FakeProjectionsStore:
         self.items.append(item)
         return item
 
+    def update_run_status(self, *, run_id: int, status: str, summary_json=None):
+        item = self.get_run(run_id=run_id)
+        if item is None:
+            raise KeyError("server_effective_law_projection_run_not_found")
+        item.status = status
+        item.summary_json = dict(summary_json or {})
+        return item
+
 
 class AdminLawProjectionApiTests(unittest.TestCase):
     def setUp(self):
@@ -246,6 +254,14 @@ class AdminLawProjectionApiTests(unittest.TestCase):
         self.assertEqual(items.status_code, 200)
         self.assertEqual(items.json()["count"], 2)
         self.assertEqual(items.json()["items"][0]["selected_source_set_key"], "orange-priority")
+
+        approved = self.client.post("/api/admin/law-projection-runs/1/approve", json={"reason": "looks_good"})
+        self.assertEqual(approved.status_code, 200)
+        self.assertEqual(approved.json()["run"]["status"], "approved")
+
+        held = self.client.post("/api/admin/law-projection-runs/1/hold", json={"reason": "manual_pause"})
+        self.assertEqual(held.status_code, 200)
+        self.assertEqual(held.json()["run"]["status"], "held")
 
     def test_admin_law_projection_missing_run(self):
         response = self.client.get("/api/admin/law-projection-runs/999/items")

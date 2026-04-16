@@ -35,7 +35,7 @@ class ServerEffectiveLawProjectionItemRecord:
 
 class ServerEffectiveLawProjectionsStore:
     VALID_TRIGGER_MODES = {"manual", "replay"}
-    VALID_RUN_STATUSES = {"preview", "held"}
+    VALID_RUN_STATUSES = {"preview", "approved", "held"}
     VALID_ITEM_STATUSES = {"candidate", "stale", "quarantined"}
 
     def __init__(self, backend: DatabaseBackend):
@@ -271,5 +271,33 @@ class ServerEffectiveLawProjectionsStore:
         except Exception:
             conn.rollback()
             raise
+        finally:
+            conn.close()
+
+    def update_run_status(
+        self,
+        *,
+        run_id: int,
+        status: str,
+        summary_json: dict[str, Any] | None = None,
+    ) -> ServerEffectiveLawProjectionRunRecord:
+        normalized_status = self._normalize_run_status(status)
+        normalized_summary = self._normalize_json_object(summary_json)
+        conn = self.backend.connect()
+        try:
+            row = conn.execute(
+                """
+                UPDATE server_effective_law_projection_runs
+                SET status = %s, summary_json = %s::jsonb
+                WHERE id = %s
+                RETURNING id, server_code, trigger_mode, status, summary_json, created_at
+                """,
+                (normalized_status, normalized_summary, int(run_id)),
+            ).fetchone()
+            if row is None:
+                conn.rollback()
+                raise KeyError("server_effective_law_projection_run_not_found")
+            conn.commit()
+            return self._run_from_row(dict(row))
         finally:
             conn.close()
