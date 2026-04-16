@@ -119,6 +119,51 @@ def _build_runtime_laws_provenance_summary(
     }
 
 
+def _build_runtime_alignment_summary(
+    *,
+    active_law_set: dict[str, Any] | None,
+    active_law_version: Any | None,
+    projection_bridge: dict[str, Any] | None,
+) -> dict[str, Any]:
+    active_law_set_id = int(active_law_set.get("id") or 0) if active_law_set else 0
+    active_law_version_id = int(active_law_version.id) if active_law_version else 0
+    projected_law_set_id = int((projection_bridge or {}).get("law_set_id") or 0)
+    projected_law_version_id = int((projection_bridge or {}).get("law_version_id") or 0)
+    projection_run_id = int((projection_bridge or {}).get("run_id") or 0)
+    matches_active_law_version = bool((projection_bridge or {}).get("matches_active_law_version"))
+    matches_active_law_set = (
+        active_law_set_id > 0 and projected_law_set_id > 0 and active_law_set_id == projected_law_set_id
+    )
+
+    if projection_run_id > 0 and matches_active_law_version:
+        status = "aligned"
+        detail = "Promoted projection matches the current active runtime law_version."
+    elif projection_run_id > 0 and (projected_law_version_id > 0 or projected_law_set_id > 0):
+        status = "drift"
+        detail = "Promoted projection exists, but the active runtime shell no longer matches it exactly."
+    elif active_law_set_id > 0 and active_law_version_id > 0:
+        status = "legacy_only"
+        detail = "Active runtime shell exists without an aligned promoted projection."
+    elif active_law_set_id > 0:
+        status = "pending_activation"
+        detail = "Runtime law_set shell exists, but there is no active runtime law_version yet."
+    else:
+        status = "uninitialized"
+        detail = "Runtime alignment cannot be checked before a runtime shell exists."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "projection_run_id": projection_run_id or None,
+        "projected_law_set_id": projected_law_set_id or None,
+        "projected_law_version_id": projected_law_version_id or None,
+        "active_law_set_id": active_law_set_id or None,
+        "active_law_version_id": active_law_version_id or None,
+        "matches_active_law_set": matches_active_law_set if projected_law_set_id > 0 else None,
+        "matches_active_law_version": matches_active_law_version if projected_law_version_id > 0 else None,
+    }
+
+
 def _build_runtime_server_onboarding_payload(
     *,
     server: RuntimeServerRecord | None,
@@ -477,12 +522,18 @@ def build_runtime_server_health_payload(
         projection_bridge=projection_bridge,
         bindings=bindings,
     )
+    runtime_alignment = _build_runtime_alignment_summary(
+        active_law_set=active_law_set,
+        active_law_version=active_law_version,
+        projection_bridge=projection_bridge,
+    )
     return {
         "server_code": normalized_code,
         "checks": checks,
         "onboarding": onboarding,
         "projection_bridge": projection_bridge,
         "runtime_provenance": runtime_provenance,
+        "runtime_alignment": runtime_alignment,
         "summary": {
             "ready_count": ready_count,
             "total_count": len(checks),

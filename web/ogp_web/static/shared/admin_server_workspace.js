@@ -367,10 +367,11 @@ window.OGPAdminServerWorkspace = {
         return;
       }
       const laws = state.lawsSummary || {};
-      const bindings = Array.isArray(laws.bindings) ? laws.bindings : [];
-      const projection = laws.latest_projection_run || {};
-      const runtimeProvenance = laws.runtime_provenance || {};
-      const effective = state.lawsEffective || {};
+        const bindings = Array.isArray(laws.bindings) ? laws.bindings : [];
+        const projection = laws.latest_projection_run || {};
+        const runtimeProvenance = laws.runtime_provenance || {};
+        const runtimeAlignment = laws.runtime_alignment || state.lawsDiff?.runtime_alignment || {};
+        const effective = state.lawsEffective || {};
       const effectiveItems = Array.isArray(effective.items) ? effective.items.slice(0, 12) : [];
       const fillSummary = laws.fill_check || effective.summary || {};
       const diffSummary = laws.diff || state.lawsDiff?.summary || {};
@@ -400,12 +401,17 @@ window.OGPAdminServerWorkspace = {
             <div><strong>${escapeHtml(String(projection.id || "—"))}</strong></div>
             <div class="admin-user-cell__secondary">status: ${escapeHtml(String(projection.status || "none"))} • selected: ${escapeHtml(String(projection.selected_count || 0))}</div>
           </div>
-          <div class="legal-field">
-            <span class="legal-field__label">Runtime provenance</span>
-            <div><strong>${escapeHtml(String(runtimeProvenance.mode || "unknown"))}</strong></div>
-            <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeProvenance.detail || "Runtime source-of-truth explanation is not available yet."))}</div>
+            <div class="legal-field">
+              <span class="legal-field__label">Runtime provenance</span>
+              <div><strong>${escapeHtml(String(runtimeProvenance.mode || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeProvenance.detail || "Runtime source-of-truth explanation is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Runtime alignment</span>
+              <div><strong>${escapeHtml(String(runtimeAlignment.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeAlignment.detail || "Active runtime shell and promoted projection alignment is not available yet."))}</div>
+            </div>
           </div>
-        </div>
         <div class="legal-subcard">
           <span class="legal-field__label">Source set bindings</span>
           ${

@@ -165,6 +165,9 @@ def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
     assert payload["checks"]["config_resolution"]["ok"] is True
     assert payload["runtime_provenance"]["mode"] == "legacy_runtime_shell"
     assert payload["runtime_provenance"]["is_projection_backed"] is False
+    assert payload["runtime_alignment"]["status"] == "legacy_only"
+    assert payload["runtime_alignment"]["active_law_set_id"] == 1
+    assert payload["runtime_alignment"]["active_law_version_id"] == 77
     assert payload["onboarding"]["highest_completed_state"] == "rollout-ready"
     assert payload["onboarding"]["next_required_state"] == "production-ready"
 
@@ -223,6 +226,9 @@ def test_second_server_published_pack_health_payload_reports_release_candidate_s
     assert payload["checks"]["config_resolution"]["ok"] is True
     assert payload["runtime_provenance"]["mode"] == "projection_backed"
     assert payload["runtime_provenance"]["is_projection_backed"] is True
+    assert payload["runtime_alignment"]["status"] == "aligned"
+    assert payload["runtime_alignment"]["matches_active_law_set"] is True
+    assert payload["runtime_alignment"]["matches_active_law_version"] is True
     assert payload["onboarding"]["highest_completed_state"] == "rollout-ready"
     assert payload["checks"]["health"]["active_law_version_id"] == 88
     assert payload["projection_bridge"]["run_id"] == 4
