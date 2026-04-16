@@ -1,0 +1,113 @@
+name: Production Stats
+
+on:
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - name: Check deploy secrets
+        id: check
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          missing=0
+
+          if [ -z "$DEPLOY_HOST" ]; then
+            echo "Missing secret: DEPLOY_HOST"
+            missing=1
+          fi
+
+          if [ -z "$DEPLOY_USER" ]; then
+            echo "Missing secret: DEPLOY_USER"
+            missing=1
+          fi
+
+          if [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "Missing secret: DEPLOY_SSH_KEY"
+            missing=1
+          fi
+
+          if [ "$missing" -eq 1 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+  collect:
+    needs: preflight
+    runs-on: ubuntu-latest
+    if: ${{ needs.preflight.outputs.ready == 'true' }}
+
+    steps:
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Trust deploy host
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Collect production stats
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+        run: |
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" '
+            set -euo pipefail
+            echo "=== HOST ==="
+            hostname
+            echo
+
+            echo "=== OS ==="
+            if command -v uname >/dev/null 2>&1; then
+              uname -a
+            fi
+            if [ -f /etc/os-release ]; then
+              cat /etc/os-release
+            fi
+            echo
+
+            echo "=== CPU ==="
+            if command -v nproc >/dev/null 2>&1; then
+              echo "logical_cpus=$(nproc)"
+            fi
+            if command -v lscpu >/dev/null 2>&1; then
+              lscpu
+            fi
+            echo
+
+            echo "=== MEMORY ==="
+            if command -v free >/dev/null 2>&1; then
+              free -h
+            fi
+            echo
+
+            echo "=== LOAD ==="
+            uptime
+            echo
+
+            echo "=== TOP SNAPSHOT ==="
+            if command -v top >/dev/null 2>&1; then
+              top -bn1 | head -n 12
+            fi
+            echo
+
+            echo "=== TOP PROCESSES BY CPU ==="
+            ps -eo pid,comm,%cpu,%mem --sort=-%cpu | head -n 12
+            echo
+
+            echo "=== TOP PROCESSES BY MEM ==="
+            ps -eo pid,comm,%cpu,%mem --sort=-%mem | head -n 12
+          '
