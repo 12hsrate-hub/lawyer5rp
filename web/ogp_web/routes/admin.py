@@ -475,6 +475,7 @@ async def admin_runtime_server_health(
     user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     _ = user
@@ -483,6 +484,7 @@ async def admin_runtime_server_health(
         server_code=normalized_code,
         runtime_servers_store=store,
         law_sets_store=law_sets_store,
+        projections_store=projections_store,
     )
     if not payload["checks"]["server"]["ok"]:
         _raise_not_found("server_not_found")

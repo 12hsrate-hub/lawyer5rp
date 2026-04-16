@@ -20,7 +20,7 @@ os.environ.setdefault("OGP_SKIP_DEFAULT_APP_INIT", "1")
 from fastapi.testclient import TestClient
 
 from ogp_web.app import create_app
-from ogp_web.dependencies import get_content_workflow_service, get_runtime_law_sets_store, get_runtime_servers_store
+from ogp_web.dependencies import get_content_workflow_service, get_runtime_law_sets_store, get_runtime_servers_store, get_server_effective_law_projections_store
 import ogp_web.routes.admin as admin_route
 from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
 import ogp_web.services.admin_runtime_servers_service as admin_runtime_servers_service
@@ -233,6 +233,31 @@ class _FakeRuntimeLawSetsStore:
         return {k: row[k] for k in ("id", "server_code", "name", "is_active", "is_published")}
 
 
+class _FakeProjectionRun:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class _FakeProjectionsStore:
+    def list_runs(self, *, server_code: str):
+        if server_code != "orange":
+            return []
+        return [
+            _FakeProjectionRun(
+                id=4,
+                server_code="orange",
+                trigger_mode="manual",
+                status="approved",
+                summary_json={
+                    "decision_status": "approved",
+                    "materialization": {"law_set_id": 2},
+                    "activation": {"law_version_id": 88},
+                },
+                created_at="2026-04-16T06:00:00+00:00",
+            )
+        ]
+
+
 class AdminRuntimeServersApiTests(unittest.TestCase):
     def setUp(self):
         self.tmpdir = make_temporary_directory()
@@ -251,8 +276,10 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         app = create_app(self.user_store, self.exam_store, self.admin_store, self.task_registry)
         self.runtime_store = _FakeRuntimeServersStore()
         self.runtime_law_sets_store = _FakeRuntimeLawSetsStore()
+        self.projections_store = _FakeProjectionsStore()
         app.dependency_overrides[get_runtime_servers_store] = lambda: self.runtime_store
         app.dependency_overrides[get_runtime_law_sets_store] = lambda: self.runtime_law_sets_store
+        app.dependency_overrides[get_server_effective_law_projections_store] = lambda: self.projections_store
         self.client = TestClient(app, base_url="https://testserver")
         reset_rate_limit(self.client.app.state.rate_limiter)
         self._register_and_login_admin("12345", "admin@example.com")
@@ -415,6 +442,10 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertFalse(payload["onboarding"]["uses_transitional_fallback"])
         self.assertEqual(payload["onboarding"]["highest_completed_state"], "rollout-ready")
         self.assertEqual(payload["checks"]["health"]["active_law_version_id"], 88)
+        self.assertEqual(payload["projection_bridge"]["run_id"], 4)
+        self.assertEqual(payload["projection_bridge"]["law_set_id"], 2)
+        self.assertEqual(payload["projection_bridge"]["law_version_id"], 88)
+        self.assertTrue(payload["projection_bridge"]["matches_active_law_version"])
 
     def test_catalog_audit_accepts_entity_filters(self):
         fake_workflow = _FakeContentWorkflowService()

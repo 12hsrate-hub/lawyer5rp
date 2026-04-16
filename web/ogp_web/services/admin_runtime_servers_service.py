@@ -8,6 +8,7 @@ from ogp_web.services.law_bundle_service import load_law_bundle_meta
 from ogp_web.services.law_version_service import resolve_active_law_version
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
 from ogp_web.storage.runtime_servers_store import RuntimeServerRecord, RuntimeServersStore
+from ogp_web.storage.server_effective_law_projections_store import ServerEffectiveLawProjectionsStore
 
 ONBOARDING_STATES = (
     "bootstrap-ready",
@@ -48,6 +49,41 @@ def _build_state_entry(*, ok: bool, detail: str) -> dict[str, Any]:
     return {
         "ok": bool(ok),
         "detail": str(detail or "").strip(),
+    }
+
+
+def _build_projection_bridge_summary(
+    *,
+    server_code: str,
+    projections_store: ServerEffectiveLawProjectionsStore | None,
+    active_law_version: Any | None,
+) -> dict[str, Any] | None:
+    if projections_store is None:
+        return None
+    runs = projections_store.list_runs(server_code=server_code)
+    if not runs:
+        return None
+    active_version_id = int(active_law_version.id) if active_law_version else 0
+    selected_run = None
+    for run in runs:
+        summary_json = dict(run.summary_json or {})
+        activation = dict(summary_json.get("activation") or {})
+        if active_version_id > 0 and int(activation.get("law_version_id") or 0) == active_version_id:
+            selected_run = run
+            break
+    if selected_run is None:
+        selected_run = runs[0]
+    summary_json = dict(selected_run.summary_json or {})
+    materialization = dict(summary_json.get("materialization") or {})
+    activation = dict(summary_json.get("activation") or {})
+    return {
+        "run_id": int(selected_run.id),
+        "status": str(selected_run.status or ""),
+        "decision_status": str(summary_json.get("decision_status") or ""),
+        "law_set_id": int(materialization.get("law_set_id") or 0) or None,
+        "law_version_id": int(activation.get("law_version_id") or 0) or None,
+        "matches_active_law_version": active_version_id > 0 and int(activation.get("law_version_id") or 0) == active_version_id,
+        "created_at": str(selected_run.created_at or ""),
     }
 
 
@@ -274,6 +310,7 @@ def build_runtime_server_health_payload(
     server_code: str,
     runtime_servers_store: RuntimeServersStore,
     law_sets_store: RuntimeLawSetsStore,
+    projections_store: ServerEffectiveLawProjectionsStore | None = None,
 ) -> dict[str, Any]:
     context = _collect_runtime_server_context(
         server_code=server_code,
@@ -328,10 +365,16 @@ def build_runtime_server_health_payload(
         },
     }
     ready_count = sum(1 for item in checks.values() if item.get("ok"))
+    projection_bridge = _build_projection_bridge_summary(
+        server_code=normalized_code,
+        projections_store=projections_store,
+        active_law_version=active_law_version,
+    )
     return {
         "server_code": normalized_code,
         "checks": checks,
         "onboarding": onboarding,
+        "projection_bridge": projection_bridge,
         "summary": {
             "ready_count": ready_count,
             "total_count": len(checks),
