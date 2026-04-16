@@ -68,6 +68,31 @@ class _FakeRuntimeLawSetsStore:
         return [{"law_set_id": 1, "law_code": "uk"}]
 
 
+class _FakeProjectionRun:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class _FakeProjectionsStore:
+    def list_runs(self, *, server_code: str):
+        if server_code != "orange":
+            return []
+        return [
+            _FakeProjectionRun(
+                id=4,
+                server_code="orange",
+                trigger_mode="manual",
+                status="approved",
+                summary_json={
+                    "decision_status": "approved",
+                    "materialization": {"law_set_id": 2},
+                    "activation": {"law_version_id": 88},
+                },
+                created_at="2026-04-16T06:00:00+00:00",
+            )
+        ]
+
+
 def test_runtime_server_payload_helpers_cover_crud_shape():
     store = _FakeRuntimeServersStore()
     law_sets_store = _FakeRuntimeLawSetsStore()
@@ -163,6 +188,7 @@ def test_second_server_published_pack_health_payload_reports_release_candidate_s
         server_code="orange",
         runtime_servers_store=store,
         law_sets_store=OrangeLawSetsStore(),
+        projections_store=_FakeProjectionsStore(),
     )
 
     assert payload["summary"]["is_ready"] is True
@@ -170,3 +196,7 @@ def test_second_server_published_pack_health_payload_reports_release_candidate_s
     assert payload["onboarding"]["uses_transitional_fallback"] is False
     assert payload["onboarding"]["highest_completed_state"] == "rollout-ready"
     assert payload["checks"]["health"]["active_law_version_id"] == 88
+    assert payload["projection_bridge"]["run_id"] == 4
+    assert payload["projection_bridge"]["law_set_id"] == 2
+    assert payload["projection_bridge"]["law_version_id"] == 88
+    assert payload["projection_bridge"]["matches_active_law_version"] is True
