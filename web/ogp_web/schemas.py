@@ -611,6 +611,15 @@ class AdminLawSourcesPayload(BaseModel):
         return str(value or "").strip().lower()
 
 
+class AdminLawSourceSetBackfillPayload(BaseModel):
+    server_code: str = ""
+
+    @field_validator("server_code")
+    @classmethod
+    def validate_server_code(cls, value: str) -> str:
+        return str(value or "").strip().lower()
+
+
 class AdminLawSourceRegistryPayload(BaseModel):
     name: str = ""
     kind: str = "url"
