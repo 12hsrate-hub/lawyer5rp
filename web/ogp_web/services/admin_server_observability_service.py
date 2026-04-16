@@ -8,6 +8,7 @@ from ogp_web.services.admin_runtime_servers_service import (
 )
 from ogp_web.services.admin_server_laws_workspace_service import (
     build_projection_bridge_readiness_summary,
+    build_promotion_blockers_summary,
     build_promotion_candidate_summary,
     build_promotion_delta_summary,
     build_server_laws_recheck_payload,
@@ -338,6 +339,32 @@ def _build_promotion_delta_issue(promotion_delta: dict[str, Any]) -> dict[str, A
             {"kind": "recheck", "label": "Проверить наполнение"},
         ],
     }
+
+
+def _build_promotion_blockers_issue(promotion_blockers: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((promotion_blockers or {}).get("status") or "").strip().lower()
+    if status in {"", "clear"}:
+        return None
+    items = list((promotion_blockers or {}).get("items") or [])
+    sample = ", ".join(str(item.get("kind") or "").strip() for item in items[:3] if str(item.get("kind") or "").strip())
+    detail = (
+        f"{str((promotion_blockers or {}).get('detail') or '').strip()} "
+        f"count={int((promotion_blockers or {}).get('count') or 0)}"
+        f"{f' • sample={sample}' if sample else ''}. "
+        f"{str((promotion_blockers or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "laws_promotion_blockers",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Promotion blockers требуют внимания",
+        "detail": detail,
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
 def build_server_audit_payload(
     *,
     server_code: str,
@@ -499,6 +526,14 @@ def build_server_issues_payload(
         latest_projection_run={},
         projection_bridge_readiness=projection_bridge_readiness,
     )
+    promotion_blockers = build_promotion_blockers_summary(
+        projection_bridge_readiness=projection_bridge_readiness,
+        promotion_candidate=promotion_candidate,
+        promotion_delta=promotion_delta,
+        runtime_item_parity=runtime_item_parity,
+        runtime_version_parity=runtime_version_parity,
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+    )
     items: list[dict[str, Any]] = []
     if bool(onboarding.get("requires_explicit_runtime_pack")):
         items.append(
@@ -556,6 +591,9 @@ def build_server_issues_payload(
     promotion_delta_issue = _build_promotion_delta_issue(promotion_delta)
     if promotion_delta_issue is not None:
         items.append(promotion_delta_issue)
+    promotion_blockers_issue = _build_promotion_blockers_issue(promotion_blockers)
+    if promotion_blockers_issue is not None:
+        items.append(promotion_blockers_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -624,7 +662,7 @@ def execute_server_issue_action_payload(
     normalized_server = normalize_runtime_server_code(server_code)
     normalized_issue = str(issue_id or "").strip().lower()
     normalized_action = str(action or "").strip().lower()
-    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta"} and normalized_action == "recheck":
+    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_blockers"} and normalized_action == "recheck":
         result = build_server_laws_recheck_payload(
             server_code=normalized_server,
             runtime_servers_store=runtime_servers_store,

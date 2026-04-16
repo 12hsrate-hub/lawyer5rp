@@ -7,6 +7,7 @@ from ogp_web.services.admin_runtime_servers_service import (
     normalize_runtime_server_code,
 )
 from ogp_web.services.admin_server_laws_workspace_service import build_projection_bridge_readiness_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_promotion_blockers_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_promotion_candidate_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_promotion_delta_summary
 from ogp_web.services.content_workflow_service import ContentWorkflowService
@@ -472,6 +473,29 @@ def _build_promotion_delta_issue(promotion_delta: dict[str, Any]) -> dict[str, A
         "title": "Promotion delta требует внимания",
         "detail": detail,
     }
+
+
+def _build_promotion_blockers_issue(promotion_blockers: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((promotion_blockers or {}).get("status") or "").strip().lower()
+    if status in {"", "clear"}:
+        return None
+    items = list((promotion_blockers or {}).get("items") or [])
+    sample = ", ".join(str(item.get("kind") or "").strip() for item in items[:3] if str(item.get("kind") or "").strip())
+    detail = (
+        f"{str((promotion_blockers or {}).get('detail') or '').strip()} "
+        f"count={int((promotion_blockers or {}).get('count') or 0)}"
+        f"{f' • sample={sample}' if sample else ''}. "
+        f"{str((promotion_blockers or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "laws_promotion_blockers",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Promotion blockers требуют внимания",
+        "detail": detail,
+    }
+
+
 def _build_issues_payload(
     *,
     health_payload: dict[str, Any],
@@ -482,6 +506,7 @@ def _build_issues_payload(
     projection_bridge_readiness: dict[str, Any] | None = None,
     promotion_candidate: dict[str, Any] | None = None,
     promotion_delta: dict[str, Any] | None = None,
+    promotion_blockers: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     checks = dict(health_payload.get("checks") or {})
@@ -553,6 +578,9 @@ def _build_issues_payload(
     promotion_delta_issue = _build_promotion_delta_issue(dict(promotion_delta or {}))
     if promotion_delta_issue is not None:
         items.append(promotion_delta_issue)
+    promotion_blockers_issue = _build_promotion_blockers_issue(dict(promotion_blockers or {}))
+    if promotion_blockers_issue is not None:
+        items.append(promotion_blockers_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -692,6 +720,14 @@ def build_server_workspace_payload(
         latest_projection_run={},
         projection_bridge_readiness=projection_bridge_readiness,
     )
+    promotion_blockers = build_promotion_blockers_summary(
+        projection_bridge_readiness=projection_bridge_readiness,
+        promotion_candidate=promotion_candidate,
+        promotion_delta=promotion_delta,
+        runtime_item_parity=runtime_item_parity,
+        runtime_version_parity=runtime_version_parity,
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+    )
     laws_summary = {
         "active_source_set_bindings": [
             {
@@ -714,6 +750,7 @@ def build_server_workspace_payload(
         "projection_bridge_readiness": projection_bridge_readiness,
         "promotion_candidate": promotion_candidate,
         "promotion_delta": promotion_delta,
+        "promotion_blockers": promotion_blockers,
         "health": (health_payload.get("checks") or {}).get("health", {}),
     }
     issues_payload = _build_issues_payload(
@@ -725,6 +762,7 @@ def build_server_workspace_payload(
         projection_bridge_readiness=projection_bridge_readiness,
         promotion_candidate=promotion_candidate,
         promotion_delta=promotion_delta,
+        promotion_blockers=promotion_blockers,
     )
     readiness_payload = _build_readiness_payload(
         laws_ready=bool((health_payload.get("checks") or {}).get("health", {}).get("ok")),

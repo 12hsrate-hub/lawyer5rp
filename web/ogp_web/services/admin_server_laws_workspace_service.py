@@ -560,6 +560,112 @@ def build_promotion_delta_summary(
             "error_count": error_count,
         },
     }
+
+
+def build_promotion_blockers_summary(
+    *,
+    projection_bridge_readiness: dict[str, Any],
+    promotion_candidate: dict[str, Any],
+    promotion_delta: dict[str, Any],
+    runtime_item_parity: dict[str, Any],
+    runtime_version_parity: dict[str, Any],
+    projection_bridge_lifecycle: dict[str, Any],
+) -> dict[str, Any]:
+    readiness = dict(projection_bridge_readiness or {})
+    candidate = dict(promotion_candidate or {})
+    delta = dict(promotion_delta or {})
+    item_parity = dict(runtime_item_parity or {})
+    version_parity = dict(runtime_version_parity or {})
+    lifecycle = dict(projection_bridge_lifecycle or {})
+
+    blocker_items: list[dict[str, str]] = []
+    for blocker in list(readiness.get("blockers") or []):
+        normalized = str(blocker or "").strip().lower()
+        if not normalized:
+            continue
+        blocker_items.append(
+            {
+                "kind": normalized,
+                "title": normalized.replace("_", " "),
+                "detail": str(readiness.get("detail") or "").strip(),
+            }
+        )
+
+    candidate_status = str(candidate.get("status") or "").strip().lower()
+    if candidate_status in {"content_incomplete", "runtime_drift", "review_needed"}:
+        blocker_items.append(
+            {
+                "kind": f"candidate_{candidate_status}",
+                "title": f"candidate {candidate_status.replace('_', ' ')}",
+                "detail": str(candidate.get("detail") or "").strip(),
+            }
+        )
+
+    if str(delta.get("status") or "").strip().lower() == "attention":
+        blocker_items.append(
+            {
+                "kind": "delta_attention",
+                "title": "delta attention",
+                "detail": str(delta.get("detail") or "").strip(),
+            }
+        )
+
+    if str(item_parity.get("status") or "").strip().lower() == "drift":
+        blocker_items.append(
+            {
+                "kind": "item_parity_drift",
+                "title": "item parity drift",
+                "detail": str(item_parity.get("drift_summary") or item_parity.get("detail") or "").strip(),
+            }
+        )
+
+    version_status = str(version_parity.get("status") or "").strip().lower()
+    if version_status in {"drift", "legacy_only", "pending_activation"}:
+        blocker_items.append(
+            {
+                "kind": f"version_{version_status}",
+                "title": f"version {version_status.replace('_', ' ')}",
+                "detail": str(version_parity.get("drift_summary") or version_parity.get("detail") or "").strip(),
+            }
+        )
+
+    lifecycle_status = str(lifecycle.get("status") or "").strip().lower()
+    if lifecycle_status in {"preview_only", "materialized", "drifted"}:
+        blocker_items.append(
+            {
+                "kind": f"lifecycle_{lifecycle_status}",
+                "title": f"lifecycle {lifecycle_status.replace('_', ' ')}",
+                "detail": str(lifecycle.get("detail") or "").strip(),
+            }
+        )
+
+    deduped_items: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in blocker_items:
+        kind = str(item.get("kind") or "").strip().lower()
+        if not kind or kind in seen:
+            continue
+        seen.add(kind)
+        deduped_items.append(item)
+
+    if deduped_items:
+        status = "blocked"
+        detail = f"{len(deduped_items)} blocker(s) still require attention before runtime can look clean."
+        next_step = str(readiness.get("next_step") or candidate.get("next_step") or "Проверьте blockers и выполните безопасный recheck.").strip()
+    else:
+        status = "clear"
+        detail = "No promotion blockers are visible in the current read model."
+        next_step = "Критичных blockers не видно."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "count": len(deduped_items),
+        "items": deduped_items[:8],
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -625,6 +731,14 @@ def build_server_laws_summary_payload(
         latest_projection_run=_serialize_run(current_run) or {},
         projection_bridge_readiness=bridge_readiness,
     )
+    promotion_blockers = build_promotion_blockers_summary(
+        projection_bridge_readiness=bridge_readiness,
+        promotion_candidate=promotion_candidate,
+        promotion_delta=promotion_delta,
+        runtime_item_parity=runtime_item_parity,
+        runtime_version_parity=runtime_version_parity,
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+    )
     return {
         "server_code": normalized_server,
         "bindings": bindings,
@@ -639,6 +753,7 @@ def build_server_laws_summary_payload(
         "projection_bridge_readiness": bridge_readiness,
         "promotion_candidate": promotion_candidate,
         "promotion_delta": promotion_delta,
+        "promotion_blockers": promotion_blockers,
         "latest_projection_run": _serialize_run(current_run),
         "fill_check": fill_summary,
         "diff": diff_summary,
@@ -801,6 +916,14 @@ def build_server_laws_diff_payload(
         latest_projection_run=_serialize_run(current_run) or {},
         projection_bridge_readiness=bridge_readiness,
     )
+    promotion_blockers = build_promotion_blockers_summary(
+        projection_bridge_readiness=bridge_readiness,
+        promotion_candidate=promotion_candidate,
+        promotion_delta=promotion_delta,
+        runtime_item_parity=runtime_item_parity,
+        runtime_version_parity=runtime_version_parity,
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
+    )
     return {
         "server_code": normalized_server,
         "current_run": _serialize_run(current_run),
@@ -812,5 +935,6 @@ def build_server_laws_diff_payload(
         "projection_bridge_readiness": bridge_readiness,
         "promotion_candidate": promotion_candidate,
         "promotion_delta": promotion_delta,
+        "promotion_blockers": promotion_blockers,
         "summary": diff_summary,
     }
