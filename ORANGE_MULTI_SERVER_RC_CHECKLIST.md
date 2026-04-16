@@ -1,6 +1,6 @@
 # Orange Multi-Server RC Checklist
 
-Status: pre-window ready  
+Status: hold pending orange runtime onboarding  
 Date: 2026-04-16
 
 ## Candidate
@@ -38,9 +38,9 @@ Date: 2026-04-16
 - Known-good deployed `/health` baseline: `status=ok` from Deploy Production run `24487921717`
 - RC transition package PR: `#307` — `https://github.com/12hsrate-hub/lawyer5rp/pull/307`
 - RC transition package merged commit: `c1dabbb451170008cedcb622951a14dd113b1908`
-- `orange` runtime server health payload: `capture during activation window`
-- `orange` document-builder bundle sample: `capture during activation window`
-- `orange` law set / law binding / rollback sample: `capture during activation window`
+- `orange` runtime server health payload: `live preflight 2026-04-16T02:12:19Z: unavailable because orange runtime server record is missing in production`
+- `orange` document-builder bundle sample: `live preflight 2026-04-16T02:12:19Z: captured, but returns only base court_claim schema with empty claim_kind_by_court_type and no orange-specific metadata`
+- `orange` law set / law binding / rollback sample: `live preflight 2026-04-16T02:12:19Z: none present because orange runtime law state is missing`
 - CI Runtime result: `success` — `https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487677670`
 - UTF-8 check result: `success` — `https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487677658`
 - Deploy Production workflow result: `success` — `https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487474591`
