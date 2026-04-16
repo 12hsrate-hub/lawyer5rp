@@ -30,6 +30,7 @@ from ogp_web.schemas import (
     AdminEmailUpdatePayload,
     AdminExamScoreResetPayload,
     AdminLawSourcesPayload,
+    AdminLawSourceSetBackfillPayload,
     AdminLawSetPayload,
     AdminLawSetRebuildPayload,
     AdminLawSetRollbackPayload,
@@ -92,6 +93,7 @@ from ogp_web.services.admin_law_sets_service import (
 )
 from ogp_web.services.admin_law_sources_service import (
     build_law_sources_status_payload,
+    backfill_law_sources_source_set_payload,
     describe_law_sources_dependencies_payload,
     list_law_sources_history_payload,
     preview_law_sources_payload,
@@ -1244,6 +1246,45 @@ async def admin_law_sources_sync(
         method="POST",
         status_code=200,
         meta={"changed": bool(result.get("changed"))},
+    )
+    return result
+
+
+@router.post("/api/admin/law-sources/backfill-source-set")
+async def admin_law_sources_backfill_source_set(
+    payload: AdminLawSourceSetBackfillPayload,
+    request: Request,
+    user: AuthUser = Depends(requires_permission("manage_laws")),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    user_store: UserStore = Depends(get_user_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    target_server_code = _resolve_law_sources_server_code(user, user_store, payload.server_code)
+    actor_user_id = _resolve_actor_user_id(user_store, user.username)
+    try:
+        result = backfill_law_sources_source_set_payload(
+            workflow_service=workflow_service,
+            source_sets_store=source_sets_store,
+            server_code=target_server_code,
+            actor_user_id=actor_user_id,
+            request_id=getattr(request.state, "request_id", ""),
+        )
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
+    metrics_store.log_event(
+        event_type="admin_law_sources_backfill_source_set",
+        username=user.username,
+        server_code=target_server_code,
+        path="/api/admin/law-sources/backfill-source-set",
+        method="POST",
+        status_code=200,
+        meta={
+            "source_set_key": result.get("source_set_key"),
+            "changed": bool(result.get("changed")),
+            "revision_created": bool(result.get("revision_created")),
+            "binding_created": bool(result.get("binding_created")),
+        },
     )
     return result
 
