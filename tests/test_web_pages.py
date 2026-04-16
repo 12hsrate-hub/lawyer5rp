@@ -187,6 +187,10 @@ class WebPagesSmokeTests(unittest.TestCase):
         response = self.client.get("/admin/dashboard")
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="segmented-tabs__item is-active"', response.text)
+        self.assertIn("Сводка · Ops", response.text)
+        self.assertIn("Global ops workspace", response.text)
+        self.assertIn("Global ops", response.text)
+        self.assertIn("Открыть server workspace", response.text)
         self.assertIn('href="/admin/users"', response.text)
         self.assertIn("Async Jobs", response.text)
         self.assertIn("Law rebuild tasks", response.text)
@@ -309,6 +313,10 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn('data-server-workspace-tab="audit"', response.text)
         self.assertIn('data-server-workspace-tab="errors"', response.text)
         self.assertIn('data-server-workspace-tab="diagnostics"', response.text)
+        self.assertIn("Сводка · Ops", response.text)
+        self.assertIn("Пользователи и аудит · Global", response.text)
+        self.assertIn("Серверы · Основное", response.text)
+        self.assertIn("Законы · Диагностика", response.text)
 
     def test_admin_templates_page_redirects_to_servers(self):
         self.client.post("/api/auth/logout")

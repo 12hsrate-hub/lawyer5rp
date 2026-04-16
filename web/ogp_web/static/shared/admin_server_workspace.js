@@ -370,7 +370,7 @@ window.OGPAdminServerWorkspace = {
             <button type="button" id="admin-server-laws-recheck" class="secondary-button">Проверить наполнение</button>
             <button type="button" id="admin-server-laws-reload" class="ghost-button">Обновить блок</button>
             <button type="button" id="admin-server-laws-open-diagnostics" class="ghost-button">Диагностика</button>
-            <a class="ghost-button button-link" href="/admin/laws">Открыть расширенный laws workspace</a>
+            <a class="ghost-button button-link" href="/admin/laws">Открыть laws diagnostics</a>
           </div>
         </div>
         <div class="legal-field-grid legal-field-grid--two">
@@ -392,7 +392,7 @@ window.OGPAdminServerWorkspace = {
               ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Source set</th><th>Priority</th><th>Status</th></tr></thead><tbody>${bindings.map((item) => `<tr><td>${escapeHtml(String(item.source_set_key || "—"))}</td><td>${escapeHtml(String(item.priority || 0))}</td><td>${item.is_active ? "active" : "disabled"}</td></tr>`).join("")}</tbody></table>`
               : `<p class="legal-section__description">Для сервера пока нет source set bindings. Сначала создайте или выберите source set и привяжите его в расширенном laws workspace.</p>
                  <div class="admin-section-toolbar">
-                   <a class="ghost-button button-link" href="/admin/laws">Открыть laws workspace</a>
+                   <a class="ghost-button button-link" href="/admin/laws">Открыть laws diagnostics</a>
                    <button type="button" class="ghost-button" data-server-workspace-switch="diagnostics">Открыть диагностику</button>
                  </div>`
           }
@@ -963,7 +963,7 @@ window.OGPAdminServerWorkspace = {
             <p class="legal-section__description">Technical payloads and compatibility entrypoints stay secondary to the main operator flow.</p>
           </div>
           <div class="admin-section-toolbar">
-            <a class="ghost-button button-link" href="/admin/laws">Laws diagnostics</a>
+            <a class="ghost-button button-link" href="/admin/laws">Advanced laws diagnostics</a>
             <a class="ghost-button button-link" href="/admin/dashboard">Ops dashboard</a>
           </div>
         </div>
