@@ -380,9 +380,10 @@ async def admin_runtime_servers_list(
     user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
 ):
     _ = user
-    return list_runtime_servers_payload(store=store, law_sets_store=law_sets_store)
+    return list_runtime_servers_payload(store=store, law_sets_store=law_sets_store, projections_store=projections_store)
 
 
 @router.post("/api/admin/runtime-servers")
@@ -391,10 +392,17 @@ async def admin_runtime_servers_create(
     user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     try:
-        result = create_runtime_server_payload(store=store, law_sets_store=law_sets_store, code=payload.code, title=payload.title)
+        result = create_runtime_server_payload(
+            store=store,
+            law_sets_store=law_sets_store,
+            projections_store=projections_store,
+            code=payload.code,
+            title=payload.title,
+        )
     except ValueError as exc:
         _raise_bad_request(exc)
     row = result["item"]
@@ -417,13 +425,20 @@ async def admin_runtime_servers_update(
     user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     normalized_code = _normalize_code(server_code)
     if normalized_code != payload.code:
         _raise_bad_request("server_code_mismatch")
     try:
-        result = update_runtime_server_payload(store=store, law_sets_store=law_sets_store, code=normalized_code, title=payload.title)
+        result = update_runtime_server_payload(
+            store=store,
+            law_sets_store=law_sets_store,
+            projections_store=projections_store,
+            code=normalized_code,
+            title=payload.title,
+        )
     except ValueError as exc:
         _raise_bad_request(exc)
     except KeyError as exc:
@@ -447,11 +462,18 @@ async def admin_runtime_servers_activate(
     user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     normalized_code = _normalize_code(server_code)
     try:
-        result = set_runtime_server_active_payload(store=store, law_sets_store=law_sets_store, code=normalized_code, is_active=True)
+        result = set_runtime_server_active_payload(
+            store=store,
+            law_sets_store=law_sets_store,
+            projections_store=projections_store,
+            code=normalized_code,
+            is_active=True,
+        )
     except ValueError as exc:
         _raise_bad_request(exc)
     except KeyError as exc:
@@ -506,11 +528,18 @@ async def admin_runtime_servers_deactivate(
     user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
     normalized_code = _normalize_code(server_code)
     try:
-        result = set_runtime_server_active_payload(store=store, law_sets_store=law_sets_store, code=normalized_code, is_active=False)
+        result = set_runtime_server_active_payload(
+            store=store,
+            law_sets_store=law_sets_store,
+            projections_store=projections_store,
+            code=normalized_code,
+            is_active=False,
+        )
     except ValueError as exc:
         _raise_bad_request(exc)
     except KeyError as exc:

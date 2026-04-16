@@ -304,10 +304,22 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(login.status_code, 200)
 
     def test_runtime_servers_crud_endpoints(self):
+        self.runtime_store.rows["orange"] = {
+            "code": "orange",
+            "title": "Orange City",
+            "is_active": True,
+            "created_at": "2026-04-16T00:00:00+00:00",
+        }
         listed = self.client.get("/api/admin/runtime-servers")
         self.assertEqual(listed.status_code, 200)
-        self.assertEqual(listed.json()["count"], 1)
-        self.assertEqual(listed.json()["items"][0]["onboarding"]["highest_completed_state"], "workflow-ready")
+        self.assertEqual(listed.json()["count"], 2)
+        blackberry = next(item for item in listed.json()["items"] if item["code"] == "blackberry")
+        orange = next(item for item in listed.json()["items"] if item["code"] == "orange")
+        self.assertEqual(blackberry["onboarding"]["highest_completed_state"], "workflow-ready")
+        self.assertEqual(orange["projection_bridge"]["run_id"], 4)
+        self.assertEqual(orange["projection_bridge"]["law_set_id"], 2)
+        self.assertEqual(orange["projection_bridge"]["law_version_id"], 88)
+        self.assertIsNone(orange["projection_bridge"]["matches_active_law_version"])
 
         created = self.client.post("/api/admin/runtime-servers", json={"code": "city2", "title": "City 2"})
         self.assertEqual(created.status_code, 200)
@@ -315,6 +327,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertFalse(created.json()["item"]["is_active"])
         self.assertEqual(created.json()["item"]["onboarding"]["highest_completed_state"], "not-ready")
         self.assertEqual(created.json()["item"]["onboarding"]["resolution_mode"], "neutral_fallback")
+        self.assertIsNone(created.json()["item"]["projection_bridge"])
 
         updated = self.client.put("/api/admin/runtime-servers/city2", json={"code": "city2", "title": "City 2 RU"})
         self.assertEqual(updated.status_code, 200)

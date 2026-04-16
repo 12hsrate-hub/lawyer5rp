@@ -82,7 +82,11 @@ def _build_projection_bridge_summary(
         "decision_status": str(summary_json.get("decision_status") or ""),
         "law_set_id": int(materialization.get("law_set_id") or 0) or None,
         "law_version_id": int(activation.get("law_version_id") or 0) or None,
-        "matches_active_law_version": active_version_id > 0 and int(activation.get("law_version_id") or 0) == active_version_id,
+        "matches_active_law_version": (
+            active_version_id > 0 and int(activation.get("law_version_id") or 0) == active_version_id
+            if active_version_id > 0
+            else None
+        ),
         "created_at": str(selected_run.created_at or ""),
     }
 
@@ -242,6 +246,7 @@ def _build_runtime_server_item_payload(
     record: RuntimeServerRecord,
     law_sets_store: RuntimeLawSetsStore,
     store: RuntimeServersStore,
+    projections_store: ServerEffectiveLawProjectionsStore | None = None,
 ) -> dict[str, Any]:
     payload = store.to_payload(record)
     context = _collect_runtime_server_context(
@@ -261,12 +266,27 @@ def _build_runtime_server_item_payload(
         smoke_tests_passed=False,
         smoke_tests_checked=False,
     )
+    payload["projection_bridge"] = _build_projection_bridge_summary(
+        server_code=record.code,
+        projections_store=projections_store,
+        active_law_version=context["active_law_version"],
+    )
     return payload
 
 
-def list_runtime_servers_payload(*, store: RuntimeServersStore, law_sets_store: RuntimeLawSetsStore) -> dict[str, Any]:
+def list_runtime_servers_payload(
+    *,
+    store: RuntimeServersStore,
+    law_sets_store: RuntimeLawSetsStore,
+    projections_store: ServerEffectiveLawProjectionsStore | None = None,
+) -> dict[str, Any]:
     items = [
-        _build_runtime_server_item_payload(record=record, law_sets_store=law_sets_store, store=store)
+        _build_runtime_server_item_payload(
+            record=record,
+            law_sets_store=law_sets_store,
+            store=store,
+            projections_store=projections_store,
+        )
         for record in store.list_servers()
     ]
     return {"items": items, "count": len(items)}
@@ -276,33 +296,57 @@ def create_runtime_server_payload(
     *,
     store: RuntimeServersStore,
     law_sets_store: RuntimeLawSetsStore,
+    projections_store: ServerEffectiveLawProjectionsStore | None = None,
     code: str,
     title: str,
 ) -> dict[str, Any]:
     row = store.create_server(code=code, title=title)
-    return {"item": _build_runtime_server_item_payload(record=row, law_sets_store=law_sets_store, store=store)}
+    return {
+        "item": _build_runtime_server_item_payload(
+            record=row,
+            law_sets_store=law_sets_store,
+            store=store,
+            projections_store=projections_store,
+        )
+    }
 
 
 def update_runtime_server_payload(
     *,
     store: RuntimeServersStore,
     law_sets_store: RuntimeLawSetsStore,
+    projections_store: ServerEffectiveLawProjectionsStore | None = None,
     code: str,
     title: str,
 ) -> dict[str, Any]:
     row = store.update_server(code=code, title=title)
-    return {"item": _build_runtime_server_item_payload(record=row, law_sets_store=law_sets_store, store=store)}
+    return {
+        "item": _build_runtime_server_item_payload(
+            record=row,
+            law_sets_store=law_sets_store,
+            store=store,
+            projections_store=projections_store,
+        )
+    }
 
 
 def set_runtime_server_active_payload(
     *,
     store: RuntimeServersStore,
     law_sets_store: RuntimeLawSetsStore,
+    projections_store: ServerEffectiveLawProjectionsStore | None = None,
     code: str,
     is_active: bool,
 ) -> dict[str, Any]:
     row = store.set_active(code=code, is_active=is_active)
-    return {"item": _build_runtime_server_item_payload(record=row, law_sets_store=law_sets_store, store=store)}
+    return {
+        "item": _build_runtime_server_item_payload(
+            record=row,
+            law_sets_store=law_sets_store,
+            store=store,
+            projections_store=projections_store,
+        )
+    }
 
 
 def build_runtime_server_health_payload(
