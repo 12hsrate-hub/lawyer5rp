@@ -375,6 +375,7 @@ window.OGPAdminServerWorkspace = {
         const runtimeVersionParity = laws.runtime_version_parity || state.lawsDiff?.runtime_version_parity || {};
         const projectionBridgeLifecycle = laws.projection_bridge_lifecycle || state.lawsDiff?.projection_bridge_lifecycle || {};
         const projectionBridgeReadiness = laws.projection_bridge_readiness || state.lawsDiff?.projection_bridge_readiness || {};
+        const promotionCandidate = laws.promotion_candidate || state.lawsDiff?.promotion_candidate || {};
         const effective = state.lawsEffective || {};
       const effectiveItems = Array.isArray(effective.items) ? effective.items.slice(0, 12) : [];
       const fillSummary = laws.fill_check || effective.summary || {};
@@ -434,6 +435,11 @@ window.OGPAdminServerWorkspace = {
               <span class="legal-field__label">Bridge readiness</span>
               <div><strong>${escapeHtml(String(projectionBridgeReadiness.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">${escapeHtml(String(projectionBridgeReadiness.next_step || projectionBridgeReadiness.detail || "Projection bridge readiness summary is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Promotion candidate</span>
+              <div><strong>${escapeHtml(String(promotionCandidate.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(promotionCandidate.next_step || promotionCandidate.detail || "Promotion candidate summary is not available yet."))}</div>
             </div>
           </div>
         <div class="legal-subcard">
