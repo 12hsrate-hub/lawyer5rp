@@ -135,6 +135,25 @@ class LawSourceDiscoveryStore:
         finally:
             conn.close()
 
+    def list_runs_for_revision(self, *, source_set_revision_id: int) -> list[SourceDiscoveryRunRecord]:
+        conn = self.backend.connect()
+        try:
+            rows = conn.execute(
+                """
+                SELECT r.id, r.source_set_revision_id, rev.source_set_key, rev.revision,
+                       r.trigger_mode, r.status, r.summary_json, r.error_summary,
+                       r.created_at, r.started_at, r.finished_at
+                FROM source_discovery_runs AS r
+                JOIN source_set_revisions AS rev ON rev.id = r.source_set_revision_id
+                WHERE r.source_set_revision_id = %s
+                ORDER BY r.created_at DESC, r.id DESC
+                """,
+                (int(source_set_revision_id),),
+            ).fetchall()
+            return [self._run_from_row(dict(row)) for row in rows]
+        finally:
+            conn.close()
+
     def get_run(self, *, run_id: int) -> SourceDiscoveryRunRecord | None:
         conn = self.backend.connect()
         try:
