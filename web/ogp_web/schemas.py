@@ -681,6 +681,10 @@ class AdminLawProjectionDecisionPayload(BaseModel):
         return str(value or "").strip()
 
 
+class AdminLawProjectionMaterializePayload(BaseModel):
+    safe_rerun: bool = True
+
+
 class AdminLawSourceRegistryPayload(BaseModel):
     name: str = ""
     kind: str = "url"
