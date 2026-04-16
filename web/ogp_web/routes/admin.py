@@ -29,6 +29,7 @@ from ogp_web.schemas import (
     AdminBulkActionPayload,
     AdminCatalogItemPayload,
     AdminCatalogRollbackPayload,
+    AdminServerTemplatePreviewPayload,
     AdminCatalogWorkflowPayload,
     AdminCanonicalLawDocumentIngestPayload,
     AdminCanonicalLawDocumentVersionFetchPayload,
@@ -97,6 +98,17 @@ from ogp_web.services.admin_runtime_servers_service import (
 from ogp_web.services.admin_server_workspace_service import (
     build_server_activity_payload,
     build_server_workspace_payload,
+)
+from ogp_web.services.admin_server_content_workspace_service import (
+    build_server_template_placeholders_payload,
+    build_server_template_preview_payload,
+    execute_server_content_workflow_payload,
+    get_server_template_item_payload,
+    list_server_features_payload,
+    list_server_templates_payload,
+    reset_server_template_to_default_payload,
+    save_server_feature_override_payload,
+    save_server_template_override_payload,
 )
 from ogp_web.services.admin_server_laws_workspace_service import (
     build_server_effective_laws_payload,
@@ -592,6 +604,336 @@ async def admin_runtime_server_activity(
         username=user.username,
     )
     return _admin_ok(**payload)
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/features")
+async def admin_runtime_server_features(
+    server_code: str,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+):
+    _ = user
+    return _admin_ok(
+        **list_server_features_payload(
+            workflow_service=workflow_service,
+            server_code=server_code,
+        )
+    )
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/features")
+async def admin_runtime_server_features_create(
+    server_code: str,
+    payload: AdminCatalogItemPayload,
+    request: Request,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    user_store: UserStore = Depends(get_user_store),
+):
+    actor_user_id = _resolve_actor_user_id(user_store, user.username)
+    try:
+        result = save_server_feature_override_payload(
+            workflow_service=workflow_service,
+            server_code=server_code,
+            actor_user_id=actor_user_id,
+            request_id=getattr(request.state, "request_id", ""),
+            payload=payload,
+        )
+    except (ValueError, PermissionError) as exc:
+        _raise_bad_request(exc)
+    metrics_store.log_event(
+        event_type="admin_server_feature_create",
+        username=user.username,
+        server_code=_normalize_code(server_code),
+        path=f"/api/admin/runtime-servers/{_normalize_code(server_code)}/features",
+        method="POST",
+        status_code=200,
+        meta={"content_key": payload.key or payload.feature_flag},
+    )
+    return _admin_ok(**result)
+
+
+@router.put("/api/admin/runtime-servers/{server_code}/features/{feature_key}")
+async def admin_runtime_server_features_update(
+    server_code: str,
+    feature_key: str,
+    payload: AdminCatalogItemPayload,
+    request: Request,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    user_store: UserStore = Depends(get_user_store),
+):
+    actor_user_id = _resolve_actor_user_id(user_store, user.username)
+    try:
+        result = save_server_feature_override_payload(
+            workflow_service=workflow_service,
+            server_code=server_code,
+            actor_user_id=actor_user_id,
+            request_id=getattr(request.state, "request_id", ""),
+            payload=payload,
+            feature_key=feature_key,
+        )
+    except (ValueError, PermissionError) as exc:
+        _raise_bad_request(exc)
+    metrics_store.log_event(
+        event_type="admin_server_feature_update",
+        username=user.username,
+        server_code=_normalize_code(server_code),
+        path=f"/api/admin/runtime-servers/{_normalize_code(server_code)}/features/{_normalize_code(feature_key)}",
+        method="PUT",
+        status_code=200,
+        meta={"content_key": _normalize_code(feature_key)},
+    )
+    return _admin_ok(**result)
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/features/{feature_key}/workflow")
+async def admin_runtime_server_features_workflow(
+    server_code: str,
+    feature_key: str,
+    payload: AdminCatalogWorkflowPayload,
+    request: Request,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    user_store: UserStore = Depends(get_user_store),
+):
+    actor_user_id = _resolve_actor_user_id(user_store, user.username)
+    try:
+        result = execute_server_content_workflow_payload(
+            workflow_service=workflow_service,
+            server_code=server_code,
+            actor_user_id=actor_user_id,
+            request_id=getattr(request.state, "request_id", ""),
+            content_type="features",
+            content_key=feature_key,
+            payload=payload,
+        )
+    except (ValueError, PermissionError) as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_server_feature_workflow",
+        username=user.username,
+        server_code=_normalize_code(server_code),
+        path=f"/api/admin/runtime-servers/{_normalize_code(server_code)}/features/{_normalize_code(feature_key)}/workflow",
+        method="POST",
+        status_code=200,
+        meta={"content_key": _normalize_code(feature_key), "action": payload.action},
+    )
+    return _admin_ok(**result)
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/templates")
+async def admin_runtime_server_templates(
+    server_code: str,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+):
+    _ = user
+    return _admin_ok(
+        **list_server_templates_payload(
+            workflow_service=workflow_service,
+            server_code=server_code,
+        )
+    )
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/templates/{template_key}")
+async def admin_runtime_server_template_item(
+    server_code: str,
+    template_key: str,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+):
+    _ = user
+    try:
+        payload = get_server_template_item_payload(
+            workflow_service=workflow_service,
+            server_code=server_code,
+            template_key=template_key,
+        )
+    except KeyError as exc:
+        _raise_not_found(exc)
+    return _admin_ok(**payload)
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/templates")
+async def admin_runtime_server_templates_create(
+    server_code: str,
+    payload: AdminCatalogItemPayload,
+    request: Request,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    user_store: UserStore = Depends(get_user_store),
+):
+    actor_user_id = _resolve_actor_user_id(user_store, user.username)
+    try:
+        result = save_server_template_override_payload(
+            workflow_service=workflow_service,
+            server_code=server_code,
+            actor_user_id=actor_user_id,
+            request_id=getattr(request.state, "request_id", ""),
+            payload=payload,
+        )
+    except (ValueError, PermissionError) as exc:
+        _raise_bad_request(exc)
+    metrics_store.log_event(
+        event_type="admin_server_template_create",
+        username=user.username,
+        server_code=_normalize_code(server_code),
+        path=f"/api/admin/runtime-servers/{_normalize_code(server_code)}/templates",
+        method="POST",
+        status_code=200,
+        meta={"content_key": payload.key},
+    )
+    return _admin_ok(**result)
+
+
+@router.put("/api/admin/runtime-servers/{server_code}/templates/{template_key}")
+async def admin_runtime_server_templates_update(
+    server_code: str,
+    template_key: str,
+    payload: AdminCatalogItemPayload,
+    request: Request,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    user_store: UserStore = Depends(get_user_store),
+):
+    actor_user_id = _resolve_actor_user_id(user_store, user.username)
+    try:
+        result = save_server_template_override_payload(
+            workflow_service=workflow_service,
+            server_code=server_code,
+            actor_user_id=actor_user_id,
+            request_id=getattr(request.state, "request_id", ""),
+            payload=payload,
+            template_key=template_key,
+        )
+    except (ValueError, PermissionError) as exc:
+        _raise_bad_request(exc)
+    metrics_store.log_event(
+        event_type="admin_server_template_update",
+        username=user.username,
+        server_code=_normalize_code(server_code),
+        path=f"/api/admin/runtime-servers/{_normalize_code(server_code)}/templates/{_normalize_code(template_key)}",
+        method="PUT",
+        status_code=200,
+        meta={"content_key": _normalize_code(template_key)},
+    )
+    return _admin_ok(**result)
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/templates/{template_key}/workflow")
+async def admin_runtime_server_templates_workflow(
+    server_code: str,
+    template_key: str,
+    payload: AdminCatalogWorkflowPayload,
+    request: Request,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    user_store: UserStore = Depends(get_user_store),
+):
+    actor_user_id = _resolve_actor_user_id(user_store, user.username)
+    try:
+        result = execute_server_content_workflow_payload(
+            workflow_service=workflow_service,
+            server_code=server_code,
+            actor_user_id=actor_user_id,
+            request_id=getattr(request.state, "request_id", ""),
+            content_type="templates",
+            content_key=template_key,
+            payload=payload,
+        )
+    except (ValueError, PermissionError) as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_server_template_workflow",
+        username=user.username,
+        server_code=_normalize_code(server_code),
+        path=f"/api/admin/runtime-servers/{_normalize_code(server_code)}/templates/{_normalize_code(template_key)}/workflow",
+        method="POST",
+        status_code=200,
+        meta={"content_key": _normalize_code(template_key), "action": payload.action},
+    )
+    return _admin_ok(**result)
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/templates/{template_key}/preview")
+async def admin_runtime_server_template_preview(
+    server_code: str,
+    template_key: str,
+    payload: AdminServerTemplatePreviewPayload,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+):
+    _ = user
+    try:
+        result = build_server_template_preview_payload(
+            workflow_service=workflow_service,
+            server_code=server_code,
+            template_key=template_key,
+            sample_json=payload.sample_json,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    return _admin_ok(**result)
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/templates/{template_key}/reset-to-default")
+async def admin_runtime_server_template_reset_to_default(
+    server_code: str,
+    template_key: str,
+    request: Request,
+    user: AuthUser = Depends(require_admin_user),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+    user_store: UserStore = Depends(get_user_store),
+):
+    actor_user_id = _resolve_actor_user_id(user_store, user.username)
+    try:
+        result = reset_server_template_to_default_payload(
+            workflow_service=workflow_service,
+            server_code=server_code,
+            actor_user_id=actor_user_id,
+            request_id=getattr(request.state, "request_id", ""),
+            template_key=template_key,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_server_template_reset_to_default",
+        username=user.username,
+        server_code=_normalize_code(server_code),
+        path=f"/api/admin/runtime-servers/{_normalize_code(server_code)}/templates/{_normalize_code(template_key)}/reset-to-default",
+        method="POST",
+        status_code=200,
+        meta={"content_key": _normalize_code(template_key)},
+    )
+    return _admin_ok(**result)
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/templates/{template_key}/placeholders")
+async def admin_runtime_server_template_placeholders(
+    server_code: str,
+    template_key: str,
+    user: AuthUser = Depends(require_admin_user),
+):
+    _ = user
+    _ = server_code
+    return _admin_ok(**build_server_template_placeholders_payload(template_key=template_key))
 
 
 @router.get("/api/admin/runtime-servers/{server_code}/laws/summary")

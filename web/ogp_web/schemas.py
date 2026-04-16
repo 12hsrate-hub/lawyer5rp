@@ -600,6 +600,17 @@ class AdminCatalogRollbackPayload(BaseModel):
     version: int = 0
 
 
+class AdminServerTemplatePreviewPayload(BaseModel):
+    sample_json: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("sample_json")
+    @classmethod
+    def validate_sample_json(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise ValueError("sample_json_must_be_object")
+        return value
+
+
 class AdminLawSourcesPayload(BaseModel):
     server_code: str = ""
     source_urls: list[str] = Field(default_factory=list)

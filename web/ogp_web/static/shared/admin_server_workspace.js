@@ -16,7 +16,93 @@ window.OGPAdminServerWorkspace = {
       lawsSummary: null,
       lawsEffective: null,
       lawsDiff: null,
+      featuresData: null,
+      templatesData: null,
+      featureEditorKey: "",
+      templateEditorKey: "",
+      templatePreviewByKey: {},
+      templatePlaceholdersByKey: {},
     };
+
+    function normalizeKey(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function getFeatureItems() {
+      return Array.isArray(state.featuresData?.effective_items) ? state.featuresData.effective_items : [];
+    }
+
+    function getTemplateItems() {
+      return Array.isArray(state.templatesData?.effective_items) ? state.templatesData.effective_items : [];
+    }
+
+    function findEffectiveItem(items, contentKey) {
+      const normalizedKey = normalizeKey(contentKey);
+      return items.find((item) => normalizeKey(item?.content_key) === normalizedKey) || null;
+    }
+
+    function buildWorkflowActionLabel(action) {
+      if (action === "submit_for_review") return "Отправить на ревью";
+      if (action === "approve") return "Approve";
+      if (action === "request_changes") return "На доработку";
+      if (action === "publish") return "Publish";
+      return action;
+    }
+
+    function buildWorkflowActions(item) {
+      const request = item?.active_change_request;
+      const status = normalizeKey(request?.status || item?.status);
+      if (!request?.id) {
+        return [];
+      }
+      if (status === "draft") {
+        return ["submit_for_review"];
+      }
+      if (status === "in_review" || status === "review") {
+        return ["approve", "request_changes"];
+      }
+      if (status === "approved") {
+        return ["publish"];
+      }
+      return [];
+    }
+
+    function buildFeatureEditorState() {
+      const item = findEffectiveItem(getFeatureItems(), state.featureEditorKey);
+      const effectivePayload = item?.effective_payload || {};
+      const draftPayload = item?.draft_payload || {};
+      const basePayload = { ...effectivePayload, ...draftPayload };
+      const contentKey = normalizeKey(item?.content_key || (state.featureEditorKey === "__new__" ? "" : state.featureEditorKey));
+      return {
+        item,
+        contentKey,
+        title: String(basePayload.title || item?.title || contentKey || ""),
+        status: String(basePayload.status || item?.status || "draft"),
+        enabled: Boolean(typeof basePayload.enabled === "boolean" ? basePayload.enabled : item?.status !== "disabled"),
+        order: basePayload.order ?? "",
+        rollout: String(basePayload.rollout || ""),
+        owner: String(basePayload.owner || ""),
+        notes: String(basePayload.notes || ""),
+        hidden: Boolean(basePayload.hidden || false),
+      };
+    }
+
+    function buildTemplateEditorState() {
+      const item = findEffectiveItem(getTemplateItems(), state.templateEditorKey);
+      const effectivePayload = item?.effective_payload || {};
+      const draftPayload = item?.draft_payload || {};
+      const basePayload = { ...effectivePayload, ...draftPayload };
+      const contentKey = normalizeKey(item?.content_key || (state.templateEditorKey === "__new__" ? "" : state.templateEditorKey));
+      return {
+        item,
+        contentKey,
+        title: String(basePayload.title || item?.title || contentKey || ""),
+        status: String(basePayload.status || item?.status || "draft"),
+        format: String(basePayload.format || "bbcode"),
+        body: String(basePayload.body || ""),
+        notes: String(basePayload.notes || ""),
+      };
+    }
 
     function setBusy(isBusy) {
       const refreshButton = document.getElementById("admin-server-workspace-refresh");
@@ -61,9 +147,9 @@ window.OGPAdminServerWorkspace = {
         <div class="legal-field">
           <span class="legal-field__label">Быстрые действия</span>
           <div class="admin-section-toolbar">
-            <a class="ghost-button button-link" href="/admin/laws">Advanced laws</a>
-            <a class="ghost-button button-link" href="/admin/features">Advanced features</a>
-            <a class="ghost-button button-link" href="/admin/templates">Advanced templates</a>
+            <button type="button" class="ghost-button" data-server-workspace-switch="laws">Законы</button>
+            <button type="button" class="ghost-button" data-server-workspace-switch="features">Функции</button>
+            <button type="button" class="ghost-button" data-server-workspace-switch="templates">Шаблоны</button>
             <a class="ghost-button button-link" href="/admin/users">Users</a>
           </div>
         </div>
@@ -180,30 +266,218 @@ window.OGPAdminServerWorkspace = {
       `;
     }
 
-    function renderContentPanel(panelId, label, payload, advancedHref) {
-      const hostNode = document.getElementById(panelId);
+    function renderFeatures() {
+      const hostNode = document.getElementById("admin-server-workspace-panel-features");
       if (!(hostNode instanceof HTMLElement)) {
         return;
       }
-      const items = Array.isArray(payload?.items) ? payload.items : [];
+      const payload = state.featuresData || {};
+      const items = getFeatureItems();
+      const editor = state.featureEditorKey ? buildFeatureEditorState() : null;
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
-            <span class="legal-field__label">${escapeHtml(label)}</span>
-            <p class="legal-section__description">Effective server view: сначала server overrides, затем global defaults.</p>
+            <span class="legal-field__label">Функции</span>
+            <p class="legal-section__description">Global catalog с server overrides. По умолчанию показан effective результат для текущего сервера.</p>
           </div>
           <div class="admin-section-toolbar">
-            <a class="ghost-button button-link" href="${escapeHtml(advancedHref)}">Открыть расширенный раздел</a>
+            <button type="button" id="admin-server-features-add" class="primary-button">Добавить override</button>
+            <button type="button" id="admin-server-features-reload" class="ghost-button">Обновить блок</button>
           </div>
         </div>
         <div class="legal-field-grid legal-field-grid--two">
-          <div class="legal-field"><span class="legal-field__label">Effective</span><div><strong>${escapeHtml(String(payload?.effective || payload?.counts?.effective || 0))}</strong></div></div>
-          <div class="legal-field"><span class="legal-field__label">Server overrides</span><div><strong>${escapeHtml(String(payload?.server || payload?.counts?.server || 0))}</strong></div></div>
+          <div class="legal-field"><span class="legal-field__label">Effective</span><div><strong>${escapeHtml(String(payload?.counts?.effective || 0))}</strong></div></div>
+          <div class="legal-field"><span class="legal-field__label">Server overrides</span><div><strong>${escapeHtml(String(payload?.counts?.server || 0))}</strong></div></div>
         </div>
         ${
           items.length
-            ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Key</th><th>Title</th><th>Source</th><th>Status</th></tr></thead><tbody>${items.map((item) => `<tr><td>${escapeHtml(String(item.content_key || "—"))}</td><td>${escapeHtml(String(item.title || "—"))}</td><td>${escapeHtml(String(item.source_scope || "—"))}</td><td>${escapeHtml(String(item.status || "—"))}</td></tr>`).join("")}</tbody></table>`
-            : `<p class="legal-section__description">Effective items for "${escapeHtml(label)}" пока не найдены.</p>`
+            ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Функция</th><th>Источник</th><th>Состояние</th><th>Workflow</th><th></th></tr></thead><tbody>${items.map((item) => {
+                const workflowActions = buildWorkflowActions(item);
+                const effectivePayload = item?.draft_payload && Object.keys(item.draft_payload).length ? item.draft_payload : (item?.effective_payload || {});
+                return `<tr>
+                  <td><strong>${escapeHtml(String(item.title || item.content_key || "—"))}</strong><div class="admin-user-cell__secondary">${escapeHtml(String(item.content_key || "—"))}</div></td>
+                  <td>${escapeHtml(String(item.source_scope || "global"))}<div class="admin-user-cell__secondary">override: ${item.has_server_override ? "yes" : "no"}</div></td>
+                  <td>${effectivePayload.enabled ? "enabled" : "disabled"}<div class="admin-user-cell__secondary">status: ${escapeHtml(String(item.status || "draft"))}${effectivePayload.hidden ? " • hidden" : ""}</div></td>
+                  <td>${item.active_change_request?.id ? `${escapeHtml(String(item.active_change_request.status || "draft"))} #${escapeHtml(String(item.active_change_request.id || ""))}` : "—"}</td>
+                  <td><div class="admin-section-toolbar"><button type="button" class="ghost-button" data-server-feature-edit="${escapeHtml(String(item.content_key || ""))}">${item.has_server_override ? "Редактировать" : "Создать override"}</button>${workflowActions.map((action) => `<button type="button" class="ghost-button" data-server-feature-workflow="${escapeHtml(String(item.content_key || ""))}" data-server-feature-workflow-action="${escapeHtml(action)}" data-server-feature-cr-id="${escapeHtml(String(item.active_change_request?.id || ""))}">${escapeHtml(buildWorkflowActionLabel(action))}</button>`).join("")}</div></td>
+                </tr>`;
+              }).join("")}</tbody></table>`
+            : '<p class="legal-section__description">Для сервера пока нет effective функций.</p>'
+        }
+        ${
+          editor
+            ? `<div class="legal-subcard">
+                <div class="legal-subcard__header">
+                  <div>
+                    <span class="legal-field__label">${editor.item ? "Редактирование server override" : "Новый server override"}</span>
+                    <p class="legal-section__description">Сохранение создаёт или обновляет draft override. Publish остаётся отдельным workflow action.</p>
+                  </div>
+                  <div class="admin-section-toolbar">
+                    <button type="button" class="ghost-button" id="admin-server-feature-editor-cancel">Закрыть</button>
+                  </div>
+                </div>
+                <form id="admin-server-feature-form" class="legal-field-grid legal-field-grid--two">
+                  <label class="legal-field">
+                    <span class="legal-field__label">Feature key</span>
+                    <input name="content_key" class="text-input" value="${escapeHtml(editor.contentKey)}" ${editor.item ? "readonly" : ""} required />
+                  </label>
+                  <label class="legal-field">
+                    <span class="legal-field__label">Title</span>
+                    <input name="title" class="text-input" value="${escapeHtml(editor.title)}" required />
+                  </label>
+                  <label class="legal-field">
+                    <span class="legal-field__label">Status</span>
+                    <select name="status" class="text-input">
+                      ${["draft", "review", "published", "active", "disabled", "archived"].map((status) => `<option value="${status}" ${editor.status === status ? "selected" : ""}>${status}</option>`).join("")}
+                    </select>
+                  </label>
+                  <label class="legal-field">
+                    <span class="legal-field__label">Порядок</span>
+                    <input name="order" type="number" class="text-input" value="${escapeHtml(String(editor.order ?? ""))}" />
+                  </label>
+                  <label class="legal-field">
+                    <span class="legal-field__label">Enabled</span>
+                    <input name="enabled" type="checkbox" ${editor.enabled ? "checked" : ""} />
+                  </label>
+                  <label class="legal-field">
+                    <span class="legal-field__label">Скрывать в UI</span>
+                    <input name="hidden" type="checkbox" ${editor.hidden ? "checked" : ""} />
+                  </label>
+                  <details class="legal-field" ${editor.item && (editor.rollout || editor.owner || editor.notes) ? "open" : ""}>
+                    <summary class="legal-field__label">Дополнительные настройки</summary>
+                    <label class="legal-field">
+                      <span class="legal-field__label">Rollout</span>
+                      <input name="rollout" class="text-input" value="${escapeHtml(editor.rollout)}" />
+                    </label>
+                    <label class="legal-field">
+                      <span class="legal-field__label">Owner</span>
+                      <input name="owner" class="text-input" value="${escapeHtml(editor.owner)}" />
+                    </label>
+                    <label class="legal-field">
+                      <span class="legal-field__label">Notes</span>
+                      <textarea name="notes" class="text-input" rows="4">${escapeHtml(editor.notes)}</textarea>
+                    </label>
+                  </details>
+                  <div class="admin-section-toolbar">
+                    <button type="submit" id="admin-server-feature-save" class="primary-button">Сохранить черновик</button>
+                  </div>
+                </form>
+              </div>`
+            : '<p class="legal-section__description">Выберите функцию из списка или создайте новый override, если нужно серверное включение, скрытие или порядок показа.</p>'
+        }
+      `;
+    }
+
+    function renderTemplates() {
+      const hostNode = document.getElementById("admin-server-workspace-panel-templates");
+      if (!(hostNode instanceof HTMLElement)) {
+        return;
+      }
+      const payload = state.templatesData || {};
+      const items = getTemplateItems();
+      const editor = state.templateEditorKey ? buildTemplateEditorState() : null;
+      const preview = editor ? state.templatePreviewByKey[editor.contentKey] : null;
+      const placeholders = editor ? state.templatePlaceholdersByKey[editor.contentKey] : null;
+      hostNode.innerHTML = `
+        <div class="legal-subcard__header">
+          <div>
+            <span class="legal-field__label">Шаблоны вывода</span>
+            <p class="legal-section__description">Server override меняет BBCode без переписывания global defaults. Preview и placeholders доступны прямо здесь.</p>
+          </div>
+          <div class="admin-section-toolbar">
+            <button type="button" id="admin-server-templates-add" class="primary-button">Добавить шаблон</button>
+            <button type="button" id="admin-server-templates-reload" class="ghost-button">Обновить блок</button>
+          </div>
+        </div>
+        <div class="legal-field-grid legal-field-grid--two">
+          <div class="legal-field"><span class="legal-field__label">Effective</span><div><strong>${escapeHtml(String(payload?.counts?.effective || 0))}</strong></div></div>
+          <div class="legal-field"><span class="legal-field__label">Server overrides</span><div><strong>${escapeHtml(String(payload?.counts?.server || 0))}</strong></div></div>
+        </div>
+        ${
+          items.length
+            ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Шаблон</th><th>Источник</th><th>Статус</th><th>Workflow</th><th></th></tr></thead><tbody>${items.map((item) => {
+                const workflowActions = buildWorkflowActions(item);
+                const draftPayload = item?.draft_payload || {};
+                const effectivePayload = item?.effective_payload || {};
+                const body = String(draftPayload.body || effectivePayload.body || "");
+                return `<tr>
+                  <td><strong>${escapeHtml(String(item.title || item.content_key || "—"))}</strong><div class="admin-user-cell__secondary">${escapeHtml(String(item.content_key || "—"))}</div></td>
+                  <td>${escapeHtml(String(item.source_scope || "global"))}<div class="admin-user-cell__secondary">override: ${item.has_server_override ? "yes" : "no"}</div></td>
+                  <td>${escapeHtml(String(item.status || "draft"))}<div class="admin-user-cell__secondary">${escapeHtml(body.slice(0, 120) || "Пустой шаблон")}</div></td>
+                  <td>${item.active_change_request?.id ? `${escapeHtml(String(item.active_change_request.status || "draft"))} #${escapeHtml(String(item.active_change_request.id || ""))}` : "—"}</td>
+                  <td><div class="admin-section-toolbar"><button type="button" class="ghost-button" data-server-template-edit="${escapeHtml(String(item.content_key || ""))}">${item.has_server_override ? "Редактировать" : "Создать override"}</button>${item.source_scope === "server" ? `<button type="button" class="ghost-button" data-server-template-reset="${escapeHtml(String(item.content_key || ""))}">Reset</button>` : ""}${workflowActions.map((action) => `<button type="button" class="ghost-button" data-server-template-workflow="${escapeHtml(String(item.content_key || ""))}" data-server-template-workflow-action="${escapeHtml(action)}" data-server-template-cr-id="${escapeHtml(String(item.active_change_request?.id || ""))}">${escapeHtml(buildWorkflowActionLabel(action))}</button>`).join("")}</div></td>
+                </tr>`;
+              }).join("")}</tbody></table>`
+            : '<p class="legal-section__description">Для сервера пока нет effective шаблонов.</p>'
+        }
+        ${
+          editor
+            ? `<div class="legal-subcard">
+                <div class="legal-subcard__header">
+                  <div>
+                    <span class="legal-field__label">${editor.item ? "Редактирование BBCode template override" : "Новый server template override"}</span>
+                    <p class="legal-section__description">Сохранение создаёт draft override. Publish остаётся отдельным workflow action.</p>
+                  </div>
+                  <div class="admin-section-toolbar">
+                    <button type="button" class="ghost-button" id="admin-server-template-editor-cancel">Закрыть</button>
+                  </div>
+                </div>
+                <form id="admin-server-template-form" class="legal-field-grid">
+                  <label class="legal-field">
+                    <span class="legal-field__label">Template key</span>
+                    <input name="content_key" class="text-input" value="${escapeHtml(editor.contentKey)}" ${editor.item ? "readonly" : ""} required />
+                  </label>
+                  <label class="legal-field">
+                    <span class="legal-field__label">Title</span>
+                    <input name="title" class="text-input" value="${escapeHtml(editor.title)}" required />
+                  </label>
+                  <label class="legal-field">
+                    <span class="legal-field__label">Status</span>
+                    <select name="status" class="text-input">
+                      ${["draft", "review", "published", "active", "disabled", "archived"].map((status) => `<option value="${status}" ${editor.status === status ? "selected" : ""}>${status}</option>`).join("")}
+                    </select>
+                  </label>
+                  <label class="legal-field">
+                    <span class="legal-field__label">Body (BBCode)</span>
+                    <textarea name="body" class="text-input" rows="12" required>${escapeHtml(editor.body)}</textarea>
+                  </label>
+                  <details class="legal-field" ${editor.item && editor.notes ? "open" : ""}>
+                    <summary class="legal-field__label">Дополнительные настройки</summary>
+                    <label class="legal-field">
+                      <span class="legal-field__label">Format</span>
+                      <input name="format" class="text-input" value="${escapeHtml(editor.format)}" />
+                    </label>
+                    <label class="legal-field">
+                      <span class="legal-field__label">Notes</span>
+                      <textarea name="notes" class="text-input" rows="4">${escapeHtml(editor.notes)}</textarea>
+                    </label>
+                    <label class="legal-field">
+                      <span class="legal-field__label">Sample JSON для preview</span>
+                      <textarea name="sample_json" class="text-input" rows="5">${escapeHtml(JSON.stringify(preview?.sample_json || {}, null, 2))}</textarea>
+                    </label>
+                  </details>
+                  <div class="admin-section-toolbar">
+                    <button type="submit" id="admin-server-template-save" class="primary-button">Сохранить черновик</button>
+                    <button type="button" id="admin-server-template-preview" class="secondary-button">Предпросмотр</button>
+                    ${editor.item ? `<button type="button" id="admin-server-template-reset" class="ghost-button">Сбросить к global default</button>` : ""}
+                  </div>
+                </form>
+                <div class="legal-field-grid legal-field-grid--two">
+                  <div class="legal-field">
+                    <span class="legal-field__label">Placeholder-справка</span>
+                    ${
+                      placeholders?.items?.length
+                        ? `<div class="admin-section-toolbar">${placeholders.items.map((item) => `<span class="admin-badge admin-badge--muted">${escapeHtml(String(item.name || ""))}</span>`).join("")}</div>`
+                        : '<div class="admin-user-cell__secondary">Справка загрузится после открытия шаблона.</div>'
+                    }
+                  </div>
+                  <div class="legal-field">
+                    <span class="legal-field__label">Preview</span>
+                    <pre class="legal-field__hint">${escapeHtml(String(preview?.preview || "Нажмите «Предпросмотр», чтобы увидеть итоговый BBCode."))}</pre>
+                  </div>
+                </div>
+              </div>`
+            : '<p class="legal-section__description">Выберите шаблон из списка, чтобы настроить server override, сделать preview или выполнить reset к global default.</p>'
         }
       `;
     }
@@ -329,16 +603,65 @@ window.OGPAdminServerWorkspace = {
     function renderPanels() {
       renderSummary();
       renderOverview();
-      const features = state.workspace?.overview?.features || {};
-      renderContentPanel("admin-server-workspace-panel-features", "Функции", features, "/admin/features");
-      const templates = state.workspace?.overview?.templates || {};
-      renderContentPanel("admin-server-workspace-panel-templates", "Шаблоны вывода", templates, "/admin/templates");
+      renderFeatures();
+      renderTemplates();
       renderLaws();
       renderUsers();
       renderAccess();
       renderAudit();
       renderErrors();
       renderDiagnostics();
+    }
+
+    async function loadFeaturesData() {
+      const response = await deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/features`);
+      const payload = await deps.parsePayload(response);
+      if (!response.ok) {
+        throw new Error(deps.formatHttpError?.(response, payload, "Не удалось загрузить effective features.") || "Не удалось загрузить effective features.");
+      }
+      state.featuresData = payload;
+    }
+
+    async function loadTemplateAux(contentKey) {
+      const normalizedKey = normalizeKey(contentKey);
+      if (!normalizedKey) {
+        return;
+      }
+      const [itemResponse, placeholdersResponse] = await Promise.all([
+        deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/templates/${encodeURIComponent(normalizedKey)}`),
+        deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/templates/${encodeURIComponent(normalizedKey)}/placeholders`),
+      ]);
+      const itemPayload = await deps.parsePayload(itemResponse);
+      const placeholdersPayload = await deps.parsePayload(placeholdersResponse);
+      if (itemResponse.ok) {
+        const items = getTemplateItems().filter((item) => normalizeKey(item?.content_key) !== normalizedKey);
+        items.push(itemPayload);
+        items.sort((left, right) => String(left?.title || left?.content_key || "").localeCompare(String(right?.title || right?.content_key || "")));
+        state.templatesData = {
+          ...(state.templatesData || {}),
+          effective_items: items,
+          counts: {
+            ...(state.templatesData?.counts || {}),
+            effective: items.length,
+          },
+        };
+      }
+      if (placeholdersResponse.ok) {
+        state.templatePlaceholdersByKey[normalizedKey] = placeholdersPayload;
+      }
+    }
+
+    async function loadTemplatesData() {
+      const response = await deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/templates`);
+      const payload = await deps.parsePayload(response);
+      if (!response.ok) {
+        throw new Error(deps.formatHttpError?.(response, payload, "Не удалось загрузить effective templates.") || "Не удалось загрузить effective templates.");
+      }
+      state.templatesData = payload;
+      const focusedKey = normalizeKey(state.templateEditorKey && state.templateEditorKey !== "__new__" ? state.templateEditorKey : getTemplateItems()[0]?.content_key);
+      if (focusedKey) {
+        await loadTemplateAux(focusedKey);
+      }
     }
 
     function applyTabState() {
@@ -393,6 +716,7 @@ window.OGPAdminServerWorkspace = {
         state.lawsSummary = lawsSummaryPayload;
         state.lawsEffective = lawsEffectivePayload;
         state.lawsDiff = lawsDiffPayload;
+        await Promise.all([loadFeaturesData(), loadTemplatesData()]);
         renderPanels();
         applyTabState();
       } catch (error) {
@@ -410,6 +734,12 @@ window.OGPAdminServerWorkspace = {
       const tabButton = target.closest("[data-server-workspace-tab]");
       if (tabButton instanceof HTMLElement) {
         state.activeTab = String(tabButton.getAttribute("data-server-workspace-tab") || "overview");
+        applyTabState();
+        return;
+      }
+      const quickSwitch = target.closest("[data-server-workspace-switch]");
+      if (quickSwitch instanceof HTMLElement) {
+        state.activeTab = String(quickSwitch.getAttribute("data-server-workspace-switch") || "overview");
         applyTabState();
         return;
       }
@@ -477,8 +807,274 @@ window.OGPAdminServerWorkspace = {
             deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось проверить наполнение законов.");
           }
         })();
+        return;
       }
-    });
+      if (target.id === "admin-server-features-reload") {
+          (async () => {
+            try {
+              await loadFeaturesData();
+              renderFeatures();
+              deps.showMessage?.("Блок функций обновлен.");
+            } catch (error) {
+              deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось обновить блок функций.");
+            }
+          })();
+          return;
+        }
+        if (target.id === "admin-server-features-add") {
+          state.featureEditorKey = "__new__";
+          renderFeatures();
+          return;
+        }
+        if (target.id === "admin-server-feature-editor-cancel") {
+          state.featureEditorKey = "";
+          renderFeatures();
+          return;
+        }
+        const featureEditButton = target.closest("[data-server-feature-edit]");
+        if (featureEditButton instanceof HTMLElement) {
+          state.featureEditorKey = String(featureEditButton.getAttribute("data-server-feature-edit") || "");
+          renderFeatures();
+          return;
+        }
+        const featureWorkflowButton = target.closest("[data-server-feature-workflow]");
+        if (featureWorkflowButton instanceof HTMLElement) {
+          (async () => {
+            const contentKey = String(featureWorkflowButton.getAttribute("data-server-feature-workflow") || "");
+            const action = String(featureWorkflowButton.getAttribute("data-server-feature-workflow-action") || "");
+            const changeRequestId = Number(featureWorkflowButton.getAttribute("data-server-feature-cr-id") || 0);
+            try {
+              const response = await deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/features/${encodeURIComponent(contentKey)}/workflow`, {
+                method: "POST",
+                body: JSON.stringify({ action, change_request_id: changeRequestId }),
+              });
+              const payload = await deps.parsePayload(response);
+              if (!response.ok) {
+                deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(response, payload, "Не удалось обновить feature workflow."));
+                return;
+              }
+              await loadFeaturesData();
+              renderFeatures();
+              deps.showMessage?.(`Feature workflow: ${buildWorkflowActionLabel(action)}.`);
+            } catch (error) {
+              deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось обновить feature workflow.");
+            }
+          })();
+          return;
+        }
+        if (target.id === "admin-server-templates-reload") {
+          (async () => {
+            try {
+              await loadTemplatesData();
+              renderTemplates();
+              deps.showMessage?.("Блок шаблонов обновлен.");
+            } catch (error) {
+              deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось обновить блок шаблонов.");
+            }
+          })();
+          return;
+        }
+        if (target.id === "admin-server-templates-add") {
+          state.templateEditorKey = "__new__";
+          renderTemplates();
+          return;
+        }
+        if (target.id === "admin-server-template-editor-cancel") {
+          state.templateEditorKey = "";
+          renderTemplates();
+          return;
+        }
+        const templateEditButton = target.closest("[data-server-template-edit]");
+        if (templateEditButton instanceof HTMLElement) {
+          (async () => {
+            state.templateEditorKey = String(templateEditButton.getAttribute("data-server-template-edit") || "");
+            try {
+              await loadTemplateAux(state.templateEditorKey);
+            } catch {
+              // keep editor open even if details fetch partially fails
+            }
+            renderTemplates();
+          })();
+          return;
+        }
+        const templateWorkflowButton = target.closest("[data-server-template-workflow]");
+        if (templateWorkflowButton instanceof HTMLElement) {
+          (async () => {
+            const contentKey = String(templateWorkflowButton.getAttribute("data-server-template-workflow") || "");
+            const action = String(templateWorkflowButton.getAttribute("data-server-template-workflow-action") || "");
+            const changeRequestId = Number(templateWorkflowButton.getAttribute("data-server-template-cr-id") || 0);
+            try {
+              const response = await deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/templates/${encodeURIComponent(contentKey)}/workflow`, {
+                method: "POST",
+                body: JSON.stringify({ action, change_request_id: changeRequestId }),
+              });
+              const payload = await deps.parsePayload(response);
+              if (!response.ok) {
+                deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(response, payload, "Не удалось обновить template workflow."));
+                return;
+              }
+              await loadTemplatesData();
+              await loadTemplateAux(contentKey);
+              renderTemplates();
+              deps.showMessage?.(`Template workflow: ${buildWorkflowActionLabel(action)}.`);
+            } catch (error) {
+              deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось обновить template workflow.");
+            }
+          })();
+          return;
+        }
+        const templateResetButton = target.closest("[data-server-template-reset]");
+        if (templateResetButton instanceof HTMLElement || target.id === "admin-server-template-reset") {
+          (async () => {
+            const contentKey = normalizeKey(
+              target.id === "admin-server-template-reset"
+                ? state.templateEditorKey
+                : templateResetButton.getAttribute("data-server-template-reset"),
+            );
+            if (!contentKey) {
+              return;
+            }
+            try {
+              const response = await deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/templates/${encodeURIComponent(contentKey)}/reset-to-default`, {
+                method: "POST",
+              });
+              const payload = await deps.parsePayload(response);
+              if (!response.ok) {
+                deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(response, payload, "Не удалось сбросить шаблон к global default."));
+                return;
+              }
+              await loadTemplatesData();
+              await loadTemplateAux(contentKey);
+              renderTemplates();
+              deps.showMessage?.("Шаблон сброшен к global default через draft override.");
+            } catch (error) {
+              deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось сбросить шаблон к global default.");
+            }
+          })();
+          return;
+        }
+        if (target.id === "admin-server-template-preview") {
+          (async () => {
+            const form = document.getElementById("admin-server-template-form");
+            if (!(form instanceof HTMLFormElement)) {
+              return;
+            }
+            const contentKey = normalizeKey(form.elements.namedItem("content_key")?.value);
+            try {
+              const sampleRaw = String(form.elements.namedItem("sample_json")?.value || "").trim();
+              const sampleJson = sampleRaw ? JSON.parse(sampleRaw) : {};
+              const response = await deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/templates/${encodeURIComponent(contentKey)}/preview`, {
+                method: "POST",
+                body: JSON.stringify({ sample_json: sampleJson }),
+              });
+              const payload = await deps.parsePayload(response);
+              if (!response.ok) {
+                deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(response, payload, "Не удалось построить preview шаблона."));
+                return;
+              }
+              state.templatePreviewByKey[contentKey] = payload;
+              renderTemplates();
+              deps.showMessage?.("Preview шаблона обновлен.");
+            } catch (error) {
+              deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось построить preview шаблона.");
+            }
+          })();
+          return;
+        }
+      });
+
+      host.addEventListener("submit", (event) => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement)) {
+          return;
+        }
+        if (form.id === "admin-server-feature-form") {
+          event.preventDefault();
+          (async () => {
+            const contentKey = normalizeKey(form.elements.namedItem("content_key")?.value);
+            const payload = {
+              title: String(form.elements.namedItem("title")?.value || "").trim(),
+              key: contentKey,
+              description: String(form.elements.namedItem("notes")?.value || "").trim(),
+              status: String(form.elements.namedItem("status")?.value || "draft").trim().toLowerCase(),
+              feature_flag: contentKey,
+              config: {
+                feature_code: contentKey,
+                enabled: Boolean(form.elements.namedItem("enabled")?.checked),
+                rollout: String(form.elements.namedItem("rollout")?.value || "").trim(),
+                owner: String(form.elements.namedItem("owner")?.value || "").trim(),
+                notes: String(form.elements.namedItem("notes")?.value || "").trim(),
+                hidden: Boolean(form.elements.namedItem("hidden")?.checked),
+                order: (() => {
+                  const raw = String(form.elements.namedItem("order")?.value || "").trim();
+                  return raw ? Number(raw) : null;
+                })(),
+              },
+            };
+            const existing = findEffectiveItem(getFeatureItems(), contentKey);
+            const method = existing?.server_item_id ? "PUT" : "POST";
+            const url = method === "PUT"
+              ? `/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/features/${encodeURIComponent(contentKey)}`
+              : `/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/features`;
+            try {
+              const response = await deps.apiFetch(url, { method, body: JSON.stringify(payload) });
+              const responsePayload = await deps.parsePayload(response);
+              if (!response.ok) {
+                deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(response, responsePayload, "Не удалось сохранить feature override."));
+                return;
+              }
+              state.featureEditorKey = contentKey;
+              await loadFeaturesData();
+              renderFeatures();
+              deps.showMessage?.("Feature override сохранён как черновик.");
+            } catch (error) {
+              deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось сохранить feature override.");
+            }
+          })();
+          return;
+        }
+        if (form.id === "admin-server-template-form") {
+          event.preventDefault();
+          (async () => {
+            const contentKey = normalizeKey(form.elements.namedItem("content_key")?.value);
+            const payload = {
+              title: String(form.elements.namedItem("title")?.value || "").trim(),
+              key: contentKey,
+              description: String(form.elements.namedItem("notes")?.value || "").trim(),
+              status: String(form.elements.namedItem("status")?.value || "draft").trim().toLowerCase(),
+              output_format: String(form.elements.namedItem("format")?.value || "bbcode").trim().toLowerCase(),
+              config: {
+                template_code: contentKey,
+                title: String(form.elements.namedItem("title")?.value || "").trim(),
+                body: String(form.elements.namedItem("body")?.value || ""),
+                format: String(form.elements.namedItem("format")?.value || "bbcode").trim().toLowerCase(),
+                status: String(form.elements.namedItem("status")?.value || "draft").trim().toLowerCase(),
+                notes: String(form.elements.namedItem("notes")?.value || "").trim(),
+              },
+            };
+            const existing = findEffectiveItem(getTemplateItems(), contentKey);
+            const method = existing?.server_item_id ? "PUT" : "POST";
+            const url = method === "PUT"
+              ? `/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/templates/${encodeURIComponent(contentKey)}`
+              : `/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/templates`;
+            try {
+              const response = await deps.apiFetch(url, { method, body: JSON.stringify(payload) });
+              const responsePayload = await deps.parsePayload(response);
+              if (!response.ok) {
+                deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(response, responsePayload, "Не удалось сохранить template override."));
+                return;
+              }
+              state.templateEditorKey = contentKey;
+              await loadTemplatesData();
+              await loadTemplateAux(contentKey);
+              renderTemplates();
+              deps.showMessage?.("Template override сохранён как черновик.");
+            } catch (error) {
+              deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось сохранить template override.");
+            }
+          })();
+        }
+      });
 
     applyTabState();
     loadWorkspace();
