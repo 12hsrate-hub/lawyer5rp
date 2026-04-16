@@ -49,6 +49,28 @@ class UniqueViolation(Exception):
 
 class PostgresBackend:
     def __init__(self, *, missing_tables: set[str] | None = None):
+        permissions_catalog = {
+            "manage_servers": {"id": 1, "code": "manage_servers", "description": "Manage admin users, flags, and server level settings", "created_at": "2026-01-01T00:00:00+00:00"},
+            "manage_laws": {"id": 2, "code": "manage_laws", "description": "Manage legal and exam-related administrative actions", "created_at": "2026-01-01T00:00:00+00:00"},
+            "view_analytics": {"id": 3, "code": "view_analytics", "description": "Access metrics dashboards and exports", "created_at": "2026-01-01T00:00:00+00:00"},
+            "court_claims": {"id": 4, "code": "court_claims", "description": "Access test pages for court claims and law Q&A", "created_at": "2026-01-01T00:00:00+00:00"},
+            "exam_import": {"id": 5, "code": "exam_import", "description": "Access exam import pages and API", "created_at": "2026-01-01T00:00:00+00:00"},
+            "complaint_presets": {"id": 6, "code": "complaint_presets", "description": "Access complaint test presets", "created_at": "2026-01-01T00:00:00+00:00"},
+        }
+        role_catalog = {
+            "super_admin": {"id": 1, "code": "super_admin", "name": "Super Admin", "created_at": "2026-01-01T00:00:00+00:00"},
+            "analytics_viewer": {"id": 2, "code": "analytics_viewer", "name": "Analytics Viewer", "created_at": "2026-01-01T00:00:00+00:00"},
+            "law_manager": {"id": 3, "code": "law_manager", "name": "Law Manager", "created_at": "2026-01-01T00:00:00+00:00"},
+            "tester": {"id": 4, "code": "tester", "name": "Tester", "created_at": "2026-01-01T00:00:00+00:00"},
+            "gka": {"id": 5, "code": "gka", "name": "GKA", "created_at": "2026-01-01T00:00:00+00:00"},
+        }
+        role_permission_map = {
+            "super_admin": ["manage_servers", "manage_laws", "view_analytics", "court_claims", "exam_import", "complaint_presets"],
+            "analytics_viewer": ["view_analytics"],
+            "law_manager": ["manage_laws", "exam_import"],
+            "tester": ["court_claims"],
+            "gka": ["exam_import", "complaint_presets"],
+        }
         self._state = {
             "next_user_id": 1,
             "next_generated_document_id": 1,
@@ -67,6 +89,10 @@ class PostgresBackend:
             "servers": {},
             "users": {},
             "roles": {},
+            "permissions_catalog": permissions_catalog,
+            "role_catalog": role_catalog,
+            "role_permission_map": role_permission_map,
+            "user_role_assignments": [],
             "selected_servers": {},
             "drafts": {},
             "generated_documents": [],
@@ -213,6 +239,18 @@ class FakePostgresConnection:
         if normalized.startswith("SELECT id FROM users WHERE username = %s"):
             user = self.state["users"].get(params[0])
             return FakeCursor(rowcount=1 if user else 0, one={"id": user["id"]} if user else None)
+        if normalized.startswith("SELECT id, name FROM roles WHERE code = %s"):
+            return self._fetch_role_by_code(params[0])
+        if normalized.startswith("SELECT id, code, description, created_at FROM permissions ORDER BY code ASC"):
+            return self._list_permissions()
+        if normalized.startswith("SELECT r.id AS id, r.code AS code, r.name AS name, r.created_at AS created_at, p.code AS permission_code FROM roles r LEFT JOIN role_permissions rp ON rp.role_id = r.id LEFT JOIN permissions p ON p.id = rp.permission_id ORDER BY r.code ASC, p.code ASC"):
+            return self._list_roles_with_permissions()
+        if normalized.startswith("SELECT r.code AS role_code, r.name AS role_name, ur.server_id AS server_id, ur.created_at AS created_at FROM users u JOIN user_roles ur ON ur.user_id = u.id JOIN roles r ON r.id = ur.role_id WHERE u.username = %s AND (%s = '' OR ur.server_id IS NULL OR ur.server_id = %s) ORDER BY CASE WHEN ur.server_id IS NULL THEN 0 ELSE 1 END, ur.server_id ASC NULLS FIRST, r.code ASC"):
+            return self._list_user_role_assignments(params)
+        if normalized.startswith("INSERT INTO user_roles (user_id, role_id, server_id, created_at) VALUES (%s, %s, %s, NOW()) ON CONFLICT (user_id, role_id, server_id) DO NOTHING"):
+            return self._insert_user_role_assignment(params)
+        if normalized.startswith("DELETE FROM user_roles WHERE user_id = %s AND role_id = %s AND ( (%s IS NULL AND server_id IS NULL) OR server_id = %s )"):
+            return self._delete_user_role_assignment(params)
         if normalized.startswith("SELECT dv.id, dv.document_id, dv.version_number, CAST(dv.content_json AS TEXT) AS content_json, cd.server_id, cd.document_type FROM document_versions dv JOIN case_documents cd ON cd.id = dv.document_id WHERE dv.id = %s LIMIT 1"):
             return self._get_document_version_target(params[0])
         if normalized.startswith("SELECT id, server_id, question, answer_text, CAST(used_sources_json AS TEXT) AS used_sources_json, CAST(selected_norms_json AS TEXT) AS selected_norms_json, CAST(metadata_json AS TEXT) AS metadata_json FROM law_qa_runs WHERE id = %s LIMIT 1"):
@@ -722,6 +760,91 @@ class FakePostgresConnection:
             rows = rows[:safe_limit]
         return FakeCursor(rowcount=len(rows), rows=rows)
 
+    def _fetch_role_by_code(self, role_code: str):
+        role = self.state["role_catalog"].get(str(role_code or "").strip().lower())
+        if role is None:
+            return FakeCursor(rowcount=0, one=None)
+        return FakeCursor(rowcount=1, one={"id": role["id"], "name": role["name"]})
+
+    def _list_permissions(self):
+        rows = list(sorted(self.state["permissions_catalog"].values(), key=lambda item: item["code"]))
+        return FakeCursor(rowcount=len(rows), rows=rows)
+
+    def _list_roles_with_permissions(self):
+        rows = []
+        for role in sorted(self.state["role_catalog"].values(), key=lambda item: item["code"]):
+            permission_codes = self.state["role_permission_map"].get(role["code"], [])
+            if not permission_codes:
+                rows.append({**role, "permission_code": None})
+                continue
+            for permission_code in sorted(permission_codes):
+                rows.append({**role, "permission_code": permission_code})
+        return FakeCursor(rowcount=len(rows), rows=rows)
+
+    def _list_user_role_assignments(self, params):
+        username, server_code_filter, _server_code_filter_repeat = params
+        user = self.state["users"].get(username)
+        if user is None:
+            return FakeCursor(rowcount=0, rows=[])
+        rows = []
+        for assignment in self.state["user_role_assignments"]:
+            if int(assignment["user_id"]) != int(user["id"]):
+                continue
+            assignment_server_id = assignment.get("server_id")
+            if server_code_filter and assignment_server_id not in {None, server_code_filter}:
+                continue
+            role = self.state["role_catalog"].get(assignment["role_code"])
+            rows.append(
+                {
+                    "role_code": assignment["role_code"],
+                    "role_name": role["name"] if role else assignment["role_code"],
+                    "server_id": assignment_server_id,
+                    "created_at": assignment["created_at"],
+                }
+            )
+        rows.sort(key=lambda item: (item["server_id"] is not None, item["server_id"] or "", item["role_code"]))
+        return FakeCursor(rowcount=len(rows), rows=rows)
+
+    def _insert_user_role_assignment(self, params):
+        user_id, role_id, server_id = params
+        role_code = next((code for code, role in self.state["role_catalog"].items() if int(role["id"]) == int(role_id)), "")
+        existing = next(
+            (
+                item for item in self.state["user_role_assignments"]
+                if int(item["user_id"]) == int(user_id)
+                and str(item["role_code"]) == role_code
+                and item.get("server_id") == server_id
+            ),
+            None,
+        )
+        if existing is not None:
+            return FakeCursor(rowcount=0)
+        self.state["user_role_assignments"].append(
+            {
+                "user_id": int(user_id),
+                "role_code": role_code,
+                "server_id": server_id,
+                "created_at": self._now(),
+            }
+        )
+        return FakeCursor(rowcount=1)
+
+    def _delete_user_role_assignment(self, params):
+        user_id, role_id, assignment_server_id, assignment_server_id_repeat = params
+        _ = assignment_server_id_repeat
+        role_code = next((code for code, role in self.state["role_catalog"].items() if int(role["id"]) == int(role_id)), "")
+        before = len(self.state["user_role_assignments"])
+        self.state["user_role_assignments"] = [
+            item
+            for item in self.state["user_role_assignments"]
+            if not (
+                int(item["user_id"]) == int(user_id)
+                and str(item["role_code"]) == role_code
+                and item.get("server_id") == assignment_server_id
+            )
+        ]
+        return FakeCursor(rowcount=before - len(self.state["user_role_assignments"]))
+
     def _list_permission_codes(self, params):
         username, server_code = params
         user = self.state["users"].get(username)
@@ -735,6 +858,12 @@ class FakePostgresConnection:
                 permission_codes.append("court_claims")
             if role.get("is_gka"):
                 permission_codes.extend(("exam_import", "complaint_presets"))
+        for assignment in self.state["user_role_assignments"]:
+            if int(assignment["user_id"]) != int(user["id"]):
+                continue
+            if assignment.get("server_id") not in {None, server_code}:
+                continue
+            permission_codes.extend(self.state["role_permission_map"].get(str(assignment["role_code"]), ()))
 
         rows = []
         seen_codes = set()

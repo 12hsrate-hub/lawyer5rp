@@ -1526,6 +1526,180 @@ class UserStore:
             if str(row.get("code") or "").strip()
         )
 
+    def list_permissions(self) -> list[dict[str, Any]]:
+        rows = self._pg_fetchall(
+            """
+            SELECT id, code, description, created_at
+            FROM permissions
+            ORDER BY code ASC
+            """
+        )
+        return [dict(row) for row in rows]
+
+    def list_roles(self) -> list[dict[str, Any]]:
+        rows = self._pg_fetchall(
+            """
+            SELECT
+                r.id AS id,
+                r.code AS code,
+                r.name AS name,
+                r.created_at AS created_at,
+                p.code AS permission_code
+            FROM roles r
+            LEFT JOIN role_permissions rp
+              ON rp.role_id = r.id
+            LEFT JOIN permissions p
+              ON p.id = rp.permission_id
+            ORDER BY r.code ASC, p.code ASC
+            """
+        )
+        items: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            code = str(row.get("code") or "").strip().lower()
+            if not code:
+                continue
+            item = items.setdefault(
+                code,
+                {
+                    "id": int(row.get("id") or 0) or None,
+                    "code": code,
+                    "name": str(row.get("name") or code),
+                    "created_at": str(row.get("created_at") or ""),
+                    "permission_codes": [],
+                },
+            )
+            permission_code = str(row.get("permission_code") or "").strip().lower()
+            if permission_code and permission_code not in item["permission_codes"]:
+                item["permission_codes"].append(permission_code)
+        return list(items.values())
+
+    def list_user_role_assignments(self, username: str, *, server_code: str | None = None) -> list[dict[str, Any]]:
+        normalized_username = _normalize_username(username)
+        normalized_server = str(server_code or "").strip().lower()
+        rows = self._pg_fetchall(
+            """
+            SELECT
+                r.code AS role_code,
+                r.name AS role_name,
+                ur.server_id AS server_id,
+                ur.created_at AS created_at
+            FROM users u
+            JOIN user_roles ur
+              ON ur.user_id = u.id
+            JOIN roles r
+              ON r.id = ur.role_id
+            WHERE u.username = %s
+              AND (%s = '' OR ur.server_id IS NULL OR ur.server_id = %s)
+            ORDER BY
+              CASE WHEN ur.server_id IS NULL THEN 0 ELSE 1 END,
+              ur.server_id ASC NULLS FIRST,
+              r.code ASC
+            """,
+            (normalized_username, normalized_server, normalized_server),
+        )
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            role_code = str(row.get("role_code") or "").strip().lower()
+            if not role_code:
+                continue
+            assignment_server_id = str(row.get("server_id") or "").strip().lower()
+            scope = "global" if not assignment_server_id else "server"
+            scope_key = assignment_server_id or "global"
+            items.append(
+                {
+                    "assignment_id": f"{role_code}:{scope_key}",
+                    "role_code": role_code,
+                    "role_name": str(row.get("role_name") or role_code),
+                    "scope": scope,
+                    "server_code": assignment_server_id,
+                    "created_at": str(row.get("created_at") or ""),
+                }
+            )
+        return items
+
+    def assign_role_to_user(self, username: str, role_code: str, *, server_code: str | None = None) -> dict[str, Any]:
+        normalized_username = _normalize_username(username)
+        normalized_role_code = str(role_code or "").strip().lower()
+        normalized_server = str(server_code or "").strip().lower()
+        if not normalized_role_code:
+            raise ValueError("role_code_required")
+        if normalized_role_code in {"tester", "gka"} and not normalized_server:
+            raise ValueError("server_code_required_for_server_scoped_role")
+        user_row = self._pg_fetchone("SELECT id FROM users WHERE username = %s", (normalized_username,))
+        if user_row is None:
+            raise AuthError("Пользователь не найден.")
+        role_row = self._pg_fetchone("SELECT id, name FROM roles WHERE code = %s", (normalized_role_code,))
+        if role_row is None:
+            raise KeyError("role_not_found")
+        self._pg_execute(
+            """
+            INSERT INTO user_roles (user_id, role_id, server_id, created_at)
+            VALUES (%s, %s, %s, NOW())
+            ON CONFLICT (user_id, role_id, server_id) DO NOTHING
+            """,
+            (
+                int(user_row["id"]),
+                int(role_row["id"]),
+                normalized_server or None,
+            ),
+        )
+        if normalized_role_code == "tester" and normalized_server:
+            self._pg_set_role_flag(normalized_username, "is_tester", True, server_code=normalized_server)
+        if normalized_role_code == "gka" and normalized_server:
+            self._pg_set_role_flag(normalized_username, "is_gka", True, server_code=normalized_server)
+        assignments = self.list_user_role_assignments(normalized_username, server_code=normalized_server or None)
+        scope_key = normalized_server or "global"
+        for item in assignments:
+            if str(item.get("assignment_id") or "") == f"{normalized_role_code}:{scope_key}":
+                return item
+        return {
+            "assignment_id": f"{normalized_role_code}:{scope_key}",
+            "role_code": normalized_role_code,
+            "role_name": str(role_row.get("name") or normalized_role_code),
+            "scope": "server" if normalized_server else "global",
+            "server_code": normalized_server,
+            "created_at": "",
+        }
+
+    def revoke_role_assignment(self, username: str, assignment_id: str) -> dict[str, Any]:
+        normalized_username = _normalize_username(username)
+        raw_assignment_id = str(assignment_id or "").strip().lower()
+        role_code, separator, scope_key = raw_assignment_id.partition(":")
+        if not separator or not role_code:
+            raise ValueError("assignment_id_invalid")
+        server_id = None if scope_key in {"", "global"} else scope_key
+        user_row = self._pg_fetchone("SELECT id FROM users WHERE username = %s", (normalized_username,))
+        if user_row is None:
+            raise AuthError("Пользователь не найден.")
+        role_row = self._pg_fetchone("SELECT id, name FROM roles WHERE code = %s", (role_code,))
+        if role_row is None:
+            raise KeyError("role_not_found")
+        rowcount = self._pg_execute(
+            """
+            DELETE FROM user_roles
+            WHERE user_id = %s
+              AND role_id = %s
+              AND (
+                (%s IS NULL AND server_id IS NULL)
+                OR server_id = %s
+              )
+            """,
+            (int(user_row["id"]), int(role_row["id"]), server_id, server_id),
+        )
+        if rowcount <= 0:
+            raise KeyError("role_assignment_not_found")
+        if role_code == "tester" and server_id:
+            self._pg_set_role_flag(normalized_username, "is_tester", False, server_code=server_id)
+        if role_code == "gka" and server_id:
+            self._pg_set_role_flag(normalized_username, "is_gka", False, server_code=server_id)
+        return {
+            "assignment_id": raw_assignment_id,
+            "role_code": role_code,
+            "role_name": str(role_row.get("name") or role_code),
+            "scope": "server" if server_id else "global",
+            "server_code": server_id or "",
+        }
+
     def has_permission(self, username: str, permission_code: str, *, server_code: str | None = None) -> bool:
         normalized_permission = str(permission_code or "").strip().lower()
         if not normalized_permission:

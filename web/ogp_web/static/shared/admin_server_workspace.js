@@ -16,6 +16,10 @@ window.OGPAdminServerWorkspace = {
       lawsSummary: null,
       lawsEffective: null,
       lawsDiff: null,
+      accessSummary: null,
+      rolesData: null,
+      permissionsData: null,
+      selectedAccessUsername: "",
       featuresData: null,
       templatesData: null,
       featureEditorKey: "",
@@ -34,6 +38,15 @@ window.OGPAdminServerWorkspace = {
 
     function getTemplateItems() {
       return Array.isArray(state.templatesData?.effective_items) ? state.templatesData.effective_items : [];
+    }
+
+    function getAccessItems() {
+      return Array.isArray(state.accessSummary?.items) ? state.accessSummary.items : [];
+    }
+
+    function getSelectedAccessUser() {
+      const normalized = normalizeKey(state.selectedAccessUsername);
+      return getAccessItems().find((item) => normalizeKey(item?.username) === normalized) || null;
     }
 
     function findEffectiveItem(items, contentKey) {
@@ -487,20 +500,49 @@ window.OGPAdminServerWorkspace = {
       if (!(hostNode instanceof HTMLElement)) {
         return;
       }
-      const users = Array.isArray(state.workspace?.overview?.users?.items) ? state.workspace.overview.users.items : [];
+      const users = getAccessItems();
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
             <span class="legal-field__label">Пользователи сервера</span>
-            <p class="legal-section__description">Пользователи, у которых этот сервер выбран как текущий server scope.</p>
+            <p class="legal-section__description">Пользователи текущего server scope с быстрыми действиями по доступу и переходом в настройки ролей.</p>
           </div>
           <div class="admin-section-toolbar">
+            <button type="button" id="admin-server-users-reload" class="ghost-button">Обновить блок</button>
             <a class="ghost-button button-link" href="/admin/users">Открыть users workspace</a>
           </div>
         </div>
         ${
           users.length
-            ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Username</th><th>Email</th><th>Flags</th><th>Status</th></tr></thead><tbody>${users.map((item) => `<tr><td>${escapeHtml(String(item.username || "—"))}</td><td>${escapeHtml(String(item.email || "—"))}</td><td>${item.is_tester ? "tester " : ""}${item.is_gka ? "gka" : ""}</td><td>${item.access_blocked ? "blocked" : item.deactivated_at ? "deactivated" : "active"}</td></tr>`).join("")}</tbody></table>`
+            ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>User</th><th>Email</th><th>Flags</th><th>Status</th><th>Действия</th></tr></thead><tbody>${users.map((item) => {
+                const username = String(item.username || "").trim();
+                const selected = normalizeKey(username) === normalizeKey(state.selectedAccessUsername);
+                return `<tr>
+                  <td>
+                    <button type="button" class="ghost-button" data-server-access-select-user="${escapeHtml(username)}">${escapeHtml(String(item.display_name || username || "—"))}</button>
+                    ${selected ? `<div class="admin-user-cell__secondary">выбран для доступа</div>` : ""}
+                  </td>
+                  <td>${escapeHtml(String(item.email || "—"))}</td>
+                  <td>${item.is_tester ? "tester " : ""}${item.is_gka ? "gka" : ""}</td>
+                  <td>${item.is_blocked ? "blocked" : item.is_deactivated ? "deactivated" : "active"}</td>
+                  <td>
+                    <div class="admin-section-toolbar">
+                      ${item.is_tester
+                        ? `<button type="button" class="ghost-button" data-server-user-action="revoke-tester" data-server-username="${escapeHtml(username)}">Снять тестера</button>`
+                        : `<button type="button" class="ghost-button" data-server-user-action="grant-tester" data-server-username="${escapeHtml(username)}">Выдать тестера</button>`}
+                      ${item.is_gka
+                        ? `<button type="button" class="ghost-button" data-server-user-action="revoke-gka" data-server-username="${escapeHtml(username)}">Снять ГКА</button>`
+                        : `<button type="button" class="ghost-button" data-server-user-action="grant-gka" data-server-username="${escapeHtml(username)}">Выдать ГКА</button>`}
+                      ${item.is_blocked
+                        ? `<button type="button" class="ghost-button" data-server-user-action="unblock" data-server-username="${escapeHtml(username)}">Разблокировать</button>`
+                        : `<button type="button" class="ghost-button" data-server-user-action="block" data-server-username="${escapeHtml(username)}">Блок</button>`}
+                      ${item.is_deactivated
+                        ? `<button type="button" class="ghost-button" data-server-user-action="reactivate" data-server-username="${escapeHtml(username)}">Реактивировать</button>`
+                        : `<button type="button" class="ghost-button" data-server-user-action="deactivate" data-server-username="${escapeHtml(username)}">Деактивировать</button>`}
+                    </div>
+                  </td>
+                </tr>`;
+              }).join("")}</tbody></table>`
             : '<p class="legal-section__description">Для сервера пока нет пользователей в выбранном server scope.</p>'
         }
       `;
@@ -511,14 +553,20 @@ window.OGPAdminServerWorkspace = {
       if (!(hostNode instanceof HTMLElement)) {
         return;
       }
-      const access = state.workspace?.overview?.access || {};
+      const access = state.accessSummary || state.workspace?.overview?.access || {};
       const items = Array.isArray(access.items) ? access.items : [];
       const totals = Array.isArray(access.permission_totals) ? access.permission_totals : [];
+      const roles = Array.isArray(state.rolesData?.items) ? state.rolesData.items : [];
+      const permissions = Array.isArray(state.permissionsData?.items) ? state.permissionsData.items : [];
+      const selectedUser = getSelectedAccessUser();
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
             <span class="legal-field__label">Роли / Доступ</span>
-            <p class="legal-section__description">Effective permissions per server scope. Глубокое управление ролями остаётся совместимым с existing user admin flows.</p>
+            <p class="legal-section__description">Назначение ролей и просмотр effective permissions для выбранного сервера без ухода в raw RBAC-таблицы.</p>
+          </div>
+          <div class="admin-section-toolbar">
+            <button type="button" id="admin-server-access-reload" class="ghost-button">Обновить блок</button>
           </div>
         </div>
         <div class="legal-subcard">
@@ -529,9 +577,74 @@ window.OGPAdminServerWorkspace = {
               : '<p class="legal-section__description">Разрешения для сервера пока не вычислены.</p>'
           }
         </div>
+        <div class="legal-field-grid legal-field-grid--two">
+          <div class="legal-field">
+            <span class="legal-field__label">Назначить роль</span>
+            ${
+              items.length && roles.length
+                ? `<form id="admin-server-role-assignment-form" class="admin-form-stack">
+                    <label class="legal-field">
+                      <span class="legal-field__label">Пользователь</span>
+                      <select name="username" class="text-input">
+                        ${items.map((item) => {
+                          const username = String(item.username || "").trim();
+                          const selected = normalizeKey(username) === normalizeKey(selectedUser?.username || "");
+                          return `<option value="${escapeHtml(username)}" ${selected ? "selected" : ""}>${escapeHtml(String(item.display_name || username))}</option>`;
+                        }).join("")}
+                      </select>
+                    </label>
+                    <label class="legal-field">
+                      <span class="legal-field__label">Роль</span>
+                      <select name="role_code" class="text-input">
+                        ${roles.map((role) => `<option value="${escapeHtml(String(role.code || ""))}">${escapeHtml(String(role.name || role.code || ""))}</option>`).join("")}
+                      </select>
+                    </label>
+                    <label class="legal-field">
+                      <span class="legal-field__label">Scope</span>
+                      <select name="scope" class="text-input">
+                        <option value="server" selected>Только этот сервер</option>
+                        <option value="global">Global</option>
+                      </select>
+                    </label>
+                    <div class="admin-section-toolbar">
+                      <button type="submit" class="primary-button">Назначить роль</button>
+                    </div>
+                  </form>`
+                : '<p class="legal-section__description">Сначала убедитесь, что у сервера есть пользователи и доступен каталог ролей.</p>'
+            }
+          </div>
+          <div class="legal-field">
+            <span class="legal-field__label">Каталог ролей</span>
+            ${
+              roles.length
+                ? `<div class="admin-section-toolbar">${roles.map((role) => `<span class="admin-badge admin-badge--muted">${escapeHtml(String(role.code || ""))}</span>`).join("")}</div>
+                   <div class="admin-user-cell__secondary">permissions: ${escapeHtml(String(permissions.length || 0))}</div>`
+                : '<p class="legal-section__description">Каталог ролей пока недоступен.</p>'
+            }
+          </div>
+        </div>
         ${
           items.length
-            ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>User</th><th>Permissions</th><th>Flags</th></tr></thead><tbody>${items.map((item) => `<tr><td>${escapeHtml(String(item.display_name || item.username || "—"))}</td><td>${escapeHtml(String((item.permissions || []).join(", ") || "—"))}</td><td>${item.is_tester ? "tester " : ""}${item.is_gka ? "gka " : ""}${item.is_blocked ? "blocked" : ""}</td></tr>`).join("")}</tbody></table>`
+            ? `<div class="legal-subcard">
+                <span class="legal-field__label">Effective access</span>
+                <table class="legal-table admin-table admin-table--compact"><thead><tr><th>User</th><th>Roles</th><th>Permissions</th><th>Flags</th></tr></thead><tbody>${items.map((item) => {
+                  const username = String(item.username || "").trim();
+                  const assignments = Array.isArray(item.assignments) ? item.assignments : [];
+                  return `<tr>
+                    <td>
+                      <button type="button" class="ghost-button" data-server-access-select-user="${escapeHtml(username)}">${escapeHtml(String(item.display_name || username || "—"))}</button>
+                    </td>
+                    <td>${assignments.length ? assignments.map((entry) => `
+                      <div class="admin-section-toolbar">
+                        <span class="admin-badge admin-badge--muted">${escapeHtml(String(entry.role_code || ""))}${entry.scope === "global" ? " • global" : ""}</span>
+                        <button type="button" class="ghost-button" data-server-role-revoke="${escapeHtml(String(entry.assignment_id || ""))}" data-server-username="${escapeHtml(username)}">Снять</button>
+                      </div>
+                    `).join("") : "—"}</td>
+                    <td>${escapeHtml(String((item.permissions || []).join(", ") || "—"))}</td>
+                    <td>${item.is_tester ? "tester " : ""}${item.is_gka ? "gka " : ""}${item.is_blocked ? "blocked" : item.is_deactivated ? "deactivated" : ""}</td>
+                  </tr>`;
+                }).join("")}</tbody></table>
+              </div>`
             : ""
         }
       `;
@@ -620,6 +733,60 @@ window.OGPAdminServerWorkspace = {
         throw new Error(deps.formatHttpError?.(response, payload, "Не удалось загрузить effective features.") || "Не удалось загрузить effective features.");
       }
       state.featuresData = payload;
+    }
+
+    async function loadAccessData() {
+      const [accessResponse, rolesResponse, permissionsResponse] = await Promise.all([
+        deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/access-summary`),
+        deps.apiFetch("/api/admin/roles"),
+        deps.apiFetch("/api/admin/permissions"),
+      ]);
+      const accessPayload = await deps.parsePayload(accessResponse);
+      const rolesPayload = await deps.parsePayload(rolesResponse);
+      const permissionsPayload = await deps.parsePayload(permissionsResponse);
+      if (!accessResponse.ok) {
+        throw new Error(deps.formatHttpError?.(accessResponse, accessPayload, "Не удалось загрузить server access summary.") || "Не удалось загрузить server access summary.");
+      }
+      if (!rolesResponse.ok) {
+        throw new Error(deps.formatHttpError?.(rolesResponse, rolesPayload, "Не удалось загрузить список ролей.") || "Не удалось загрузить список ролей.");
+      }
+      if (!permissionsResponse.ok) {
+        throw new Error(deps.formatHttpError?.(permissionsResponse, permissionsPayload, "Не удалось загрузить список permissions.") || "Не удалось загрузить список permissions.");
+      }
+      state.accessSummary = accessPayload;
+      state.rolesData = rolesPayload;
+      state.permissionsData = permissionsPayload;
+      if (!normalizeKey(state.selectedAccessUsername)) {
+        const firstUser = Array.isArray(accessPayload?.items) ? accessPayload.items[0] : null;
+        state.selectedAccessUsername = normalizeKey(firstUser?.username || "");
+      }
+    }
+
+    async function reloadAccessOnly(successMessage = "") {
+      try {
+        await loadAccessData();
+        renderUsers();
+        renderAccess();
+        if (successMessage) {
+          deps.showMessage?.(successMessage);
+        }
+      } catch (error) {
+        deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось обновить блок доступа.");
+      }
+    }
+
+    async function runUserAction(endpoint, successMessage, body = null) {
+      deps.clearMessage?.();
+      deps.setStateIdle?.(deps.errorsHost);
+      const response = await deps.apiFetch(endpoint, {
+        method: "POST",
+        body: body ? JSON.stringify(body) : null,
+      });
+      const payload = await deps.parsePayload(response);
+      if (!response.ok) {
+        throw new Error(deps.formatHttpError?.(response, payload, "Не удалось выполнить действие с пользователем.") || "Не удалось выполнить действие с пользователем.");
+      }
+      await reloadAccessOnly(successMessage);
     }
 
     async function loadTemplateAux(contentKey) {
@@ -716,7 +883,7 @@ window.OGPAdminServerWorkspace = {
         state.lawsSummary = lawsSummaryPayload;
         state.lawsEffective = lawsEffectivePayload;
         state.lawsDiff = lawsDiffPayload;
-        await Promise.all([loadFeaturesData(), loadTemplatesData()]);
+        await Promise.all([loadFeaturesData(), loadTemplatesData(), loadAccessData()]);
         renderPanels();
         applyTabState();
       } catch (error) {
@@ -805,6 +972,95 @@ window.OGPAdminServerWorkspace = {
             deps.showMessage?.("Проверка наполнения выполнена.");
           } catch (error) {
             deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось проверить наполнение законов.");
+          }
+        })();
+        return;
+      }
+      if (target.id === "admin-server-users-reload" || target.id === "admin-server-access-reload") {
+        void reloadAccessOnly(target.id === "admin-server-users-reload" ? "Блок пользователей обновлен." : "Блок доступа обновлен.");
+        return;
+      }
+      const accessSelectUserButton = target.closest("[data-server-access-select-user]");
+      if (accessSelectUserButton instanceof HTMLElement) {
+        state.selectedAccessUsername = String(accessSelectUserButton.getAttribute("data-server-access-select-user") || "");
+        state.activeTab = "access";
+        renderUsers();
+        renderAccess();
+        applyTabState();
+        return;
+      }
+      const serverUserActionButton = target.closest("[data-server-user-action]");
+      if (serverUserActionButton instanceof HTMLElement) {
+        (async () => {
+          const action = String(serverUserActionButton.getAttribute("data-server-user-action") || "");
+          const username = String(serverUserActionButton.getAttribute("data-server-username") || "").trim();
+          if (!username) {
+            return;
+          }
+          try {
+            if (action === "grant-tester") {
+              await runUserAction(`/api/admin/users/${encodeURIComponent(username)}/grant-tester`, "Статус тестера выдан.");
+              return;
+            }
+            if (action === "revoke-tester") {
+              await runUserAction(`/api/admin/users/${encodeURIComponent(username)}/revoke-tester`, "Статус тестера снят.");
+              return;
+            }
+            if (action === "grant-gka") {
+              await runUserAction(`/api/admin/users/${encodeURIComponent(username)}/grant-gka`, "Статус ГКА выдан.");
+              return;
+            }
+            if (action === "revoke-gka") {
+              await runUserAction(`/api/admin/users/${encodeURIComponent(username)}/revoke-gka`, "Статус ГКА снят.");
+              return;
+            }
+            if (action === "unblock") {
+              await runUserAction(`/api/admin/users/${encodeURIComponent(username)}/unblock`, "Доступ пользователя восстановлен.");
+              return;
+            }
+            if (action === "reactivate") {
+              await runUserAction(`/api/admin/users/${encodeURIComponent(username)}/reactivate`, "Аккаунт реактивирован.");
+              return;
+            }
+            if (action === "block") {
+              const reason = window.prompt(`Причина блокировки для ${username}:`, "") || "";
+              await runUserAction(`/api/admin/users/${encodeURIComponent(username)}/block`, "Пользователь заблокирован.", { reason });
+              return;
+            }
+            if (action === "deactivate") {
+              const reason = window.prompt(`Причина деактивации для ${username}:`, "") || "";
+              await runUserAction(`/api/admin/users/${encodeURIComponent(username)}/deactivate`, "Аккаунт деактивирован.", { reason });
+            }
+          } catch (error) {
+            deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось выполнить действие с пользователем.");
+          }
+        })();
+        return;
+      }
+      const revokeRoleButton = target.closest("[data-server-role-revoke]");
+      if (revokeRoleButton instanceof HTMLElement) {
+        (async () => {
+          const username = String(revokeRoleButton.getAttribute("data-server-username") || "").trim();
+          const assignmentId = String(revokeRoleButton.getAttribute("data-server-role-revoke") || "").trim();
+          if (!username || !assignmentId) {
+            return;
+          }
+          if (!window.confirm(`Снять роль ${assignmentId} у пользователя ${username}?`)) {
+            return;
+          }
+          try {
+            const response = await deps.apiFetch(`/api/admin/users/${encodeURIComponent(username)}/role-assignments/${encodeURIComponent(assignmentId)}/revoke`, {
+              method: "POST",
+            });
+            const payload = await deps.parsePayload(response);
+            if (!response.ok) {
+              deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(response, payload, "Не удалось снять назначение роли."));
+              return;
+            }
+            state.selectedAccessUsername = username;
+            await reloadAccessOnly("Назначение роли снято.");
+          } catch (error) {
+            deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось снять назначение роли.");
           }
         })();
         return;
@@ -986,6 +1242,37 @@ window.OGPAdminServerWorkspace = {
       host.addEventListener("submit", (event) => {
         const form = event.target;
         if (!(form instanceof HTMLFormElement)) {
+          return;
+        }
+        if (form.id === "admin-server-role-assignment-form") {
+          event.preventDefault();
+          (async () => {
+            const username = normalizeKey(form.elements.namedItem("username")?.value);
+            const roleCode = normalizeKey(form.elements.namedItem("role_code")?.value);
+            const scope = normalizeKey(form.elements.namedItem("scope")?.value) || "server";
+            if (!username || !roleCode) {
+              deps.setStateError?.(deps.errorsHost, "Выберите пользователя и роль.");
+              return;
+            }
+            try {
+              const response = await deps.apiFetch(`/api/admin/users/${encodeURIComponent(username)}/role-assignments`, {
+                method: "POST",
+                body: JSON.stringify({
+                  role_code: roleCode,
+                  server_code: scope === "global" ? "" : serverCode,
+                }),
+              });
+              const payload = await deps.parsePayload(response);
+              if (!response.ok) {
+                deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(response, payload, "Не удалось назначить роль."));
+                return;
+              }
+              state.selectedAccessUsername = username;
+              await reloadAccessOnly("Роль назначена.");
+            } catch (error) {
+              deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось назначить роль.");
+            }
+          })();
           return;
         }
         if (form.id === "admin-server-feature-form") {

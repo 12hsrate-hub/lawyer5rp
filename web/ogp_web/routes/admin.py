@@ -56,6 +56,7 @@ from ogp_web.schemas import (
     AdminPasswordResetPayload,
     AdminQuotaPayload,
     AdminRuntimeServerPayload,
+    AdminUserRoleAssignmentPayload,
     DocumentVersionProvenanceResponse,
 )
 from ogp_web.services.law_admin_service import LawAdminService
@@ -98,6 +99,14 @@ from ogp_web.services.admin_runtime_servers_service import (
 from ogp_web.services.admin_server_workspace_service import (
     build_server_activity_payload,
     build_server_workspace_payload,
+)
+from ogp_web.services.admin_server_access_workspace_service import (
+    assign_user_role_payload,
+    build_server_access_summary_payload,
+    list_permissions_payload,
+    list_roles_payload,
+    list_user_role_assignments_payload,
+    revoke_user_role_assignment_payload,
 )
 from ogp_web.services.admin_server_content_workspace_service import (
     build_server_template_placeholders_payload,
@@ -3021,6 +3030,160 @@ async def admin_user_details(
         user_store=user_store,
         username=username,
     )
+
+
+@router.get("/api/admin/roles")
+async def admin_roles_list(
+    user: AuthUser = Depends(requires_permission("manage_servers")),
+    user_store: UserStore = Depends(get_user_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    payload = list_roles_payload(user_store=user_store)
+    metrics_store.log_event(
+        event_type="admin_roles_list",
+        username=user.username,
+        server_code=user.server_code,
+        path="/api/admin/roles",
+        method="GET",
+        status_code=200,
+        meta={"count": payload["count"]},
+    )
+    return payload
+
+
+@router.get("/api/admin/permissions")
+async def admin_permissions_list(
+    user: AuthUser = Depends(requires_permission("manage_servers")),
+    user_store: UserStore = Depends(get_user_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    payload = list_permissions_payload(user_store=user_store)
+    metrics_store.log_event(
+        event_type="admin_permissions_list",
+        username=user.username,
+        server_code=user.server_code,
+        path="/api/admin/permissions",
+        method="GET",
+        status_code=200,
+        meta={"count": payload["count"]},
+    )
+    return payload
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/access-summary")
+async def admin_runtime_server_access_summary(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_servers")),
+    user_store: UserStore = Depends(get_user_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        payload = build_server_access_summary_payload(user_store=user_store, server_code=server_code)
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    metrics_store.log_event(
+        event_type="admin_runtime_server_access_summary",
+        username=user.username,
+        server_code=str(server_code or "").strip().lower(),
+        path=f"/api/admin/runtime-servers/{str(server_code or '').strip().lower()}/access-summary",
+        method="GET",
+        status_code=200,
+        meta={"count": payload["count"]},
+    )
+    return payload
+
+
+@router.get("/api/admin/users/{username}/role-assignments")
+async def admin_user_role_assignments(
+    username: str,
+    server_code: str = Query(default=""),
+    user: AuthUser = Depends(requires_permission("manage_servers")),
+    user_store: UserStore = Depends(get_user_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        payload = list_user_role_assignments_payload(
+            user_store=user_store,
+            username=username,
+            server_code=server_code,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    metrics_store.log_event(
+        event_type="admin_user_role_assignments",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/users/{str(username or '').strip().lower()}/role-assignments",
+        method="GET",
+        status_code=200,
+        meta={"count": payload["count"], "scope_server_code": payload["server_code"]},
+    )
+    return payload
+
+
+@router.post("/api/admin/users/{username}/role-assignments")
+async def admin_assign_user_role(
+    username: str,
+    payload: AdminUserRoleAssignmentPayload,
+    user: AuthUser = Depends(requires_permission("manage_servers")),
+    user_store: UserStore = Depends(get_user_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        result = assign_user_role_payload(
+            user_store=user_store,
+            username=username,
+            role_code=payload.role_code,
+            server_code=payload.server_code,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    except AuthError as exc:
+        _raise_bad_request(exc)
+    metrics_store.log_event(
+        event_type="admin_assign_user_role",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/users/{str(username or '').strip().lower()}/role-assignments",
+        method="POST",
+        status_code=200,
+        meta={"role_code": payload.role_code, "scope_server_code": payload.server_code or ""},
+    )
+    return result
+
+
+@router.post("/api/admin/users/{username}/role-assignments/{assignment_id}/revoke")
+async def admin_revoke_user_role_assignment(
+    username: str,
+    assignment_id: str,
+    user: AuthUser = Depends(requires_permission("manage_servers")),
+    user_store: UserStore = Depends(get_user_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        result = revoke_user_role_assignment_payload(
+            user_store=user_store,
+            username=username,
+            assignment_id=assignment_id,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    except AuthError as exc:
+        _raise_bad_request(exc)
+    metrics_store.log_event(
+        event_type="admin_revoke_user_role_assignment",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/users/{str(username or '').strip().lower()}/role-assignments/{str(assignment_id or '').strip().lower()}/revoke",
+        method="POST",
+        status_code=200,
+        meta={"assignment_id": assignment_id},
+    )
+    return result
 
 
 @router.get("/api/admin/role-history")

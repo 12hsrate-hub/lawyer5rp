@@ -958,6 +958,51 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(payload["server_code"], "blackberry")
         self.assertIn("items", payload)
 
+    def test_runtime_server_access_endpoints_support_roles_permissions_assign_and_revoke(self):
+        self.user_store.register("moderator1", "moderator1@example.com", "Password123!")
+        self.user_store.set_selected_server_code("moderator1", "blackberry")
+
+        roles = self.client.get("/api/admin/roles")
+        permissions = self.client.get("/api/admin/permissions")
+        self.assertEqual(roles.status_code, 200)
+        self.assertEqual(permissions.status_code, 200)
+        self.assertTrue(any(item["code"] == "tester" for item in roles.json()["items"]))
+        self.assertTrue(any(item["code"] == "manage_servers" for item in permissions.json()["items"]))
+
+        before_summary = self.client.get("/api/admin/runtime-servers/blackberry/access-summary")
+        self.assertEqual(before_summary.status_code, 200)
+        before_item = next(item for item in before_summary.json()["items"] if item["username"] == "moderator1")
+        self.assertEqual(before_item["assignments"], [])
+
+        assigned = self.client.post(
+            "/api/admin/users/moderator1/role-assignments",
+            json={"role_code": "tester", "server_code": "blackberry"},
+        )
+        self.assertEqual(assigned.status_code, 200)
+        self.assertEqual(assigned.json()["assignment"]["role_code"], "tester")
+        self.assertEqual(assigned.json()["assignment"]["scope"], "server")
+
+        assignments = self.client.get("/api/admin/users/moderator1/role-assignments?server_code=blackberry")
+        self.assertEqual(assignments.status_code, 200)
+        self.assertEqual(assignments.json()["count"], 1)
+        self.assertEqual(assignments.json()["items"][0]["assignment_id"], "tester:blackberry")
+
+        after_summary = self.client.get("/api/admin/runtime-servers/blackberry/access-summary")
+        self.assertEqual(after_summary.status_code, 200)
+        after_item = next(item for item in after_summary.json()["items"] if item["username"] == "moderator1")
+        self.assertIn("court_claims", after_item["permissions"])
+        self.assertTrue(after_item["is_tester"])
+
+        revoked = self.client.post("/api/admin/users/moderator1/role-assignments/tester:blackberry/revoke")
+        self.assertEqual(revoked.status_code, 200)
+        self.assertEqual(revoked.json()["assignment"]["assignment_id"], "tester:blackberry")
+
+        final_summary = self.client.get("/api/admin/runtime-servers/blackberry/access-summary")
+        self.assertEqual(final_summary.status_code, 200)
+        final_item = next(item for item in final_summary.json()["items"] if item["username"] == "moderator1")
+        self.assertEqual(final_item["assignments"], [])
+        self.assertFalse(final_item["is_tester"])
+
     def test_runtime_server_laws_workspace_endpoints_return_summary_effective_and_diff(self):
         with patch.object(
             admin_runtime_servers_service,
