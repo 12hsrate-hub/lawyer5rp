@@ -12,6 +12,7 @@ for candidate in (ROOT_DIR, WEB_DIR):
         sys.path.insert(0, str(candidate))
 
 from ogp_web.server_config import registry
+from tests.second_server_fixtures import orange_published_pack
 
 
 class ServerConfigRegistryTests(unittest.TestCase):
@@ -34,6 +35,17 @@ class ServerConfigRegistryTests(unittest.TestCase):
             pack = registry.effective_server_pack("blackberry")
         self.assertEqual(pack["version"], 7)
         self.assertEqual(pack["metadata"]["organizations"], ["FIB"])
+
+    def test_effective_server_pack_uses_published_pack_for_second_server(self):
+        with patch(
+            "ogp_web.server_config.registry._load_effective_pack_from_db",
+            side_effect=lambda *, server_code, at_timestamp=None: orange_published_pack() if server_code == "orange" else None,
+        ):
+            pack = registry.effective_server_pack("orange")
+
+        self.assertEqual(pack["server_code"], "orange")
+        self.assertEqual(pack["status"], "published")
+        self.assertEqual(pack["metadata"]["template_bindings"]["complaint"]["template_key"], "complaint_orange_v1")
 
     def test_runtime_fallback_config_is_neutral_for_db_only_server(self):
         with patch("ogp_web.server_config.registry._load_codes_from_config_repo", return_value=None), patch(
@@ -61,6 +73,40 @@ class ServerConfigRegistryTests(unittest.TestCase):
         self.assertEqual(orange.template_bindings, {})
         self.assertEqual(orange.document_builder, {})
         self.assertEqual(orange.terminology, {})
+
+    def test_inactive_db_only_server_is_not_runtime_addressable(self):
+        with patch("ogp_web.server_config.registry._load_codes_from_config_repo", return_value=None), patch(
+            "ogp_web.server_config.registry._load_server_rows_from_db",
+            return_value=[
+                {"code": "orange", "title": "Orange City", "is_active": False},
+            ],
+        ):
+            runtime_configs = registry._load_runtime_server_configs()
+
+        self.assertNotIn("orange", runtime_configs)
+        self.assertIn(registry.DEFAULT_SERVER_CODE, runtime_configs)
+
+    def test_published_pack_second_server_is_runtime_addressable_with_its_own_metadata(self):
+        with patch("ogp_web.server_config.registry._load_codes_from_config_repo", return_value=None), patch(
+            "ogp_web.server_config.registry._load_server_rows_from_db",
+            return_value=[
+                {"code": "orange", "title": "Orange City", "is_active": True},
+            ],
+        ), patch(
+            "ogp_web.server_config.registry._load_effective_pack_from_db",
+            side_effect=lambda *, server_code, at_timestamp=None: orange_published_pack() if server_code == "orange" else None,
+        ):
+            orange = registry.get_server_config("orange")
+
+        self.assertEqual(orange.code, "orange")
+        self.assertEqual(orange.name, "Orange City")
+        self.assertEqual(orange.organizations, ("GOV", "DOJ"))
+        self.assertEqual(orange.procedure_types, ("appeal", "review"))
+        self.assertEqual(
+            orange.template_bindings["complaint"]["template_key"],
+            "complaint_orange_v1",
+        )
+        self.assertEqual(orange.document_builder["choice_sets"]["claim_kind_by_court_type"]["appeal"][0]["value"], "orange_appeal_admin_claim")
 
     def test_resolve_document_builder_config_uses_bootstrap_metadata(self):
         document_builder = registry.resolve_document_builder_config("blackberry")

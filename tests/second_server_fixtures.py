@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+
+def orange_published_pack() -> dict[str, object]:
+    return {
+        "id": 200,
+        "server_code": "orange",
+        "version": 3,
+        "status": "published",
+        "metadata": {
+            "organizations": ["GOV", "DOJ"],
+            "procedure_types": ["appeal", "review"],
+            "validation_profiles": {
+                "complaint_default": {
+                    "required_sections": ["incident", "evidence"],
+                }
+            },
+            "template_bindings": {
+                "complaint": {
+                    "template_key": "complaint_orange_v1",
+                    "document_type": "complaint",
+                },
+                "court_claim": {
+                    "template_key": "court_claim_orange_v1",
+                    "document_type": "court_claim",
+                },
+            },
+            "document_builder": {
+                "choice_sets": {
+                    "claim_kind_by_court_type": {
+                        "appeal": [
+                            {
+                                "value": "orange_appeal_admin_claim",
+                                "label": "Orange appeal admin claim",
+                                "title": "Orange appeal admin claim",
+                                "description": "Published-pack-backed second-server court claim option.",
+                                "ready": True,
+                            }
+                        ]
+                    }
+                },
+                "validators": {
+                    "required_fields_by_claim_kind": {
+                        "__default__": [
+                            "plaintiff_name",
+                            "situation_description",
+                            "closing_request",
+                        ]
+                    }
+                },
+            },
+            "terminology": {
+                "court_claim": "Orange claim",
+            },
+        },
+        "created_at": "2026-04-16T00:00:00+00:00",
+        "published_at": "2026-04-16T00:00:00+00:00",
+    }
