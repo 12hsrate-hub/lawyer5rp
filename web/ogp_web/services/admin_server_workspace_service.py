@@ -189,6 +189,7 @@ def _build_issues_payload(
     items: list[dict[str, Any]] = []
     checks = dict(health_payload.get("checks") or {})
     onboarding = dict(health_payload.get("onboarding") or {})
+    runtime_provenance = dict(health_payload.get("runtime_provenance") or {})
     if bool(onboarding.get("requires_explicit_runtime_pack")):
         items.append(
             {
@@ -211,10 +212,30 @@ def _build_issues_payload(
     if not bool((checks.get("bindings") or {}).get("ok")):
         items.append(
             {
+                "issue_id": "laws_bindings_missing",
                 "severity": "warn",
                 "source": "laws",
                 "title": "Нет привязок законов",
                 "detail": str((checks.get("bindings") or {}).get("detail") or "law bindings are missing"),
+            }
+        )
+    runtime_mode = str(runtime_provenance.get("mode") or "").strip().lower()
+    if runtime_mode in {"projection_drift", "legacy_runtime_shell", "materialized_shell_only"}:
+        title = {
+            "projection_drift": "Runtime law shell расходится с projection bridge",
+            "legacy_runtime_shell": "Runtime law shell ещё не переведён на projection-backed provenance",
+            "materialized_shell_only": "Materialized law shell ещё не активирован в runtime",
+        }.get(runtime_mode, "Runtime law shell требует внимания")
+        items.append(
+            {
+                "issue_id": "laws_runtime_provenance",
+                "severity": "warn",
+                "source": "laws",
+                "title": title,
+                "detail": str(
+                    runtime_provenance.get("detail")
+                    or "Current runtime law shell still depends on the compatibility promotion bridge."
+                ),
             }
         )
     integrity = dict(dashboard_payload.get("integrity") or {})
@@ -267,6 +288,7 @@ def _build_readiness_payload(
     features_ready: bool,
     templates_ready: bool,
     issues_payload: dict[str, Any],
+    runtime_provenance: dict[str, Any],
 ) -> dict[str, Any]:
     blocks = {
         "laws": {"status": "ready" if laws_ready else "partial"},
@@ -281,6 +303,8 @@ def _build_readiness_payload(
         overall_status = "not_configured"
     else:
         overall_status = "partial"
+    runtime_mode = str((runtime_provenance or {}).get("mode") or "").strip().lower()
+    stale_changes = 1 if runtime_mode in {"projection_drift", "legacy_runtime_shell", "materialized_shell_only"} else 0
     return {
         "overall_status": overall_status,
         "blocks": blocks,
@@ -288,7 +312,7 @@ def _build_readiness_payload(
             "errors": int(issues_payload.get("error_count") or 0),
             "warnings": int(issues_payload.get("warning_count") or 0),
             "pending_actions": sum(1 for block in blocks.values() if block["status"] != "ready"),
-            "stale_changes": 0,
+            "stale_changes": stale_changes,
         },
     }
 
@@ -320,6 +344,7 @@ def build_server_workspace_payload(
     access_payload = _build_access_summary(user_store, server_code=normalized_server, users=server_users)
     source_set_bindings = source_sets_store.list_bindings(server_code=normalized_server)
     projection_bridge = dict(health_payload.get("projection_bridge") or {})
+    runtime_provenance = dict(health_payload.get("runtime_provenance") or {})
     laws_summary = {
         "active_source_set_bindings": [
             {
@@ -334,6 +359,7 @@ def build_server_workspace_payload(
         "active_law_version_id": (health_payload.get("checks") or {}).get("health", {}).get("active_law_version_id"),
         "chunk_count": (health_payload.get("checks") or {}).get("health", {}).get("chunk_count"),
         "projection_bridge": projection_bridge,
+        "runtime_provenance": runtime_provenance,
         "health": (health_payload.get("checks") or {}).get("health", {}),
     }
     issues_payload = _build_issues_payload(health_payload=health_payload, dashboard_payload=dashboard_payload)
@@ -342,6 +368,7 @@ def build_server_workspace_payload(
         features_ready=int(features_payload["counts"]["effective"]) > 0,
         templates_ready=int(templates_payload["counts"]["effective"]) > 0,
         issues_payload=issues_payload,
+        runtime_provenance=runtime_provenance,
     )
     activity = _build_recent_activity(
         metrics_store=metrics_store,
