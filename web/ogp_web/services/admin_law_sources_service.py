@@ -9,6 +9,7 @@ from ogp_web.services.job_status_service import enrich_job_status
 from ogp_web.services.law_admin_service import LawAdminService
 from ogp_web.services.server_context_service import resolve_user_server_permissions
 from ogp_web.services.content_workflow_service import ContentWorkflowService
+from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
 from ogp_web.storage.user_store import UserStore
 
 
@@ -54,6 +55,112 @@ def build_law_sources_status_payload(
         "manifest_version": snapshot.manifest_version,
         "active_law_version": snapshot.active_law_version,
         "bundle_meta": snapshot.bundle_meta,
+    }
+
+
+def _legacy_source_set_key(*, server_code: str) -> str:
+    normalized_server = str(server_code or "").strip().lower()
+    return f"legacy-{normalized_server}-default"
+
+
+def backfill_law_sources_source_set_payload(
+    *,
+    workflow_service: ContentWorkflowService,
+    source_sets_store: LawSourceSetsStore,
+    server_code: str,
+    actor_user_id: int,
+    request_id: str,
+) -> dict[str, Any]:
+    normalized_server = str(server_code or "").strip().lower()
+    if not normalized_server:
+        raise ValueError("server_code_required")
+
+    snapshot = LawAdminService(workflow_service).get_effective_sources(server_code=normalized_server)
+    source_urls = list(snapshot.source_urls)
+    if not source_urls:
+        raise ValueError("server_has_no_law_qa_sources")
+
+    source_set_key = _legacy_source_set_key(server_code=normalized_server)
+    source_set = source_sets_store.get_source_set(source_set_key=source_set_key)
+    source_set_created = False
+    if source_set is None:
+        source_set = source_sets_store.create_source_set(
+            source_set_key=source_set_key,
+            title=f"Legacy law sources import for {normalized_server}",
+            description="Imported from legacy flat law source URLs.",
+        )
+        source_set_created = True
+
+    revisions = source_sets_store.list_revisions(source_set_key=source_set_key)
+    latest_revision = revisions[0] if revisions else None
+    revision_created = False
+    if latest_revision and latest_revision.status == "legacy_flat" and tuple(source_urls) == latest_revision.container_urls:
+        revision = latest_revision
+    else:
+        revision = source_sets_store.create_revision(
+            source_set_key=source_set_key,
+            container_urls=source_urls,
+            status="legacy_flat",
+            adapter_policy_json={"mode": "legacy_flat_import"},
+            metadata_json={
+                "import_mode": "legacy_flat",
+                "source_origin": snapshot.source_origin,
+                "server_code": normalized_server,
+                "actor_user_id": int(actor_user_id),
+                "request_id": str(request_id or ""),
+            },
+        )
+        revision_created = True
+
+    bindings = source_sets_store.list_bindings(server_code=normalized_server)
+    binding = next((item for item in bindings if item.source_set_key == source_set_key), None)
+    binding_created = False
+    if binding is None:
+        binding = source_sets_store.create_binding(
+            server_code=normalized_server,
+            source_set_key=source_set_key,
+            priority=100,
+            is_active=True,
+            metadata_json={
+                "origin": "legacy_import",
+                "source_origin": snapshot.source_origin,
+                "actor_user_id": int(actor_user_id),
+                "request_id": str(request_id or ""),
+            },
+        )
+        binding_created = True
+
+    return {
+        "ok": True,
+        "changed": bool(source_set_created or revision_created or binding_created),
+        "server_code": normalized_server,
+        "source_origin": snapshot.source_origin,
+        "source_urls": source_urls,
+        "source_set_key": source_set_key,
+        "source_set_created": source_set_created,
+        "revision_created": revision_created,
+        "binding_created": binding_created,
+        "source_set": {
+            "source_set_key": source_set.source_set_key,
+            "title": source_set.title,
+            "description": source_set.description,
+            "scope": source_set.scope,
+        },
+        "revision": {
+            "id": revision.id,
+            "revision": revision.revision,
+            "status": revision.status,
+            "container_urls": list(revision.container_urls),
+            "metadata_json": dict(revision.metadata_json),
+        },
+        "binding": {
+            "id": binding.id,
+            "server_code": binding.server_code,
+            "source_set_key": binding.source_set_key,
+            "priority": binding.priority,
+            "is_active": binding.is_active,
+            "metadata_json": dict(binding.metadata_json),
+        },
     }
 
 
