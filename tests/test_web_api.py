@@ -23,6 +23,7 @@ os.environ.setdefault("OGP_SKIP_DEFAULT_APP_INIT", "1")
 from fastapi.testclient import TestClient
 
 from ogp_web.app import create_app
+from ogp_web.dependencies import require_user
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.rate_limit import reset_for_testing as reset_rate_limit
 from ogp_web.routes import admin as admin_route
@@ -1231,6 +1232,37 @@ class WebApiTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["job_id"], 101)
         self.assertEqual(service.kwargs["source"], "sheet")
+
+    def test_admin_synthetic_route_uses_app_default_when_request_and_user_server_missing(self):
+        class DummyPermissionSet:
+            def has(self, permission: str) -> bool:
+                return str(permission or "").strip().lower() == "manage_servers"
+
+        class DummySyntheticRunnerService:
+            def __init__(self, _metrics_store):
+                self.metrics_store = _metrics_store
+
+            def run_suite(self, **kwargs):
+                self.kwargs = kwargs
+                return {"suite": kwargs["suite"], "server_code": kwargs["server_code"], "trigger": kwargs["trigger"]}
+
+        self.client.app.state.server_config = type("Cfg", (), {"code": "orange"})()
+        self.client.app.dependency_overrides[require_user] = lambda: admin_route.AuthUser(
+            username="admin",
+            email="admin@example.com",
+            server_code="",
+        )
+        original_runner = admin_route.SyntheticRunnerService
+        admin_route.SyntheticRunnerService = DummySyntheticRunnerService
+        try:
+            with patch("ogp_web.dependencies.build_permission_set", return_value=DummyPermissionSet()):
+                response = self.client.post("/api/admin/synthetic/run", json={"suite": "smoke"})
+        finally:
+            admin_route.SyntheticRunnerService = original_runner
+            self.client.app.dependency_overrides.pop(require_user, None)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["server_code"], "orange")
 
     def test_law_sources_preview_forbidden_for_user_without_manage_laws_permission(self):
         self._register_verify_and_login("plainuser_preview", "plainuser-preview@example.com")

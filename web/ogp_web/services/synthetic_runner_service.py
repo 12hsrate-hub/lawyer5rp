@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from ogp_web.server_config import DEFAULT_SERVER_CODE
 from ogp_web.services.async_job_service import ACTIVE_STATUSES, JOB_POLICIES, TERMINAL_STATUSES
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 
@@ -175,7 +176,7 @@ class SyntheticRunnerService:
             ),
         ]
 
-    def run_suite(self, *, suite: str, server_code: str = "blackberry", trigger: str = "manual") -> dict[str, Any]:
+    def run_suite(self, *, suite: str, server_code: str = DEFAULT_SERVER_CODE, trigger: str = "manual") -> dict[str, Any]:
         normalized_suite = str(suite or "").strip().lower()
         run_id = f"syn_{normalized_suite}_{uuid.uuid4().hex[:12]}"
         started = datetime.now(timezone.utc)

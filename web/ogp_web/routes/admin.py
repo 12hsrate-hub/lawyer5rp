@@ -58,6 +58,7 @@ from ogp_web.services.point3_policy_service import load_point3_eval_thresholds
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.services.content_contracts import normalize_content_type
+from ogp_web.server_config import resolve_default_server_code
 from ogp_web.services.server_context_service import (
     extract_server_shell_context,
     resolve_user_server_context,
@@ -1534,7 +1535,12 @@ async def run_synthetic_suite(
     body = await request.json()
     suite = str((body or {}).get("suite") or "").strip().lower()
     trigger = str((body or {}).get("trigger") or "manual").strip().lower() or "manual"
-    server_code = str((body or {}).get("server_code") or user.server_code or "blackberry").strip().lower() or "blackberry"
+    app_server = getattr(getattr(request.app, "state", None), "server_config", None)
+    server_code = resolve_default_server_code(
+        explicit_server_code=str((body or {}).get("server_code") or ""),
+        user_server_code=user.server_code,
+        app_server_code=getattr(app_server, "code", ""),
+    )
     if suite not in {"smoke", "nightly", "load", "fault"}:
         raise HTTPException(status_code=400, detail=["suite must be one of smoke|nightly|load|fault"])
     runner = SyntheticRunnerService(metrics_store)

@@ -33,6 +33,7 @@ from ogp_web.services.server_context_service import (
     resolve_user_server_permissions,
     server_has_feature,
 )
+from ogp_web.server_config.registry import resolve_default_server_code
 
 
 class _DummyUserStore:
@@ -62,6 +63,46 @@ class ServerContextServiceTests(unittest.TestCase):
 
         self.assertIs(resolved, config)
         get_server_config_mock.assert_called_once_with("blackberry")
+
+    def test_resolve_default_server_code_prefers_explicit_over_user_and_app(self):
+        resolved = resolve_default_server_code(
+            explicit_server_code=" Orange ",
+            user_server_code="blackberry",
+            app_server_code="grape",
+            fallback_server_code="lemon",
+        )
+
+        self.assertEqual(resolved, "orange")
+
+    def test_resolve_default_server_code_prefers_user_when_explicit_missing(self):
+        resolved = resolve_default_server_code(
+            explicit_server_code="",
+            user_server_code=" Orange ",
+            app_server_code="blackberry",
+            fallback_server_code="lemon",
+        )
+
+        self.assertEqual(resolved, "orange")
+
+    def test_resolve_default_server_code_prefers_app_when_explicit_and_user_missing(self):
+        resolved = resolve_default_server_code(
+            explicit_server_code="",
+            user_server_code="",
+            app_server_code=" Orange ",
+            fallback_server_code="blackberry",
+        )
+
+        self.assertEqual(resolved, "orange")
+
+    def test_resolve_default_server_code_uses_default_server_when_all_candidates_empty(self):
+        resolved = resolve_default_server_code(
+            explicit_server_code="",
+            user_server_code="",
+            app_server_code="",
+            fallback_server_code="",
+        )
+
+        self.assertEqual(resolved, "blackberry")
 
     def test_resolve_server_law_bundle_path_uses_shared_server_config(self):
         config = type("Cfg", (), {"law_qa_bundle_path": "/tmp/laws.json"})()

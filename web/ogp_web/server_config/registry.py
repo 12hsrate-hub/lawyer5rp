@@ -32,6 +32,20 @@ def _normalized_code(value: str) -> str:
     return str(value or "").strip().lower()
 
 
+def resolve_default_server_code(
+    *,
+    explicit_server_code: str = "",
+    user_server_code: str = "",
+    app_server_code: str = "",
+    fallback_server_code: str = DEFAULT_SERVER_CODE,
+) -> str:
+    for candidate in (explicit_server_code, user_server_code, app_server_code, fallback_server_code, DEFAULT_SERVER_CODE):
+        normalized = _normalized_code(candidate)
+        if normalized:
+            return normalized
+    return DEFAULT_SERVER_CODE
+
+
 def _load_codes_from_config_repo() -> set[str] | None:
     path = Path(str(os.getenv("OGP_SERVER_CONFIG_REPO", "")).strip())
     if not str(path):
@@ -121,7 +135,7 @@ def _build_fallback_server_config(*, code: str, title: str) -> ServerConfig:
 
 
 def effective_server_pack(server_code: str, at_timestamp: datetime | None = None) -> dict[str, Any]:
-    normalized = _normalized_code(server_code) or DEFAULT_SERVER_CODE
+    normalized = resolve_default_server_code(explicit_server_code=server_code)
     db_pack = _load_effective_pack_from_db(server_code=normalized, at_timestamp=at_timestamp)
     if db_pack is not None:
         return db_pack
@@ -134,6 +148,15 @@ def effective_server_pack(server_code: str, at_timestamp: datetime | None = None
         "status": "draft",
         "metadata": {},
     }
+
+
+def resolve_document_builder_config(server_code: str) -> dict[str, Any]:
+    pack = effective_server_pack(server_code)
+    metadata = pack.get("metadata") if isinstance(pack, dict) else None
+    if not isinstance(metadata, dict):
+        return {}
+    document_builder = metadata.get("document_builder")
+    return dict(document_builder) if isinstance(document_builder, dict) else {}
 
 
 def _build_server_config_from_pack_or_base(*, code: str, title: str, base_config: ServerConfig | None) -> ServerConfig:
@@ -187,7 +210,7 @@ def _load_runtime_server_configs() -> dict[str, ServerConfig]:
 
 
 def get_server_config(server_code: str) -> ServerConfig:
-    normalized = _normalized_code(server_code) or DEFAULT_SERVER_CODE
+    normalized = resolve_default_server_code(explicit_server_code=server_code)
     runtime_configs = _load_runtime_server_configs()
     try:
         return runtime_configs[normalized]

@@ -107,6 +107,7 @@ def build_server_config_from_pack(*, metadata: dict[str, Any], code: str = "blac
         form_schema=dict(metadata.get("form_schema") or {}),
         validation_profiles=dict(metadata.get("validation_profiles") or {}),
         template_bindings=dict(metadata.get("template_bindings") or {}),
+        document_builder=dict(metadata.get("document_builder") or {}),
         terminology={
             str(key): str(value)
             for key, value in dict(metadata.get("terminology") or {}).items()

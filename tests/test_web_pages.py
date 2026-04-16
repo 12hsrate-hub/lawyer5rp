@@ -5,6 +5,7 @@ import sys
 import unittest
 from pathlib import Path
 from urllib.parse import urlsplit
+from unittest.mock import patch
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 WEB_DIR = ROOT_DIR / "web"
@@ -123,6 +124,22 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Подтверждение email", response.text)
         self.assertIn("OGP Builder", response.text)
+
+    def test_verify_email_page_uses_app_default_server_context_when_non_default(self):
+        self.client.app.state.server_config = type("Cfg", (), {"code": "orange"})()
+
+        with patch(
+            "ogp_web.routes.pages.resolve_server_config",
+            return_value=type("ServerCfg", (), {"code": "orange", "name": "Orange County", "app_title": "Orange Builder"})(),
+        ) as resolve_server_config_mock, patch(
+            "ogp_web.routes.pages.extract_server_shell_context",
+            return_value={"server_code": "orange", "server_name": "Orange County", "app_title": "Orange Builder"},
+        ):
+            response = self.client.get("/verify-email")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Orange Builder", response.text)
+        resolve_server_config_mock.assert_called_once_with(server_code="orange")
 
     def test_reset_password_page_renders_server_context(self):
         response = self.client.get("/reset-password?token=test-token")
