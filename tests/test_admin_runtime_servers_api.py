@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 from ogp_web.app import create_app
 from ogp_web.dependencies import (
     get_admin_dashboard_service,
+    get_canonical_law_document_versions_store,
     get_content_workflow_service,
     get_law_source_sets_store,
     get_runtime_law_sets_store,
@@ -246,23 +247,230 @@ class _FakeProjectionRun:
 
 
 class _FakeProjectionsStore:
+    def __init__(self):
+        self._runs = {
+            "orange": [
+                _FakeProjectionRun(
+                    id=4,
+                    server_code="orange",
+                    trigger_mode="manual",
+                    status="approved",
+                    summary_json={
+                        "decision_status": "approved",
+                        "materialization": {"law_set_id": 2},
+                        "activation": {"law_version_id": 88},
+                    },
+                    created_at="2026-04-16T06:00:00+00:00",
+                )
+            ],
+            "blackberry": [
+                _FakeProjectionRun(
+                    id=8,
+                    server_code="blackberry",
+                    trigger_mode="manual",
+                    status="preview",
+                    summary_json={
+                        "selected_count": 1,
+                        "candidate_count": 1,
+                        "input_fingerprint": "bb-fp-1",
+                    },
+                    created_at="2026-04-16T07:00:00+00:00",
+                ),
+                _FakeProjectionRun(
+                    id=7,
+                    server_code="blackberry",
+                    trigger_mode="manual",
+                    status="preview",
+                    summary_json={
+                        "selected_count": 1,
+                        "candidate_count": 1,
+                        "input_fingerprint": "bb-fp-0",
+                    },
+                    created_at="2026-04-16T05:00:00+00:00",
+                ),
+            ],
+        }
+        self._items = {
+            8: [
+                type(
+                    "_ProjectionItem",
+                    (),
+                    {
+                        "id": 81,
+                        "projection_run_id": 8,
+                        "canonical_law_document_id": 21,
+                        "canonical_identity_key": "uk",
+                        "normalized_url": "https://example.com/laws/uk",
+                        "selected_document_version_id": 101,
+                        "selected_source_set_key": "legacy-blackberry-default",
+                        "selected_revision": 2,
+                        "precedence_rank": 1,
+                        "contributor_count": 1,
+                        "status": "candidate",
+                        "provenance_json": {},
+                        "created_at": "2026-04-16T07:00:00+00:00",
+                    },
+                )()
+            ],
+            7: [
+                type(
+                    "_ProjectionItem",
+                    (),
+                    {
+                        "id": 71,
+                        "projection_run_id": 7,
+                        "canonical_law_document_id": 21,
+                        "canonical_identity_key": "uk",
+                        "normalized_url": "https://example.com/laws/uk",
+                        "selected_document_version_id": 100,
+                        "selected_source_set_key": "legacy-blackberry-default",
+                        "selected_revision": 1,
+                        "precedence_rank": 1,
+                        "contributor_count": 1,
+                        "status": "candidate",
+                        "provenance_json": {},
+                        "created_at": "2026-04-16T05:00:00+00:00",
+                    },
+                )()
+            ],
+        }
+        self._next_run_id = 9
+        self._next_item_id = 90
+
     def list_runs(self, *, server_code: str):
-        if server_code != "orange":
-            return []
-        return [
-            _FakeProjectionRun(
-                id=4,
-                server_code="orange",
-                trigger_mode="manual",
-                status="approved",
-                summary_json={
-                    "decision_status": "approved",
-                    "materialization": {"law_set_id": 2},
-                    "activation": {"law_version_id": 88},
-                },
-                created_at="2026-04-16T06:00:00+00:00",
-            )
-        ]
+        return list(self._runs.get(server_code, []))
+
+    def get_run(self, *, run_id: int):
+        for items in self._runs.values():
+            for row in items:
+                if int(row.id) == int(run_id):
+                    return row
+        return None
+
+    def list_items(self, *, projection_run_id: int):
+        return list(self._items.get(int(projection_run_id), []))
+
+    def create_projection_run(self, *, server_code: str, trigger_mode: str = "manual", status: str = "preview", summary_json=None):
+        row = _FakeProjectionRun(
+            id=self._next_run_id,
+            server_code=server_code,
+            trigger_mode=trigger_mode,
+            status=status,
+            summary_json=dict(summary_json or {}),
+            created_at=f"2026-04-16T08:0{self._next_run_id - 9}:00+00:00",
+        )
+        self._next_run_id += 1
+        self._runs.setdefault(server_code, []).insert(0, row)
+        self._items.setdefault(int(row.id), [])
+        return row
+
+    def create_projection_item(
+        self,
+        *,
+        projection_run_id: int,
+        canonical_law_document_id: int,
+        canonical_identity_key: str,
+        normalized_url: str,
+        selected_document_version_id: int,
+        selected_source_set_key: str,
+        selected_revision: int,
+        precedence_rank: int,
+        contributor_count: int,
+        status: str = "candidate",
+        provenance_json=None,
+    ):
+        item = type(
+            "_ProjectionItem",
+            (),
+            {
+                "id": self._next_item_id,
+                "projection_run_id": int(projection_run_id),
+                "canonical_law_document_id": int(canonical_law_document_id),
+                "canonical_identity_key": canonical_identity_key,
+                "normalized_url": normalized_url,
+                "selected_document_version_id": int(selected_document_version_id),
+                "selected_source_set_key": selected_source_set_key,
+                "selected_revision": int(selected_revision),
+                "precedence_rank": int(precedence_rank),
+                "contributor_count": int(contributor_count),
+                "status": status,
+                "provenance_json": dict(provenance_json or {}),
+                "created_at": "2026-04-16T08:10:00+00:00",
+            },
+        )()
+        self._next_item_id += 1
+        self._items.setdefault(int(projection_run_id), []).append(item)
+        self._items[int(projection_run_id)].sort(key=lambda row: (int(row.precedence_rank), str(row.canonical_identity_key)))
+        return item
+
+    def update_run_status(self, *, run_id: int, status: str, summary_json=None):
+        run = self.get_run(run_id=run_id)
+        if run is None:
+            raise KeyError("server_effective_law_projection_run_not_found")
+        run.status = status
+        run.summary_json = dict(summary_json or {})
+        return run
+
+
+class _FakeCanonicalLawDocumentVersionsStore:
+    class _Version:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    def __init__(self):
+        self.rows = {
+            100: self._Version(
+                id=100,
+                canonical_law_document_id=21,
+                canonical_identity_key="uk",
+                display_title="УК",
+                source_discovery_run_id=10,
+                discovered_law_link_id=1000,
+                source_set_key="legacy-blackberry-default",
+                source_set_revision_id=1,
+                revision=1,
+                normalized_url="https://example.com/laws/uk",
+                source_container_url="https://example.com/laws",
+                fetch_status="fetched",
+                parse_status="parsed",
+                content_checksum="v1",
+                raw_title="УК v1",
+                parsed_title="Уголовный кодекс v1",
+                body_text="Старый текст закона для blackberry.",
+                metadata_json={},
+                created_at="2026-04-16T05:00:00+00:00",
+                updated_at="2026-04-16T05:00:00+00:00",
+            ),
+            101: self._Version(
+                id=101,
+                canonical_law_document_id=21,
+                canonical_identity_key="uk",
+                display_title="УК",
+                source_discovery_run_id=11,
+                discovered_law_link_id=1001,
+                source_set_key="legacy-blackberry-default",
+                source_set_revision_id=2,
+                revision=2,
+                normalized_url="https://example.com/laws/uk",
+                source_container_url="https://example.com/laws",
+                fetch_status="fetched",
+                parse_status="parsed",
+                content_checksum="v2",
+                raw_title="УК v2",
+                parsed_title="Уголовный кодекс v2",
+                body_text="Актуальный текст закона для blackberry с содержимым.",
+                metadata_json={},
+                created_at="2026-04-16T07:00:00+00:00",
+                updated_at="2026-04-16T07:00:00+00:00",
+            ),
+        }
+
+    def get_version(self, *, version_id: int):
+        return self.rows.get(int(version_id))
+
+    def list_parsed_versions_for_source_sets(self, *, source_set_keys):
+        normalized = {str(item or "").strip().lower() for item in source_set_keys}
+        return [row for row in self.rows.values() if str(row.source_set_key or "").strip().lower() in normalized]
 
 
 class _FakeLawSourceSetsStore:
@@ -279,6 +487,12 @@ class _FakeLawSourceSetsStore:
                     "source_set_key": "legacy-blackberry-default",
                     "priority": 100,
                     "is_active": True,
+                    "include_law_keys": [],
+                    "exclude_law_keys": [],
+                    "pin_policy_json": {},
+                    "metadata_json": {},
+                    "created_at": "2026-04-16T04:00:00+00:00",
+                    "updated_at": "2026-04-16T04:00:00+00:00",
                 },
             )()
         ]
@@ -318,11 +532,13 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.runtime_law_sets_store = _FakeRuntimeLawSetsStore()
         self.projections_store = _FakeProjectionsStore()
         self.source_sets_store = _FakeLawSourceSetsStore()
+        self.versions_store = _FakeCanonicalLawDocumentVersionsStore()
         self.workflow_service = _FakeContentWorkflowService()
         app.dependency_overrides[get_runtime_servers_store] = lambda: self.runtime_store
         app.dependency_overrides[get_runtime_law_sets_store] = lambda: self.runtime_law_sets_store
         app.dependency_overrides[get_server_effective_law_projections_store] = lambda: self.projections_store
         app.dependency_overrides[get_law_source_sets_store] = lambda: self.source_sets_store
+        app.dependency_overrides[get_canonical_law_document_versions_store] = lambda: self.versions_store
         app.dependency_overrides[get_admin_dashboard_service] = lambda: _FakeAdminDashboardService()
         app.dependency_overrides[get_content_workflow_service] = lambda: self.workflow_service
         self.client = TestClient(app, base_url="https://testserver")
@@ -485,6 +701,49 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["server_code"], "blackberry")
         self.assertIn("items", payload)
+
+    def test_runtime_server_laws_workspace_endpoints_return_summary_effective_and_diff(self):
+        with patch.object(
+            admin_runtime_servers_service,
+            "resolve_active_law_version",
+            return_value=ResolvedLawVersion(
+                id=91,
+                server_code="blackberry",
+                generated_at_utc="2026-04-16T00:00:00+00:00",
+                effective_from="2026-04-16",
+                effective_to="",
+                fingerprint="bb-laws-fp",
+                chunk_count=6,
+            ),
+        ):
+            summary = self.client.get("/api/admin/runtime-servers/blackberry/laws/summary")
+            effective = self.client.get("/api/admin/runtime-servers/blackberry/laws/effective")
+            diff = self.client.get("/api/admin/runtime-servers/blackberry/laws/diff")
+
+        self.assertEqual(summary.status_code, 200)
+        self.assertEqual(effective.status_code, 200)
+        self.assertEqual(diff.status_code, 200)
+        self.assertEqual(summary.json()["binding_count"], 1)
+        self.assertEqual(effective.json()["count"], 1)
+        self.assertEqual(effective.json()["items"][0]["title"], "Уголовный кодекс v2")
+        self.assertEqual(diff.json()["summary"]["changed"], 1)
+        self.assertEqual(diff.json()["summary"]["added"], 0)
+
+    def test_runtime_server_laws_refresh_preview_and_recheck_are_safe_and_operator_facing(self):
+        refresh = self.client.post("/api/admin/runtime-servers/blackberry/laws/refresh-preview")
+        self.assertEqual(refresh.status_code, 200)
+        refresh_payload = refresh.json()
+        self.assertTrue(refresh_payload["ok"])
+        self.assertIn("run", refresh_payload)
+        self.assertIn("diff", refresh_payload)
+        self.assertGreaterEqual(refresh_payload["count"], 1)
+
+        recheck = self.client.post("/api/admin/runtime-servers/blackberry/laws/recheck")
+        self.assertEqual(recheck.status_code, 200)
+        recheck_payload = recheck.json()
+        self.assertTrue(recheck_payload["ok"])
+        self.assertEqual(recheck_payload["summary"]["with_content"], 1)
+        self.assertEqual(recheck_payload["summary"]["missing_content"], 0)
 
     def test_second_server_published_pack_health_endpoint_reports_release_candidate_state(self):
         self.runtime_store.rows["orange"] = {

@@ -98,6 +98,13 @@ from ogp_web.services.admin_server_workspace_service import (
     build_server_activity_payload,
     build_server_workspace_payload,
 )
+from ogp_web.services.admin_server_laws_workspace_service import (
+    build_server_effective_laws_payload,
+    build_server_laws_diff_payload,
+    build_server_laws_recheck_payload,
+    build_server_laws_summary_payload,
+    run_server_laws_refresh_preview_payload,
+)
 from ogp_web.services.admin_law_sets_service import (
     add_runtime_server_law_binding_payload,
     create_law_source_registry_payload,
@@ -584,6 +591,139 @@ async def admin_runtime_server_activity(
         dashboard_service=dashboard_service,
         username=user.username,
     )
+    return _admin_ok(**payload)
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/laws/summary")
+async def admin_runtime_server_laws_summary(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_laws")),
+    runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    versions_store: CanonicalLawDocumentVersionsStore = Depends(get_canonical_law_document_versions_store),
+):
+    _ = user
+    try:
+        payload = build_server_laws_summary_payload(
+            server_code=server_code,
+            runtime_servers_store=runtime_servers_store,
+            law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
+            projections_store=projections_store,
+            versions_store=versions_store,
+        )
+    except KeyError as exc:
+        _raise_not_found(exc)
+    return _admin_ok(**payload)
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/laws/effective")
+async def admin_runtime_server_laws_effective(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_laws")),
+    runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    versions_store: CanonicalLawDocumentVersionsStore = Depends(get_canonical_law_document_versions_store),
+):
+    _ = user
+    try:
+        payload = build_server_effective_laws_payload(
+            server_code=server_code,
+            runtime_servers_store=runtime_servers_store,
+            projections_store=projections_store,
+            versions_store=versions_store,
+        )
+    except KeyError as exc:
+        _raise_not_found(exc)
+    return _admin_ok(**payload)
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/laws/refresh-preview")
+async def admin_runtime_server_laws_refresh_preview(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_laws")),
+    runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    versions_store: CanonicalLawDocumentVersionsStore = Depends(get_canonical_law_document_versions_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        payload = run_server_laws_refresh_preview_payload(
+            server_code=server_code,
+            runtime_servers_store=runtime_servers_store,
+            source_sets_store=source_sets_store,
+            projections_store=projections_store,
+            versions_store=versions_store,
+            trigger_mode="manual",
+            safe_rerun=True,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    normalized_server = _normalize_code(server_code)
+    metrics_store.log_event(
+        event_type="admin_server_laws_refresh_preview",
+        username=user.username,
+        server_code=normalized_server,
+        path=f"/api/admin/runtime-servers/{normalized_server}/laws/refresh-preview",
+        method="POST",
+        status_code=200,
+        meta={"run_id": (payload.get("run") or {}).get("id")},
+    )
+    return _admin_ok(**payload)
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/laws/recheck")
+async def admin_runtime_server_laws_recheck(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_laws")),
+    runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    versions_store: CanonicalLawDocumentVersionsStore = Depends(get_canonical_law_document_versions_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        payload = build_server_laws_recheck_payload(
+            server_code=server_code,
+            runtime_servers_store=runtime_servers_store,
+            projections_store=projections_store,
+            versions_store=versions_store,
+        )
+    except KeyError as exc:
+        _raise_not_found(exc)
+    normalized_server = _normalize_code(server_code)
+    metrics_store.log_event(
+        event_type="admin_server_laws_recheck",
+        username=user.username,
+        server_code=normalized_server,
+        path=f"/api/admin/runtime-servers/{normalized_server}/laws/recheck",
+        method="POST",
+        status_code=200,
+        meta={"count": (payload.get("summary") or {}).get("count")},
+    )
+    return _admin_ok(**payload)
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/laws/diff")
+async def admin_runtime_server_laws_diff(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_laws")),
+    runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+):
+    _ = user
+    try:
+        payload = build_server_laws_diff_payload(
+            server_code=server_code,
+            runtime_servers_store=runtime_servers_store,
+            projections_store=projections_store,
+        )
+    except KeyError as exc:
+        _raise_not_found(exc)
     return _admin_ok(**payload)
 
 

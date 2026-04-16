@@ -13,6 +13,9 @@ window.OGPAdminServerWorkspace = {
       activeTab: "overview",
       workspace: null,
       activity: null,
+      lawsSummary: null,
+      lawsEffective: null,
+      lawsDiff: null,
     };
 
     function setBusy(isBusy) {
@@ -112,37 +115,66 @@ window.OGPAdminServerWorkspace = {
       if (!(hostNode instanceof HTMLElement)) {
         return;
       }
-      const laws = state.workspace?.overview?.laws || {};
-      const bindings = Array.isArray(laws.active_source_set_bindings) ? laws.active_source_set_bindings : [];
-      const projection = laws.projection_bridge || {};
+      const laws = state.lawsSummary || {};
+      const bindings = Array.isArray(laws.bindings) ? laws.bindings : [];
+      const projection = laws.latest_projection_run || {};
+      const effective = state.lawsEffective || {};
+      const effectiveItems = Array.isArray(effective.items) ? effective.items.slice(0, 12) : [];
+      const fillSummary = laws.fill_check || effective.summary || {};
+      const diffSummary = laws.diff || state.lawsDiff?.summary || {};
+      const health = laws.health || {};
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
             <span class="legal-field__label">Законы</span>
-            <p class="legal-section__description">Source set bindings, active runtime law version и projection bridge summary.</p>
+            <p class="legal-section__description">Основной путь: выбрать source sets, проверить итоговую выборку законов и безопасно обновить preview без runtime activation.</p>
           </div>
           <div class="admin-section-toolbar">
+            <button type="button" id="admin-server-laws-refresh-preview" class="primary-button">Обновить законы</button>
+            <button type="button" id="admin-server-laws-recheck" class="secondary-button">Проверить наполнение</button>
+            <button type="button" id="admin-server-laws-reload" class="ghost-button">Обновить блок</button>
+            <button type="button" id="admin-server-laws-open-diagnostics" class="ghost-button">Диагностика</button>
             <a class="ghost-button button-link" href="/admin/laws">Открыть расширенный laws workspace</a>
           </div>
         </div>
         <div class="legal-field-grid legal-field-grid--two">
           <div class="legal-field">
-            <span class="legal-field__label">Active law version</span>
-            <div><strong>${escapeHtml(String(laws.active_law_version_id || "—"))}</strong></div>
-            <div class="admin-user-cell__secondary">chunks: ${escapeHtml(String(laws.chunk_count || 0))}</div>
+            <span class="legal-field__label">Runtime health</span>
+            <div><strong>${escapeHtml(String(laws.health?.active_law_version_id || "—"))}</strong></div>
+            <div class="admin-user-cell__secondary">chunks: ${escapeHtml(String(health.chunk_count || 0))} • status: ${escapeHtml(String(health.ok ? "ready" : "check"))}</div>
           </div>
           <div class="legal-field">
-            <span class="legal-field__label">Projection bridge</span>
-            <div><strong>${escapeHtml(String(projection.run_id || "—"))}</strong></div>
-            <div class="admin-user-cell__secondary">status: ${escapeHtml(String(projection.status || "none"))}</div>
+            <span class="legal-field__label">Последний preview</span>
+            <div><strong>${escapeHtml(String(projection.id || "—"))}</strong></div>
+            <div class="admin-user-cell__secondary">status: ${escapeHtml(String(projection.status || "none"))} • selected: ${escapeHtml(String(projection.selected_count || 0))}</div>
           </div>
         </div>
         <div class="legal-subcard">
-          <span class="legal-field__label">Active source set bindings</span>
+          <span class="legal-field__label">Source set bindings</span>
           ${
             bindings.length
               ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Source set</th><th>Priority</th><th>Status</th></tr></thead><tbody>${bindings.map((item) => `<tr><td>${escapeHtml(String(item.source_set_key || "—"))}</td><td>${escapeHtml(String(item.priority || 0))}</td><td>${item.is_active ? "active" : "disabled"}</td></tr>`).join("")}</tbody></table>`
-              : '<p class="legal-section__description">Для сервера пока нет source set bindings.</p>'
+              : '<p class="legal-section__description">Для сервера пока нет source set bindings. Сначала привяжите source set в расширенном laws workspace.</p>'
+          }
+        </div>
+        <div class="legal-field-grid legal-field-grid--two">
+          <div class="legal-field">
+            <span class="legal-field__label">Проверка наполнения</span>
+            <div><strong>${escapeHtml(String(fillSummary.with_content || 0))}/${escapeHtml(String(fillSummary.count || 0))}</strong></div>
+            <div class="admin-user-cell__secondary">missing: ${escapeHtml(String(fillSummary.missing_content || 0))} • errors: ${escapeHtml(String(fillSummary.error_count || 0))}</div>
+          </div>
+          <div class="legal-field">
+            <span class="legal-field__label">Последний diff</span>
+            <div><strong>+${escapeHtml(String(diffSummary.added || 0))} / -${escapeHtml(String(diffSummary.removed || 0))}</strong></div>
+            <div class="admin-user-cell__secondary">changed: ${escapeHtml(String(diffSummary.changed || 0))} • unchanged: ${escapeHtml(String(diffSummary.unchanged || 0))}</div>
+          </div>
+        </div>
+        <div class="legal-subcard">
+          <span class="legal-field__label">Effective laws</span>
+          ${
+            effectiveItems.length
+              ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Закон</th><th>Источник</th><th>Обновлено</th><th>Статус</th></tr></thead><tbody>${effectiveItems.map((item) => `<tr><td><strong>${escapeHtml(String(item.title || item.canonical_identity_key || "—"))}</strong><div class="admin-user-cell__secondary">${escapeHtml(String(item.preview_excerpt || "Без preview"))}</div></td><td>${escapeHtml(String(item.selected_source_set_key || "—"))}<div class="admin-user-cell__secondary">rev ${escapeHtml(String(item.selected_revision || 0))}</div></td><td>${escapeHtml(String(item.updated_at || "—"))}</td><td>${item.has_content ? "content ready" : "missing content"}<div class="admin-user-cell__secondary">${escapeHtml(String(item.fetch_status || "—"))} / ${escapeHtml(String(item.parse_status || "—"))}</div></td></tr>`).join("")}</tbody></table>`
+              : '<p class="legal-section__description">Effective laws пока не рассчитаны. Нажмите «Обновить законы», чтобы получить безопасный preview.</p>'
           }
         </div>
       `;
@@ -324,12 +356,18 @@ window.OGPAdminServerWorkspace = {
       deps.clearMessage?.();
       deps.setStateIdle?.(deps.errorsHost);
       try {
-        const [workspaceResponse, activityResponse] = await Promise.all([
+        const [workspaceResponse, activityResponse, lawsSummaryResponse, lawsEffectiveResponse, lawsDiffResponse] = await Promise.all([
           deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/workspace`),
           deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/activity`),
+          deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/laws/summary`),
+          deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/laws/effective`),
+          deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/laws/diff`),
         ]);
         const workspacePayload = await deps.parsePayload(workspaceResponse);
         const activityPayload = await deps.parsePayload(activityResponse);
+        const lawsSummaryPayload = await deps.parsePayload(lawsSummaryResponse);
+        const lawsEffectivePayload = await deps.parsePayload(lawsEffectiveResponse);
+        const lawsDiffPayload = await deps.parsePayload(lawsDiffResponse);
         if (!workspaceResponse.ok) {
           deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(workspaceResponse, workspacePayload, "Не удалось загрузить server workspace."));
           return;
@@ -338,8 +376,23 @@ window.OGPAdminServerWorkspace = {
           deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(activityResponse, activityPayload, "Не удалось загрузить activity feed."));
           return;
         }
+        if (!lawsSummaryResponse.ok) {
+          deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(lawsSummaryResponse, lawsSummaryPayload, "Не удалось загрузить laws summary."));
+          return;
+        }
+        if (!lawsEffectiveResponse.ok) {
+          deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(lawsEffectiveResponse, lawsEffectivePayload, "Не удалось загрузить effective laws."));
+          return;
+        }
+        if (!lawsDiffResponse.ok) {
+          deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(lawsDiffResponse, lawsDiffPayload, "Не удалось загрузить laws diff."));
+          return;
+        }
         state.workspace = workspacePayload;
         state.activity = activityPayload;
+        state.lawsSummary = lawsSummaryPayload;
+        state.lawsEffective = lawsEffectivePayload;
+        state.lawsDiff = lawsDiffPayload;
         renderPanels();
         applyTabState();
       } catch (error) {
@@ -362,6 +415,68 @@ window.OGPAdminServerWorkspace = {
       }
       if (target.id === "admin-server-workspace-refresh") {
         loadWorkspace();
+        return;
+      }
+      if (target.id === "admin-server-laws-open-diagnostics") {
+        state.activeTab = "diagnostics";
+        applyTabState();
+        return;
+      }
+      if (target.id === "admin-server-laws-reload") {
+        loadWorkspace();
+        return;
+      }
+      if (target.id === "admin-server-laws-refresh-preview") {
+        (async () => {
+          deps.clearMessage?.();
+          deps.setStateIdle?.(deps.errorsHost);
+          try {
+            const response = await deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/laws/refresh-preview`, { method: "POST" });
+            const payload = await deps.parsePayload(response);
+            if (!response.ok) {
+              deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(response, payload, "Не удалось обновить laws preview."));
+              return;
+            }
+            deps.showMessage?.(payload?.reused_run ? "Preview уже актуален." : "Preview законов обновлен.");
+            await loadWorkspace();
+            state.activeTab = "laws";
+            applyTabState();
+          } catch (error) {
+            deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось обновить laws preview.");
+          }
+        })();
+        return;
+      }
+      if (target.id === "admin-server-laws-recheck") {
+        (async () => {
+          deps.clearMessage?.();
+          deps.setStateIdle?.(deps.errorsHost);
+          try {
+            const response = await deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/laws/recheck`, { method: "POST" });
+            const payload = await deps.parsePayload(response);
+            if (!response.ok) {
+              deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(response, payload, "Не удалось проверить наполнение законов."));
+              return;
+            }
+            state.lawsEffective = {
+              ...(state.lawsEffective || {}),
+              run: payload.run,
+              summary: payload.summary,
+              items: Array.isArray(payload.items) ? payload.items : [],
+              count: Array.isArray(payload.items) ? payload.items.length : Number(payload.summary?.count || 0),
+            };
+            if (state.lawsSummary) {
+              state.lawsSummary = {
+                ...state.lawsSummary,
+                fill_check: payload.summary,
+              };
+            }
+            renderLaws();
+            deps.showMessage?.("Проверка наполнения выполнена.");
+          } catch (error) {
+            deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось проверить наполнение законов.");
+          }
+        })();
       }
     });
 
