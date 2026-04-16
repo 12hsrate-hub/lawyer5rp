@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -10,6 +11,12 @@ for candidate in (ROOT_DIR, WEB_DIR):
         sys.path.insert(0, str(candidate))
 
 from ogp_web.storage.canonical_law_documents_store import CanonicalLawDocumentsStore
+
+
+def _decode_jsonish(value):
+    if isinstance(value, str):
+        return json.loads(value)
+    return value
 
 
 class _Cursor:
@@ -49,7 +56,7 @@ class _Connection:
                 "canonical_identity_key": canonical_identity_key,
                 "identity_source": identity_source,
                 "display_title": display_title,
-                "metadata_json": dict(metadata_json),
+                "metadata_json": dict(_decode_jsonish(metadata_json)),
                 "created_at": "2026-04-16T01:00:00+00:00",
                 "updated_at": "2026-04-16T01:00:00+00:00",
             }
@@ -71,7 +78,7 @@ class _Connection:
                 "normalized_url": normalized_url,
                 "alias_kind": alias_kind,
                 "is_active": bool(is_active),
-                "metadata_json": dict(metadata_json),
+                "metadata_json": dict(_decode_jsonish(metadata_json)),
                 "created_at": "2026-04-16T01:05:00+00:00",
                 "updated_at": "2026-04-16T01:05:00+00:00",
             }

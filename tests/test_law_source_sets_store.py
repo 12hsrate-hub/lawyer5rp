@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -10,6 +11,12 @@ for candidate in (ROOT_DIR, WEB_DIR):
         sys.path.insert(0, str(candidate))
 
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
+
+
+def _decode_jsonish(value):
+    if isinstance(value, str):
+        return json.loads(value)
+    return value
 
 
 class _Cursor:
@@ -80,9 +87,9 @@ class _Connection:
                 "source_set_key": source_set_key,
                 "revision": revision,
                 "status": status,
-                "container_urls_json": list(container_urls_json),
-                "adapter_policy_json": dict(adapter_policy_json),
-                "metadata_json": dict(metadata_json),
+                "container_urls_json": list(_decode_jsonish(container_urls_json)),
+                "adapter_policy_json": dict(_decode_jsonish(adapter_policy_json)),
+                "metadata_json": dict(_decode_jsonish(metadata_json)),
                 "created_at": "2026-04-16T00:05:00+00:00",
                 "published_at": "2026-04-16T00:05:00+00:00" if published_status == "published" else None,
             }
@@ -109,10 +116,10 @@ class _Connection:
                 "source_set_key": source_set_key,
                 "priority": priority,
                 "is_active": is_active,
-                "include_law_keys_json": list(include_law_keys_json),
-                "exclude_law_keys_json": list(exclude_law_keys_json),
-                "pin_policy_json": dict(pin_policy_json),
-                "metadata_json": dict(metadata_json),
+                "include_law_keys_json": list(_decode_jsonish(include_law_keys_json)),
+                "exclude_law_keys_json": list(_decode_jsonish(exclude_law_keys_json)),
+                "pin_policy_json": dict(_decode_jsonish(pin_policy_json)),
+                "metadata_json": dict(_decode_jsonish(metadata_json)),
                 "created_at": "2026-04-16T00:10:00+00:00",
                 "updated_at": "2026-04-16T00:10:00+00:00",
             }
