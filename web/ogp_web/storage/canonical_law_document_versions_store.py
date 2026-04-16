@@ -410,3 +410,77 @@ class CanonicalLawDocumentVersionsStore:
             return self._record_from_row(dict(joined))
         finally:
             conn.close()
+
+    def update_parse_result(
+        self,
+        *,
+        version_id: int,
+        parse_status: str,
+        parsed_title: str = "",
+        body_text: str = "",
+        metadata_json: dict[str, Any] | None = None,
+    ) -> CanonicalLawDocumentVersionRecord:
+        normalized_parse_status = self._normalize_parse_status(parse_status)
+        normalized_parsed_title = self._normalize_text(parsed_title)
+        normalized_body_text = str(body_text or "").strip()
+        normalized_metadata = self._normalize_json_object(metadata_json)
+        conn = self.backend.connect()
+        try:
+            row = conn.execute(
+                """
+                UPDATE canonical_law_document_versions
+                SET
+                    parse_status = %s,
+                    parsed_title = %s,
+                    body_text = %s,
+                    metadata_json = %s::jsonb,
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING id
+                """,
+                (
+                    normalized_parse_status,
+                    normalized_parsed_title,
+                    normalized_body_text,
+                    normalized_metadata,
+                    int(version_id),
+                ),
+            ).fetchone()
+            if row is None:
+                conn.rollback()
+                raise KeyError("canonical_law_document_version_not_found")
+            joined = conn.execute(
+                """
+                SELECT
+                    v.id,
+                    v.canonical_law_document_id,
+                    d.canonical_identity_key,
+                    d.display_title,
+                    v.source_discovery_run_id,
+                    v.discovered_law_link_id,
+                    rev.source_set_key,
+                    l.source_set_revision_id,
+                    rev.revision,
+                    l.normalized_url,
+                    l.source_container_url,
+                    v.fetch_status,
+                    v.parse_status,
+                    v.content_checksum,
+                    v.raw_title,
+                    v.parsed_title,
+                    v.body_text,
+                    v.metadata_json,
+                    v.created_at,
+                    v.updated_at
+                FROM canonical_law_document_versions AS v
+                JOIN canonical_law_documents AS d ON d.id = v.canonical_law_document_id
+                JOIN discovered_law_links AS l ON l.id = v.discovered_law_link_id
+                JOIN source_set_revisions AS rev ON rev.id = l.source_set_revision_id
+                WHERE v.id = %s
+                """,
+                (int(version_id),),
+            ).fetchone()
+            conn.commit()
+            return self._record_from_row(dict(joined))
+        finally:
+            conn.close()

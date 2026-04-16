@@ -154,6 +154,17 @@ class _FakeVersionsStore:
         item.updated_at = "2026-04-16T03:00:00+00:00"
         return item
 
+    def update_parse_result(self, **kwargs):
+        item = self.get_version(version_id=int(kwargs["version_id"]))
+        if item is None:
+            raise KeyError("canonical_law_document_version_not_found")
+        item.parse_status = kwargs["parse_status"]
+        item.parsed_title = kwargs.get("parsed_title", "")
+        item.body_text = kwargs.get("body_text", "")
+        item.metadata_json = dict(kwargs.get("metadata_json") or {})
+        item.updated_at = "2026-04-16T03:10:00+00:00"
+        return item
+
 
 class AdminCanonicalLawDocumentVersionsApiTests(unittest.TestCase):
     def setUp(self):
@@ -229,6 +240,15 @@ class AdminCanonicalLawDocumentVersionsApiTests(unittest.TestCase):
         self.assertEqual(fetched.json()["fetched_versions"], 1)
         self.assertEqual(fetched.json()["items"][0]["fetch_status"], "fetched")
         self.assertEqual(fetched.json()["items"][0]["raw_title"], "Fetched Code")
+
+        parsed = self.client.post(
+            "/api/admin/law-source-discovery-runs/5/parse-document-versions",
+            json={"safe_rerun": True},
+        )
+        self.assertEqual(parsed.status_code, 200)
+        self.assertEqual(parsed.json()["parsed_versions"], 1)
+        self.assertEqual(parsed.json()["items"][0]["parse_status"], "parsed")
+        self.assertEqual(parsed.json()["items"][0]["parsed_title"], "Fetched Code")
 
     def test_admin_canonical_law_document_versions_missing_run(self):
         response = self.client.post("/api/admin/law-source-discovery-runs/999/ingest-document-versions", json={"safe_rerun": True})
