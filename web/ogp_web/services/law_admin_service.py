@@ -26,6 +26,7 @@ from ogp_web.services.law_sources_validation import (
     normalize_source_urls,
     validate_source_urls,
 )
+from ogp_web.storage.law_versions_repository import LawVersionsRepository
 
 
 LAW_SOURCES_CONTENT_TYPE = "laws"
@@ -47,6 +48,11 @@ class LawAdminService:
     def __init__(self, workflow_service: ContentWorkflowService):
         self.workflow_service = workflow_service
         self.repository = workflow_service.repository
+        self.law_versions_repository = (
+            LawVersionsRepository(workflow_service.repository.backend)
+            if hasattr(workflow_service.repository, "backend")
+            else None
+        )
 
     def get_effective_sources(self, *, server_code: str) -> LawSourcesSnapshot:
         manifest_item = self.repository.get_content_item_by_identity(
@@ -307,30 +313,11 @@ class LawAdminService:
                 raise ValueError("rollback_target_not_found")
             target = rows[1]
         assert target is not None
-        conn = self.repository.backend.connect()
-        try:
-            conn.execute(
-                """
-                UPDATE law_versions
-                SET effective_to = NOW()
-                WHERE server_code = %s AND id <> %s AND effective_to IS NULL
-                """,
-                (server_code, int(target.id)),
-            )
-            conn.execute(
-                """
-                UPDATE law_versions
-                SET effective_from = NOW(), effective_to = NULL
-                WHERE id = %s AND server_code = %s
-                """,
-                (int(target.id), server_code),
-            )
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        repository = self.law_versions_repository or LawVersionsRepository(self.repository.backend)
+        repository.rollback_active_version(
+            server_code=server_code,
+            target_version_id=int(target.id),
+        )
         active = resolve_active_law_version(server_code=server_code)
         return {
             "ok": True,
