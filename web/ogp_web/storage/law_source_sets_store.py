@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -108,6 +109,10 @@ class LawSourceSetsStore:
     @staticmethod
     def _normalize_json_object(value: dict[str, Any] | None) -> dict[str, Any]:
         return dict(value or {})
+
+    @staticmethod
+    def _serialize_json_value(value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False)
 
     @staticmethod
     def _is_unique_violation(exc: Exception, *tokens: str) -> bool:
@@ -311,9 +316,9 @@ class LawSourceSetsStore:
                     normalized_key,
                     next_revision,
                     normalized_status,
-                    list(normalized_container_urls),
-                    normalized_adapter_policy,
-                    normalized_metadata,
+                    self._serialize_json_value(list(normalized_container_urls)),
+                    self._serialize_json_value(normalized_adapter_policy),
+                    self._serialize_json_value(normalized_metadata),
                     normalized_status,
                 ),
             ).fetchone()
@@ -393,10 +398,10 @@ class LawSourceSetsStore:
                     normalized_key,
                     int(priority),
                     bool(is_active),
-                    list(normalized_include),
-                    list(normalized_exclude),
-                    normalized_pin_policy,
-                    normalized_metadata,
+                    self._serialize_json_value(list(normalized_include)),
+                    self._serialize_json_value(list(normalized_exclude)),
+                    self._serialize_json_value(normalized_pin_policy),
+                    self._serialize_json_value(normalized_metadata),
                 ),
             ).fetchone()
             conn.commit()

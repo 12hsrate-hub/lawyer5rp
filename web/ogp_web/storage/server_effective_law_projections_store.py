@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -69,6 +70,10 @@ class ServerEffectiveLawProjectionsStore:
     @staticmethod
     def _normalize_json_object(value: dict[str, Any] | None) -> dict[str, Any]:
         return dict(value or {})
+
+    @staticmethod
+    def _serialize_json_value(value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False)
 
     @staticmethod
     def _run_from_row(row: dict[str, Any]) -> ServerEffectiveLawProjectionRunRecord:
@@ -185,7 +190,12 @@ class ServerEffectiveLawProjectionsStore:
                 VALUES (%s, %s, %s, %s::jsonb)
                 RETURNING id, server_code, trigger_mode, status, summary_json, created_at
                 """,
-                (normalized_server, normalized_trigger, normalized_status, normalized_summary),
+                (
+                    normalized_server,
+                    normalized_trigger,
+                    normalized_status,
+                    self._serialize_json_value(normalized_summary),
+                ),
             ).fetchone()
             conn.commit()
             return self._run_from_row(dict(row))
@@ -263,7 +273,7 @@ class ServerEffectiveLawProjectionsStore:
                     int(precedence_rank),
                     int(contributor_count),
                     normalized_status,
-                    normalized_provenance,
+                    self._serialize_json_value(normalized_provenance),
                 ),
             ).fetchone()
             conn.commit()
@@ -292,7 +302,7 @@ class ServerEffectiveLawProjectionsStore:
                 WHERE id = %s
                 RETURNING id, server_code, trigger_mode, status, summary_json, created_at
                 """,
-                (normalized_status, normalized_summary, int(run_id)),
+                (normalized_status, self._serialize_json_value(normalized_summary), int(run_id)),
             ).fetchone()
             if row is None:
                 conn.rollback()

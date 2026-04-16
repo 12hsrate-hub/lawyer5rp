@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -58,6 +59,10 @@ class CanonicalLawDocumentVersionsStore:
     @staticmethod
     def _normalize_json_object(value: dict[str, Any] | None) -> dict[str, Any]:
         return dict(value or {})
+
+    @staticmethod
+    def _serialize_json_value(value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False)
 
     @staticmethod
     def _is_unique_violation(exc: Exception, *tokens: str) -> bool:
@@ -328,7 +333,7 @@ class CanonicalLawDocumentVersionsStore:
                     normalized_raw_title,
                     normalized_parsed_title,
                     normalized_body_text,
-                    normalized_metadata,
+                    self._serialize_json_value(normalized_metadata),
                 ),
             ).fetchone()
             version_id = int(dict(row)["id"])
@@ -408,7 +413,7 @@ class CanonicalLawDocumentVersionsStore:
                     normalized_checksum,
                     normalized_raw_title,
                     normalized_body_text,
-                    normalized_metadata,
+                    self._serialize_json_value(normalized_metadata),
                     int(version_id),
                 ),
             ).fetchone()
@@ -482,7 +487,7 @@ class CanonicalLawDocumentVersionsStore:
                     normalized_parse_status,
                     normalized_parsed_title,
                     normalized_body_text,
-                    normalized_metadata,
+                    self._serialize_json_value(normalized_metadata),
                     int(version_id),
                 ),
             ).fetchone()

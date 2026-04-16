@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -10,6 +11,12 @@ for candidate in (ROOT_DIR, WEB_DIR):
         sys.path.insert(0, str(candidate))
 
 from ogp_web.storage.canonical_law_document_versions_store import CanonicalLawDocumentVersionsStore
+
+
+def _decode_jsonish(value):
+    if isinstance(value, str):
+        return json.loads(value)
+    return value
 
 
 class _Cursor:
@@ -74,7 +81,7 @@ class _Connection:
                 "raw_title": raw_title,
                 "parsed_title": parsed_title,
                 "body_text": body_text,
-                "metadata_json": dict(metadata_json),
+                "metadata_json": dict(_decode_jsonish(metadata_json)),
                 "created_at": "2026-04-16T02:00:00+00:00",
                 "updated_at": "2026-04-16T02:00:00+00:00",
             }
@@ -94,7 +101,7 @@ class _Connection:
             row["content_checksum"] = content_checksum
             row["raw_title"] = raw_title
             row["body_text"] = body_text
-            row["metadata_json"] = dict(metadata_json)
+            row["metadata_json"] = dict(_decode_jsonish(metadata_json))
             row["updated_at"] = "2026-04-16T03:00:00+00:00"
             return _Cursor(one={"id": row["id"]})
         if normalized.startswith("UPDATE canonical_law_document_versions SET parse_status = %s, parsed_title = %s, body_text = %s, metadata_json = %s::jsonb, updated_at = NOW() WHERE id = %s RETURNING id"):
@@ -105,7 +112,7 @@ class _Connection:
             row["parse_status"] = parse_status
             row["parsed_title"] = parsed_title
             row["body_text"] = body_text
-            row["metadata_json"] = dict(metadata_json)
+            row["metadata_json"] = dict(_decode_jsonish(metadata_json))
             row["updated_at"] = "2026-04-16T03:10:00+00:00"
             return _Cursor(one={"id": row["id"]})
         raise AssertionError(f"Unsupported query: {normalized}")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -71,6 +72,10 @@ class CanonicalLawDocumentsStore:
     @staticmethod
     def _normalize_json_object(value: dict[str, Any] | None) -> dict[str, Any]:
         return dict(value or {})
+
+    @staticmethod
+    def _serialize_json_value(value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False)
 
     @staticmethod
     def _is_unique_violation(exc: Exception, *tokens: str) -> bool:
@@ -181,7 +186,12 @@ class CanonicalLawDocumentsStore:
                 RETURNING id, canonical_identity_key, identity_source, display_title,
                           metadata_json, created_at, updated_at
                 """,
-                (normalized_key, normalized_identity_source, normalized_title, normalized_metadata),
+                (
+                    normalized_key,
+                    normalized_identity_source,
+                    normalized_title,
+                    self._serialize_json_value(normalized_metadata),
+                ),
             ).fetchone()
             conn.commit()
             return self._document_from_row(dict(row))
@@ -235,7 +245,13 @@ class CanonicalLawDocumentsStore:
                 RETURNING id, canonical_law_document_id, normalized_url, alias_kind,
                           is_active, metadata_json, created_at, updated_at
                 """,
-                (int(canonical_law_document_id), normalized_url_value, normalized_alias_kind, bool(is_active), normalized_metadata),
+                (
+                    int(canonical_law_document_id),
+                    normalized_url_value,
+                    normalized_alias_kind,
+                    bool(is_active),
+                    self._serialize_json_value(normalized_metadata),
+                ),
             ).fetchone()
             conn.commit()
             return self._alias_from_row(dict(row))

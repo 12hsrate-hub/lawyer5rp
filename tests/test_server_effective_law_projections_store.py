@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -10,6 +11,12 @@ for candidate in (ROOT_DIR, WEB_DIR):
         sys.path.insert(0, str(candidate))
 
 from ogp_web.storage.server_effective_law_projections_store import ServerEffectiveLawProjectionsStore
+
+
+def _decode_jsonish(value):
+    if isinstance(value, str):
+        return json.loads(value)
+    return value
 
 
 class _Cursor:
@@ -56,7 +63,7 @@ class _Connection:
                 "server_code": str(server_code),
                 "trigger_mode": str(trigger_mode),
                 "status": str(status),
-                "summary_json": dict(summary_json),
+                "summary_json": dict(_decode_jsonish(summary_json)),
                 "created_at": "2026-04-16T05:00:00+00:00",
             }
             self.next_run_id += 1
@@ -76,7 +83,7 @@ class _Connection:
                 "precedence_rank": int(precedence_rank),
                 "contributor_count": int(contributor_count),
                 "status": str(status),
-                "provenance_json": dict(provenance_json),
+                "provenance_json": dict(_decode_jsonish(provenance_json)),
                 "created_at": "2026-04-16T05:01:00+00:00",
             }
             self.next_item_id += 1
@@ -88,7 +95,7 @@ class _Connection:
             if row is None:
                 return _Cursor(one=None)
             row["status"] = str(status)
-            row["summary_json"] = dict(summary_json)
+            row["summary_json"] = dict(_decode_jsonish(summary_json))
             return _Cursor(one=row)
         raise AssertionError(f"Unsupported query: {normalized}")
 

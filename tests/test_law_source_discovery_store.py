@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -10,6 +11,12 @@ for candidate in (ROOT_DIR, WEB_DIR):
         sys.path.insert(0, str(candidate))
 
 from ogp_web.storage.law_source_discovery_store import LawSourceDiscoveryStore
+
+
+def _decode_jsonish(value):
+    if isinstance(value, str):
+        return json.loads(value)
+    return value
 
 
 class _Cursor:
@@ -66,7 +73,7 @@ class _Connection:
                 "revision": revision["revision"],
                 "trigger_mode": trigger_mode,
                 "status": status,
-                "summary_json": dict(summary_json),
+                "summary_json": dict(_decode_jsonish(summary_json)),
                 "error_summary": error_summary,
                 "created_at": f"2026-04-16T00:0{self.next_run_id}:00+00:00",
                 "started_at": None,
@@ -98,8 +105,8 @@ class _Connection:
                 "normalized_url": normalized_url,
                 "source_container_url": source_container_url,
                 "discovery_status": discovery_status,
-                "alias_hints_json": dict(alias_hints_json),
-                "metadata_json": dict(metadata_json),
+                "alias_hints_json": dict(_decode_jsonish(alias_hints_json)),
+                "metadata_json": dict(_decode_jsonish(metadata_json)),
                 "first_seen_at": "2026-04-16T00:20:00+00:00",
                 "last_seen_at": "2026-04-16T00:20:00+00:00",
                 "created_at": "2026-04-16T00:20:00+00:00",
