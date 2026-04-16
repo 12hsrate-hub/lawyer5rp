@@ -10,6 +10,7 @@ for candidate in (ROOT_DIR, WEB_DIR):
         sys.path.insert(0, str(candidate))
 
 from ogp_web.services.admin_law_projection_service import (
+    decide_server_effective_law_projection_payload,
     list_server_effective_law_projection_items_payload,
     list_server_effective_law_projection_runs_payload,
     preview_server_effective_law_projection_payload,
@@ -183,6 +184,14 @@ class _FakeProjectionsStore:
         self.items.append(item)
         return item
 
+    def update_run_status(self, *, run_id: int, status: str, summary_json=None):
+        item = self.get_run(run_id=run_id)
+        if item is None:
+            raise KeyError("server_effective_law_projection_run_not_found")
+        item.status = status
+        item.summary_json = dict(summary_json or {})
+        return item
+
 
 def test_preview_server_effective_law_projection_payload_selects_highest_priority_binding():
     projections = _FakeProjectionsStore()
@@ -239,3 +248,22 @@ def test_list_server_effective_law_projection_payloads():
         run_id=created["run"]["id"],
     )
     assert items["count"] == 2
+
+
+def test_decide_server_effective_law_projection_payload_updates_run_status():
+    projections = _FakeProjectionsStore()
+    created = preview_server_effective_law_projection_payload(
+        source_sets_store=_FakeSourceSetsStore(),
+        versions_store=_FakeVersionsStore(),
+        projections_store=projections,
+        server_code="orange",
+    )
+    approved = decide_server_effective_law_projection_payload(
+        projections_store=projections,
+        run_id=created["run"]["id"],
+        status="approved",
+        decided_by="admin",
+        reason="ready_for_runtime_bridge",
+    )
+    assert approved["run"]["status"] == "approved"
+    assert approved["run"]["summary_json"]["decision_reason"] == "ready_for_runtime_bridge"

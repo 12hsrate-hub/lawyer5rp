@@ -672,6 +672,15 @@ class AdminLawProjectionRunPayload(BaseModel):
         return normalized
 
 
+class AdminLawProjectionDecisionPayload(BaseModel):
+    reason: str = ""
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str) -> str:
+        return str(value or "").strip()
+
+
 class AdminLawSourceRegistryPayload(BaseModel):
     name: str = ""
     kind: str = "url"
