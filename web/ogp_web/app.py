@@ -37,7 +37,7 @@ from ogp_web.routes.document_builder import router as document_builder_router
 from ogp_web.routes.pages import router as pages_router
 from ogp_web.routes.profile import router as profile_router
 from ogp_web.routes.validation import router as validation_router
-from ogp_web.server_config import get_server_config
+from ogp_web.server_config import get_server_config, resolve_default_server_code
 from ogp_web.services.auth_service import _get_secret_key, get_current_user, is_admin_user
 from ogp_web.services.exam_import_tasks import ExamImportTaskRegistry
 from ogp_web.services.async_job_service import AsyncJobService
@@ -244,7 +244,9 @@ def create_app(
         exam_import_tasks_db_path,
         backend=exam_import_tasks_backend,
     )
-    app.state.server_config = get_server_config(os.getenv("OGP_DEFAULT_SERVER_CODE", "blackberry"))
+    app.state.server_config = get_server_config(
+        resolve_default_server_code(explicit_server_code=os.getenv("OGP_DEFAULT_SERVER_CODE", ""))
+    )
     app.state.queue_provider = build_queue_provider_from_env()
     app.state.job_worker_pool = None
     if (os.getenv("OGP_JOB_WORKER_POOL_ENABLED") or "0").strip().lower() in {"1", "true", "yes"}:

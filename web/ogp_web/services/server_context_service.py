@@ -9,6 +9,7 @@ from ogp_web.server_config import (
     build_permission_set,
     get_server_config,
     list_server_configs,
+    resolve_default_server_code,
 )
 from ogp_web.services.law_sources_validation import normalize_source_urls
 from ogp_web.storage.user_store import UserStore
@@ -44,8 +45,10 @@ class ServerComplaintSettings:
 
 
 def resolve_server_config(*, server_code: str = "", fallback_server_code: str = DEFAULT_SERVER_CODE) -> ServerConfig:
-    normalized_server_code = str(server_code or "").strip().lower()
-    effective_server_code = normalized_server_code or str(fallback_server_code or DEFAULT_SERVER_CODE).strip().lower()
+    effective_server_code = resolve_default_server_code(
+        explicit_server_code=server_code,
+        fallback_server_code=fallback_server_code,
+    )
     return get_server_config(effective_server_code)
 
 

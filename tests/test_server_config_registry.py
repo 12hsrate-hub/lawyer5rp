@@ -59,7 +59,21 @@ class ServerConfigRegistryTests(unittest.TestCase):
         self.assertEqual(orange.form_schema, {})
         self.assertEqual(orange.validation_profiles, {})
         self.assertEqual(orange.template_bindings, {})
+        self.assertEqual(orange.document_builder, {})
         self.assertEqual(orange.terminology, {})
+
+    def test_resolve_document_builder_config_uses_bootstrap_metadata(self):
+        document_builder = registry.resolve_document_builder_config("blackberry")
+
+        self.assertIn("choice_sets", document_builder)
+        self.assertIn("validators", document_builder)
+        self.assertIn("supreme", document_builder["choice_sets"]["claim_kind_by_court_type"])
+
+    def test_resolve_document_builder_config_returns_empty_for_db_only_server(self):
+        with patch("ogp_web.server_config.registry._load_effective_pack_from_db", return_value=None):
+            document_builder = registry.resolve_document_builder_config("orange")
+
+        self.assertEqual(document_builder, {})
 
 
 if __name__ == "__main__":

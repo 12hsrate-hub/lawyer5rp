@@ -37,6 +37,7 @@ class ServerConfig:
     form_schema: dict[str, object] = field(default_factory=dict)
     validation_profiles: dict[str, object] = field(default_factory=dict)
     template_bindings: dict[str, object] = field(default_factory=dict)
+    document_builder: dict[str, object] = field(default_factory=dict)
     terminology: dict[str, str] = field(default_factory=dict)
     page_nav_items: tuple[NavItemConfig, ...] = ()
     complaint_nav_items: tuple[NavItemConfig, ...] = ()
