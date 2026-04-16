@@ -345,6 +345,7 @@ def build_server_workspace_payload(
     source_set_bindings = source_sets_store.list_bindings(server_code=normalized_server)
     projection_bridge = dict(health_payload.get("projection_bridge") or {})
     runtime_provenance = dict(health_payload.get("runtime_provenance") or {})
+    runtime_alignment = dict(health_payload.get("runtime_alignment") or {})
     laws_summary = {
         "active_source_set_bindings": [
             {
@@ -360,6 +361,7 @@ def build_server_workspace_payload(
         "chunk_count": (health_payload.get("checks") or {}).get("health", {}).get("chunk_count"),
         "projection_bridge": projection_bridge,
         "runtime_provenance": runtime_provenance,
+        "runtime_alignment": runtime_alignment,
         "health": (health_payload.get("checks") or {}).get("health", {}),
     }
     issues_payload = _build_issues_payload(health_payload=health_payload, dashboard_payload=dashboard_payload)

@@ -951,6 +951,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertIn("access", payload["overview"])
         self.assertEqual(payload["overview"]["laws"]["binding_count"], 1)
         self.assertEqual(payload["overview"]["laws"]["runtime_provenance"]["mode"], "legacy_runtime_shell")
+        self.assertEqual(payload["overview"]["laws"]["runtime_alignment"]["status"], "legacy_only")
         self.assertEqual(payload["health"]["onboarding"]["resolution_mode"], "bootstrap_pack")
         issue_ids = {item.get("issue_id") for item in payload["issues"]["items"] if item.get("issue_id")}
         self.assertIn("laws_runtime_provenance", issue_ids)
@@ -1100,8 +1101,10 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(diff.status_code, 200)
         self.assertEqual(summary.json()["binding_count"], 1)
         self.assertEqual(summary.json()["runtime_provenance"]["mode"], "legacy_runtime_shell")
+        self.assertEqual(summary.json()["runtime_alignment"]["status"], "legacy_only")
         self.assertEqual(effective.json()["count"], 1)
         self.assertEqual(effective.json()["items"][0]["title"], "Уголовный кодекс v2")
+        self.assertEqual(diff.json()["runtime_alignment"]["status"], "legacy_only")
         self.assertEqual(diff.json()["summary"]["changed"], 1)
         self.assertEqual(diff.json()["summary"]["added"], 0)
 
@@ -1270,6 +1273,8 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertTrue(payload["checks"]["config_resolution"]["ok"])
         self.assertEqual(payload["runtime_provenance"]["mode"], "projection_backed")
         self.assertTrue(payload["runtime_provenance"]["is_projection_backed"])
+        self.assertEqual(payload["runtime_alignment"]["status"], "aligned")
+        self.assertTrue(payload["runtime_alignment"]["matches_active_law_version"])
         self.assertEqual(payload["onboarding"]["highest_completed_state"], "rollout-ready")
         self.assertEqual(payload["checks"]["health"]["active_law_version_id"], 88)
         self.assertEqual(payload["projection_bridge"]["run_id"], 4)

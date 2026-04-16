@@ -232,6 +232,7 @@ def build_server_laws_summary_payload(
         "health": dict((health_payload.get("checks") or {}).get("health") or {}),
         "projection_bridge": dict(health_payload.get("projection_bridge") or {}),
         "runtime_provenance": dict(health_payload.get("runtime_provenance") or {}),
+        "runtime_alignment": dict(health_payload.get("runtime_alignment") or {}),
         "latest_projection_run": _serialize_run(current_run),
         "fill_check": fill_summary,
         "diff": diff_summary,
@@ -344,12 +345,19 @@ def build_server_laws_diff_payload(
     *,
     server_code: str,
     runtime_servers_store: RuntimeServersStore,
+    law_sets_store: RuntimeLawSetsStore,
     projections_store: ServerEffectiveLawProjectionsStore,
 ) -> dict[str, Any]:
     normalized_server = normalize_runtime_server_code(server_code)
     server = runtime_servers_store.get_server(code=normalized_server)
     if server is None:
         raise KeyError("server_not_found")
+    health_payload = build_runtime_server_health_payload(
+        server_code=normalized_server,
+        runtime_servers_store=runtime_servers_store,
+        law_sets_store=law_sets_store,
+        projections_store=projections_store,
+    )
     current_run, previous_run = _latest_projection_runs(projections_store, server_code=normalized_server)
     current_items = projections_store.list_items(projection_run_id=int(current_run.id)) if current_run is not None else []
     previous_items = projections_store.list_items(projection_run_id=int(previous_run.id)) if previous_run is not None else []
@@ -360,5 +368,6 @@ def build_server_laws_diff_payload(
         "server_code": normalized_server,
         "current_run": _serialize_run(current_run),
         "baseline_run": _serialize_run(previous_run),
+        "runtime_alignment": dict(health_payload.get("runtime_alignment") or {}),
         "summary": diff_summary,
     }

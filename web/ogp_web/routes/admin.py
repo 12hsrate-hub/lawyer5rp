@@ -1205,6 +1205,7 @@ async def admin_runtime_server_laws_diff(
     server_code: str,
     user: AuthUser = Depends(requires_permission("manage_laws")),
     runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
     projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
 ):
     _ = user
@@ -1212,6 +1213,7 @@ async def admin_runtime_server_laws_diff(
         payload = build_server_laws_diff_payload(
             server_code=server_code,
             runtime_servers_store=runtime_servers_store,
+            law_sets_store=law_sets_store,
             projections_store=projections_store,
         )
     except KeyError as exc:
