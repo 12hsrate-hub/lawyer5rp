@@ -19,6 +19,7 @@ from ogp_web.storage.exam_answers_store import ExamAnswersStore, get_default_exa
 from ogp_web.storage.user_store import UserStore, get_default_user_store
 from ogp_web.storage.content_workflow_repository import ContentWorkflowRepository
 from ogp_web.storage.admin_dashboard_repository import AdminDashboardRepository
+from ogp_web.storage.canonical_law_documents_store import CanonicalLawDocumentsStore
 from ogp_web.storage.law_source_discovery_store import LawSourceDiscoveryStore
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
 from ogp_web.storage.runtime_servers_store import RuntimeServersStore
@@ -134,6 +135,11 @@ def get_law_source_sets_store(_: Request) -> LawSourceSetsStore:
 def get_law_source_discovery_store(_: Request) -> LawSourceDiscoveryStore:
     backend = get_database_backend()
     return LawSourceDiscoveryStore(backend)
+
+
+def get_canonical_law_documents_store(_: Request) -> CanonicalLawDocumentsStore:
+    backend = get_database_backend()
+    return CanonicalLawDocumentsStore(backend)
 
 def get_exam_import_task_registry(request: Request) -> ExamImportTaskRegistry:
     return request.app.state.exam_import_task_registry
