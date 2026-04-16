@@ -10,6 +10,7 @@ from ogp_web.services.law_admin_service import LawAdminService
 from ogp_web.services.server_context_service import resolve_user_server_permissions
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
+from ogp_web.storage.server_effective_law_projections_store import ServerEffectiveLawProjectionsStore
 from ogp_web.storage.user_store import UserStore
 
 
@@ -41,14 +42,61 @@ def resolve_law_sources_target_server_code(
     return target_server_code
 
 
+def _build_projection_bridge_summary(
+    *,
+    server_code: str,
+    projections_store: ServerEffectiveLawProjectionsStore | None,
+    active_law_version: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if projections_store is None:
+        return None
+    runs = projections_store.list_runs(server_code=server_code)
+    if not runs:
+        return None
+    active_version_id = int((active_law_version or {}).get("id") or 0)
+    selected_run = None
+    for run in runs:
+        summary_json = dict(run.summary_json or {})
+        activation = dict(summary_json.get("activation") or {})
+        if active_version_id > 0 and int(activation.get("law_version_id") or 0) == active_version_id:
+            selected_run = run
+            break
+    if selected_run is None:
+        selected_run = runs[0]
+    summary_json = dict(selected_run.summary_json or {})
+    materialization = dict(summary_json.get("materialization") or {})
+    activation = dict(summary_json.get("activation") or {})
+    return {
+        "run_id": int(selected_run.id),
+        "status": str(selected_run.status or ""),
+        "decision_status": str(summary_json.get("decision_status") or ""),
+        "law_set_id": int(materialization.get("law_set_id") or 0) or None,
+        "law_version_id": int(activation.get("law_version_id") or 0) or None,
+        "matches_active_law_version": (
+            active_version_id > 0 and int(activation.get("law_version_id") or 0) == active_version_id
+            if active_version_id > 0
+            else None
+        ),
+        "created_at": str(selected_run.created_at or ""),
+    }
+
+
 def build_law_sources_status_payload(
     *,
     workflow_service: ContentWorkflowService,
     server_code: str,
+    projections_store: ServerEffectiveLawProjectionsStore | None = None,
 ) -> dict[str, Any]:
     snapshot = LawAdminService(workflow_service).get_effective_sources(server_code=server_code)
+    projection_bridge = _build_projection_bridge_summary(
+        server_code=server_code,
+        projections_store=projections_store,
+        active_law_version=snapshot.active_law_version if isinstance(snapshot.active_law_version, dict) else None,
+    )
     return {
         "server_code": server_code,
+        "primary_explanation": "projection_bridge" if projection_bridge else "legacy_effective_sources",
+        "projection_bridge": projection_bridge,
         "source_urls": list(snapshot.source_urls),
         "source_origin": snapshot.source_origin,
         "manifest_item": snapshot.manifest_item,
