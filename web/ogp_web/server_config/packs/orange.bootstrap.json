@@ -20,6 +20,10 @@
         ]
       }
     },
+    "law_qa_sources": [
+      "https://forum.gta5rp.com/forums/zakonodatelnaja-baza.102/"
+    ],
+    "law_qa_bundle_path": "law_bundles/orange.json",
     "template_bindings": {
       "complaint": {
         "template_key": "complaint_orange_v1",
