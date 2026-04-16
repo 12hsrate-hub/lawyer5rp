@@ -445,6 +445,70 @@ def build_projection_bridge_readiness_summary(
     }
 
 
+def build_promotion_candidate_summary(
+    *,
+    diff_summary: dict[str, Any],
+    fill_summary: dict[str, Any],
+    projection_bridge_readiness: dict[str, Any],
+    runtime_version_parity: dict[str, Any],
+    latest_projection_run: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    diff = dict(diff_summary or {})
+    fill = dict(fill_summary or {})
+    readiness = dict(projection_bridge_readiness or {})
+    version_parity = dict(runtime_version_parity or {})
+    run = dict(latest_projection_run or {})
+    selected_count = int(run.get("selected_count") or fill.get("count") or 0)
+    changed = int(diff.get("changed") or 0)
+    added = int(diff.get("added") or 0)
+    removed = int(diff.get("removed") or 0)
+    missing_content = int(fill.get("missing_content") or 0)
+    error_count = int(fill.get("error_count") or 0)
+    with_content = int(fill.get("with_content") or 0)
+    readiness_status = str(readiness.get("status") or "").strip().lower()
+    version_status = str(version_parity.get("status") or "").strip().lower()
+
+    if readiness_status in {"not_configured", "action_required"}:
+        status = "blocked"
+        detail = str(readiness.get("detail") or "Projection bridge is not ready for controlled promotion.")
+        next_step = str(readiness.get("next_step") or "Устраните blockers перед controlled promotion.")
+    elif selected_count <= 0 and readiness_status not in {"ready"}:
+        status = "empty"
+        detail = "Latest projection does not currently select any laws."
+        next_step = "Проверьте bindings и запустите preview ещё раз."
+    elif error_count > 0 or missing_content > 0:
+        status = "content_incomplete"
+        detail = "Latest projection still has missing content or content errors."
+        next_step = "Проверьте наполнение и устраните content gaps."
+    elif version_status not in {"aligned", "uninitialized"}:
+        status = "runtime_drift"
+        detail = "Runtime version parity still requires attention before controlled promotion."
+        next_step = "Сверьте active runtime law_version с promoted projection."
+    elif changed > 0 or added > 0 or removed > 0:
+        status = "review_needed"
+        detail = "Latest projection candidate differs from the previous baseline and should be reviewed."
+        next_step = "Проверьте diff и подтвердите, что изменения ожидаемы."
+    else:
+        status = "ready"
+        detail = "Latest projection candidate looks stable for the next controlled promotion step."
+        next_step = "Кандидат выглядит готовым к controlled promotion."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "counts": {
+            "selected_count": selected_count,
+            "with_content": with_content,
+            "missing_content": missing_content,
+            "error_count": error_count,
+            "changed": changed,
+            "added": added,
+            "removed": removed,
+        },
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -497,6 +561,13 @@ def build_server_laws_summary_payload(
     diff_summary = _diff_summary(current_items, previous_items)
     diff_summary["current_run_id"] = int(current_run.id) if current_run is not None else None
     diff_summary["baseline_run_id"] = int(previous_run.id) if previous_run is not None else None
+    promotion_candidate = build_promotion_candidate_summary(
+        diff_summary=diff_summary,
+        fill_summary=fill_summary,
+        projection_bridge_readiness=bridge_readiness,
+        runtime_version_parity=runtime_version_parity,
+        latest_projection_run=_serialize_run(current_run) or {},
+    )
     return {
         "server_code": normalized_server,
         "bindings": bindings,
@@ -509,6 +580,7 @@ def build_server_laws_summary_payload(
         "runtime_version_parity": runtime_version_parity,
         "projection_bridge_lifecycle": projection_bridge_lifecycle,
         "projection_bridge_readiness": bridge_readiness,
+        "promotion_candidate": promotion_candidate,
         "latest_projection_run": _serialize_run(current_run),
         "fill_check": fill_summary,
         "diff": diff_summary,
@@ -658,6 +730,13 @@ def build_server_laws_diff_payload(
     diff_summary = _diff_summary(current_items, previous_items)
     diff_summary["current_run_id"] = int(current_run.id) if current_run is not None else None
     diff_summary["baseline_run_id"] = int(previous_run.id) if previous_run is not None else None
+    promotion_candidate = build_promotion_candidate_summary(
+        diff_summary=diff_summary,
+        fill_summary={},
+        projection_bridge_readiness=bridge_readiness,
+        runtime_version_parity=runtime_version_parity,
+        latest_projection_run=_serialize_run(current_run) or {},
+    )
     return {
         "server_code": normalized_server,
         "current_run": _serialize_run(current_run),
@@ -667,5 +746,6 @@ def build_server_laws_diff_payload(
         "runtime_version_parity": runtime_version_parity,
         "projection_bridge_lifecycle": projection_bridge_lifecycle,
         "projection_bridge_readiness": bridge_readiness,
+        "promotion_candidate": promotion_candidate,
         "summary": diff_summary,
     }
