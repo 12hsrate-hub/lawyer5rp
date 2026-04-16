@@ -452,7 +452,6 @@ def _build_promotion_candidate_issue(promotion_candidate: dict[str, Any]) -> dic
         "detail": detail,
     }
 
-
 def _build_promotion_delta_issue(promotion_delta: dict[str, Any]) -> dict[str, Any] | None:
     status = str((promotion_delta or {}).get("status") or "").strip().lower()
     if status in {"", "stable", "empty"}:
@@ -473,8 +472,6 @@ def _build_promotion_delta_issue(promotion_delta: dict[str, Any]) -> dict[str, A
         "title": "Promotion delta требует внимания",
         "detail": detail,
     }
-
-
 def _build_issues_payload(
     *,
     health_payload: dict[str, Any],

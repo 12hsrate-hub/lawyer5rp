@@ -508,7 +508,6 @@ def build_promotion_candidate_summary(
         },
     }
 
-
 def build_promotion_delta_summary(
     *,
     diff_summary: dict[str, Any],
@@ -561,8 +560,6 @@ def build_promotion_delta_summary(
             "error_count": error_count,
         },
     }
-
-
 def build_server_laws_summary_payload(
     *,
     server_code: str,

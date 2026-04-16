@@ -315,7 +315,6 @@ def _build_promotion_candidate_issue(promotion_candidate: dict[str, Any]) -> dic
         ],
     }
 
-
 def _build_promotion_delta_issue(promotion_delta: dict[str, Any]) -> dict[str, Any] | None:
     status = str((promotion_delta or {}).get("status") or "").strip().lower()
     if status in {"", "stable", "empty"}:
@@ -339,8 +338,6 @@ def _build_promotion_delta_issue(promotion_delta: dict[str, Any]) -> dict[str, A
             {"kind": "recheck", "label": "Проверить наполнение"},
         ],
     }
-
-
 def build_server_audit_payload(
     *,
     server_code: str,

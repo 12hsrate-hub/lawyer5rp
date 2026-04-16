@@ -1107,14 +1107,12 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertTrue(candidate_recheck_payload["ok"])
             self.assertEqual(candidate_recheck_payload["issue_id"], "laws_promotion_candidate")
             self.assertEqual(candidate_recheck_payload["action"], "recheck")
-
             delta_recheck = self.client.post("/api/admin/runtime-servers/blackberry/issues/laws_promotion_delta/recheck")
             self.assertEqual(delta_recheck.status_code, 200)
             delta_recheck_payload = delta_recheck.json()
             self.assertTrue(delta_recheck_payload["ok"])
             self.assertEqual(delta_recheck_payload["issue_id"], "laws_promotion_delta")
             self.assertEqual(delta_recheck_payload["action"], "recheck")
-
     def test_runtime_server_issues_endpoint_exposes_runtime_item_parity_warning_for_drift(self):
         self.runtime_law_sets_store.law_set_details[1]["items"] = [
             {
