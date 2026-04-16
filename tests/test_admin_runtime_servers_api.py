@@ -984,10 +984,12 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(payload["overview"]["laws"]["runtime_alignment"]["status"], "legacy_only")
         self.assertEqual(payload["overview"]["laws"]["runtime_item_parity"]["status"], "aligned")
         self.assertEqual(payload["overview"]["laws"]["runtime_version_parity"]["status"], "legacy_only")
+        self.assertEqual(payload["overview"]["laws"]["projection_bridge_lifecycle"]["status"], "preview_only")
         self.assertEqual(payload["health"]["onboarding"]["resolution_mode"], "bootstrap_pack")
         issue_ids = {item.get("issue_id") for item in payload["issues"]["items"] if item.get("issue_id")}
         self.assertIn("laws_runtime_provenance", issue_ids)
         self.assertIn("laws_runtime_version_parity", issue_ids)
+        self.assertIn("laws_projection_bridge_lifecycle", issue_ids)
         self.assertEqual(payload["readiness"]["counters"]["stale_changes"], 1)
         self.assertIsInstance(payload["activity"], list)
 
@@ -1059,6 +1061,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             issue_ids = {item["issue_id"] for item in payload["items"]}
             self.assertIn("laws_runtime_provenance", issue_ids)
             self.assertIn("laws_runtime_version_parity", issue_ids)
+            self.assertIn("laws_projection_bridge_lifecycle", issue_ids)
 
             recheck = self.client.post("/api/admin/runtime-servers/blackberry/issues/laws_runtime_provenance/recheck")
             self.assertEqual(recheck.status_code, 200)
@@ -1073,6 +1076,13 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertTrue(parity_recheck_payload["ok"])
             self.assertEqual(parity_recheck_payload["issue_id"], "laws_runtime_version_parity")
             self.assertEqual(parity_recheck_payload["action"], "recheck")
+
+            lifecycle_recheck = self.client.post("/api/admin/runtime-servers/blackberry/issues/laws_projection_bridge_lifecycle/recheck")
+            self.assertEqual(lifecycle_recheck.status_code, 200)
+            lifecycle_recheck_payload = lifecycle_recheck.json()
+            self.assertTrue(lifecycle_recheck_payload["ok"])
+            self.assertEqual(lifecycle_recheck_payload["issue_id"], "laws_projection_bridge_lifecycle")
+            self.assertEqual(lifecycle_recheck_payload["action"], "recheck")
 
     def test_runtime_server_issues_endpoint_exposes_runtime_item_parity_warning_for_drift(self):
         self.runtime_law_sets_store.law_set_details[1]["items"] = [
@@ -1211,11 +1221,13 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(summary.json()["runtime_alignment"]["status"], "legacy_only")
         self.assertEqual(summary.json()["runtime_item_parity"]["status"], "aligned")
         self.assertEqual(summary.json()["runtime_version_parity"]["status"], "legacy_only")
+        self.assertEqual(summary.json()["projection_bridge_lifecycle"]["status"], "preview_only")
         self.assertEqual(effective.json()["count"], 1)
         self.assertEqual(effective.json()["items"][0]["title"], "Уголовный кодекс v2")
         self.assertEqual(diff.json()["runtime_alignment"]["status"], "legacy_only")
         self.assertEqual(diff.json()["runtime_item_parity"]["status"], "aligned")
         self.assertEqual(diff.json()["runtime_version_parity"]["status"], "legacy_only")
+        self.assertEqual(diff.json()["projection_bridge_lifecycle"]["status"], "preview_only")
         self.assertEqual(diff.json()["summary"]["changed"], 1)
         self.assertEqual(diff.json()["summary"]["added"], 0)
 
@@ -1405,6 +1417,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             workspace = self.client.get("/api/admin/runtime-servers/orange/workspace")
         self.assertEqual(workspace.status_code, 200)
         self.assertEqual(workspace.json()["overview"]["laws"]["runtime_version_parity"]["status"], "aligned")
+        self.assertEqual(workspace.json()["overview"]["laws"]["projection_bridge_lifecycle"]["status"], "activated")
         self.assertEqual(payload["onboarding"]["highest_completed_state"], "rollout-ready")
         self.assertEqual(payload["checks"]["health"]["active_law_version_id"], 88)
         self.assertEqual(payload["projection_bridge"]["run_id"], 4)

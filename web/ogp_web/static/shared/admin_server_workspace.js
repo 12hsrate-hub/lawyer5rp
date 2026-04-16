@@ -373,6 +373,7 @@ window.OGPAdminServerWorkspace = {
         const runtimeAlignment = laws.runtime_alignment || state.lawsDiff?.runtime_alignment || {};
         const runtimeItemParity = laws.runtime_item_parity || state.lawsDiff?.runtime_item_parity || {};
         const runtimeVersionParity = laws.runtime_version_parity || state.lawsDiff?.runtime_version_parity || {};
+        const projectionBridgeLifecycle = laws.projection_bridge_lifecycle || state.lawsDiff?.projection_bridge_lifecycle || {};
         const effective = state.lawsEffective || {};
       const effectiveItems = Array.isArray(effective.items) ? effective.items.slice(0, 12) : [];
       const fillSummary = laws.fill_check || effective.summary || {};
@@ -422,6 +423,11 @@ window.OGPAdminServerWorkspace = {
               <span class="legal-field__label">Version parity</span>
               <div><strong>${escapeHtml(String(runtimeVersionParity.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">active: ${escapeHtml(String(runtimeVersionParity.active_law_version_id || "—"))} • projected: ${escapeHtml(String(runtimeVersionParity.projected_law_version_id || "—"))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Bridge lifecycle</span>
+              <div><strong>${escapeHtml(String(projectionBridgeLifecycle.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(projectionBridgeLifecycle.detail || "Projection bridge lifecycle summary is not available yet."))}</div>
             </div>
           </div>
         <div class="legal-subcard">

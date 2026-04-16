@@ -312,6 +312,49 @@ def _build_runtime_version_parity(*, health_payload: dict[str, Any]) -> dict[str
     }
 
 
+def _build_projection_bridge_lifecycle(*, health_payload: dict[str, Any]) -> dict[str, Any]:
+    projection_bridge = dict((health_payload or {}).get("projection_bridge") or {})
+    runtime_alignment = dict((health_payload or {}).get("runtime_alignment") or {})
+    runtime_provenance = dict((health_payload or {}).get("runtime_provenance") or {})
+    run_id = int(projection_bridge.get("run_id") or 0)
+    law_set_id = int(projection_bridge.get("law_set_id") or 0)
+    law_version_id = int(projection_bridge.get("law_version_id") or 0)
+    matches_active = bool(projection_bridge.get("matches_active_law_version"))
+    active_law_version_id = int(runtime_alignment.get("active_law_version_id") or 0)
+    runtime_mode = str(runtime_provenance.get("mode") or "").strip().lower()
+
+    if run_id <= 0:
+        status = "uninitialized"
+        detail = "No promoted projection lifecycle is available for this server yet."
+    elif law_version_id > 0 and matches_active:
+        status = "activated"
+        detail = "Projection bridge is activated and matches the current runtime law_version."
+    elif law_version_id > 0:
+        status = "drifted"
+        detail = "Projection bridge has an activation record, but it no longer matches the current runtime law_version."
+    elif law_set_id > 0:
+        status = "materialized"
+        detail = "Projection bridge materialized a runtime law_set shell, but no active runtime law_version is aligned yet."
+    else:
+        status = "preview_only"
+        detail = "Projection bridge currently exists only as a preview/decision run without materialization."
+
+    if runtime_mode == "materialized_shell_only" and law_set_id > 0 and law_version_id <= 0:
+        status = "materialized"
+    elif runtime_mode == "projection_drift" and law_version_id > 0 and active_law_version_id > 0 and law_version_id != active_law_version_id:
+        status = "drifted"
+
+    return {
+        "status": status,
+        "detail": detail,
+        "run_id": run_id or None,
+        "law_set_id": law_set_id or None,
+        "law_version_id": law_version_id or None,
+        "active_law_version_id": active_law_version_id or None,
+        "matches_active_law_version": matches_active if law_version_id > 0 else None,
+    }
+
+
 def _build_runtime_item_parity_issue(runtime_item_parity: dict[str, Any]) -> dict[str, Any] | None:
     status = str((runtime_item_parity or {}).get("status") or "").strip().lower()
     if status != "drift":
@@ -348,12 +391,29 @@ def _build_runtime_version_parity_issue(runtime_version_parity: dict[str, Any]) 
     }
 
 
+def _build_projection_bridge_lifecycle_issue(projection_bridge_lifecycle: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((projection_bridge_lifecycle or {}).get("status") or "").strip().lower()
+    if status not in {"preview_only", "materialized", "drifted"}:
+        return None
+    return {
+        "issue_id": "laws_projection_bridge_lifecycle",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Projection bridge lifecycle требует внимания",
+        "detail": (
+            f"{str((projection_bridge_lifecycle or {}).get('detail') or '').strip()} "
+            "Это не меняет runtime автоматически, но показывает, на каком шаге bridge остановился."
+        ).strip(),
+    }
+
+
 def _build_issues_payload(
     *,
     health_payload: dict[str, Any],
     dashboard_payload: dict[str, Any],
     runtime_item_parity: dict[str, Any] | None = None,
     runtime_version_parity: dict[str, Any] | None = None,
+    projection_bridge_lifecycle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     checks = dict(health_payload.get("checks") or {})
@@ -413,6 +473,9 @@ def _build_issues_payload(
     runtime_version_parity_issue = _build_runtime_version_parity_issue(dict(runtime_version_parity or {}))
     if runtime_version_parity_issue is not None:
         items.append(runtime_version_parity_issue)
+    projection_bridge_lifecycle_issue = _build_projection_bridge_lifecycle_issue(dict(projection_bridge_lifecycle or {}))
+    if projection_bridge_lifecycle_issue is not None:
+        items.append(projection_bridge_lifecycle_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -528,6 +591,7 @@ def build_server_workspace_payload(
         server_code=normalized_server,
     )
     runtime_version_parity = _build_runtime_version_parity(health_payload=health_payload)
+    projection_bridge_lifecycle = _build_projection_bridge_lifecycle(health_payload=health_payload)
     laws_summary = {
         "active_source_set_bindings": [
             {
@@ -546,6 +610,7 @@ def build_server_workspace_payload(
         "runtime_alignment": runtime_alignment,
         "runtime_item_parity": runtime_item_parity,
         "runtime_version_parity": runtime_version_parity,
+        "projection_bridge_lifecycle": projection_bridge_lifecycle,
         "health": (health_payload.get("checks") or {}).get("health", {}),
     }
     issues_payload = _build_issues_payload(
@@ -553,6 +618,7 @@ def build_server_workspace_payload(
         dashboard_payload=dashboard_payload,
         runtime_item_parity=runtime_item_parity,
         runtime_version_parity=runtime_version_parity,
+        projection_bridge_lifecycle=projection_bridge_lifecycle,
     )
     readiness_payload = _build_readiness_payload(
         laws_ready=bool((health_payload.get("checks") or {}).get("health", {}).get("ok")),
