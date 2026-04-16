@@ -12,6 +12,7 @@ from ogp_web.dependencies import (
     get_admin_analytics_service,
     get_admin_ai_pipeline_service,
     get_admin_dashboard_service,
+    get_law_source_sets_store,
     get_admin_metrics_store,
     get_admin_task_ops_service,
     get_exam_answers_store,
@@ -142,6 +143,12 @@ from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
 from ogp_web.storage.runtime_servers_store import RuntimeServerRecord, RuntimeServersStore
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
+from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
+from ogp_web.services.admin_law_source_sets_service import (
+    list_server_source_set_bindings_payload,
+    list_source_set_revisions_payload,
+    list_source_sets_payload,
+)
 from ogp_web.web import page_context, templates
 
 
@@ -489,6 +496,77 @@ async def admin_runtime_server_law_bindings(
 ):
     _ = user
     return list_runtime_server_law_bindings_payload(store=store, server_code=server_code)
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/source-set-bindings")
+async def admin_runtime_server_source_set_bindings(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    _ = user
+    normalized_code = _normalize_code(server_code)
+    try:
+        payload = list_server_source_set_bindings_payload(store=store, server_code=normalized_code)
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    metrics_store.log_event(
+        event_type="admin_server_source_set_bindings_list",
+        username=user.username,
+        server_code=normalized_code,
+        path=f"/api/admin/runtime-servers/{normalized_code}/source-set-bindings",
+        method="GET",
+        status_code=200,
+        meta={"count": payload["count"]},
+    )
+    return payload
+
+
+@router.get("/api/admin/law-source-sets")
+async def admin_law_source_sets(
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    _ = user
+    payload = list_source_sets_payload(store=store)
+    metrics_store.log_event(
+        event_type="admin_law_source_sets_list",
+        username=user.username,
+        server_code=user.server_code,
+        path="/api/admin/law-source-sets",
+        method="GET",
+        status_code=200,
+        meta={"count": payload["count"]},
+    )
+    return payload
+
+
+@router.get("/api/admin/law-source-sets/{source_set_key}/revisions")
+async def admin_law_source_set_revisions(
+    source_set_key: str,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    _ = user
+    try:
+        payload = list_source_set_revisions_payload(store=store, source_set_key=source_set_key)
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_law_source_set_revisions_list",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/law-source-sets/{str(source_set_key or '').strip().lower()}/revisions",
+        method="GET",
+        status_code=200,
+        meta={"count": payload["count"], "source_set_key": payload["source_set"]["source_set_key"]},
+    )
+    return payload
 
 
 @router.post("/api/admin/runtime-servers/{server_code}/law-bindings")
