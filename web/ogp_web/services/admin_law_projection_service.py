@@ -3,9 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
+from dataclasses import asdict
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 from typing import Any
 
+from ogp_web.services.law_bundle_service import _split_structured_text_into_chunks
+from ogp_web.services.law_version_service import import_law_snapshot
 from ogp_web.storage.canonical_law_document_versions_store import (
     CanonicalLawDocumentVersionRecord,
     CanonicalLawDocumentVersionsStore,
@@ -85,6 +89,10 @@ def _next_materialization_name(*, run_id: int, previous_attempts: int) -> str:
     return f"Projection candidate #{int(run_id)}.{attempt}"
 
 
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def _contributors_payload(
     *,
     candidates: list[tuple[ServerSourceSetBindingRecord, CanonicalLawDocumentVersionRecord]],
@@ -103,6 +111,54 @@ def _contributors_payload(
             }
         )
     return items
+
+
+def _build_projection_runtime_snapshot(
+    *,
+    versions_store: CanonicalLawDocumentVersionsStore,
+    projection_items: list[Any],
+    server_code: str,
+) -> dict[str, Any]:
+    source_items: list[dict[str, Any]] = []
+    articles: list[dict[str, Any]] = []
+    seen_sources: set[tuple[str, str]] = set()
+    for item in projection_items:
+        version = versions_store.get_version(version_id=int(item.selected_document_version_id))
+        if version is None:
+            raise ValueError("server_effective_law_projection_document_version_missing")
+        document_title = str(version.parsed_title or version.raw_title or version.display_title or version.normalized_url).strip()
+        body_text = str(version.body_text or "").strip()
+        if not body_text:
+            raise ValueError("server_effective_law_projection_document_body_missing")
+        chunks = _split_structured_text_into_chunks(
+            url=str(version.normalized_url or "").strip(),
+            document_title=document_title,
+            text=body_text,
+        )
+        if not chunks:
+            continue
+        source_key = (str(version.normalized_url or "").strip(), document_title)
+        if source_key not in seen_sources:
+            seen_sources.add(source_key)
+            source_items.append(
+                {
+                    "url": source_key[0],
+                    "document_title": source_key[1],
+                    "page_urls": [source_key[0]],
+                    "post_count": 1,
+                    "included_post_count": 1,
+                    "chunk_count": len(chunks),
+                }
+            )
+        articles.extend(asdict(chunk) for chunk in chunks)
+    if not articles:
+        raise ValueError("server_effective_law_projection_snapshot_empty")
+    return {
+        "server_code": str(server_code or "").strip().lower(),
+        "generated_at_utc": _utc_now_iso(),
+        "sources": source_items,
+        "articles": articles,
+    }
 
 
 def list_server_effective_law_projection_runs_payload(
@@ -391,6 +447,7 @@ def activate_server_effective_law_projection_payload(
     *,
     projections_store: ServerEffectiveLawProjectionsStore,
     runtime_law_sets_store: RuntimeLawSetsStore,
+    versions_store: CanonicalLawDocumentVersionsStore,
     law_admin_service: Any,
     run_id: int,
     actor_user_id: int,
@@ -428,23 +485,31 @@ def activate_server_effective_law_projection_payload(
             "activation": activation,
         }
 
+    _ = law_admin_service
+    _ = actor_user_id
+    _ = request_id
     published_law_set = runtime_law_sets_store.publish_law_set(law_set_id=law_set_id)
-    server_code, source_urls = runtime_law_sets_store.list_source_urls_for_law_set(law_set_id=law_set_id)
-    if not source_urls:
-        raise ValueError("law_set_sources_empty")
-    rebuild_result = law_admin_service.rebuild_index(
-        server_code=server_code,
-        source_urls=list(source_urls),
-        actor_user_id=int(actor_user_id),
-        request_id=str(request_id or "").strip(),
-        persist_sources=False,
-        dry_run=False,
+    projection_items = projections_store.list_items(projection_run_id=int(run_id))
+    if not projection_items:
+        raise ValueError("server_effective_law_projection_items_missing")
+    snapshot_payload = _build_projection_runtime_snapshot(
+        versions_store=versions_store,
+        projection_items=projection_items,
+        server_code=run.server_code,
     )
+    law_version_id = import_law_snapshot(
+        server_code=run.server_code,
+        payload=snapshot_payload,
+        source_ref=f"projection_run:{int(run.id)}",
+    )
+    source_count = len(snapshot_payload.get("sources") or [])
+    chunk_count = len(snapshot_payload.get("articles") or [])
     activation_payload = {
         "law_set_id": law_set_id,
-        "server_code": str(server_code or ""),
-        "law_version_id": int(rebuild_result.get("law_version_id") or 0),
-        "source_urls_count": len(source_urls),
+        "server_code": str(run.server_code or ""),
+        "law_version_id": int(law_version_id or 0),
+        "source_urls_count": int(source_count),
+        "chunk_count": int(chunk_count),
         "activated_by": str(activated_by or "").strip(),
     }
     summary_json["activation"] = activation_payload
@@ -467,7 +532,12 @@ def activate_server_effective_law_projection_payload(
         },
         "law_set": dict(published_law_set),
         "activation": activation_payload,
-        "result": rebuild_result,
+        "result": {
+            "ok": True,
+            "law_version_id": int(law_version_id or 0),
+            "source_count": int(source_count),
+            "chunk_count": int(chunk_count),
+        },
     }
 
 

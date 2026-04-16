@@ -1229,6 +1229,7 @@ async def admin_law_projection_run_activate_runtime(
     user: AuthUser = Depends(requires_permission("publish_law_sets")),
     projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
     runtime_law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    versions_store: CanonicalLawDocumentVersionsStore = Depends(get_canonical_law_document_versions_store),
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
     user_store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
@@ -1238,6 +1239,7 @@ async def admin_law_projection_run_activate_runtime(
         result = activate_server_effective_law_projection_payload(
             projections_store=projections_store,
             runtime_law_sets_store=runtime_law_sets_store,
+            versions_store=versions_store,
             law_admin_service=LawAdminService(workflow_service),
             run_id=run_id,
             actor_user_id=actor_user_id,

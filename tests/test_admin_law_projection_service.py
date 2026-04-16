@@ -60,9 +60,9 @@ class _FakeSourceSetsStore:
 
 
 class _FakeVersionsStore:
-    def list_parsed_versions_for_source_sets(self, *, source_set_keys):
-        return [
-            _FakeVersion(
+    def __init__(self):
+        self._versions = {
+            7: _FakeVersion(
                 id=7,
                 canonical_law_document_id=1,
                 canonical_identity_key="url_seed:law-a",
@@ -84,7 +84,7 @@ class _FakeVersionsStore:
                 created_at="2026-04-16T05:00:00+00:00",
                 updated_at="2026-04-16T05:00:00+00:00",
             ),
-            _FakeVersion(
+            8: _FakeVersion(
                 id=8,
                 canonical_law_document_id=1,
                 canonical_identity_key="url_seed:law-a",
@@ -106,7 +106,7 @@ class _FakeVersionsStore:
                 created_at="2026-04-16T05:10:00+00:00",
                 updated_at="2026-04-16T05:10:00+00:00",
             ),
-            _FakeVersion(
+            9: _FakeVersion(
                 id=9,
                 canonical_law_document_id=2,
                 canonical_identity_key="url_seed:law-b",
@@ -128,7 +128,13 @@ class _FakeVersionsStore:
                 created_at="2026-04-16T05:20:00+00:00",
                 updated_at="2026-04-16T05:20:00+00:00",
             ),
-        ]
+        }
+
+    def list_parsed_versions_for_source_sets(self, *, source_set_keys):
+        return [self._versions[7], self._versions[8], self._versions[9]]
+
+    def get_version(self, *, version_id: int):
+        return self._versions.get(int(version_id))
 
 
 class _FakeRun:
@@ -417,6 +423,7 @@ def test_activate_server_effective_law_projection_payload_requires_materialized_
         activate_server_effective_law_projection_payload(
             projections_store=projections,
             runtime_law_sets_store=runtime_store,
+            versions_store=_FakeVersionsStore(),
             law_admin_service=object(),
             run_id=created["run"]["id"],
             actor_user_id=1,
@@ -429,19 +436,12 @@ def test_activate_server_effective_law_projection_payload_requires_materialized_
         raise AssertionError("expected materialization-required guard")
 
 
-def test_activate_server_effective_law_projection_payload_publishes_law_set_and_rebuilds_once():
-    class _FakeLawAdminService:
-        def __init__(self):
-            self.calls = []
-
-        def rebuild_index(self, **kwargs):
-            self.calls.append(dict(kwargs))
-            return {"ok": True, "law_version_id": 44}
-
+def test_activate_server_effective_law_projection_payload_publishes_law_set_and_imports_runtime_snapshot():
     projections = _FakeProjectionsStore()
+    versions_store = _FakeVersionsStore()
     created = preview_server_effective_law_projection_payload(
         source_sets_store=_FakeSourceSetsStore(),
-        versions_store=_FakeVersionsStore(),
+        versions_store=versions_store,
         projections_store=projections,
         server_code="orange",
     )
@@ -459,26 +459,34 @@ def test_activate_server_effective_law_projection_payload_publishes_law_set_and_
         run_id=created["run"]["id"],
         materialized_by="admin",
     )
-    law_admin_service = _FakeLawAdminService()
-    activated = activate_server_effective_law_projection_payload(
-        projections_store=projections,
-        runtime_law_sets_store=runtime_store,
-        law_admin_service=law_admin_service,
-        run_id=created["run"]["id"],
-        actor_user_id=7,
-        request_id="req-2",
-        activated_by="admin",
-    )
+    from unittest.mock import patch
+
+    with patch("ogp_web.services.admin_law_projection_service.import_law_snapshot", return_value=44) as fake_import:
+        activated = activate_server_effective_law_projection_payload(
+            projections_store=projections,
+            runtime_law_sets_store=runtime_store,
+            versions_store=versions_store,
+            law_admin_service=object(),
+            run_id=created["run"]["id"],
+            actor_user_id=7,
+            request_id="req-2",
+            activated_by="admin",
+        )
     assert activated["changed"] is True
     assert activated["law_set"]["is_published"] is True
     assert activated["activation"]["law_version_id"] == 44
-    assert law_admin_service.calls[0]["persist_sources"] is False
-    assert law_admin_service.calls[0]["server_code"] == "orange"
+    assert activated["activation"]["server_code"] == "orange"
+    assert activated["activation"]["source_urls_count"] == 2
+    assert activated["activation"]["chunk_count"] > 0
+    assert fake_import.call_args.kwargs["server_code"] == "orange"
+    assert fake_import.call_args.kwargs["source_ref"] == "projection_run:1"
+    assert len(fake_import.call_args.kwargs["payload"]["articles"]) > 0
 
     reused = activate_server_effective_law_projection_payload(
         projections_store=projections,
         runtime_law_sets_store=runtime_store,
-        law_admin_service=law_admin_service,
+        versions_store=versions_store,
+        law_admin_service=object(),
         run_id=created["run"]["id"],
         actor_user_id=7,
         request_id="req-2",
@@ -487,4 +495,3 @@ def test_activate_server_effective_law_projection_payload_publishes_law_set_and_
     )
     assert reused["changed"] is False
     assert reused["reused_activation"] is True
-    assert len(law_admin_service.calls) == 1
