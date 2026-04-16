@@ -43,12 +43,15 @@ from ogp_web.schemas import (
     AdminExamScoreResetPayload,
     AdminLawSourcesPayload,
     AdminLawSourceDiscoveryRunPayload,
+    AdminLawSourceSetPayload,
+    AdminLawSourceSetRevisionPayload,
     AdminLawSourceSetBackfillPayload,
     AdminLawSetPayload,
     AdminLawSetRebuildPayload,
     AdminLawSetRollbackPayload,
     AdminLawSourceRegistryPayload,
     AdminServerLawBindingPayload,
+    AdminServerSourceSetBindingPayload,
     AdminPasswordResetPayload,
     AdminQuotaPayload,
     AdminRuntimeServerPayload,
@@ -184,9 +187,14 @@ from ogp_web.services.admin_law_source_discovery_service import (
     list_source_set_discovery_runs_payload,
 )
 from ogp_web.services.admin_law_source_sets_service import (
+    create_server_source_set_binding_payload,
+    create_source_set_payload,
+    create_source_set_revision_payload,
     list_server_source_set_bindings_payload,
     list_source_set_revisions_payload,
     list_source_sets_payload,
+    update_server_source_set_binding_payload,
+    update_source_set_payload,
 )
 from ogp_web.services.admin_law_projection_service import (
     activate_server_effective_law_projection_payload,
@@ -622,6 +630,71 @@ async def admin_law_source_sets(
     return payload
 
 
+@router.post("/api/admin/law-source-sets")
+async def admin_law_source_sets_create(
+    payload: AdminLawSourceSetPayload,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        result = create_source_set_payload(
+            store=store,
+            source_set_key=payload.source_set_key,
+            title=payload.title,
+            description=payload.description,
+            scope=payload.scope,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    item = result["item"]
+    metrics_store.log_event(
+        event_type="admin_law_source_set_create",
+        username=user.username,
+        server_code=user.server_code,
+        path="/api/admin/law-source-sets",
+        method="POST",
+        status_code=200,
+        meta={"source_set_key": item.get("source_set_key")},
+    )
+    return _admin_ok(**result)
+
+
+@router.put("/api/admin/law-source-sets/{source_set_key}")
+async def admin_law_source_sets_update(
+    source_set_key: str,
+    payload: AdminLawSourceSetPayload,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    normalized_key = _normalize_code(source_set_key)
+    if normalized_key != payload.source_set_key:
+        _raise_bad_request("source_set_key_mismatch")
+    try:
+        result = update_source_set_payload(
+            store=store,
+            source_set_key=normalized_key,
+            title=payload.title,
+            description=payload.description,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    item = result["item"]
+    metrics_store.log_event(
+        event_type="admin_law_source_set_update",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/law-source-sets/{normalized_key}",
+        method="PUT",
+        status_code=200,
+        meta={"source_set_key": item.get("source_set_key")},
+    )
+    return _admin_ok(**result)
+
+
 @router.get("/api/admin/law-source-sets/{source_set_key}/revisions")
 async def admin_law_source_set_revisions(
     source_set_key: str,
@@ -646,6 +719,45 @@ async def admin_law_source_set_revisions(
         meta={"count": payload["count"], "source_set_key": payload["source_set"]["source_set_key"]},
     )
     return payload
+
+
+@router.post("/api/admin/law-source-sets/{source_set_key}/revisions")
+async def admin_law_source_set_revisions_create(
+    source_set_key: str,
+    payload: AdminLawSourceSetRevisionPayload,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    normalized_key = _normalize_code(source_set_key)
+    try:
+        result = create_source_set_revision_payload(
+            store=store,
+            source_set_key=normalized_key,
+            container_urls=payload.container_urls,
+            adapter_policy_json=payload.adapter_policy_json,
+            metadata_json=payload.metadata_json,
+            status=payload.status,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    item = result["item"]
+    metrics_store.log_event(
+        event_type="admin_law_source_set_revision_create",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/law-source-sets/{normalized_key}/revisions",
+        method="POST",
+        status_code=200,
+        meta={
+            "source_set_key": normalized_key,
+            "revision_id": item.get("id"),
+            "status": item.get("status"),
+        },
+    )
+    return _admin_ok(**result)
 
 
 @router.get("/api/admin/law-source-sets/{source_set_key}/discovery-runs")
@@ -1300,6 +1412,84 @@ async def admin_runtime_server_law_bindings_add(
         meta={"law_set_id": item.get("law_set_id"), "law_code": item.get("law_code")},
     )
     return _admin_ok(item=item)
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/source-set-bindings")
+async def admin_runtime_server_source_set_bindings_add(
+    server_code: str,
+    payload: AdminServerSourceSetBindingPayload,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    normalized_code = _normalize_code(server_code)
+    try:
+        result = create_server_source_set_binding_payload(
+            store=store,
+            server_code=normalized_code,
+            source_set_key=payload.source_set_key,
+            priority=payload.priority,
+            is_active=payload.is_active,
+            include_law_keys=payload.include_law_keys,
+            exclude_law_keys=payload.exclude_law_keys,
+            pin_policy_json=payload.pin_policy_json,
+            metadata_json=payload.metadata_json,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    item = result["item"]
+    metrics_store.log_event(
+        event_type="admin_server_source_set_binding_add",
+        username=user.username,
+        server_code=normalized_code,
+        path=f"/api/admin/runtime-servers/{normalized_code}/source-set-bindings",
+        method="POST",
+        status_code=200,
+        meta={"binding_id": item.get("id"), "source_set_key": item.get("source_set_key")},
+    )
+    return _admin_ok(**result)
+
+
+@router.put("/api/admin/runtime-servers/{server_code}/source-set-bindings/{binding_id}")
+async def admin_runtime_server_source_set_bindings_update(
+    server_code: str,
+    binding_id: int,
+    payload: AdminServerSourceSetBindingPayload,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    normalized_code = _normalize_code(server_code)
+    try:
+        result = update_server_source_set_binding_payload(
+            store=store,
+            server_code=normalized_code,
+            binding_id=binding_id,
+            source_set_key=payload.source_set_key,
+            priority=payload.priority,
+            is_active=payload.is_active,
+            include_law_keys=payload.include_law_keys,
+            exclude_law_keys=payload.exclude_law_keys,
+            pin_policy_json=payload.pin_policy_json,
+            metadata_json=payload.metadata_json,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    item = result["item"]
+    metrics_store.log_event(
+        event_type="admin_server_source_set_binding_update",
+        username=user.username,
+        server_code=normalized_code,
+        path=f"/api/admin/runtime-servers/{normalized_code}/source-set-bindings/{binding_id}",
+        method="PUT",
+        status_code=200,
+        meta={"binding_id": item.get("id"), "source_set_key": item.get("source_set_key")},
+    )
+    return _admin_ok(**result)
 
 
 @router.post("/api/admin/runtime-servers/{server_code}/law-sets")

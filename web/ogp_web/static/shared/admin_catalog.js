@@ -156,6 +156,48 @@ window.OGPAdminCatalog = {
       ${entityType === "laws" ? `
       <div class="legal-subcard">
         <div class="admin-section-toolbar">
+          <strong>Canonical Source Sets</strong>
+          <div>
+            <button type="button" id="law-source-sets-refresh" class="ghost-button">Обновить source sets</button>
+            <button type="button" id="law-source-sets-create" class="primary-button">Добавить source set</button>
+          </div>
+        </div>
+        <p class="legal-section__description">Канонический путь для управления контейнерами источников и их ревизиями. Server-specific flat URLs остаются только как compatibility-вход.</p>
+        <label class="legal-field" style="max-width:420px">
+          <span class="legal-field__label">Поиск source set</span>
+          <input id="law-source-sets-search" type="search" placeholder="source_set_key или title">
+        </label>
+        <div id="law-source-sets-host"></div>
+        <hr>
+        <div class="admin-section-toolbar">
+          <strong>Source Set Revisions</strong>
+          <div>
+            <button type="button" id="law-source-set-revisions-refresh" class="ghost-button">Обновить revisions</button>
+            <button type="button" id="law-source-set-revision-create" class="primary-button">Добавить revision</button>
+          </div>
+        </div>
+        <div id="law-source-set-revisions-host"></div>
+        <hr>
+        <div class="admin-section-toolbar">
+          <strong>Server Source-Set Bindings</strong>
+          <div>
+            <button type="button" id="server-source-set-bindings-refresh" class="ghost-button">Обновить bindings</button>
+            <button type="button" id="server-source-set-bindings-add" class="primary-button">Привязать source set</button>
+          </div>
+        </div>
+        <div id="server-source-set-bindings-host"></div>
+        <hr>
+        <div class="admin-section-toolbar">
+          <strong>Discovery / Canonical Pipeline</strong>
+          <div>
+            <button type="button" id="law-canonical-pipeline-refresh" class="ghost-button">Обновить pipeline</button>
+            <button type="button" id="law-projection-run-create" class="primary-button">Preview projection</button>
+          </div>
+        </div>
+        <p class="legal-field__hint">Manual canonical law creation/edit is not supported in this slice. Canonical documents stay operator-visible and flow-driven from discovery.</p>
+        <div id="law-canonical-pipeline-host"></div>
+        <hr>
+        <div class="admin-section-toolbar">
           <strong>Источники законов</strong>
           <label class="legal-field" style="min-width:260px">
             <span class="legal-field__label">Сервер (обязательно)</span>

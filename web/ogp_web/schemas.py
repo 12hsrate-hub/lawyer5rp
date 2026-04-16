@@ -620,6 +620,75 @@ class AdminLawSourceSetBackfillPayload(BaseModel):
         return str(value or "").strip().lower()
 
 
+class AdminLawSourceSetPayload(BaseModel):
+    source_set_key: str = ""
+    title: str = ""
+    description: str = ""
+    scope: str = "global"
+
+    @field_validator("source_set_key")
+    @classmethod
+    def validate_source_set_key(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            raise ValueError("source_set_key_required")
+        return normalized
+
+    @field_validator("title")
+    @classmethod
+    def validate_source_set_title(cls, value: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("source_set_title_required")
+        return normalized
+
+    @field_validator("description")
+    @classmethod
+    def validate_source_set_description(cls, value: str) -> str:
+        return str(value or "").strip()
+
+    @field_validator("scope")
+    @classmethod
+    def validate_source_set_scope(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower() or "global"
+        if normalized != "global":
+            raise ValueError("source_set_scope_invalid")
+        return normalized
+
+
+class AdminLawSourceSetRevisionPayload(BaseModel):
+    container_urls: list[str] = Field(default_factory=list)
+    adapter_policy_json: dict[str, Any] = Field(default_factory=dict)
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+    status: str = "draft"
+
+    @field_validator("container_urls")
+    @classmethod
+    def validate_container_urls(cls, value: list[str]) -> list[str]:
+        normalized = [str(item or "").strip() for item in value if str(item or "").strip()]
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for item in normalized:
+            key = item.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(item)
+        if not deduped:
+            raise ValueError("source_set_container_urls_required")
+        if len(deduped) > 2:
+            raise ValueError("source_set_container_urls_too_many")
+        return deduped
+
+    @field_validator("status")
+    @classmethod
+    def validate_revision_status(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower() or "draft"
+        if normalized not in {"draft", "published", "archived", "legacy_flat"}:
+            raise ValueError("source_set_revision_status_invalid")
+        return normalized
+
+
 class AdminLawSourceDiscoveryRunPayload(BaseModel):
     source_set_revision_id: int | None = None
     trigger_mode: str = "manual"
@@ -687,6 +756,48 @@ class AdminLawProjectionMaterializePayload(BaseModel):
 
 class AdminLawProjectionActivatePayload(BaseModel):
     safe_rerun: bool = True
+
+
+class AdminServerSourceSetBindingPayload(BaseModel):
+    source_set_key: str = ""
+    priority: int = 100
+    is_active: bool = True
+    include_law_keys: list[str] = Field(default_factory=list)
+    exclude_law_keys: list[str] = Field(default_factory=list)
+    pin_policy_json: dict[str, Any] = Field(default_factory=dict)
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("source_set_key")
+    @classmethod
+    def validate_source_set_key(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            raise ValueError("source_set_key_required")
+        return normalized
+
+    @field_validator("priority")
+    @classmethod
+    def validate_priority(cls, value: int) -> int:
+        normalized = int(value or 0)
+        if normalized < 1 or normalized > 10000:
+            raise ValueError("server_source_set_binding_priority_invalid")
+        return normalized
+
+    @field_validator("include_law_keys", "exclude_law_keys")
+    @classmethod
+    def validate_law_keys(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw in value or []:
+            item = str(raw or "").strip()
+            if not item:
+                continue
+            key = item.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(item)
+        return normalized
 
 
 class AdminLawSourceRegistryPayload(BaseModel):
