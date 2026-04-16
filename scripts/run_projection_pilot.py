@@ -97,7 +97,7 @@ def run_projection_pilot(
         source_sets_store=source_sets_store,
         discovery_store=discovery_store,
         source_set_key=source_set_key,
-        trigger_mode="pilot_bootstrap",
+        trigger_mode="backfill",
         safe_rerun=True,
     )
     discovery_run_id = int((discovery.get("run") or {}).get("id") or 0)
