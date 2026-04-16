@@ -110,8 +110,11 @@ if [[ -f "${APP_ROOT}/scripts/seed_admin_catalog_workflow.py" ]]; then
 fi
 
 if [[ -f "${APP_ROOT}/scripts/sync_server_bootstrap_pack.py" ]]; then
-  echo "Syncing published server bootstrap pack..."
-  "${PYTHON_BIN}" "${APP_ROOT}/scripts/sync_server_bootstrap_pack.py" --server blackberry
+  while IFS= read -r pack_path; do
+    server_code="$(basename "${pack_path}" .bootstrap.json)"
+    echo "Syncing published server bootstrap pack for ${server_code}..."
+    "${PYTHON_BIN}" "${APP_ROOT}/scripts/sync_server_bootstrap_pack.py" --server "${server_code}"
+  done < <(find "${APP_ROOT}/web/ogp_web/server_config/packs" -maxdepth 1 -type f -name '*.bootstrap.json' | sort)
 fi
 
 systemctl stop "${SERVICE_NAME}" || true
