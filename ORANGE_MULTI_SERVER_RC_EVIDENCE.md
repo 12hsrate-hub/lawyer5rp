@@ -1,6 +1,6 @@
 # Orange Multi-Server RC Evidence
 
-Status: RC window open; Checkpoint 1 active  
+Status: accepted staged multi-server RC candidate
 Date: 2026-04-16
 
 ## Scope
@@ -35,7 +35,7 @@ Date: 2026-04-16
   - deactivate `orange`
   - verify `blackberry` health and runtime server visibility
 - Code-wide rollback:
-  - redeploy the previous known-good `main` commit `4b6049e` via `Deploy Production`
+  - redeploy the previous known-good `main` commit `3293acf` via `Deploy Production`
 
 ## Validation commands
 
@@ -60,10 +60,10 @@ Date: 2026-04-16
   - `success`
   - https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24487677658
 - Current known-good deployed baseline:
-  - commit `916811f`
-  - Deploy Production run `24489154809`
-  - https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24489154809
-- Baseline production verification from run `24489154809`:
+  - commit `3293acf`
+  - Deploy Production run `24494677193`
+  - https://github.com/12hsrate-hub/lawyer5rp/actions/runs/24494677193
+- Baseline production verification from run `24494677193`:
   - `/health`: `status=ok`
   - deploy smoke: `passed`
   - synthetic smoke: `pass`
@@ -82,53 +82,64 @@ Date: 2026-04-16
 ## Live enablement snapshot
 
 - Snapshot time:
-  - `2026-04-16T02:47:53Z`
+  - `2026-04-16T05:57:21Z`
 - Current production baseline:
   - `/health = status=ok`
 - `orange` runtime server:
   - exists
-  - `is_active = false` at preflight pass
+  - `is_active = true`
   - title = `Orange`
 - `orange` admin health snapshot:
-  - `highest_completed_state = workflow-ready`
-  - `next_required_state = rollout-ready`
+  - `highest_completed_state = rollout-ready`
+  - `next_required_state = production-ready`
   - `resolution_mode = published_pack`
   - `uses_transitional_fallback = false`
 - `orange` law runtime state:
-  - published `law_set_id = 3`
-  - binding count = `1`
-  - active `law_version_id = 203`
+  - approved `projection_run_id = 1`
+  - materialized `law_set_id = 4`
+  - binding count = `2`
+  - active `law_version_id = 247`
+  - `chunk_count = 1`
   - rollback path remains the existing admin law-version flow
 - `orange` document-builder sample:
   - `claim_kind_by_court_type.appeal[0].value = orange_appeal_admin_claim`
   - bundle resolves from orange-owned metadata, not base fallback
 - scope confirmation:
   - second-server complaint runtime remains out of scope
+ - operator sign-off:
+   - `orange` accepted as a staged multi-server RC candidate
 
-## Evidence to fill during RC rollout
+## RC rollout evidence
 
-- Deploy Production run for RC window:
-- Deploy Production run for RC window:
-  - none required; RC window opened by explicit `orange` activation on deployed baseline `916811f`
-- `/health` result for RC window:
-  - `status=ok` at `2026-04-16T02:48:44Z`
-- Deploy smoke result for RC window:
-  - inherited green baseline from deploy run `24489154809`
-- Synthetic smoke result for RC window:
-  - inherited green baseline from deploy run `24489154809`
+- Projection pilot run:
+  - `24494653859`
+  - result: `success`
+- Deploy Production run for accepted baseline:
+  - `24494677193`
+- `/health` result for accepted baseline:
+  - `status=ok`
+- Deploy smoke result for accepted baseline:
+  - `passed`
+- Synthetic smoke result for accepted baseline:
+  - `pass`
 - `orange` admin health payload snapshot:
-  - live preflight rerun captured pre-activation at `2026-04-16T02:47:53Z`
-  - result: payload is operator-readable; `workflow-ready`, `published_pack`, inactive
-  - post-activation Checkpoint 1: activation became `active`; highest state remained `workflow-ready`; next state remained `rollout-ready`
+  - live pilot result:
+    - `highest_completed_state = rollout-ready`
+    - `next_required_state = production-ready`
+    - `summary.is_ready = true`
+    - `active_law_version_id = 247`
+    - `chunk_count = 1`
 - `orange` document-builder sample:
-  - live preflight rerun captured pre-activation at `2026-04-16T02:47:53Z`
-  - result: bundle resolves with orange-owned metadata
+  - live pilot reused orange-owned metadata path
   - evidence:
     - `server = orange`
     - `claim_kind_by_court_type.appeal[0].value = orange_appeal_admin_claim`
     - orange-specific document-builder metadata is present
 - `orange` law rollback sample:
-  - live preflight rerun captured pre-activation at `2026-04-16T02:47:53Z`
-  - result: published law set, binding, and active law version are present; rollback path is now explainable
+  - live pilot result:
+    - approved projection run `1`
+    - materialized `law_set_id = 4`
+    - active `law_version_id = 247`
+    - rollback path remains explainable through existing admin rollback flow
 - Observation window status:
-  - RC window opened on `2026-04-16T02:47:53Z`; Checkpoint 1 is active
+  - technical rollout-ready accepted; remaining `production-ready` evidence is manual/operator-based
