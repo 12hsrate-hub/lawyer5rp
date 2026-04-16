@@ -655,6 +655,10 @@ class AdminCanonicalLawDocumentVersionFetchPayload(BaseModel):
         return normalized
 
 
+class AdminCanonicalLawDocumentVersionParsePayload(BaseModel):
+    safe_rerun: bool = True
+
+
 class AdminLawSourceRegistryPayload(BaseModel):
     name: str = ""
     kind: str = "url"

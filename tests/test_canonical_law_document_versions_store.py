@@ -97,6 +97,17 @@ class _Connection:
             row["metadata_json"] = dict(metadata_json)
             row["updated_at"] = "2026-04-16T03:00:00+00:00"
             return _Cursor(one={"id": row["id"]})
+        if normalized.startswith("UPDATE canonical_law_document_versions SET parse_status = %s, parsed_title = %s, body_text = %s, metadata_json = %s::jsonb, updated_at = NOW() WHERE id = %s RETURNING id"):
+            parse_status, parsed_title, body_text, metadata_json, version_id = params
+            row = next((item for item in self.versions if int(item["id"]) == int(version_id)), None)
+            if row is None:
+                return _Cursor(one=None)
+            row["parse_status"] = parse_status
+            row["parsed_title"] = parsed_title
+            row["body_text"] = body_text
+            row["metadata_json"] = dict(metadata_json)
+            row["updated_at"] = "2026-04-16T03:10:00+00:00"
+            return _Cursor(one={"id": row["id"]})
         raise AssertionError(f"Unsupported query: {normalized}")
 
     def commit(self):
@@ -176,3 +187,24 @@ def test_canonical_law_document_versions_store_updates_fetch_result():
     fetched = store.get_version(version_id=created.id)
     assert fetched is not None
     assert fetched.fetch_status == "fetched"
+
+
+def test_canonical_law_document_versions_store_updates_parse_result():
+    store = CanonicalLawDocumentVersionsStore(_Backend())
+    created = store.create_version(
+        canonical_law_document_id=1,
+        source_discovery_run_id=5,
+        discovered_law_link_id=11,
+        fetch_status="fetched",
+        body_text="<html><title>Fetched Title</title><body>Fetched body</body></html>",
+    )
+    updated = store.update_parse_result(
+        version_id=created.id,
+        parse_status="parsed",
+        parsed_title="Fetched Title",
+        body_text="Fetched Title Fetched body",
+        metadata_json={"parse_mode": "manual_admin_parse"},
+    )
+    assert updated.parse_status == "parsed"
+    assert updated.parsed_title == "Fetched Title"
+    assert updated.body_text == "Fetched Title Fetched body"

@@ -32,6 +32,7 @@ from ogp_web.schemas import (
     AdminCanonicalLawDocumentIngestPayload,
     AdminCanonicalLawDocumentVersionFetchPayload,
     AdminCanonicalLawDocumentVersionIngestPayload,
+    AdminCanonicalLawDocumentVersionParsePayload,
     AdminDeactivatePayload,
     AdminEmailUpdatePayload,
     AdminExamScoreResetPayload,
@@ -167,6 +168,9 @@ from ogp_web.services.admin_canonical_law_document_versions_service import (
 )
 from ogp_web.services.admin_canonical_law_document_fetch_service import (
     fetch_discovery_run_document_versions_payload,
+)
+from ogp_web.services.admin_canonical_law_document_parse_service import (
+    parse_discovery_run_document_versions_payload,
 )
 from ogp_web.services.admin_law_source_discovery_service import (
     execute_source_set_discovery_payload,
@@ -894,6 +898,44 @@ async def admin_law_source_discovery_run_fetch_document_versions(
             "run_id": int(run_id),
             "changed": bool(result.get("changed")),
             "fetched_versions": int(result.get("fetched_versions") or 0),
+            "failed_versions": int(result.get("failed_versions") or 0),
+        },
+    )
+    return result
+
+
+@router.post("/api/admin/law-source-discovery-runs/{run_id}/parse-document-versions")
+async def admin_law_source_discovery_run_parse_document_versions(
+    run_id: int,
+    payload: AdminCanonicalLawDocumentVersionParsePayload,
+    user: AuthUser = Depends(requires_permission("manage_law_sets")),
+    discovery_store: LawSourceDiscoveryStore = Depends(get_law_source_discovery_store),
+    versions_store: CanonicalLawDocumentVersionsStore = Depends(get_canonical_law_document_versions_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    try:
+        result = parse_discovery_run_document_versions_payload(
+            discovery_store=discovery_store,
+            versions_store=versions_store,
+            run_id=run_id,
+            safe_rerun=payload.safe_rerun,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_law_source_discovery_run_parse_document_versions",
+        username=user.username,
+        server_code=user.server_code,
+        path=f"/api/admin/law-source-discovery-runs/{int(run_id)}/parse-document-versions",
+        method="POST",
+        status_code=200,
+        meta={
+            "count": result["count"],
+            "run_id": int(run_id),
+            "changed": bool(result.get("changed")),
+            "parsed_versions": int(result.get("parsed_versions") or 0),
             "failed_versions": int(result.get("failed_versions") or 0),
         },
     )
