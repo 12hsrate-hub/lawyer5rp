@@ -123,6 +123,7 @@ const {
 } = window.OGPAdminOverview;
 const {
   renderLawSetsTable,
+  renderLawMainCheckMarkup,
   renderSourceSetsTable,
   renderSourceSetRevisionsPanel,
   renderRuntimeServersTable,
@@ -184,6 +185,7 @@ let lawCatalogOptions = [];
 let activeCatalogAuditEntityType = "";
 let activeCatalogAuditEntityId = "";
 let pendingLawModalContext = null;
+let activeLawDetailsView = "";
 
 function withLawServerQuery(path) {
   return withQuery(path, "server_code", activeLawServerCode);
@@ -253,10 +255,12 @@ function parseJsonField(raw, fieldLabel) {
 
 function resetLawModalState() {
   pendingLawModalContext = null;
+  activeLawDetailsView = "";
   if (lawModalTitle) lawModalTitle.textContent = "Форма закона";
   if (lawModalDescription) lawModalDescription.textContent = "";
   if (lawModalBody) lawModalBody.innerHTML = "";
   if (lawModalSaveButton) {
+    lawModalSaveButton.hidden = false;
     lawModalSaveButton.disabled = false;
     lawModalSaveButton.textContent = "Сохранить";
   }
@@ -274,9 +278,12 @@ function openLawModal({
   submitLabel = "Сохранить",
   formMarkup,
   onSubmit,
+  hideSaveButton = false,
+  detailsView = "",
 }) {
   resetLawModalState();
-  pendingLawModalContext = { onSubmit };
+  pendingLawModalContext = onSubmit ? { onSubmit } : null;
+  activeLawDetailsView = detailsView;
   if (lawModalTitle) lawModalTitle.textContent = title;
   if (lawModalDescription) lawModalDescription.textContent = description;
   if (lawModalBody) {
@@ -292,9 +299,33 @@ function openLawModal({
   }
   if (lawModalSaveButton) {
     lawModalSaveButton.textContent = submitLabel;
-    lawModalSaveButton.disabled = false;
+    lawModalSaveButton.disabled = hideSaveButton;
+    lawModalSaveButton.hidden = hideSaveButton;
   }
   lawModal.open();
+}
+
+function syncLawDetailsModalBody() {
+  if (!(lawModalBody instanceof HTMLElement) || !activeLawDetailsView) {
+    return;
+  }
+  if (activeLawDetailsView === "diagnostics") {
+    const pipelineHost = document.getElementById("law-canonical-pipeline-host");
+    if (pipelineHost instanceof HTMLElement) {
+      lawModalBody.innerHTML = pipelineHost.innerHTML || '<p class="legal-section__description">Диагностика пока недоступна.</p>';
+    }
+  }
+}
+
+function openLawDiagnosticsPanel() {
+  openLawModal({
+    title: "Диагностика / Pipeline details",
+    description: "Расширенные operator-инструменты: discovery, canonical documents, versions, projection и runtime promotion actions.",
+    formMarkup: '<div class="legal-description"></div>',
+    hideSaveButton: true,
+    detailsView: "diagnostics",
+  });
+  syncLawDetailsModalBody();
 }
 
 async function submitLawModal() {
@@ -357,6 +388,7 @@ function renderSourceSets() {
     selectedKey: selectedLawSourceSetKey,
     search: lawSourceSetSearch,
   });
+  renderLawMainCheck();
 }
 
 function renderSourceSetRevisions() {
@@ -365,12 +397,27 @@ function renderSourceSetRevisions() {
   host.innerHTML = renderSourceSetRevisionsPanel(lawSourceSetRevisionsPayload, {
     selectedRevisionId: selectedLawSourceSetRevisionId,
   });
+  renderLawMainCheck();
 }
 
 function renderServerSourceSetBindings() {
   const host = document.getElementById("server-source-set-bindings-host");
   if (!host) return;
   host.innerHTML = renderServerSourceSetBindingsTable(lawSourceSetBindings);
+  renderLawMainCheck();
+}
+
+function renderLawMainCheck() {
+  const host = document.getElementById("law-main-check-host");
+  if (!host) return;
+  host.innerHTML = renderLawMainCheckMarkup({
+    activeLawServerCode,
+    selectedSourceSet: getLawSourceSetByKey(selectedLawSourceSetKey),
+    selectedRevisionId: selectedLawSourceSetRevisionId,
+    projectionRuns: lawProjectionRunsPayload,
+    projectionStatus: lawProjectionStatusPayload,
+    selectedProjectionRunId,
+  });
 }
 
 function renderCanonicalPipeline() {
@@ -384,9 +431,12 @@ function renderCanonicalPipeline() {
     projectionRuns: lawProjectionRunsPayload,
     projectionItems: lawProjectionItemsPayload,
     projectionStatus: lawProjectionStatusPayload,
+    selectedRevisionId: selectedLawSourceSetRevisionId,
     selectedDiscoveryRunId,
     selectedProjectionRunId,
   });
+  renderLawMainCheck();
+  syncLawDetailsModalBody();
 }
 
 async function loadLawSourceSets() {
@@ -995,14 +1045,17 @@ async function openCreateSourceSetRevisionFlow() {
             <option value="published">published</option>
           </select>
         </label>
-        <label class="legal-field legal-field--full">
-          <span class="legal-field__label">Adapter policy JSON</span>
-          <textarea name="adapter_policy_json" rows="4" spellcheck="false" placeholder="{ }">{}</textarea>
-        </label>
-        <label class="legal-field legal-field--full">
-          <span class="legal-field__label">Metadata JSON</span>
-          <textarea name="metadata_json" rows="4" spellcheck="false" placeholder="{ }">{}</textarea>
-        </label>
+        <details class="legal-field legal-field--full">
+          <summary>Дополнительные настройки</summary>
+          <label class="legal-field legal-field--full">
+            <span class="legal-field__label">Adapter policy JSON</span>
+            <textarea name="adapter_policy_json" rows="4" spellcheck="false" placeholder="{ }">{}</textarea>
+          </label>
+          <label class="legal-field legal-field--full">
+            <span class="legal-field__label">Metadata JSON</span>
+            <textarea name="metadata_json" rows="4" spellcheck="false" placeholder="{ }">{}</textarea>
+          </label>
+        </details>
       </form>
     `,
     onSubmit: async (form) => {
@@ -1033,6 +1086,12 @@ async function createOrUpdateSourceSetBindingFlow(existingBinding = null) {
   if (!lawSourceSetItems.length) {
     await loadLawSourceSets();
   }
+  const hasBindingAdvancedSettings = Boolean(
+    (existingBinding?.include_law_keys || []).length
+    || (existingBinding?.exclude_law_keys || []).length
+    || Object.keys(existingBinding?.pin_policy_json || {}).length
+    || Object.keys(existingBinding?.metadata_json || {}).length
+  );
   const options = lawSourceSetItems
     .map((item) => `<option value="${escapeHtml(String(item.source_set_key || ""))}" ${String(item.source_set_key || "") === String(existingBinding?.source_set_key || selectedLawSourceSetKey || "") ? "selected" : ""}>${escapeHtml(String(item.title || item.source_set_key || ""))} (${escapeHtml(String(item.source_set_key || ""))})</option>`)
     .join("");
@@ -1053,22 +1112,25 @@ async function createOrUpdateSourceSetBindingFlow(existingBinding = null) {
           <span class="legal-field__label">Active</span>
           <input name="is_active" class="admin-filter-toggle__input" type="checkbox" ${existingBinding ? (existingBinding.is_active ? "checked" : "") : "checked"}>
         </label>
-        <label class="legal-field legal-field--full">
-          <span class="legal-field__label">include_law_keys</span>
-          <textarea name="include_law_keys" rows="3" placeholder="Один key на строку">${escapeHtml(String((existingBinding?.include_law_keys || []).join("\n") || ""))}</textarea>
-        </label>
-        <label class="legal-field legal-field--full">
-          <span class="legal-field__label">exclude_law_keys</span>
-          <textarea name="exclude_law_keys" rows="3" placeholder="Один key на строку">${escapeHtml(String((existingBinding?.exclude_law_keys || []).join("\n") || ""))}</textarea>
-        </label>
-        <label class="legal-field legal-field--full">
-          <span class="legal-field__label">Pin policy JSON</span>
-          <textarea name="pin_policy_json" rows="4" spellcheck="false">${escapeHtml(JSON.stringify(existingBinding?.pin_policy_json || {}, null, 2))}</textarea>
-        </label>
-        <label class="legal-field legal-field--full">
-          <span class="legal-field__label">Metadata JSON</span>
-          <textarea name="metadata_json" rows="4" spellcheck="false">${escapeHtml(JSON.stringify(existingBinding?.metadata_json || {}, null, 2))}</textarea>
-        </label>
+        <details class="legal-field legal-field--full" ${hasBindingAdvancedSettings ? "open" : ""}>
+          <summary>Дополнительные настройки</summary>
+          <label class="legal-field legal-field--full">
+            <span class="legal-field__label">include_law_keys</span>
+            <textarea name="include_law_keys" rows="3" placeholder="Один key на строку">${escapeHtml(String((existingBinding?.include_law_keys || []).join("\n") || ""))}</textarea>
+          </label>
+          <label class="legal-field legal-field--full">
+            <span class="legal-field__label">exclude_law_keys</span>
+            <textarea name="exclude_law_keys" rows="3" placeholder="Один key на строку">${escapeHtml(String((existingBinding?.exclude_law_keys || []).join("\n") || ""))}</textarea>
+          </label>
+          <label class="legal-field legal-field--full">
+            <span class="legal-field__label">Pin policy JSON</span>
+            <textarea name="pin_policy_json" rows="4" spellcheck="false">${escapeHtml(JSON.stringify(existingBinding?.pin_policy_json || {}, null, 2))}</textarea>
+          </label>
+          <label class="legal-field legal-field--full">
+            <span class="legal-field__label">Metadata JSON</span>
+            <textarea name="metadata_json" rows="4" spellcheck="false">${escapeHtml(JSON.stringify(existingBinding?.metadata_json || {}, null, 2))}</textarea>
+          </label>
+        </details>
       </form>
     `,
     onSubmit: async (form) => {
@@ -1244,6 +1306,181 @@ async function activateProjectionRun(runId) {
   selectedProjectionRunId = Number(runId || 0);
   await loadProjectionRunDetails(selectedProjectionRunId);
   await Promise.all([loadLawSourcesManager(), loadLawSets(), loadServerLawBindings()]);
+}
+
+function openLegacyRuntimePanel() {
+  const panel = document.getElementById("law-legacy-runtime-panel");
+  if (!(panel instanceof HTMLDetailsElement)) {
+    return;
+  }
+  panel.open = true;
+  panel.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+async function handleLawWorkspaceClick(target) {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.id === "law-source-sets-refresh") {
+    await loadLawSourceSets();
+    return true;
+  }
+  if (target.id === "law-source-sets-create") {
+    await openCreateSourceSetFlow();
+    return true;
+  }
+  if (target.id === "law-source-set-revisions-refresh") {
+    await loadSourceSetRevisions();
+    return true;
+  }
+  if (target.id === "law-source-set-revision-create") {
+    await openCreateSourceSetRevisionFlow();
+    return true;
+  }
+  if (target.id === "server-source-set-bindings-refresh") {
+    await loadServerSourceSetBindings();
+    return true;
+  }
+  if (target.id === "server-source-set-bindings-add") {
+    await createOrUpdateSourceSetBindingFlow();
+    return true;
+  }
+  if (target.id === "law-main-check-refresh" || target.id === "law-canonical-pipeline-refresh") {
+    await Promise.all([loadSourceSetDiscoveryRuns(), loadProjectionRuns()]);
+    return true;
+  }
+  if (target.id === "law-open-diagnostics") {
+    openLawDiagnosticsPanel();
+    return true;
+  }
+  if (target.id === "law-open-legacy-runtime") {
+    openLegacyRuntimePanel();
+    return true;
+  }
+  if (target.id === "law-projection-run-create") {
+    await createProjectionRun();
+    return true;
+  }
+  const sourceSetSelectKey = target.getAttribute("data-source-set-select");
+  if (sourceSetSelectKey) {
+    setSelectedSourceSetKey(sourceSetSelectKey);
+    renderSourceSets();
+    await loadSourceSetRevisions(sourceSetSelectKey);
+    await loadSourceSetDiscoveryRuns(sourceSetSelectKey);
+    return true;
+  }
+  const sourceSetEditKey = target.getAttribute("data-source-set-edit");
+  if (sourceSetEditKey) {
+    await openEditSourceSetFlow(sourceSetEditKey);
+    return true;
+  }
+  const selectedRevisionId = Number(target.getAttribute("data-source-set-revision-select") || 0);
+  if (selectedRevisionId) {
+    selectedLawSourceSetRevisionId = selectedRevisionId;
+    renderSourceSetRevisions();
+    return true;
+  }
+  const discoveryRevisionId = Number(target.getAttribute("data-source-set-discovery-run") || 0);
+  if (discoveryRevisionId) {
+    const response = await apiFetch(`/api/admin/law-source-sets/${encodeURIComponent(selectedLawSourceSetKey)}/discovery-runs`, {
+      method: "POST",
+      body: JSON.stringify({ source_set_revision_id: discoveryRevisionId, trigger_mode: "manual", safe_rerun: true }),
+    });
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось запустить discovery run."));
+      return true;
+    }
+    selectedDiscoveryRunId = Number((payload?.run || {}).id || 0);
+    showMessage("Discovery run запущен.");
+    await loadSourceSetDiscoveryRuns();
+    return true;
+  }
+  const sourceSetBindingEditId = Number(target.getAttribute("data-server-source-set-binding-edit") || 0);
+  if (sourceSetBindingEditId) {
+    await createOrUpdateSourceSetBindingFlow(getServerSourceSetBindingById(sourceSetBindingEditId));
+    return true;
+  }
+  const sourceSetBindingToggleId = Number(target.getAttribute("data-server-source-set-binding-toggle") || 0);
+  if (sourceSetBindingToggleId) {
+    const existing = getServerSourceSetBindingById(sourceSetBindingToggleId);
+    if (!existing) {
+      setStateError(errorsHost, "Binding не найден.");
+      return true;
+    }
+    const response = await apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(activeLawServerCode)}/source-set-bindings/${encodeURIComponent(String(sourceSetBindingToggleId))}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        source_set_key: existing.source_set_key,
+        priority: existing.priority,
+        is_active: !existing.is_active,
+        include_law_keys: existing.include_law_keys || [],
+        exclude_law_keys: existing.exclude_law_keys || [],
+        pin_policy_json: existing.pin_policy_json || {},
+        metadata_json: existing.metadata_json || {},
+      }),
+    });
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось изменить binding."));
+      return true;
+    }
+    showMessage(existing.is_active ? "Binding отключен." : "Binding включен.");
+    await loadServerSourceSetBindings();
+    await loadProjectionRuns();
+    return true;
+  }
+  const discoveryRunSelectId = Number(target.getAttribute("data-discovery-run-select") || 0);
+  if (discoveryRunSelectId) {
+    selectedDiscoveryRunId = discoveryRunSelectId;
+    await loadDiscoveryRunDetails(discoveryRunSelectId);
+    return true;
+  }
+  const ingestDocsRunId = Number(target.getAttribute("data-discovery-run-ingest-docs") || 0);
+  if (ingestDocsRunId) {
+    await executeDiscoveryRunAction(ingestDocsRunId, "ingestDocuments", "Canonical documents ingested.");
+    return true;
+  }
+  const ingestVersionsRunId = Number(target.getAttribute("data-discovery-run-ingest-versions") || 0);
+  if (ingestVersionsRunId) {
+    await executeDiscoveryRunAction(ingestVersionsRunId, "ingestVersions", "Document versions ingested.");
+    return true;
+  }
+  const fetchRunId = Number(target.getAttribute("data-discovery-run-fetch") || 0);
+  if (fetchRunId) {
+    await executeDiscoveryRunAction(fetchRunId, "fetch", "Document versions fetched.");
+    return true;
+  }
+  const parseRunId = Number(target.getAttribute("data-discovery-run-parse") || 0);
+  if (parseRunId) {
+    await executeDiscoveryRunAction(parseRunId, "parse", "Document versions parsed.");
+    return true;
+  }
+  const projectionRunSelectId = Number(target.getAttribute("data-projection-run-select") || 0);
+  if (projectionRunSelectId) {
+    selectedProjectionRunId = projectionRunSelectId;
+    await loadProjectionRunDetails(projectionRunSelectId);
+    return true;
+  }
+  const projectionApproveId = Number(target.getAttribute("data-projection-run-approve") || 0);
+  if (projectionApproveId) {
+    await decideProjectionRun(projectionApproveId, "approved");
+    return true;
+  }
+  const projectionHoldId = Number(target.getAttribute("data-projection-run-hold") || 0);
+  if (projectionHoldId) {
+    await decideProjectionRun(projectionHoldId, "held");
+    return true;
+  }
+  const projectionMaterializeId = Number(target.getAttribute("data-projection-run-materialize") || 0);
+  if (projectionMaterializeId) {
+    await materializeProjectionRun(projectionMaterializeId);
+    return true;
+  }
+  const projectionActivateId = Number(target.getAttribute("data-projection-run-activate") || 0);
+  if (projectionActivateId) {
+    await activateProjectionRun(projectionActivateId);
+    return true;
+  }
+  return false;
 }
 
 function renderServerLawBindings(payload) {
@@ -4446,157 +4683,7 @@ catalogHost?.addEventListener("click", async (event) => {
   if (await adminLawRuntimeController.handleCatalogClick(target)) {
     return;
   }
-  if (target.id === "law-source-sets-refresh") {
-    await loadLawSourceSets();
-    return;
-  }
-  if (target.id === "law-source-sets-create") {
-    await openCreateSourceSetFlow();
-    return;
-  }
-  if (target.id === "law-source-set-revisions-refresh") {
-    await loadSourceSetRevisions();
-    await loadSourceSetDiscoveryRuns();
-    return;
-  }
-  if (target.id === "law-source-set-revision-create") {
-    await openCreateSourceSetRevisionFlow();
-    return;
-  }
-  if (target.id === "server-source-set-bindings-refresh") {
-    await loadServerSourceSetBindings();
-    return;
-  }
-  if (target.id === "server-source-set-bindings-add") {
-    await createOrUpdateSourceSetBindingFlow();
-    return;
-  }
-  if (target.id === "law-canonical-pipeline-refresh") {
-    await Promise.all([loadSourceSetDiscoveryRuns(), loadProjectionRuns()]);
-    return;
-  }
-  if (target.id === "law-projection-run-create") {
-    await createProjectionRun();
-    return;
-  }
-  const sourceSetSelectKey = target.getAttribute("data-source-set-select");
-  if (sourceSetSelectKey) {
-    setSelectedSourceSetKey(sourceSetSelectKey);
-    renderSourceSets();
-    await loadSourceSetRevisions(sourceSetSelectKey);
-    await loadSourceSetDiscoveryRuns(sourceSetSelectKey);
-    return;
-  }
-  const sourceSetEditKey = target.getAttribute("data-source-set-edit");
-  if (sourceSetEditKey) {
-    await openEditSourceSetFlow(sourceSetEditKey);
-    return;
-  }
-  const selectedRevisionId = Number(target.getAttribute("data-source-set-revision-select") || 0);
-  if (selectedRevisionId) {
-    selectedLawSourceSetRevisionId = selectedRevisionId;
-    renderSourceSetRevisions();
-    return;
-  }
-  const discoveryRevisionId = Number(target.getAttribute("data-source-set-discovery-run") || 0);
-  if (discoveryRevisionId) {
-    const response = await apiFetch(`/api/admin/law-source-sets/${encodeURIComponent(selectedLawSourceSetKey)}/discovery-runs`, {
-      method: "POST",
-      body: JSON.stringify({ source_set_revision_id: discoveryRevisionId, trigger_mode: "manual", safe_rerun: true }),
-    });
-    const payload = await parsePayload(response);
-    if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось запустить discovery run."));
-      return;
-    }
-    selectedDiscoveryRunId = Number((payload?.run || {}).id || 0);
-    showMessage("Discovery run запущен.");
-    await loadSourceSetDiscoveryRuns();
-    return;
-  }
-  const sourceSetBindingEditId = Number(target.getAttribute("data-server-source-set-binding-edit") || 0);
-  if (sourceSetBindingEditId) {
-    await createOrUpdateSourceSetBindingFlow(getServerSourceSetBindingById(sourceSetBindingEditId));
-    return;
-  }
-  const sourceSetBindingToggleId = Number(target.getAttribute("data-server-source-set-binding-toggle") || 0);
-  if (sourceSetBindingToggleId) {
-    const existing = getServerSourceSetBindingById(sourceSetBindingToggleId);
-    if (!existing) {
-      setStateError(errorsHost, "Binding не найден.");
-      return;
-    }
-    const response = await apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(activeLawServerCode)}/source-set-bindings/${encodeURIComponent(String(sourceSetBindingToggleId))}`, {
-      method: "PUT",
-      body: JSON.stringify({
-        source_set_key: existing.source_set_key,
-        priority: existing.priority,
-        is_active: !existing.is_active,
-        include_law_keys: existing.include_law_keys || [],
-        exclude_law_keys: existing.exclude_law_keys || [],
-        pin_policy_json: existing.pin_policy_json || {},
-        metadata_json: existing.metadata_json || {},
-      }),
-    });
-    const payload = await parsePayload(response);
-    if (!response.ok) {
-      setStateError(errorsHost, formatHttpError(response, payload, "Не удалось изменить binding."));
-      return;
-    }
-    showMessage(existing.is_active ? "Binding отключен." : "Binding включен.");
-    await loadServerSourceSetBindings();
-    return;
-  }
-  const discoveryRunSelectId = Number(target.getAttribute("data-discovery-run-select") || 0);
-  if (discoveryRunSelectId) {
-    selectedDiscoveryRunId = discoveryRunSelectId;
-    await loadDiscoveryRunDetails(discoveryRunSelectId);
-    return;
-  }
-  const ingestDocsRunId = Number(target.getAttribute("data-discovery-run-ingest-docs") || 0);
-  if (ingestDocsRunId) {
-    await executeDiscoveryRunAction(ingestDocsRunId, "ingestDocuments", "Canonical documents ingested.");
-    return;
-  }
-  const ingestVersionsRunId = Number(target.getAttribute("data-discovery-run-ingest-versions") || 0);
-  if (ingestVersionsRunId) {
-    await executeDiscoveryRunAction(ingestVersionsRunId, "ingestVersions", "Document versions ingested.");
-    return;
-  }
-  const fetchRunId = Number(target.getAttribute("data-discovery-run-fetch") || 0);
-  if (fetchRunId) {
-    await executeDiscoveryRunAction(fetchRunId, "fetch", "Document versions fetched.");
-    return;
-  }
-  const parseRunId = Number(target.getAttribute("data-discovery-run-parse") || 0);
-  if (parseRunId) {
-    await executeDiscoveryRunAction(parseRunId, "parse", "Document versions parsed.");
-    return;
-  }
-  const projectionRunSelectId = Number(target.getAttribute("data-projection-run-select") || 0);
-  if (projectionRunSelectId) {
-    selectedProjectionRunId = projectionRunSelectId;
-    await loadProjectionRunDetails(projectionRunSelectId);
-    return;
-  }
-  const projectionApproveId = Number(target.getAttribute("data-projection-run-approve") || 0);
-  if (projectionApproveId) {
-    await decideProjectionRun(projectionApproveId, "approved");
-    return;
-  }
-  const projectionHoldId = Number(target.getAttribute("data-projection-run-hold") || 0);
-  if (projectionHoldId) {
-    await decideProjectionRun(projectionHoldId, "held");
-    return;
-  }
-  const projectionMaterializeId = Number(target.getAttribute("data-projection-run-materialize") || 0);
-  if (projectionMaterializeId) {
-    await materializeProjectionRun(projectionMaterializeId);
-    return;
-  }
-  const projectionActivateId = Number(target.getAttribute("data-projection-run-activate") || 0);
-  if (projectionActivateId) {
-    await activateProjectionRun(projectionActivateId);
+  if (await handleLawWorkspaceClick(target)) {
     return;
   }
   if (target.id === "catalog-create") {
@@ -4710,6 +4797,12 @@ catalogHost?.addEventListener("click", async (event) => {
     if (response.ok) showMessage("Элемент удален.");
     await loadCatalog(activeCatalogEntity);
   }
+});
+
+lawModalBody?.addEventListener("click", async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  await handleLawWorkspaceClick(target);
 });
 
 userModalBody?.addEventListener("click", async (event) => {

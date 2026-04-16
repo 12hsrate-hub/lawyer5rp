@@ -233,17 +233,21 @@ window.OGPAdminRuntimeLaws = {
         </div>
         <p class="legal-section__description">${escapeHtml(String(sourceSet.description || "Без описания."))}</p>
         <table class="legal-table admin-table admin-table--compact">
-          <thead><tr><th>Revision</th><th>Status</th><th>Container links</th><th>Policy</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Revision</th><th>Status</th><th>Container links</th><th>Updated</th><th>Actions</th></tr></thead>
           <tbody>
             ${items.length ? items.map((item) => `
               <tr ${Number(item?.id || 0) === Number(selectedRevisionId || 0) ? 'class="is-selected"' : ""}>
                 <td>#${escapeHtml(String(item?.revision || item?.id || "—"))}</td>
                 <td>${escapeHtml(String(item?.status || "draft"))}</td>
-                <td>${(Array.isArray(item?.container_urls) ? item.container_urls : []).map((url) => `<div class="admin-user-cell__secondary">${escapeHtml(String(url || ""))}</div>`).join("") || "—"}</td>
-                <td><pre class="legal-field__hint">${escapeHtml(JSON.stringify(item?.adapter_policy_json || {}, null, 2))}</pre></td>
+                <td>
+                  ${(Array.isArray(item?.container_urls) ? item.container_urls : []).map((url) => `<div class="admin-user-cell__secondary">${escapeHtml(String(url || ""))}</div>`).join("") || "—"}
+                  ${Object.keys(item?.adapter_policy_json || {}).length || Object.keys(item?.metadata_json || {}).length
+                    ? '<div class="admin-user-cell__secondary">Есть дополнительные настройки</div>'
+                    : ""}
+                </td>
+                <td>${escapeHtml(String(item?.updated_at || item?.created_at || item?.published_at || "—"))}</td>
                 <td>
                   <button type="button" class="ghost-button" data-source-set-revision-select="${escapeHtml(String(item?.id || ""))}">Выбрать</button>
-                  <button type="button" class="ghost-button" data-source-set-discovery-run="${escapeHtml(String(item?.id || ""))}">Discovery</button>
                 </td>
               </tr>
             `).join("") : '<tr><td colspan="5" class="legal-section__description">Revisions пока нет.</td></tr>'}
@@ -257,7 +261,7 @@ window.OGPAdminRuntimeLaws = {
     const escapeHtml = window.OGPWeb?.escapeHtml || ((value) => String(value ?? ""));
     return `
       <table class="legal-table admin-table admin-table--compact">
-        <thead><tr><th>Priority</th><th>Source set</th><th>Status</th><th>Overrides</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Priority</th><th>Source set</th><th>Status</th><th>Rules</th><th>Actions</th></tr></thead>
         <tbody>
           ${items.length ? items.map((item) => `
             <tr>
@@ -265,8 +269,9 @@ window.OGPAdminRuntimeLaws = {
               <td><code>${escapeHtml(String(item?.source_set_key || "—"))}</code></td>
               <td>${item?.is_active ? "active" : "disabled"}</td>
               <td>
-                <div class="admin-user-cell__secondary">include: ${escapeHtml(String((item?.include_law_keys || []).join(", ") || "—"))}</div>
-                <div class="admin-user-cell__secondary">exclude: ${escapeHtml(String((item?.exclude_law_keys || []).join(", ") || "—"))}</div>
+                ${((item?.include_law_keys || []).length || (item?.exclude_law_keys || []).length || Object.keys(item?.pin_policy_json || {}).length || Object.keys(item?.metadata_json || {}).length)
+                  ? '<span class="admin-user-cell__secondary">Есть дополнительные правила</span>'
+                  : '<span class="admin-user-cell__secondary">Базовая привязка</span>'}
               </td>
               <td>
                 <button type="button" class="ghost-button" data-server-source-set-binding-edit="${escapeHtml(String(item?.id || ""))}">Изменить</button>
@@ -276,6 +281,61 @@ window.OGPAdminRuntimeLaws = {
           `).join("") : '<tr><td colspan="5" class="legal-section__description">Для выбранного сервера нет source-set bindings.</td></tr>'}
         </tbody>
       </table>
+    `;
+  },
+
+  renderLawMainCheckMarkup(state = {}) {
+    const escapeHtml = window.OGPWeb?.escapeHtml || ((value) => String(value ?? ""));
+    const sourceSet = state.selectedSourceSet || null;
+    const sourceSetLabel = sourceSet
+      ? String(sourceSet.title || sourceSet.source_set_key || "—")
+      : "не выбран";
+    const revisionLabel = state.selectedRevisionId ? `#${state.selectedRevisionId}` : "не выбрана";
+    const serverLabel = state.activeLawServerCode || "не выбран";
+    const projectionRuns = Array.isArray(state.projectionRuns?.items) ? state.projectionRuns.items : [];
+    const latestRun = projectionRuns.find((item) => Number(item?.id || 0) === Number(state.selectedProjectionRunId || 0)) || projectionRuns[0] || null;
+    const statusPayload = state.projectionStatus || {};
+    const latestStatus = latestRun ? String(latestRun?.status || "pending") : "ещё не запускался";
+    const decisionStatus = latestRun ? String((latestRun?.summary_json || {}).decision_status || "—") : "—";
+    const runtimeAlignment = statusPayload?.runtime_alignment || {};
+    const alignmentText = statusPayload?.error
+      ? String(statusPayload.error)
+      : latestRun
+        ? `Items: ${escapeHtml(String(runtimeAlignment.item_count_matches_materialization ?? "—"))}, active version: ${escapeHtml(String(runtimeAlignment.activation_law_version_matches_active ?? "—"))}`
+        : "Запустите preview, чтобы проверить итоговую конфигурацию.";
+    return `
+      <div class="admin-catalog-preview">
+        <div class="admin-catalog-preview__header">
+          <h4 class="admin-catalog-preview__title">Проверка результата</h4>
+          <span class="admin-badge ${latestRun ? "admin-badge--muted" : "admin-badge--warning"}">${escapeHtml(latestStatus)}</span>
+        </div>
+        <p class="legal-section__description">Основной шаг после настройки source set и binding: безопасно собрать projection preview и посмотреть итог.</p>
+        <div class="legal-field-grid legal-field-grid--two">
+          <div class="legal-field">
+            <span class="legal-field__label">Source set</span>
+            <div class="admin-user-cell__secondary">${escapeHtml(sourceSetLabel)}</div>
+          </div>
+          <div class="legal-field">
+            <span class="legal-field__label">Revision</span>
+            <div class="admin-user-cell__secondary">${escapeHtml(String(revisionLabel))}</div>
+          </div>
+          <div class="legal-field">
+            <span class="legal-field__label">Сервер</span>
+            <div class="admin-user-cell__secondary">${escapeHtml(String(serverLabel))}</div>
+          </div>
+          <div class="legal-field">
+            <span class="legal-field__label">Decision</span>
+            <div class="admin-user-cell__secondary">${escapeHtml(String(decisionStatus))}</div>
+          </div>
+        </div>
+        <p class="legal-field__hint">${escapeHtml(String(alignmentText))}</p>
+        <div class="admin-section-toolbar">
+          <button type="button" id="law-projection-run-create" class="primary-button" ${state.activeLawServerCode ? "" : "disabled"}>Preview projection</button>
+          <button type="button" id="law-main-check-refresh" class="ghost-button">Обновить проверку</button>
+          <button type="button" id="law-open-diagnostics" class="ghost-button">Диагностика / Pipeline details</button>
+          <button type="button" id="law-open-legacy-runtime" class="ghost-button">Legacy / Runtime</button>
+        </div>
+      </div>
     `;
   },
 
@@ -289,12 +349,17 @@ window.OGPAdminRuntimeLaws = {
     const projectionItems = Array.isArray(state.projectionItems?.items) ? state.projectionItems.items : [];
     const selectedRun = state.selectedDiscoveryRunId ? `run #${state.selectedDiscoveryRunId}` : "не выбран";
     const selectedProjectionRun = state.selectedProjectionRunId ? `run #${state.selectedProjectionRunId}` : "не выбран";
+    const selectedRevisionId = Number(state.selectedRevisionId || 0);
     return `
       <div class="legal-field-grid legal-field-grid--two">
         <div class="legal-subcard">
           <div class="admin-section-toolbar">
             <strong>Discovery runs</strong>
-            <span class="admin-badge admin-badge--muted">${escapeHtml(String(discoveryRuns.length))}</span>
+            <div>
+              <span class="admin-badge admin-badge--muted">${escapeHtml(String(discoveryRuns.length))}</span>
+              <button type="button" class="ghost-button" id="law-canonical-pipeline-refresh">Обновить pipeline</button>
+              <button type="button" class="ghost-button" data-source-set-discovery-run="${escapeHtml(String(selectedRevisionId || ""))}" ${selectedRevisionId ? "" : "disabled"}>Запустить discovery</button>
+            </div>
           </div>
           <table class="legal-table admin-table admin-table--compact">
             <thead><tr><th>ID</th><th>Status</th><th>Summary</th><th>Actions</th></tr></thead>
