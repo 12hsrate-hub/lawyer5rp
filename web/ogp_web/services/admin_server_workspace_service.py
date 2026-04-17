@@ -13,6 +13,8 @@ from ogp_web.services.admin_server_laws_workspace_service import build_promotion
 from ogp_web.services.admin_server_laws_workspace_service import build_promotion_delta_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_convergence_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_cutover_readiness_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_bridge_shrink_checklist_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_cutover_blockers_breakdown_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_shell_debt_summary
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -579,6 +581,47 @@ def _build_cutover_readiness_issue(cutover_readiness: dict[str, Any]) -> dict[st
     }
 
 
+def _build_bridge_shrink_checklist_issue(bridge_shrink_checklist: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((bridge_shrink_checklist or {}).get("status") or "").strip().lower()
+    if status in {"", "ready"}:
+        return None
+    detail = (
+        f"{str((bridge_shrink_checklist or {}).get('detail') or '').strip()} "
+        f"completed={int((bridge_shrink_checklist or {}).get('completed_count') or 0)}/"
+        f"{int((bridge_shrink_checklist or {}).get('total_count') or 0)}. "
+        f"{str((bridge_shrink_checklist or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "laws_bridge_shrink_checklist",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Bridge shrink checklist требует внимания",
+        "detail": detail,
+    }
+
+
+def _build_cutover_blockers_breakdown_issue(cutover_blockers_breakdown: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((cutover_blockers_breakdown or {}).get("status") or "").strip().lower()
+    if status in {"", "clear"}:
+        return None
+    counts = dict((cutover_blockers_breakdown or {}).get("category_counts") or {})
+    detail = (
+        f"{str((cutover_blockers_breakdown or {}).get('detail') or '').strip()} "
+        f"promotion={int(counts.get('promotion') or 0)} "
+        f"activation={int(counts.get('activation') or 0)} "
+        f"shell_debt={int(counts.get('shell_debt') or 0)} "
+        f"cutover={int(counts.get('cutover') or 0)}. "
+        f"{str((cutover_blockers_breakdown or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "laws_cutover_blockers_breakdown",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Cutover blockers требуют внимания",
+        "detail": detail,
+    }
+
+
 def _build_issues_payload(
     *,
     health_payload: dict[str, Any],
@@ -594,6 +637,8 @@ def _build_issues_payload(
     runtime_shell_debt: dict[str, Any] | None = None,
     runtime_convergence: dict[str, Any] | None = None,
     cutover_readiness: dict[str, Any] | None = None,
+    bridge_shrink_checklist: dict[str, Any] | None = None,
+    cutover_blockers_breakdown: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     checks = dict(health_payload.get("checks") or {})
@@ -680,6 +725,12 @@ def _build_issues_payload(
     cutover_readiness_issue = _build_cutover_readiness_issue(dict(cutover_readiness or {}))
     if cutover_readiness_issue is not None:
         items.append(cutover_readiness_issue)
+    bridge_shrink_checklist_issue = _build_bridge_shrink_checklist_issue(dict(bridge_shrink_checklist or {}))
+    if bridge_shrink_checklist_issue is not None:
+        items.append(bridge_shrink_checklist_issue)
+    cutover_blockers_breakdown_issue = _build_cutover_blockers_breakdown_issue(dict(cutover_blockers_breakdown or {}))
+    if cutover_blockers_breakdown_issue is not None:
+        items.append(cutover_blockers_breakdown_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -850,6 +901,19 @@ def build_server_workspace_payload(
         runtime_shell_debt=runtime_shell_debt,
         activation_gap=activation_gap,
     )
+    bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
+        projection_bridge_readiness=projection_bridge_readiness,
+        activation_gap=activation_gap,
+        runtime_shell_debt=runtime_shell_debt,
+        runtime_convergence=runtime_convergence,
+        cutover_readiness=cutover_readiness,
+    )
+    cutover_blockers_breakdown = build_cutover_blockers_breakdown_summary(
+        promotion_blockers=promotion_blockers,
+        runtime_shell_debt=runtime_shell_debt,
+        activation_gap=activation_gap,
+        cutover_readiness=cutover_readiness,
+    )
     laws_summary = {
         "active_source_set_bindings": [
             {
@@ -877,6 +941,8 @@ def build_server_workspace_payload(
         "runtime_shell_debt": runtime_shell_debt,
         "runtime_convergence": runtime_convergence,
         "cutover_readiness": cutover_readiness,
+        "bridge_shrink_checklist": bridge_shrink_checklist,
+        "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "health": (health_payload.get("checks") or {}).get("health", {}),
     }
     issues_payload = _build_issues_payload(
@@ -893,6 +959,8 @@ def build_server_workspace_payload(
         runtime_shell_debt=runtime_shell_debt,
         runtime_convergence=runtime_convergence,
         cutover_readiness=cutover_readiness,
+        bridge_shrink_checklist=bridge_shrink_checklist,
+        cutover_blockers_breakdown=cutover_blockers_breakdown,
     )
     readiness_payload = _build_readiness_payload(
         laws_ready=bool((health_payload.get("checks") or {}).get("health", {}).get("ok")),

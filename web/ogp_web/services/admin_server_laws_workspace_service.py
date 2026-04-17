@@ -878,6 +878,168 @@ def build_cutover_readiness_summary(
     }
 
 
+def build_bridge_shrink_checklist_summary(
+    *,
+    projection_bridge_readiness: dict[str, Any],
+    activation_gap: dict[str, Any],
+    runtime_shell_debt: dict[str, Any],
+    runtime_convergence: dict[str, Any],
+    cutover_readiness: dict[str, Any],
+) -> dict[str, Any]:
+    readiness = dict(projection_bridge_readiness or {})
+    gap = dict(activation_gap or {})
+    shell_debt = dict(runtime_shell_debt or {})
+    convergence = dict(runtime_convergence or {})
+    cutover = dict(cutover_readiness or {})
+
+    steps = [
+        {
+            "key": "bindings_and_preview_ready",
+            "label": "Bindings and preview readiness",
+            "done": str(readiness.get("status") or "").strip().lower() == "ready",
+            "detail": str(readiness.get("detail") or "").strip(),
+        },
+        {
+            "key": "activation_aligned",
+            "label": "Activation alignment",
+            "done": str(gap.get("status") or "").strip().lower() == "closed",
+            "detail": str(gap.get("detail") or "").strip(),
+        },
+        {
+            "key": "shell_debt_low",
+            "label": "Low runtime shell debt",
+            "done": str(shell_debt.get("status") or "").strip().lower() == "low",
+            "detail": str(shell_debt.get("detail") or "").strip(),
+        },
+        {
+            "key": "runtime_converged",
+            "label": "Runtime convergence",
+            "done": str(convergence.get("status") or "").strip().lower() == "converged",
+            "detail": str(convergence.get("detail") or "").strip(),
+        },
+        {
+            "key": "cutover_ready",
+            "label": "Cutover readiness",
+            "done": str(cutover.get("status") or "").strip().lower() == "ready_for_cutover",
+            "detail": str(cutover.get("detail") or "").strip(),
+        },
+    ]
+    completed = sum(1 for item in steps if bool(item.get("done")))
+    total = len(steps)
+
+    if completed >= total:
+        status = "ready"
+        detail = "Bridge shrink checklist is fully green for the current read model."
+        next_step = "Можно обсуждать controlled bridge shrinking."
+    elif completed <= 0:
+        status = "blocked"
+        detail = "Bridge shrink checklist is still blocked on every major step."
+        next_step = "Начните с projection bridge readiness и activation alignment."
+    else:
+        status = "in_progress"
+        detail = f"Bridge shrink checklist has {completed}/{total} steps completed."
+        next_step = "Продолжайте закрывать незавершённые checklist items."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "completed_count": completed,
+        "total_count": total,
+        "items": steps,
+    }
+
+
+def build_cutover_blockers_breakdown_summary(
+    *,
+    promotion_blockers: dict[str, Any],
+    runtime_shell_debt: dict[str, Any],
+    activation_gap: dict[str, Any],
+    cutover_readiness: dict[str, Any],
+) -> dict[str, Any]:
+    blockers = dict(promotion_blockers or {})
+    shell_debt = dict(runtime_shell_debt or {})
+    gap = dict(activation_gap or {})
+    cutover = dict(cutover_readiness or {})
+
+    items: list[dict[str, str]] = []
+    for item in list(blockers.get("items") or []):
+        kind = str(item.get("kind") or "").strip().lower()
+        if not kind:
+            continue
+        items.append(
+            {
+                "category": "promotion",
+                "kind": kind,
+                "detail": str(item.get("detail") or "").strip(),
+            }
+        )
+
+    for reason in list(shell_debt.get("reasons") or []):
+        normalized = str(reason or "").strip().lower()
+        if not normalized:
+            continue
+        items.append(
+            {
+                "category": "shell_debt",
+                "kind": normalized,
+                "detail": str(shell_debt.get("detail") or "").strip(),
+            }
+        )
+
+    gap_status = str(gap.get("status") or "").strip().lower()
+    if gap_status in {"open", "drift", "blocked", "not_ready"}:
+        items.append(
+            {
+                "category": "activation",
+                "kind": gap_status,
+                "detail": str(gap.get("detail") or "").strip(),
+            }
+        )
+
+    cutover_status = str(cutover.get("status") or "").strip().lower()
+    if cutover_status not in {"", "ready_for_cutover", "monitor"}:
+        items.append(
+            {
+                "category": "cutover",
+                "kind": cutover_status,
+                "detail": str(cutover.get("detail") or "").strip(),
+            }
+        )
+
+    deduped: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        marker = (str(item.get("category") or ""), str(item.get("kind") or ""))
+        if marker in seen:
+            continue
+        seen.add(marker)
+        deduped.append(item)
+
+    category_counts: dict[str, int] = {}
+    for item in deduped:
+        category = str(item.get("category") or "other")
+        category_counts[category] = int(category_counts.get(category) or 0) + 1
+
+    if deduped:
+        status = "blocked"
+        detail = f"{len(deduped)} cutover blocker(s) still require attention."
+        next_step = str(cutover.get("next_step") or blockers.get("next_step") or "Сначала разберите blocker breakdown по категориям.").strip()
+    else:
+        status = "clear"
+        detail = "No explicit cutover blockers are visible in the current read model."
+        next_step = "Явных cutover blockers не видно."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "count": len(deduped),
+        "category_counts": category_counts,
+        "items": deduped[:10],
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -974,6 +1136,19 @@ def build_server_laws_summary_payload(
         runtime_shell_debt=runtime_shell_debt,
         activation_gap=activation_gap,
     )
+    bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
+        projection_bridge_readiness=bridge_readiness,
+        activation_gap=activation_gap,
+        runtime_shell_debt=runtime_shell_debt,
+        runtime_convergence=runtime_convergence,
+        cutover_readiness=cutover_readiness,
+    )
+    cutover_blockers_breakdown = build_cutover_blockers_breakdown_summary(
+        promotion_blockers=promotion_blockers,
+        runtime_shell_debt=runtime_shell_debt,
+        activation_gap=activation_gap,
+        cutover_readiness=cutover_readiness,
+    )
     return {
         "server_code": normalized_server,
         "bindings": bindings,
@@ -993,6 +1168,8 @@ def build_server_laws_summary_payload(
         "runtime_shell_debt": runtime_shell_debt,
         "runtime_convergence": runtime_convergence,
         "cutover_readiness": cutover_readiness,
+        "bridge_shrink_checklist": bridge_shrink_checklist,
+        "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "latest_projection_run": _serialize_run(current_run),
         "fill_check": fill_summary,
         "diff": diff_summary,
@@ -1186,6 +1363,19 @@ def build_server_laws_diff_payload(
         runtime_shell_debt=runtime_shell_debt,
         activation_gap=activation_gap,
     )
+    bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
+        projection_bridge_readiness=bridge_readiness,
+        activation_gap=activation_gap,
+        runtime_shell_debt=runtime_shell_debt,
+        runtime_convergence=runtime_convergence,
+        cutover_readiness=cutover_readiness,
+    )
+    cutover_blockers_breakdown = build_cutover_blockers_breakdown_summary(
+        promotion_blockers=promotion_blockers,
+        runtime_shell_debt=runtime_shell_debt,
+        activation_gap=activation_gap,
+        cutover_readiness=cutover_readiness,
+    )
     return {
         "server_code": normalized_server,
         "current_run": _serialize_run(current_run),
@@ -1202,5 +1392,7 @@ def build_server_laws_diff_payload(
         "runtime_shell_debt": runtime_shell_debt,
         "runtime_convergence": runtime_convergence,
         "cutover_readiness": cutover_readiness,
+        "bridge_shrink_checklist": bridge_shrink_checklist,
+        "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "summary": diff_summary,
     }

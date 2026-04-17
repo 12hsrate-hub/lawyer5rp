@@ -382,6 +382,8 @@ window.OGPAdminServerWorkspace = {
         const runtimeShellDebt = laws.runtime_shell_debt || state.lawsDiff?.runtime_shell_debt || {};
         const runtimeConvergence = laws.runtime_convergence || state.lawsDiff?.runtime_convergence || {};
         const cutoverReadiness = laws.cutover_readiness || state.lawsDiff?.cutover_readiness || {};
+        const bridgeShrinkChecklist = laws.bridge_shrink_checklist || state.lawsDiff?.bridge_shrink_checklist || {};
+        const cutoverBlockersBreakdown = laws.cutover_blockers_breakdown || state.lawsDiff?.cutover_blockers_breakdown || {};
         const effective = state.lawsEffective || {};
       const effectiveItems = Array.isArray(effective.items) ? effective.items.slice(0, 12) : [];
       const fillSummary = laws.fill_check || effective.summary || {};
@@ -476,6 +478,16 @@ window.OGPAdminServerWorkspace = {
               <span class="legal-field__label">Cutover readiness</span>
               <div><strong>${escapeHtml(String(cutoverReadiness.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">${escapeHtml(String(cutoverReadiness.detail || "Cutover readiness summary is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Bridge shrink checklist</span>
+              <div><strong>${escapeHtml(String(bridgeShrinkChecklist.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(bridgeShrinkChecklist.detail || "Bridge shrink checklist is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Cutover blockers</span>
+              <div><strong>${escapeHtml(String(cutoverBlockersBreakdown.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(cutoverBlockersBreakdown.detail || "Cutover blockers breakdown is not available yet."))}</div>
             </div>
         </div>
         <div class="legal-subcard">
