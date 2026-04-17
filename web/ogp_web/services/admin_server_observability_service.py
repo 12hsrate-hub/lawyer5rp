@@ -21,6 +21,7 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_runtime_shell_debt_summary,
     build_bridge_shrink_checklist_summary,
     build_cutover_blockers_breakdown_summary,
+    build_runtime_bridge_policy_summary,
     build_runtime_cutover_mode_summary,
     build_server_laws_recheck_payload,
 )
@@ -549,6 +550,25 @@ def _build_runtime_cutover_mode_issue(runtime_cutover_mode: dict[str, Any]) -> d
     }
 
 
+def _build_runtime_bridge_policy_issue(runtime_bridge_policy: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_bridge_policy or {}).get("status") or "").strip().lower()
+    if status not in {"keep_compatibility", "stabilize_for_cutover"}:
+        return None
+    return {
+        "issue_id": "runtime_bridge_policy",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Bridge policy ещё не смещена к projection runtime",
+        "detail": (
+            f"{str((runtime_bridge_policy or {}).get('detail') or '').strip()} "
+            f"{str((runtime_bridge_policy or {}).get('next_step') or '').strip()}"
+        ).strip(),
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
 def _build_bridge_shrink_checklist_issue(bridge_shrink_checklist: dict[str, Any]) -> dict[str, Any] | None:
     status = str((bridge_shrink_checklist or {}).get("status") or "").strip().lower()
     if status in {"", "ready"}:
@@ -802,6 +822,11 @@ def build_server_issues_payload(
         runtime_shell_debt=runtime_shell_debt,
         runtime_config_debt=runtime_config_debt,
     )
+    runtime_bridge_policy = build_runtime_bridge_policy_summary(
+        runtime_resolution_policy=runtime_resolution_policy,
+        runtime_cutover_mode=runtime_cutover_mode,
+        cutover_readiness=cutover_readiness,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=projection_bridge_readiness,
         activation_gap=activation_gap,
@@ -899,6 +924,9 @@ def build_server_issues_payload(
     runtime_cutover_mode_issue = _build_runtime_cutover_mode_issue(runtime_cutover_mode)
     if runtime_cutover_mode_issue is not None:
         items.append(runtime_cutover_mode_issue)
+    runtime_bridge_policy_issue = _build_runtime_bridge_policy_issue(runtime_bridge_policy)
+    if runtime_bridge_policy_issue is not None:
+        items.append(runtime_bridge_policy_issue)
     bridge_shrink_checklist_issue = _build_bridge_shrink_checklist_issue(bridge_shrink_checklist)
     if bridge_shrink_checklist_issue is not None:
         items.append(bridge_shrink_checklist_issue)
@@ -973,7 +1001,7 @@ def execute_server_issue_action_payload(
     normalized_server = normalize_runtime_server_code(server_code)
     normalized_issue = str(issue_id or "").strip().lower()
     normalized_action = str(action or "").strip().lower()
-    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_review_signal", "laws_promotion_blockers", "laws_activation_gap", "laws_runtime_shell_debt", "laws_runtime_convergence", "laws_cutover_readiness", "laws_runtime_cutover_mode", "laws_bridge_shrink_checklist", "laws_cutover_blockers_breakdown"} and normalized_action == "recheck":
+    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_review_signal", "laws_promotion_blockers", "laws_activation_gap", "laws_runtime_shell_debt", "laws_runtime_convergence", "laws_cutover_readiness", "laws_runtime_cutover_mode", "runtime_bridge_policy", "laws_bridge_shrink_checklist", "laws_cutover_blockers_breakdown"} and normalized_action == "recheck":
         result = build_server_laws_recheck_payload(
             server_code=normalized_server,
             runtime_servers_store=runtime_servers_store,

@@ -20,6 +20,7 @@ from ogp_web.services.admin_server_laws_workspace_service import build_cutover_r
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_shell_debt_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_bridge_shrink_checklist_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_cutover_blockers_breakdown_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_runtime_bridge_policy_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_cutover_mode_summary
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
@@ -660,6 +661,22 @@ def _build_runtime_cutover_mode_issue(runtime_cutover_mode: dict[str, Any]) -> d
     }
 
 
+def _build_runtime_bridge_policy_issue(runtime_bridge_policy: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_bridge_policy or {}).get("status") or "").strip().lower()
+    if status not in {"keep_compatibility", "stabilize_for_cutover"}:
+        return None
+    return {
+        "issue_id": "runtime_bridge_policy",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Bridge policy ещё не смещена к projection runtime",
+        "detail": (
+            f"{str((runtime_bridge_policy or {}).get('detail') or '').strip()} "
+            f"{str((runtime_bridge_policy or {}).get('next_step') or '').strip()}"
+        ).strip(),
+    }
+
+
 def _build_bridge_shrink_checklist_issue(bridge_shrink_checklist: dict[str, Any]) -> dict[str, Any] | None:
     status = str((bridge_shrink_checklist or {}).get("status") or "").strip().lower()
     if status in {"", "ready"}:
@@ -721,6 +738,7 @@ def _build_issues_payload(
     runtime_convergence: dict[str, Any] | None = None,
     cutover_readiness: dict[str, Any] | None = None,
     runtime_cutover_mode: dict[str, Any] | None = None,
+    runtime_bridge_policy: dict[str, Any] | None = None,
     bridge_shrink_checklist: dict[str, Any] | None = None,
     cutover_blockers_breakdown: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -821,6 +839,9 @@ def _build_issues_payload(
     runtime_cutover_mode_issue = _build_runtime_cutover_mode_issue(dict(runtime_cutover_mode or {}))
     if runtime_cutover_mode_issue is not None:
         items.append(runtime_cutover_mode_issue)
+    runtime_bridge_policy_issue = _build_runtime_bridge_policy_issue(dict(runtime_bridge_policy or {}))
+    if runtime_bridge_policy_issue is not None:
+        items.append(runtime_bridge_policy_issue)
     bridge_shrink_checklist_issue = _build_bridge_shrink_checklist_issue(dict(bridge_shrink_checklist or {}))
     if bridge_shrink_checklist_issue is not None:
         items.append(bridge_shrink_checklist_issue)
@@ -1011,6 +1032,11 @@ def build_server_workspace_payload(
         runtime_shell_debt=runtime_shell_debt,
         runtime_config_debt=runtime_config_debt,
     )
+    runtime_bridge_policy = build_runtime_bridge_policy_summary(
+        runtime_resolution_policy=runtime_resolution_policy,
+        runtime_cutover_mode=runtime_cutover_mode,
+        cutover_readiness=cutover_readiness,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=projection_bridge_readiness,
         activation_gap=activation_gap,
@@ -1056,6 +1082,7 @@ def build_server_workspace_payload(
         "runtime_convergence": runtime_convergence,
         "cutover_readiness": cutover_readiness,
         "runtime_cutover_mode": runtime_cutover_mode,
+        "runtime_bridge_policy": runtime_bridge_policy,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "health": (health_payload.get("checks") or {}).get("health", {}),
@@ -1079,6 +1106,7 @@ def build_server_workspace_payload(
         runtime_convergence=runtime_convergence,
         cutover_readiness=cutover_readiness,
         runtime_cutover_mode=runtime_cutover_mode,
+        runtime_bridge_policy=runtime_bridge_policy,
         bridge_shrink_checklist=bridge_shrink_checklist,
         cutover_blockers_breakdown=cutover_blockers_breakdown,
     )
