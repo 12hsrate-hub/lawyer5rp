@@ -737,3 +737,51 @@ def test_runtime_shell_artifact_only_allowance_is_limited_not_broad_compatibilit
 
     assert next_shrink_step["status"] == "ready_step"
     assert next_shrink_step["target_path"] == "runtime_shell_artifact"
+
+    compatibility_exit_scorecard = build_compatibility_exit_scorecard_summary(
+        bridge_shrink_checklist={"status": "ready", "detail": "", "next_step": ""},
+        cutover_blockers_breakdown={"status": "clear", "detail": "", "next_step": ""},
+        runtime_risk_register={"status": "low", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        policy_breach_summary={"status": "clear", "detail": "", "next_step": ""},
+        legacy_path_allowance=legacy_path_allowance,
+    )
+
+    assert compatibility_exit_scorecard["status"] == "exit_in_progress"
+    assert "runtime-shell-artifact tail" in compatibility_exit_scorecard["detail"]
+
+    runtime_breach_categories = build_runtime_breach_categories_summary(
+        runtime_policy_violations={"status": "clear", "items": []},
+        runtime_risk_register={"status": "low", "items": [], "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        policy_breach_summary={"status": "clear", "detail": "", "next_step": ""},
+        legacy_path_allowance=legacy_path_allowance,
+        cutover_blockers_breakdown={"status": "clear", "category_counts": {}, "next_step": ""},
+    )
+
+    assert runtime_breach_categories["status"] == "clear"
+
+    runtime_exception_register_after_exit = build_runtime_exception_register_summary(
+        legacy_path_allowance=legacy_path_allowance,
+        runtime_policy_violations={"status": "clear", "items": []},
+        runtime_breach_categories=runtime_breach_categories,
+        compatibility_exit_scorecard=compatibility_exit_scorecard,
+    )
+
+    assert runtime_exception_register_after_exit["status"] == "clear"
+
+    projection_runtime_gate = build_projection_runtime_gate_summary(
+        runtime_governance_contract={"status": "compatibility_contract", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        compatibility_exit_scorecard=compatibility_exit_scorecard,
+        runtime_policy_enforcement={"status": "enforced", "detail": "", "next_step": ""},
+        runtime_breach_categories=runtime_breach_categories,
+    )
+
+    assert projection_runtime_gate["status"] == "guarded"
+    assert "final runtime-shell-artifact exit pass" in projection_runtime_gate["detail"]
+
+    shrink_sequence = build_shrink_sequence_summary(
+        compatibility_path_matrix=compatibility_path_matrix,
+        next_shrink_step=next_shrink_step,
+    )
+
+    assert shrink_sequence["status"] == "planned"
+    assert "runtime shell artifact tail" in shrink_sequence["next_step"]

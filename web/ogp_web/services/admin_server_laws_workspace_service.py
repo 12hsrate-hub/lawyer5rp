@@ -1860,6 +1860,14 @@ def build_compatibility_exit_scorecard_summary(
     allowance_status = str(allowance.get("status") or "").strip().lower()
     shell_role = str(risk_register.get("shell_role") or allowance.get("shell_role") or "").strip().lower()
     shell_stage = str(risk_register.get("shell_stage") or allowance.get("shell_stage") or "").strip().lower()
+    artifact_tail_exit = (
+        allowance_status == "limited"
+        and shell_role == "runtime_shell_artifact"
+        and checklist_status in {"in_progress", "ready"}
+        and blockers_status == "clear"
+        and risk_status == "low"
+        and breach_status == "clear"
+    )
 
     if (
         checklist_status == "ready"
@@ -1871,6 +1879,10 @@ def build_compatibility_exit_scorecard_summary(
         status = "ready_to_exit"
         detail = "Server looks ready to exit compatibility runtime handling in the current read model."
         next_step = "Используйте этот сервер как кандидат на controlled compatibility-bridge shrinking."
+    elif artifact_tail_exit:
+        status = "exit_in_progress"
+        detail = "Compatibility exit is down to the final runtime-shell-artifact tail."
+        next_step = "Закройте финальный bounded shrink step для runtime shell artifact tail."
     elif checklist_status in {"in_progress", "ready"} and blockers_status != "clear":
         status = "exit_in_progress"
         detail = "Compatibility exit is underway, but blocker categories still require attention."
@@ -1921,7 +1933,21 @@ def build_runtime_breach_categories_summary(
     items: list[dict[str, str]] = []
 
     allowance_status = str(allowance.get("status") or "").strip().lower()
-    if allowance_status in {"compatibility_allowed", "limited"}:
+    allowance_paths = {
+        str(path or "").strip().lower()
+        for path in list(allowance.get("allowed_paths") or [])
+        if str(path or "").strip()
+    }
+    shell_role = str(risk_register.get("shell_role") or allowance.get("shell_role") or "").strip().lower()
+    shell_stage = str(risk_register.get("shell_stage") or allowance.get("shell_stage") or "").strip().lower()
+    artifact_tail_only_allowance = (
+        allowance_status == "limited"
+        and allowance_paths
+        and allowance_paths.issubset({"runtime_shell_artifact", "legacy_shell_debt"})
+        and shell_role == "runtime_shell_artifact"
+    )
+
+    if allowance_status in {"compatibility_allowed", "limited"} and not artifact_tail_only_allowance:
         category_counts["legacy_path"] += max(1, int(allowance.get("count") or 0))
         items.append({"category": "legacy_path", "detail": str(allowance.get("detail") or "").strip()})
 
@@ -1978,9 +2004,6 @@ def build_runtime_breach_categories_summary(
         status = "clear"
         detail = "No explicit runtime breach categories are visible in the current read model."
         next_step = "Явных runtime breach categories не видно."
-
-    shell_role = str(risk_register.get("shell_role") or allowance.get("shell_role") or "").strip().lower()
-    shell_stage = str(risk_register.get("shell_stage") or allowance.get("shell_stage") or "").strip().lower()
 
     return {
         "status": status,
@@ -2104,6 +2127,12 @@ def build_projection_runtime_gate_summary(
     breach_status = str(breach_categories.get("status") or "").strip().lower()
     shell_role = str(contract.get("shell_role") or scorecard.get("shell_role") or "").strip().lower()
     shell_stage = str(contract.get("shell_stage") or scorecard.get("shell_stage") or "").strip().lower()
+    artifact_tail_gate = (
+        shell_role == "runtime_shell_artifact"
+        and scorecard_status == "exit_in_progress"
+        and enforcement_status == "enforced"
+        and breach_status == "clear"
+    )
 
     if (
         contract_status == "projection_contract"
@@ -2114,6 +2143,10 @@ def build_projection_runtime_gate_summary(
         status = "open"
         detail = "Projection-runtime gate is open for this server in the current read model."
         next_step = "Используйте сервер как candidate для controlled compatibility shrinking."
+    elif artifact_tail_gate:
+        status = "guarded"
+        detail = "Projection-runtime gate is narrowed to the final runtime-shell-artifact exit pass."
+        next_step = "Проведите финальный bounded shrink step для runtime shell artifact tail."
     elif breach_status == "breached" or enforcement_status == "violated":
         status = "blocked"
         detail = "Projection-runtime gate is blocked by policy breach/enforcement failure."
@@ -2210,6 +2243,19 @@ def build_runtime_exception_register_summary(
 
     items: list[dict[str, str]] = []
     allowance_status = str(allowance.get("status") or "").strip().lower()
+    allowance_paths = {
+        str(path or "").strip().lower()
+        for path in list(allowance.get("allowed_paths") or [])
+        if str(path or "").strip()
+    }
+    shell_role = str(allowance.get("shell_role") or breach_categories.get("shell_role") or "").strip().lower()
+    shell_stage = str(allowance.get("shell_stage") or breach_categories.get("shell_stage") or "").strip().lower()
+    artifact_tail_only_allowance = (
+        allowance_status == "limited"
+        and allowance_paths
+        and allowance_paths.issubset({"runtime_shell_artifact", "legacy_shell_debt"})
+        and shell_role == "runtime_shell_artifact"
+    )
     if allowance_status in {"compatibility_allowed", "limited"}:
         for path in list(allowance.get("allowed_paths") or [])[:10]:
             normalized_path = str(path or "").strip().lower()
@@ -2229,7 +2275,7 @@ def build_runtime_exception_register_summary(
             items.append({"kind": category, "detail": detail})
 
     scorecard_status = str(scorecard.get("status") or "").strip().lower()
-    if scorecard_status in {"not_ready", "exit_in_progress"}:
+    if scorecard_status == "not_ready" or (scorecard_status == "exit_in_progress" and not artifact_tail_only_allowance):
         items.append({"kind": "exit_scorecard", "detail": str(scorecard.get("detail") or "").strip()})
 
     deduped: list[dict[str, str]] = []
@@ -2254,9 +2300,6 @@ def build_runtime_exception_register_summary(
         status = "clear"
         detail = "No explicit runtime exceptions are visible in the current read model."
         next_step = "Явных runtime exceptions не видно."
-
-    shell_role = str(allowance.get("shell_role") or breach_categories.get("shell_role") or "").strip().lower()
-    shell_stage = str(allowance.get("shell_stage") or breach_categories.get("shell_stage") or "").strip().lower()
 
     return {
         "status": status,
@@ -2485,7 +2528,10 @@ def build_shrink_sequence_summary(
         next_step_text = "Совместимость уже сведена к blocked paths в текущей матрице."
     elif next_target:
         status = "planned"
-        next_step_text = str(next_step.get("next_step") or "Следуйте следующему bounded shrink step из sequence.").strip()
+        if next_target == "runtime_shell_artifact":
+            next_step_text = "Финализируйте последний bounded shrink step для runtime shell artifact tail."
+        else:
+            next_step_text = str(next_step.get("next_step") or "Следуйте следующему bounded shrink step из sequence.").strip()
     elif any(item["status"] in {"active_exception", "transition_path"} for item in ordered_paths):
         status = "queued"
         next_step_text = str(matrix.get("next_step") or "Сначала соберите bounded shrink step по открытым paths.").strip()
