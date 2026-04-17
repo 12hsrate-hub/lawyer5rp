@@ -41,6 +41,7 @@ Date: 2026-04-14
   - `L.runtime.24` demote `law_set` to a true observational-only check in runtime health summary: it now advertises `observational_only=true` and only appears in `observational_checks` when it is actually missing or requires attention
   - `L.runtime.25` demote `active_law_set` inside laws summary/diff and issues version-parity messaging: drift/version summaries now stay law_version-first, with `law_set` retained only as observational shell metadata when version ids are absent
   - `L.runtime.26` mark projection-bridge lifecycle and runtime-version parity as `law_set_observational_only` across server-centric laws/issues surfaces so operators stop reading legacy `law_set` ids as operational readiness truth
+  - `L.runtime.27` align issues fallback health with canonical binding truth: even when runtime health construction fails, observability fallback now keeps canonical source-set binding counts as the only readiness basis and demotes legacy `law_set` detail to observational shell metadata instead of reviving old fallback semantics
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`

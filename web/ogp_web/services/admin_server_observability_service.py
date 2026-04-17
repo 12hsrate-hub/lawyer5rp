@@ -1099,23 +1099,26 @@ def build_server_issues_payload(
             "checks": {
                 "bindings": {
                     "ok": canonical_ready,
-                    "detail": f"{binding_source}:{len(source_set_bindings if canonical_ready else runtime_bindings)}",
-                    "count": len(source_set_bindings if canonical_ready else runtime_bindings),
+                    "detail": f"source_set_bindings:{len(source_set_bindings)}",
+                    "count": len(source_set_bindings),
                     "binding_source": binding_source,
                     "canonical_ready": canonical_ready,
                     "source_set_binding_count": len(source_set_bindings),
                     "runtime_binding_count": len(runtime_bindings),
                     "uses_runtime_bindings_fallback": bool(runtime_bindings and not canonical_ready),
                 },
+                "law_set": {
+                    "ok": bool(active_law_set),
+                    "detail": "law_set_present" if active_law_set else "law_set_missing",
+                    "law_set_id": int(active_law_set.get("id")) if active_law_set and active_law_set.get("id") is not None else None,
+                    "observational_only": True,
+                },
                 "health": {
                     "ok": False,
-                    "detail": (
-                        str(active_law_set.get("name") or "active_law_set_present")
-                        if active_law_set
-                        else "active_law_version_missing"
-                    ),
+                    "detail": "runtime_health_unavailable",
                     "active_law_version_id": None,
                     "chunk_count": 0,
+                    "runtime_shell_artifact_present": bool(active_law_set or runtime_bindings),
                 },
             }
         }
