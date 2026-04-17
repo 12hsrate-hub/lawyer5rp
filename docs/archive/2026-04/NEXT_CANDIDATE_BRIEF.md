@@ -1,3 +1,5 @@
+> **Status:** Historical / archived
+
 # NEXT_CANDIDATE_BRIEF.md
 
 Status: `H.1 draft`  

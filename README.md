@@ -63,6 +63,7 @@ Recommended deploy path:
 
 Deploy docs:
 
+Active-document links in this README intentionally exclude archived materials under `docs/archive/`.
 - `AGENTS.md`
 - `docs/README.md`
 - `docs/OPERATIONS_INDEX.md`

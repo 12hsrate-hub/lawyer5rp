@@ -1,3 +1,5 @@
+> **Status:** Historical / archived
+
 # PILOT_ACTIVATION_CHECKLIST.md
 
 Status: Phase G working checklist  
