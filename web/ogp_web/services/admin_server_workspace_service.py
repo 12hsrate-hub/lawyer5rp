@@ -6,6 +6,7 @@ from ogp_web.services.admin_runtime_servers_service import (
     build_runtime_server_health_payload,
     build_runtime_config_debt_summary,
     build_runtime_config_posture_summary,
+    build_runtime_resolution_policy_summary,
     normalize_runtime_server_code,
 )
 from ogp_web.services.admin_server_laws_workspace_service import build_projection_bridge_readiness_summary
@@ -19,6 +20,7 @@ from ogp_web.services.admin_server_laws_workspace_service import build_cutover_r
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_shell_debt_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_bridge_shrink_checklist_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_cutover_blockers_breakdown_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_runtime_cutover_mode_summary
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
@@ -606,6 +608,22 @@ def _build_runtime_config_debt_issue(runtime_config_debt: dict[str, Any]) -> dic
     }
 
 
+def _build_runtime_resolution_policy_issue(runtime_resolution_policy: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_resolution_policy or {}).get("status") or "").strip().lower()
+    if status not in {"transitional_bootstrap", "compatibility_exception"}:
+        return None
+    return {
+        "issue_id": "runtime_resolution_policy",
+        "severity": "warn",
+        "source": "runtime_config",
+        "title": "Runtime resolution policy ещё transitional",
+        "detail": (
+            f"{str((runtime_resolution_policy or {}).get('detail') or '').strip()} "
+            f"{str((runtime_resolution_policy or {}).get('next_step') or '').strip()}"
+        ).strip(),
+    }
+
+
 def _build_cutover_readiness_issue(cutover_readiness: dict[str, Any]) -> dict[str, Any] | None:
     status = str((cutover_readiness or {}).get("status") or "").strip().lower()
     if status in {"", "ready_for_cutover", "monitor"}:
@@ -623,6 +641,22 @@ def _build_cutover_readiness_issue(cutover_readiness: dict[str, Any]) -> dict[st
         "source": "laws",
         "title": "Cutover readiness требует внимания",
         "detail": detail,
+    }
+
+
+def _build_runtime_cutover_mode_issue(runtime_cutover_mode: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_cutover_mode or {}).get("status") or "").strip().lower()
+    if status not in {"compatibility_mode", "cutover_candidate"}:
+        return None
+    return {
+        "issue_id": "laws_runtime_cutover_mode",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Runtime cutover mode ещё transitional",
+        "detail": (
+            f"{str((runtime_cutover_mode or {}).get('detail') or '').strip()} "
+            f"{str((runtime_cutover_mode or {}).get('next_step') or '').strip()}"
+        ).strip(),
     }
 
 
@@ -677,6 +711,7 @@ def _build_issues_payload(
     projection_bridge_readiness: dict[str, Any] | None = None,
     runtime_config_posture: dict[str, Any] | None = None,
     runtime_config_debt: dict[str, Any] | None = None,
+    runtime_resolution_policy: dict[str, Any] | None = None,
     promotion_candidate: dict[str, Any] | None = None,
     promotion_delta: dict[str, Any] | None = None,
     promotion_blockers: dict[str, Any] | None = None,
@@ -685,6 +720,7 @@ def _build_issues_payload(
     runtime_shell_debt: dict[str, Any] | None = None,
     runtime_convergence: dict[str, Any] | None = None,
     cutover_readiness: dict[str, Any] | None = None,
+    runtime_cutover_mode: dict[str, Any] | None = None,
     bridge_shrink_checklist: dict[str, Any] | None = None,
     cutover_blockers_breakdown: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -705,6 +741,9 @@ def _build_issues_payload(
     runtime_config_debt_issue = _build_runtime_config_debt_issue(dict(runtime_config_debt or {}))
     if runtime_config_debt_issue is not None:
         items.append(runtime_config_debt_issue)
+    runtime_resolution_policy_issue = _build_runtime_resolution_policy_issue(dict(runtime_resolution_policy or {}))
+    if runtime_resolution_policy_issue is not None:
+        items.append(runtime_resolution_policy_issue)
     if not bool((checks.get("health") or {}).get("ok")):
         items.append(
             {
@@ -779,6 +818,9 @@ def _build_issues_payload(
     cutover_readiness_issue = _build_cutover_readiness_issue(dict(cutover_readiness or {}))
     if cutover_readiness_issue is not None:
         items.append(cutover_readiness_issue)
+    runtime_cutover_mode_issue = _build_runtime_cutover_mode_issue(dict(runtime_cutover_mode or {}))
+    if runtime_cutover_mode_issue is not None:
+        items.append(runtime_cutover_mode_issue)
     bridge_shrink_checklist_issue = _build_bridge_shrink_checklist_issue(dict(bridge_shrink_checklist or {}))
     if bridge_shrink_checklist_issue is not None:
         items.append(bridge_shrink_checklist_issue)
@@ -895,6 +937,7 @@ def build_server_workspace_payload(
     runtime_alignment = dict(health_payload.get("runtime_alignment") or {})
     runtime_config_posture = build_runtime_config_posture_summary(health_payload=health_payload)
     runtime_config_debt = build_runtime_config_debt_summary(health_payload=health_payload)
+    runtime_resolution_policy = build_runtime_resolution_policy_summary(health_payload=health_payload)
     runtime_item_parity = _build_runtime_item_parity(
         law_sets_store=law_sets_store,
         active_law_set_id=int(runtime_alignment.get("active_law_set_id") or 0) or None,
@@ -962,6 +1005,12 @@ def build_server_workspace_payload(
         runtime_shell_debt=runtime_shell_debt,
         activation_gap=activation_gap,
     )
+    runtime_cutover_mode = build_runtime_cutover_mode_summary(
+        cutover_readiness=cutover_readiness,
+        runtime_convergence=runtime_convergence,
+        runtime_shell_debt=runtime_shell_debt,
+        runtime_config_debt=runtime_config_debt,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=projection_bridge_readiness,
         activation_gap=activation_gap,
@@ -991,6 +1040,7 @@ def build_server_workspace_payload(
         "projection_bridge": projection_bridge,
         "runtime_config_posture": runtime_config_posture,
         "runtime_config_debt": runtime_config_debt,
+        "runtime_resolution_policy": runtime_resolution_policy,
         "runtime_provenance": runtime_provenance,
         "runtime_alignment": runtime_alignment,
         "runtime_item_parity": runtime_item_parity,
@@ -1005,6 +1055,7 @@ def build_server_workspace_payload(
         "runtime_shell_debt": runtime_shell_debt,
         "runtime_convergence": runtime_convergence,
         "cutover_readiness": cutover_readiness,
+        "runtime_cutover_mode": runtime_cutover_mode,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "health": (health_payload.get("checks") or {}).get("health", {}),
@@ -1014,6 +1065,7 @@ def build_server_workspace_payload(
         dashboard_payload=dashboard_payload,
         runtime_config_posture=runtime_config_posture,
         runtime_config_debt=runtime_config_debt,
+        runtime_resolution_policy=runtime_resolution_policy,
         runtime_item_parity=runtime_item_parity,
         runtime_version_parity=runtime_version_parity,
         projection_bridge_lifecycle=projection_bridge_lifecycle,
@@ -1026,6 +1078,7 @@ def build_server_workspace_payload(
         runtime_shell_debt=runtime_shell_debt,
         runtime_convergence=runtime_convergence,
         cutover_readiness=cutover_readiness,
+        runtime_cutover_mode=runtime_cutover_mode,
         bridge_shrink_checklist=bridge_shrink_checklist,
         cutover_blockers_breakdown=cutover_blockers_breakdown,
     )

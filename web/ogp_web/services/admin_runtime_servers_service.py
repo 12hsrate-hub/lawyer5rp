@@ -616,3 +616,32 @@ def build_runtime_config_debt_summary(*, health_payload: dict[str, Any]) -> dict
         "resolution_mode": resolution_mode,
         "highest_completed_state": highest_completed_state,
     }
+
+
+def build_runtime_resolution_policy_summary(*, health_payload: dict[str, Any]) -> dict[str, Any]:
+    posture = build_runtime_config_posture_summary(health_payload=health_payload)
+    debt = build_runtime_config_debt_summary(health_payload=health_payload)
+    posture_status = str(posture.get("status") or "").strip().lower()
+    debt_status = str(debt.get("status") or "").strip().lower()
+
+    if posture_status == "declared_ready" and debt_status == "low":
+        status = "declared_runtime"
+        detail = "Server resolves through a declared runtime config path."
+        next_step = "Config resolution policy looks clean."
+    elif posture_status == "bootstrap_transition" and debt_status in {"medium", "low"}:
+        status = "transitional_bootstrap"
+        detail = "Server still relies on bootstrap-pack resolution as a transitional runtime policy."
+        next_step = "Продолжайте перевод сервера на published runtime pack."
+    else:
+        status = "compatibility_exception"
+        detail = "Server is still runtime-addressable only through a compatibility-style config path."
+        next_step = "Сведите server config resolution к published/bootstrap policy без neutral fallback."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "posture_status": posture_status,
+        "debt_status": debt_status,
+        "resolution_mode": str(posture.get("resolution_mode") or "").strip().lower(),
+    }

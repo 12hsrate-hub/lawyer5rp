@@ -5,6 +5,7 @@ from typing import Any
 from ogp_web.services.admin_runtime_servers_service import (
     build_runtime_config_debt_summary,
     build_runtime_config_posture_summary,
+    build_runtime_resolution_policy_summary,
     build_runtime_server_health_payload,
     normalize_runtime_server_code,
 )
@@ -20,6 +21,7 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_runtime_shell_debt_summary,
     build_bridge_shrink_checklist_summary,
     build_cutover_blockers_breakdown_summary,
+    build_runtime_cutover_mode_summary,
     build_server_laws_recheck_payload,
 )
 from ogp_web.services.content_workflow_service import ContentWorkflowService
@@ -488,6 +490,23 @@ def _build_runtime_config_debt_issue(runtime_config_debt: dict[str, Any]) -> dic
     }
 
 
+def _build_runtime_resolution_policy_issue(runtime_resolution_policy: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_resolution_policy or {}).get("status") or "").strip().lower()
+    if status not in {"transitional_bootstrap", "compatibility_exception"}:
+        return None
+    return {
+        "issue_id": "runtime_resolution_policy",
+        "severity": "warn",
+        "source": "runtime_config",
+        "title": "Runtime resolution policy ещё transitional",
+        "detail": (
+            f"{str((runtime_resolution_policy or {}).get('detail') or '').strip()} "
+            f"{str((runtime_resolution_policy or {}).get('next_step') or '').strip()}"
+        ).strip(),
+        "available_actions": [],
+    }
+
+
 def _build_cutover_readiness_issue(cutover_readiness: dict[str, Any]) -> dict[str, Any] | None:
     status = str((cutover_readiness or {}).get("status") or "").strip().lower()
     if status in {"", "ready_for_cutover", "monitor"}:
@@ -505,6 +524,25 @@ def _build_cutover_readiness_issue(cutover_readiness: dict[str, Any]) -> dict[st
         "source": "laws",
         "title": "Cutover readiness требует внимания",
         "detail": detail,
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
+def _build_runtime_cutover_mode_issue(runtime_cutover_mode: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_cutover_mode or {}).get("status") or "").strip().lower()
+    if status not in {"compatibility_mode", "cutover_candidate"}:
+        return None
+    return {
+        "issue_id": "laws_runtime_cutover_mode",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Runtime cutover mode ещё transitional",
+        "detail": (
+            f"{str((runtime_cutover_mode or {}).get('detail') or '').strip()} "
+            f"{str((runtime_cutover_mode or {}).get('next_step') or '').strip()}"
+        ).strip(),
         "available_actions": [
             {"kind": "recheck", "label": "Проверить наполнение"},
         ],
@@ -693,6 +731,7 @@ def build_server_issues_payload(
     runtime_alignment = dict(health_payload.get("runtime_alignment") or {})
     runtime_config_posture = build_runtime_config_posture_summary(health_payload=health_payload)
     runtime_config_debt = build_runtime_config_debt_summary(health_payload=health_payload)
+    runtime_resolution_policy = build_runtime_resolution_policy_summary(health_payload=health_payload)
     runtime_item_parity = _build_runtime_item_parity(
         law_sets_store=law_sets_store,
         active_law_set_id=int(runtime_alignment.get("active_law_set_id") or 0) or None,
@@ -757,6 +796,12 @@ def build_server_issues_payload(
         runtime_shell_debt=runtime_shell_debt,
         activation_gap=activation_gap,
     )
+    runtime_cutover_mode = build_runtime_cutover_mode_summary(
+        cutover_readiness=cutover_readiness,
+        runtime_convergence=runtime_convergence,
+        runtime_shell_debt=runtime_shell_debt,
+        runtime_config_debt=runtime_config_debt,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=projection_bridge_readiness,
         activation_gap=activation_gap,
@@ -785,6 +830,9 @@ def build_server_issues_payload(
     runtime_config_debt_issue = _build_runtime_config_debt_issue(runtime_config_debt)
     if runtime_config_debt_issue is not None:
         items.append(runtime_config_debt_issue)
+    runtime_resolution_policy_issue = _build_runtime_resolution_policy_issue(runtime_resolution_policy)
+    if runtime_resolution_policy_issue is not None:
+        items.append(runtime_resolution_policy_issue)
     if not bool((checks.get("health") or {}).get("ok")):
         items.append(
             {
@@ -848,6 +896,9 @@ def build_server_issues_payload(
     cutover_readiness_issue = _build_cutover_readiness_issue(cutover_readiness)
     if cutover_readiness_issue is not None:
         items.append(cutover_readiness_issue)
+    runtime_cutover_mode_issue = _build_runtime_cutover_mode_issue(runtime_cutover_mode)
+    if runtime_cutover_mode_issue is not None:
+        items.append(runtime_cutover_mode_issue)
     bridge_shrink_checklist_issue = _build_bridge_shrink_checklist_issue(bridge_shrink_checklist)
     if bridge_shrink_checklist_issue is not None:
         items.append(bridge_shrink_checklist_issue)
@@ -922,7 +973,7 @@ def execute_server_issue_action_payload(
     normalized_server = normalize_runtime_server_code(server_code)
     normalized_issue = str(issue_id or "").strip().lower()
     normalized_action = str(action or "").strip().lower()
-    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_review_signal", "laws_promotion_blockers", "laws_activation_gap", "laws_runtime_shell_debt", "laws_runtime_convergence", "laws_cutover_readiness", "laws_bridge_shrink_checklist", "laws_cutover_blockers_breakdown"} and normalized_action == "recheck":
+    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_review_signal", "laws_promotion_blockers", "laws_activation_gap", "laws_runtime_shell_debt", "laws_runtime_convergence", "laws_cutover_readiness", "laws_runtime_cutover_mode", "laws_bridge_shrink_checklist", "laws_cutover_blockers_breakdown"} and normalized_action == "recheck":
         result = build_server_laws_recheck_payload(
             server_code=normalized_server,
             runtime_servers_store=runtime_servers_store,
