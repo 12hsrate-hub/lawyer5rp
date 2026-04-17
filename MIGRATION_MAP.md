@@ -51,6 +51,9 @@ Date: 2026-04-14
   - `L.runtime.34` add explicit config-path role/stage semantics to runtime config posture/debt/policy so `published / bootstrap / fallback` resolution paths read as declared/transitional/exception contracts instead of generic labels
   - `L.runtime.35` propagate config-path role/stage semantics through cutover and exit-contract summaries so bootstrap/fallback no longer survive only as low-level resolution labels, but as explicit transitional/exception contract context across the shrinking layer
   - `L.runtime.36` add the same config-path role/stage contract to base runtime health `config_resolution`, so lower-level health payloads and higher-level shrinking summaries now speak one consistent declared/transitional/exception config vocabulary
+  - `L.runtime.37` tighten bootstrap config resolution into a true transitional gate: `bootstrap_pack` remains runtime-addressable for bounded base-config flows, but base runtime health no longer marks it as a green `config_resolution` state; only `published_pack` now satisfies the fully-ready config-resolution check
+  - `L.runtime.38` cap bootstrap onboarding at `workflow-ready`: bootstrap remains a bounded transitional path, but server onboarding no longer advances to `rollout-ready` until a `published_pack` exists, so rollout posture and runtime config posture stop disagreeing about what counts as fully stable
+  - `L.runtime.39` align server workspace readiness with the stricter bootstrap gate: the `laws` block now requires canonical bindings, health, and green published config resolution together, so bootstrap-backed servers no longer appear fully law-ready in server-centric readiness while the config path is still transitional
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`
