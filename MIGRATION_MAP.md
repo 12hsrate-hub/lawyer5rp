@@ -7,11 +7,11 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase L`
-- Active task: `physically shrink the neutral_fallback path so DB-only servers stop being silently runtime-addressable`
+- Active task: `tighten bootstrap_pack so it remains runtime-addressable only for code-owned base server configs`
 - Status: `in_progress`
 - Last completed phase: `Phase K`
 - Inventory slices completed: `6`
-- Next slice: `tighten bootstrap_pack after neutral_fallback is no longer a normal runtime-addressable path`
+- Next slice: `start shrinking the legacy law runtime shell after fallback/bootstrap addressability is narrowed`
 - Last updated: `2026-04-17`
 - Accelerated runtime phase:
   - `L.runtime.1` add a single `runtime_bridge_policy` verdict so runtime cutover posture is no longer inferred from multiple lower-level summaries
@@ -24,6 +24,7 @@ Date: 2026-04-14
   - `L.runtime.8` add `legacy_path_controls`, `projection_runtime_gate`, `compatibility_shrink_decision`, and `runtime_exception_register` so runtime/admin surfaces now express not just governance posture but concrete shrinking controls, gate state, and explicit carried exceptions per server
   - `L.runtime.9` add `compatibility_path_matrix`, `next_shrink_step`, and `shrink_sequence` so runtime/admin surfaces move from generic shrink posture to bounded per-path execution planning, with an explicit matrix of remaining compatibility paths, the next recommended shrink target, and the ordered sequence for exiting the remaining compatibility shell
   - `L.runtime.10` physically shrink `neutral_fallback` by removing automatic runtime addressability for DB-only servers without a published/bootstrap pack, while preserving the fallback as an explicit admin/runtime compatibility signal and bounded exception path
+  - `L.runtime.11` tighten `bootstrap_pack` so it remains runtime-addressable only for code-owned base server configs, instead of acting as a generic steady-state runtime path for arbitrary non-base servers
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`
