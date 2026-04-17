@@ -412,6 +412,12 @@ window.OGPAdminServerWorkspace = {
       const fillSummary = laws.fill_check || effective.summary || {};
       const diffSummary = laws.diff || state.lawsDiff?.summary || {};
       const health = laws.health || {};
+      const bindingSource = String(laws.binding_source || state.lawsDiff?.binding_source || "").trim() || "unknown";
+      const canonicalBindingReady = Boolean(
+        typeof laws.canonical_binding_ready === "boolean"
+          ? laws.canonical_binding_ready
+          : state.lawsDiff?.canonical_binding_ready,
+      );
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
@@ -457,10 +463,15 @@ window.OGPAdminServerWorkspace = {
               <div><strong>${escapeHtml(String(runtimeProvenance.mode || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeProvenance.detail || "Runtime source-of-truth explanation is not available yet."))}</div>
             </div>
+          <div class="legal-field">
+            <span class="legal-field__label">Runtime alignment</span>
+            <div><strong>${escapeHtml(String(runtimeAlignment.status || "unknown"))}</strong></div>
+            <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeAlignment.detail || "Active runtime shell and promoted projection alignment is not available yet."))}</div>
+          </div>
             <div class="legal-field">
-              <span class="legal-field__label">Runtime alignment</span>
-              <div><strong>${escapeHtml(String(runtimeAlignment.status || "unknown"))}</strong></div>
-              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeAlignment.detail || "Active runtime shell and promoted projection alignment is not available yet."))}</div>
+              <span class="legal-field__label">Bindings posture</span>
+              <div><strong>${escapeHtml(canonicalBindingReady ? "canonical" : bindingSource)}</strong></div>
+              <div class="admin-user-cell__secondary">source: ${escapeHtml(bindingSource)} • ${canonicalBindingReady ? "Canonical source-set bindings already drive laws readiness." : "Legacy runtime bindings or missing canonical bindings still keep this server on compatibility posture."}</div>
             </div>
             <div class="legal-field">
               <span class="legal-field__label">Item parity</span>

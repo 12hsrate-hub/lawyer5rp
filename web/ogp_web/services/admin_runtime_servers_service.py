@@ -170,6 +170,8 @@ def _build_runtime_server_onboarding_payload(
     server: RuntimeServerRecord | None,
     resolution: dict[str, Any],
     bindings: list[dict[str, Any]],
+    source_set_bindings: list[dict[str, Any]] | None,
+    runtime_bindings: list[dict[str, Any]] | None,
     binding_source: str,
     smoke_tests_passed: bool,
     smoke_tests_checked: bool,
@@ -192,7 +194,8 @@ def _build_runtime_server_onboarding_payload(
         tuple(getattr(runtime_config, "law_qa_sources", ()) or ())
         or str(getattr(runtime_config, "law_qa_bundle_path", "") or "").strip()
     )
-    bindings_defined = bool(bindings)
+    canonical_bindings_defined = bool(source_set_bindings)
+    runtime_bindings_defined = bool(runtime_bindings)
     template_bindings_defined = bool(dict(getattr(runtime_config, "template_bindings", {}) or {}))
     validation_profiles_defined = bool(dict(getattr(runtime_config, "validation_profiles", {}) or {}))
     feature_flags_defined = bool(frozenset(getattr(runtime_config, "feature_flags", frozenset()) or frozenset()))
@@ -216,8 +219,8 @@ def _build_runtime_server_onboarding_payload(
         workflow_missing.append("published/bootstrap runtime pack")
     if not law_sources_defined:
         workflow_missing.append("law source configuration")
-    if not bindings_defined:
-        workflow_missing.append("law bindings")
+    if not canonical_bindings_defined:
+        workflow_missing.append("canonical source-set bindings")
     if not template_bindings_defined:
         workflow_missing.append("template bindings")
     if not validation_profiles_defined:
@@ -278,6 +281,10 @@ def _build_runtime_server_onboarding_payload(
         },
         "states": states,
         "binding_source": str(binding_source or "runtime_bindings"),
+        "canonical_binding_ready": canonical_bindings_defined,
+        "source_set_binding_count": len(source_set_bindings or []),
+        "runtime_binding_count": len(runtime_bindings or []),
+        "uses_runtime_bindings_fallback": bool(runtime_bindings_defined and not canonical_bindings_defined),
     }
 
 
@@ -364,6 +371,8 @@ def _build_runtime_server_item_payload(
         server=record,
         resolution=context["resolution"],
         bindings=context["bindings"],
+        source_set_bindings=context["source_set_bindings"],
+        runtime_bindings=context["runtime_bindings"],
         binding_source=str(context["binding_source"] or "runtime_bindings"),
         smoke_tests_passed=False,
         smoke_tests_checked=False,
@@ -483,6 +492,8 @@ def build_runtime_server_health_payload(
         server=server,
         resolution=context["resolution"],
         bindings=bindings,
+        source_set_bindings=context["source_set_bindings"],
+        runtime_bindings=context["runtime_bindings"],
         binding_source=str(context["binding_source"] or "runtime_bindings"),
         smoke_tests_passed=bool(server and server.is_active and active_law_version and chunk_count > 0),
         smoke_tests_checked=True,
@@ -499,11 +510,14 @@ def build_runtime_server_health_payload(
             "law_set_id": int(active_law_set.get("id")) if active_law_set and active_law_set.get("id") is not None else None,
         },
         "bindings": {
-            "ok": bool(bindings),
+            "ok": bool(onboarding.get("canonical_binding_ready")),
             "detail": f"{str(context['binding_source'] or 'runtime_bindings')}:{len(bindings)}",
             "count": len(bindings),
             "binding_source": str(context["binding_source"] or "runtime_bindings"),
             "canonical_ready": str(context["binding_source"] or "runtime_bindings") == "source_set_bindings",
+            "source_set_binding_count": len(context["source_set_bindings"] or []),
+            "runtime_binding_count": len(context["runtime_bindings"] or []),
+            "uses_runtime_bindings_fallback": bool(onboarding.get("uses_runtime_bindings_fallback")),
         },
         "activation": {
             "ok": bool(server and server.is_active),
@@ -548,6 +562,9 @@ def build_runtime_server_health_payload(
         active_law_version=active_law_version,
         projection_bridge=projection_bridge,
     )
+    observational_checks = ["law_set"]
+    if bool(onboarding.get("uses_runtime_bindings_fallback")):
+        observational_checks.append("runtime_bindings")
     return {
         "server_code": normalized_code,
         "checks": checks,
@@ -560,7 +577,7 @@ def build_runtime_server_health_payload(
             "total_count": len(required_check_codes),
             "is_ready": ready_count == len(required_check_codes),
             "observed_check_count": len(checks),
-            "observational_checks": ["law_set"],
+            "observational_checks": observational_checks,
         },
     }
 

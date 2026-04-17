@@ -47,6 +47,7 @@ from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.services.admin_dashboard_service import AdminDashboardService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.canonical_law_document_versions_store import CanonicalLawDocumentVersionsStore
+from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
 from ogp_web.storage.runtime_servers_store import RuntimeServersStore
 from ogp_web.storage.server_effective_law_projections_store import ServerEffectiveLawProjectionsStore
@@ -1068,6 +1069,7 @@ def build_server_issues_payload(
     server_code: str,
     runtime_servers_store: RuntimeServersStore,
     law_sets_store: RuntimeLawSetsStore,
+    source_sets_store: LawSourceSetsStore | None,
     dashboard_service: AdminDashboardService,
     projections_store: ServerEffectiveLawProjectionsStore | None,
     username: str,
@@ -1078,20 +1080,29 @@ def build_server_issues_payload(
             server_code=normalized_server,
             runtime_servers_store=runtime_servers_store,
             law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
             projections_store=projections_store,
         )
     except Exception:
-        bindings = law_sets_store.list_server_law_bindings(server_code=normalized_server)
+        runtime_bindings = law_sets_store.list_server_law_bindings(server_code=normalized_server)
+        source_set_bindings = source_sets_store.list_bindings(server_code=normalized_server) if source_sets_store else []
         law_sets = law_sets_store.list_law_sets(server_code=normalized_server)
         active_law_set = next((item for item in law_sets if item.get("is_published")), None)
         if active_law_set is None:
             active_law_set = next((item for item in law_sets if item.get("is_active")), None)
+        canonical_ready = bool(source_set_bindings)
+        binding_source = "source_set_bindings" if canonical_ready else "runtime_bindings"
         health_payload = {
             "checks": {
                 "bindings": {
-                    "ok": bool(bindings),
-                    "detail": f"bindings:{len(bindings)}",
-                    "count": len(bindings),
+                    "ok": canonical_ready,
+                    "detail": f"{binding_source}:{len(source_set_bindings if canonical_ready else runtime_bindings)}",
+                    "count": len(source_set_bindings if canonical_ready else runtime_bindings),
+                    "binding_source": binding_source,
+                    "canonical_ready": canonical_ready,
+                    "source_set_binding_count": len(source_set_bindings),
+                    "runtime_binding_count": len(runtime_bindings),
+                    "uses_runtime_bindings_fallback": bool(runtime_bindings and not canonical_ready),
                 },
                 "health": {
                     "ok": False,
@@ -1122,7 +1133,7 @@ def build_server_issues_payload(
     runtime_version_parity = _build_runtime_version_parity(health_payload=health_payload)
     projection_bridge_lifecycle = _build_projection_bridge_lifecycle(health_payload=health_payload)
     projection_bridge_readiness = build_projection_bridge_readiness_summary(
-        binding_count=int((checks.get("bindings") or {}).get("count") or 0),
+        binding_count=int((checks.get("bindings") or {}).get("source_set_binding_count") or 0),
         projection_bridge_lifecycle=projection_bridge_lifecycle,
         runtime_version_parity=runtime_version_parity,
         fill_summary={},
@@ -1347,7 +1358,7 @@ def build_server_issues_payload(
                 "available_actions": [],
             }
         )
-    elif str((checks.get("bindings") or {}).get("binding_source") or "").strip().lower() == "runtime_bindings":
+    if bool((checks.get("bindings") or {}).get("uses_runtime_bindings_fallback")):
         items.append(
             {
                 "issue_id": "laws_bindings_runtime_fallback",

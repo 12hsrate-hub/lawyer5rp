@@ -1112,7 +1112,7 @@ def _build_issues_payload(
                 "detail": str((checks.get("bindings") or {}).get("detail") or "law bindings are missing"),
             }
         )
-    elif str((checks.get("bindings") or {}).get("binding_source") or "").strip().lower() == "runtime_bindings":
+    if bool((checks.get("bindings") or {}).get("uses_runtime_bindings_fallback")):
         items.append(
             {
                 "issue_id": "laws_bindings_runtime_fallback",
@@ -1337,6 +1337,7 @@ def build_server_workspace_payload(
         server_code=normalized_server,
         runtime_servers_store=runtime_servers_store,
         law_sets_store=law_sets_store,
+        source_sets_store=source_sets_store,
         projections_store=projections_store,
     )
     dashboard_payload = dashboard_service.get_dashboard(username=username, server_id=normalized_server)
@@ -1359,11 +1360,8 @@ def build_server_workspace_payload(
     )
     runtime_version_parity = _build_runtime_version_parity(health_payload=health_payload)
     projection_bridge_lifecycle = _build_projection_bridge_lifecycle(health_payload=health_payload)
-    bridge_binding_count = len(source_set_bindings)
-    if bridge_binding_count <= 0:
-        bridge_binding_count = int(((health_payload.get("checks") or {}).get("bindings") or {}).get("count") or 0)
     projection_bridge_readiness = build_projection_bridge_readiness_summary(
-        binding_count=bridge_binding_count,
+        binding_count=len(source_set_bindings),
         projection_bridge_lifecycle=projection_bridge_lifecycle,
         runtime_version_parity=runtime_version_parity,
         fill_summary={},

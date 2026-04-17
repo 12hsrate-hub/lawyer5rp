@@ -109,6 +109,8 @@ class _NoActiveLawSetStore:
 
 class _FakeLawSourceSetsStore:
     def list_bindings(self, *, server_code: str):
+        if server_code == "orange":
+            return [type("_Binding", (), {"source_set_key": "legacy-orange-default", "priority": 100, "is_active": True})()]
         if server_code != "blackberry":
             return []
         return [type("_Binding", (), {"source_set_key": "legacy-blackberry-default", "priority": 100, "is_active": True})()]
@@ -149,7 +151,7 @@ def test_runtime_server_payload_helpers_cover_crud_shape():
     deactivated = set_runtime_server_active_payload(store=store, law_sets_store=law_sets_store, code="city2", is_active=False)
 
     assert listed["count"] == 1
-    assert listed["items"][0]["onboarding"]["highest_completed_state"] == "workflow-ready"
+    assert listed["items"][0]["onboarding"]["highest_completed_state"] == "bootstrap-ready"
     assert created["item"]["code"] == "city2"
     assert created["item"]["is_active"] is False
     assert created["item"]["onboarding"]["highest_completed_state"] == "not-ready"
@@ -279,7 +281,15 @@ def test_runtime_server_health_payload_marks_runtime_bindings_as_non_canonical_f
     )
 
     assert payload["checks"]["bindings"]["binding_source"] == "runtime_bindings"
+    assert payload["checks"]["bindings"]["ok"] is False
     assert payload["checks"]["bindings"]["canonical_ready"] is False
+    assert payload["checks"]["bindings"]["runtime_binding_count"] == 1
+    assert payload["checks"]["bindings"]["source_set_binding_count"] == 0
+    assert payload["checks"]["bindings"]["uses_runtime_bindings_fallback"] is True
+    assert payload["summary"]["is_ready"] is False
+    assert "runtime_bindings" in payload["summary"]["observational_checks"]
+    assert payload["onboarding"]["highest_completed_state"] == "bootstrap-ready"
+    assert payload["onboarding"]["uses_runtime_bindings_fallback"] is True
 
 
 def test_second_server_published_pack_health_payload_reports_release_candidate_state(monkeypatch):
@@ -327,6 +337,7 @@ def test_second_server_published_pack_health_payload_reports_release_candidate_s
         server_code="orange",
         runtime_servers_store=store,
         law_sets_store=OrangeLawSetsStore(),
+        source_sets_store=_FakeLawSourceSetsStore(),
         projections_store=_FakeProjectionsStore(),
     )
 

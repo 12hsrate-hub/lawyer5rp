@@ -8,6 +8,7 @@ Date: 2026-04-14
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase L`
 - Active task: `shrink legacy law runtime shell by removing active_law_set from onboarding/workflow readiness truth`
+- Active task: `prefer canonical source-set bindings across remaining laws summary/diff runtime read models`
 - Status: `in_progress`
 - Last completed phase: `Phase K`
 - Inventory slices completed: `6`
@@ -30,6 +31,11 @@ Date: 2026-04-14
   - `L.runtime.14` switch runtime-server onboarding and health to prefer canonical `source-set bindings` as the readiness basis whenever they exist, while keeping legacy runtime law bindings only as a bounded fallback/observability path
   - `L.runtime.15` surface legacy runtime law bindings as explicit compatibility debt: runtime-server/workspace/issues now mark `runtime_bindings` as non-canonical fallback and emit a dedicated operator warning until canonical source-set bindings are in place
   - `L.runtime.16` gate server workspace laws readiness on canonical bindings: legacy `runtime_bindings` can still keep shell health green, but the `laws` readiness block no longer turns `ready` until canonical `source-set bindings` are actually present
+  - `L.runtime.17` align laws summary/diff with canonical binding posture: server laws summary and diff now use canonical `source-set bindings` for health-derived binding posture and bridge readiness whenever available, instead of silently falling back to legacy runtime bindings in those read models
+  - `L.runtime.18` expose canonical binding posture directly in the server laws workspace so operators can see canonical-vs-runtime binding status from the UI without reading raw API payloads
+  - `L.runtime.19` treat legacy runtime bindings as observational debt only in runtime health/onboarding: `runtime_bindings` no longer satisfy `bindings.ok` or `workflow-ready`, and remain visible only as bounded fallback counts plus compatibility debt signals until canonical `source-set bindings` exist
+  - `L.runtime.20` align server workspace and issues with canonical binding truth: both surfaces now build runtime health through `LawSourceSetsStore`, so canonical `source-set bindings` stay the only operational readiness basis outside the narrow runtime shell fallback path
+  - `L.runtime.21` remove hidden runtime-binding fallback from workspace bridge-readiness: server workspace now computes projection bridge binding count from canonical source-set bindings only, instead of silently borrowing legacy runtime-binding counts when canonical bindings are absent
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`
