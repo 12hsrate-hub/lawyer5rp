@@ -36,6 +36,7 @@ Date: 2026-04-14
   - `L.runtime.19` treat legacy runtime bindings as observational debt only in runtime health/onboarding: `runtime_bindings` no longer satisfy `bindings.ok` or `workflow-ready`, and remain visible only as bounded fallback counts plus compatibility debt signals until canonical `source-set bindings` exist
   - `L.runtime.20` align server workspace and issues with canonical binding truth: both surfaces now build runtime health through `LawSourceSetsStore`, so canonical `source-set bindings` stay the only operational readiness basis outside the narrow runtime shell fallback path
   - `L.runtime.21` remove hidden runtime-binding fallback from workspace bridge-readiness: server workspace now computes projection bridge binding count from canonical source-set bindings only, instead of silently borrowing legacy runtime-binding counts when canonical bindings are absent
+  - `L.runtime.22` remove runtime-bindings from health binding counts: runtime-server health now reports `checks.bindings.count/detail` from canonical source-set bindings only, while legacy runtime bindings survive only as separate fallback-debt counters
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`
