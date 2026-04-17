@@ -571,6 +571,7 @@ def build_promotion_blockers_summary(
     runtime_version_parity: dict[str, Any],
     projection_bridge_lifecycle: dict[str, Any],
 ) -> dict[str, Any]:
+    advisory_kinds = {"candidate_review_needed", "delta_attention"}
     readiness = dict(projection_bridge_readiness or {})
     candidate = dict(promotion_candidate or {})
     delta = dict(promotion_delta or {})
@@ -648,10 +649,19 @@ def build_promotion_blockers_summary(
         seen.add(kind)
         deduped_items.append(item)
 
-    if deduped_items:
+    hard_items = [
+        item for item in deduped_items
+        if str(item.get("kind") or "").strip().lower() not in advisory_kinds
+    ]
+
+    if hard_items:
         status = "blocked"
-        detail = f"{len(deduped_items)} blocker(s) still require attention before runtime can look clean."
+        detail = f"{len(hard_items)} blocker(s) still require attention before runtime can look clean."
         next_step = str(readiness.get("next_step") or candidate.get("next_step") or "Проверьте blockers и выполните безопасный recheck.").strip()
+    elif deduped_items:
+        status = "review"
+        detail = "Only advisory review signals remain before runtime can be considered clean."
+        next_step = str(candidate.get("next_step") or "Проверьте diff и подтвердите, что изменения ожидаемы.").strip()
     else:
         status = "clear"
         detail = "No promotion blockers are visible in the current read model."
@@ -662,6 +672,8 @@ def build_promotion_blockers_summary(
         "detail": detail,
         "next_step": next_step,
         "count": len(deduped_items),
+        "hard_count": len(hard_items),
+        "advisory_count": len(deduped_items) - len(hard_items),
         "items": deduped_items[:8],
     }
 
@@ -794,7 +806,7 @@ def build_runtime_convergence_summary(
     gap_status = str(gap.get("status") or "").strip().lower()
     shell_debt_status = str(shell_debt.get("status") or "").strip().lower()
 
-    if blockers_status == "clear" and gap_status == "closed" and shell_debt_status == "low":
+    if blockers_status in {"clear", "review"} and gap_status == "closed" and shell_debt_status == "low":
         status = "converged"
         detail = "Server looks close to a fully projection-backed runtime state."
         next_step = "Runtime convergence looks healthy."
@@ -802,6 +814,10 @@ def build_runtime_convergence_summary(
         status = "blocked"
         detail = "Upstream promotion blockers still prevent runtime convergence."
         next_step = str(blockers.get("next_step") or "Сначала снимите promotion blockers.").strip()
+    elif blockers_status == "review":
+        status = "advancing"
+        detail = "Runtime looks converged, but the latest promotion delta still deserves operator review."
+        next_step = str(blockers.get("next_step") or "Проверьте diff и подтвердите ожидаемые изменения.").strip()
     elif gap_status in {"open", "drift", "blocked"}:
         status = "activation_pending"
         detail = "Runtime convergence is still waiting on activation-side alignment."
@@ -957,6 +973,7 @@ def build_cutover_blockers_breakdown_summary(
     activation_gap: dict[str, Any],
     cutover_readiness: dict[str, Any],
 ) -> dict[str, Any]:
+    advisory_kinds = {"candidate_review_needed", "delta_attention"}
     blockers = dict(promotion_blockers or {})
     shell_debt = dict(runtime_shell_debt or {})
     gap = dict(activation_gap or {})
@@ -966,6 +983,8 @@ def build_cutover_blockers_breakdown_summary(
     for item in list(blockers.get("items") or []):
         kind = str(item.get("kind") or "").strip().lower()
         if not kind:
+            continue
+        if kind in advisory_kinds:
             continue
         items.append(
             {
