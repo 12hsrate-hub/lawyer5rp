@@ -10,6 +10,8 @@ for candidate in (ROOT_DIR, WEB_DIR):
         sys.path.insert(0, str(candidate))
 
 from ogp_web.services.admin_runtime_servers_service import (
+    build_runtime_config_debt_summary,
+    build_runtime_config_posture_summary,
     build_runtime_server_health_payload,
     create_runtime_server_payload,
     list_runtime_servers_payload,
@@ -244,6 +246,58 @@ def test_second_server_published_pack_health_payload_reports_release_candidate_s
     assert payload["projection_bridge"]["law_set_id"] == 2
     assert payload["projection_bridge"]["law_version_id"] == 88
     assert payload["projection_bridge"]["matches_active_law_version"] is True
+
+
+def test_runtime_config_posture_and_debt_distinguish_published_bootstrap_and_fallback():
+    fallback_health = {
+        "onboarding": {
+            "resolution_mode": "neutral_fallback",
+            "highest_completed_state": "not-ready",
+            "next_required_state": "bootstrap-ready",
+            "requires_explicit_runtime_pack": True,
+        },
+        "checks": {
+            "config_resolution": {
+                "resolution_mode": "neutral_fallback",
+                "requires_explicit_runtime_pack": True,
+            }
+        },
+    }
+    bootstrap_health = {
+        "onboarding": {
+            "resolution_mode": "bootstrap_pack",
+            "highest_completed_state": "workflow-ready",
+            "next_required_state": "rollout-ready",
+            "requires_explicit_runtime_pack": False,
+        },
+        "checks": {
+            "config_resolution": {
+                "resolution_mode": "bootstrap_pack",
+                "requires_explicit_runtime_pack": False,
+            }
+        },
+    }
+    published_health = {
+        "onboarding": {
+            "resolution_mode": "published_pack",
+            "highest_completed_state": "rollout-ready",
+            "next_required_state": "production-ready",
+            "requires_explicit_runtime_pack": False,
+        },
+        "checks": {
+            "config_resolution": {
+                "resolution_mode": "published_pack",
+                "requires_explicit_runtime_pack": False,
+            }
+        },
+    }
+
+    assert build_runtime_config_posture_summary(health_payload=fallback_health)["status"] == "fallback_only"
+    assert build_runtime_config_debt_summary(health_payload=fallback_health)["status"] == "high"
+    assert build_runtime_config_posture_summary(health_payload=bootstrap_health)["status"] == "bootstrap_transition"
+    assert build_runtime_config_debt_summary(health_payload=bootstrap_health)["status"] == "medium"
+    assert build_runtime_config_posture_summary(health_payload=published_health)["status"] == "declared_ready"
+    assert build_runtime_config_debt_summary(health_payload=published_health)["status"] == "low"
 
 
 def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
