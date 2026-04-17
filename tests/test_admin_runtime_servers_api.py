@@ -917,6 +917,31 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(blackberry["onboarding"]["highest_completed_state"], "workflow-ready")
         self.assertNotIn("law set", blackberry["onboarding"]["states"]["workflow-ready"]["detail"])
 
+    def test_runtime_server_health_treats_law_set_as_observational_shell_check(self):
+        self.client.app.dependency_overrides[get_runtime_law_sets_store] = lambda: _NoActiveLawSetStore()
+
+        with patch.object(
+            admin_runtime_servers_service,
+            "resolve_active_law_version",
+            return_value=ResolvedLawVersion(
+                id=77,
+                server_code="blackberry",
+                generated_at_utc="2026-04-14T00:00:00+00:00",
+                effective_from="2026-04-14",
+                effective_to="",
+                fingerprint="test-fingerprint",
+                chunk_count=12,
+            ),
+        ):
+            response = self.client.get("/api/admin/runtime-servers/blackberry/health")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["checks"]["law_set"]["ok"])
+        self.assertTrue(payload["summary"]["is_ready"])
+        self.assertEqual(payload["summary"]["ready_count"], payload["summary"]["total_count"])
+        self.assertEqual(payload["summary"]["observational_checks"], ["law_set"])
+
     def test_runtime_server_update_rejects_code_mismatch(self):
         response = self.client.put("/api/admin/runtime-servers/city2", json={"code": "city3", "title": "Wrong"})
         self.assertEqual(response.status_code, 400)
@@ -961,7 +986,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             health_before = self.client.get("/api/admin/runtime-servers/city2/health")
             self.assertEqual(health_before.status_code, 200)
             payload_before = health_before.json()
-            self.assertEqual(payload_before["summary"]["ready_count"], 4)
+            self.assertEqual(payload_before["summary"]["ready_count"], 3)
             self.assertFalse(payload_before["checks"]["activation"]["ok"])
             self.assertTrue(payload_before["checks"]["health"]["ok"])
             self.assertFalse(payload_before["checks"]["config_resolution"]["ok"])
