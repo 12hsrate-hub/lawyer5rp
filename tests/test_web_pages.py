@@ -26,6 +26,7 @@ from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.storage.user_store import UserStore
+from tests.second_server_fixtures import blackberry_published_pack
 from tests.temp_helpers import make_temporary_directory
 from tests.test_web_storage import (
     FakeAdminMetricsPostgresBackend,
@@ -115,7 +116,11 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn("exam-import", response.text)
 
     def test_court_claim_test_page_preserves_in_development_marker(self):
-        response = self.client.get("/court-claim-test")
+        with patch(
+            "ogp_web.server_config.registry._load_effective_pack_from_db",
+            side_effect=lambda *, server_code, at_timestamp=None: blackberry_published_pack() if server_code == "blackberry" else None,
+        ):
+            response = self.client.get("/court-claim-test")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Тестовый раздел", response.text)
         self.assertIn("Форма находится в разработке", response.text)
@@ -263,7 +268,11 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertNotIn('href="/admin/rules"', response.text)
 
     def test_law_qa_test_page_renders_sources_panel(self):
-        response = self.client.get("/law-qa-test")
+        with patch(
+            "ogp_web.server_config.registry._load_effective_pack_from_db",
+            side_effect=lambda *, server_code, at_timestamp=None: blackberry_published_pack() if server_code == "blackberry" else None,
+        ):
+            response = self.client.get("/law-qa-test")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Q&A по законодательной базе", response.text)
         self.assertIn("Законы, которые используются в поиске", response.text)
@@ -343,6 +352,18 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn('id="admin-server-laws-materialize-run"', script_text)
         self.assertIn('id="admin-server-laws-activate-run"', script_text)
         self.assertIn("server-centric safe path", script_text)
+        self.assertIn("Onboarding checklist", script_text)
+        self.assertIn("Новый сервер нужно доводить до usable state через этот server workspace", script_text)
+        self.assertIn("Primary path:", script_text)
+        self.assertIn("Workflow summary", script_text)
+        self.assertIn("Operational loop", script_text)
+        self.assertIn("Operational admin layer", script_text)
+        self.assertIn("Access summary", script_text)
+        self.assertIn("Audit summary", script_text)
+        self.assertIn("Issues summary", script_text)
+        self.assertIn("User operations summary", script_text)
+        self.assertIn("pending=${escapeHtml(String(summary?.counts?.active_workflow || 0))}", script_text)
+        self.assertIn("Do not treat `/admin/laws`", Path("NEW_SERVER_CHECKLIST.md").read_text(encoding="utf-8"))
 
     def test_admin_templates_page_redirects_to_servers(self):
         self.client.post("/api/auth/logout")
