@@ -23,12 +23,16 @@ from shared.ogp_core import (
     validate_complaint_input,
     validate_rehab_input,
 )
-from ogp_web.server_config import effective_server_pack
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
 from ogp_web.services.generation_snapshot_schema_service import (
     build_content_workflow_snapshot,
     build_effective_generation_config_snapshot,
     build_generation_server_snapshot,
+)
+from ogp_web.services.runtime_pack_reader_service import read_runtime_pack_snapshot
+from ogp_web.services.runtime_pack_reader_service import (
+    resolve_runtime_pack_feature_flags,
+    resolve_runtime_pack_law_bundle_path,
 )
 from ogp_web.services.server_context_service import (
     resolve_server_feature_flags,
@@ -124,11 +128,22 @@ def _validation_rules_version(document_kind: str) -> str:
     return _short_hash(source)
 
 
+def _pack_declares_key(*, metadata: object, key: str) -> bool:
+    return isinstance(metadata, dict) and key in metadata
+
+
 def build_generation_context_snapshot(store: UserStore, user: AuthUser, *, document_kind: str) -> dict[str, object]:
     server_code = user.server_code or store.get_server_code(user.username)
     server_identity = resolve_server_identity(server_code=server_code, fallback_server_code=server_code)
-    server_pack = effective_server_pack(server_code)
-    bundle_meta = load_law_bundle_meta(server_code, resolve_server_law_bundle_path(server_code=server_code))
+    pack_snapshot = read_runtime_pack_snapshot(server_code=server_code)
+    pack_metadata = dict(getattr(pack_snapshot, "metadata", {}) or {})
+    bundle_path = resolve_runtime_pack_law_bundle_path(server_code=server_code)
+    if not bundle_path and not _pack_declares_key(metadata=pack_metadata, key="law_qa_bundle_path"):
+        bundle_path = resolve_server_law_bundle_path(server_code=server_code)
+    bundle_meta = load_law_bundle_meta(server_code, bundle_path) if bundle_path else None
+    feature_flags = resolve_runtime_pack_feature_flags(server_code=server_code)
+    if not feature_flags and not _pack_declares_key(metadata=pack_metadata, key="feature_flags"):
+        feature_flags = resolve_server_feature_flags(server_code=server_code, fallback_server_code=server_code)
     template_version = {
         "id": _TEMPLATE_VERSION_IDS.get(document_kind, "complaint_bbcode_v1"),
         "hash": _template_hash(document_kind),
@@ -138,7 +153,7 @@ def build_generation_context_snapshot(store: UserStore, user: AuthUser, *, docum
     }
     validation_rules_version = _validation_rules_version(document_kind)
     effective_config_snapshot = build_effective_generation_config_snapshot(
-        server_pack_version=str(server_pack.get("version") or "0"),
+        server_pack_version=str(pack_snapshot.pack_version or "0"),
         law_set_hash=str(law_version_set["hash"] or "unknown"),
         template_version_id=str(template_version["id"] or "unknown"),
         validation_rules_version=str(validation_rules_version or "unknown"),
@@ -150,5 +165,5 @@ def build_generation_context_snapshot(store: UserStore, user: AuthUser, *, docum
         "validation_rules_version": validation_rules_version,
         "effective_config_snapshot": effective_config_snapshot,
         "content_workflow": build_content_workflow_snapshot(effective_config_snapshot),
-        "feature_flags": list(resolve_server_feature_flags(server_code=server_code, fallback_server_code=server_code)),
+        "feature_flags": list(feature_flags),
     }

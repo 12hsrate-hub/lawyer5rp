@@ -54,6 +54,17 @@
               <p class="legal-subcard__description">Поле ручного ввода закона убрано: поиск идет по заранее закрепленной законодательной базе сервера.</p>
             </div>
           </div>
+          <p class="legal-subcard__description">
+            Готовность контекста:
+            <strong>{{ law_context_readiness.status }}</strong>
+            · mode: <strong>{{ law_context_readiness.mode }}</strong>
+            {% if law_context_readiness.active_law_version_id %}
+            · active law version: <strong>{{ law_context_readiness.active_law_version_id }}</strong>
+            {% endif %}
+          </p>
+          {% if not law_context_readiness.is_ready %}
+          <p class="legal-subcard__description">{{ law_context_readiness.reason_detail }}</p>
+          {% endif %}
           <ul class="legal-meta-list">
             {% for item in law_qa_sources %}
             <li class="legal-meta-list__item">

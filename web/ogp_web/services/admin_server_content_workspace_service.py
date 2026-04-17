@@ -93,6 +93,79 @@ def _list_scoped_items(
     return [dict(item) for item in items or [] if isinstance(item, dict)]
 
 
+def build_content_workspace_summary(
+    *,
+    effective_items: list[dict[str, Any]],
+    content_type: str,
+) -> dict[str, Any]:
+    normalized_type = normalize_content_type(content_type)
+    items = [dict(item) for item in list(effective_items or []) if isinstance(item, dict)]
+    server_override_count = sum(
+        1
+        for item in items
+        if bool(item.get("has_server_override")) or str(item.get("source_scope") or "").strip().lower() == "server"
+    )
+    active_workflow = [
+        dict(item.get("active_change_request") or {})
+        for item in items
+        if isinstance(item.get("active_change_request"), dict) and item.get("active_change_request")
+    ]
+    active_workflow_count = len(active_workflow)
+    draft_count = sum(
+        1 for row in active_workflow if str(row.get("status") or "").strip().lower() == "draft"
+    )
+    in_review_count = sum(
+        1 for row in active_workflow if str(row.get("status") or "").strip().lower() in {"in_review", "review"}
+    )
+    published_effective_count = sum(
+        1 for item in items if str(item.get("status") or "").strip().lower() in {"published", "active"}
+    )
+
+    if not items:
+        status = "not_configured"
+        if normalized_type == "features":
+            detail = "No effective feature items are available for this server yet."
+            next_step = "Create the first feature override or confirm that the needed global defaults already exist."
+        else:
+            detail = "No effective template items are available for this server yet."
+            next_step = "Create the first template override or confirm that the needed global defaults already exist."
+    elif active_workflow_count > 0:
+        status = "workflow_pending"
+        if normalized_type == "features":
+            detail = "Feature overrides exist, but draft/review workflow is still pending."
+        else:
+            detail = "Template overrides exist, but draft/review workflow is still pending."
+        next_step = "Finish submit/review/publish actions for the pending server overrides."
+    elif server_override_count > 0:
+        status = "ready"
+        if normalized_type == "features":
+            detail = "Server-specific feature overrides are already in place."
+        else:
+            detail = "Server-specific template overrides are already in place."
+        next_step = "Use edit/preview/reset actions only when the server needs another local override."
+    else:
+        status = "ready"
+        if normalized_type == "features":
+            detail = "Global feature defaults are effective for this server."
+        else:
+            detail = "Global template defaults are effective for this server."
+        next_step = "Create a server override only when the server needs a local deviation from global defaults."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "counts": {
+            "effective": len(items),
+            "server_overrides": server_override_count,
+            "active_workflow": active_workflow_count,
+            "draft_workflow": draft_count,
+            "in_review_workflow": in_review_count,
+            "published_effective": published_effective_count,
+        },
+    }
+
+
 def _effective_items_payload(
     workflow_service: ContentWorkflowService,
     *,
@@ -158,6 +231,10 @@ def _effective_items_payload(
         effective_map.values(),
         key=lambda row: (row.get("source_scope") != "server", str(row.get("title") or row.get("content_key") or "").lower()),
     )
+    summary = build_content_workspace_summary(
+        effective_items=effective_items,
+        content_type=content_type,
+    )
     return {
         "server_code": server_code,
         "content_type": content_type,
@@ -169,6 +246,7 @@ def _effective_items_payload(
             "server": len(server_payloads),
             "effective": len(effective_items),
         },
+        "summary": summary,
     }
 
 
