@@ -224,8 +224,8 @@ def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
         source_sets_store=_FakeLawSourceSetsStore(),
     )
 
-    assert payload["summary"]["is_ready"] is True
-    assert payload["summary"]["ready_count"] == payload["summary"]["total_count"]
+    assert payload["summary"]["is_ready"] is False
+    assert payload["summary"]["ready_count"] == payload["summary"]["total_count"] - 1
     assert payload["summary"]["observational_checks"] == []
     assert payload["checks"]["law_set"]["observational_only"] is True
     assert payload["checks"]["bindings"]["binding_source"] == "source_set_bindings"
@@ -233,7 +233,8 @@ def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
     assert payload["checks"]["law_set"]["detail"] == "law_set_present"
     assert payload["checks"]["health"]["active_law_version_id"] == 77
     assert payload["checks"]["health"]["runtime_shell_artifact_present"] is True
-    assert payload["checks"]["config_resolution"]["ok"] is True
+    assert payload["checks"]["config_resolution"]["ok"] is False
+    assert payload["checks"]["config_resolution"]["detail"] == "bootstrap_pack_requires_published_runtime"
     assert payload["checks"]["config_resolution"]["path_role"] == "transitional_runtime_path"
     assert payload["checks"]["config_resolution"]["path_stage"] == "bootstrap"
     assert payload["runtime_provenance"]["mode"] == "legacy_runtime_shell"
@@ -249,8 +250,8 @@ def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
     assert payload["runtime_alignment"]["shell_stage"] == "active_without_projection"
     assert payload["runtime_alignment"]["active_law_set_id"] == 1
     assert payload["runtime_alignment"]["active_law_version_id"] == 77
-    assert payload["onboarding"]["highest_completed_state"] == "rollout-ready"
-    assert payload["onboarding"]["next_required_state"] == "production-ready"
+    assert payload["onboarding"]["highest_completed_state"] == "workflow-ready"
+    assert payload["onboarding"]["next_required_state"] == "rollout-ready"
 
 
 def test_runtime_server_health_summary_treats_law_set_as_observational_shell_check(monkeypatch):
@@ -279,8 +280,8 @@ def test_runtime_server_health_summary_treats_law_set_as_observational_shell_che
     )
 
     assert payload["checks"]["law_set"]["ok"] is False
-    assert payload["summary"]["ready_count"] == payload["summary"]["total_count"]
-    assert payload["summary"]["is_ready"] is True
+    assert payload["summary"]["ready_count"] == payload["summary"]["total_count"] - 1
+    assert payload["summary"]["is_ready"] is False
     assert payload["summary"]["observational_checks"] == ["law_set"]
     assert payload["checks"]["law_set"]["observational_only"] is True
     assert payload["checks"]["bindings"]["binding_source"] == "source_set_bindings"
@@ -295,6 +296,7 @@ def test_runtime_server_health_summary_treats_law_set_as_observational_shell_che
     assert payload["runtime_alignment"]["active_law_version_id"] == 77
     assert payload["checks"]["config_resolution"]["path_role"] == "transitional_runtime_path"
     assert payload["checks"]["config_resolution"]["path_stage"] == "bootstrap"
+    assert payload["checks"]["config_resolution"]["detail"] == "bootstrap_pack_requires_published_runtime"
 
 
 def test_runtime_server_health_payload_marks_runtime_bindings_as_non_canonical_fallback():

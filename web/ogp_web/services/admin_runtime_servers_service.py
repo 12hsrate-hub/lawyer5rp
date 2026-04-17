@@ -260,6 +260,8 @@ def _build_runtime_server_onboarding_payload(
     )
 
     rollout_missing: list[str] = []
+    if resolution_mode != "published_pack":
+        rollout_missing.append("published runtime pack")
     if not feature_flags_defined:
         rollout_missing.append("feature flags / rollout defaults")
     if not admin_visibility_defined:
@@ -561,10 +563,15 @@ def build_runtime_server_health_payload(
             "runtime_shell_artifact_present": bool(active_law_set or active_law_version),
         },
         "config_resolution": {
-            "ok": not bool(onboarding.get("requires_explicit_runtime_pack")),
+            "ok": str(onboarding.get("resolution_mode") or "").strip().lower() == "published_pack"
+            and not bool(onboarding.get("requires_explicit_runtime_pack")),
             "detail": (
-                f"resolution:{onboarding.get('resolution_mode')}"
-                if not bool(onboarding.get("requires_explicit_runtime_pack"))
+                "resolution:published_pack"
+                if str(onboarding.get("resolution_mode") or "").strip().lower() == "published_pack"
+                and not bool(onboarding.get("requires_explicit_runtime_pack"))
+                else "bootstrap_pack_requires_published_runtime"
+                if str(onboarding.get("resolution_mode") or "").strip().lower() == "bootstrap_pack"
+                and not bool(onboarding.get("requires_explicit_runtime_pack"))
                 else "neutral_fallback_requires_pack_publication"
             ),
             "resolution_mode": str(onboarding.get("resolution_mode") or "neutral_fallback"),

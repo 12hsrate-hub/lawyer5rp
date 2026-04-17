@@ -1651,7 +1651,8 @@ def build_server_workspace_payload(
     )
     readiness_payload = _build_readiness_payload(
         laws_ready=bool((health_payload.get("checks") or {}).get("health", {}).get("ok"))
-        and bool(((health_payload.get("checks") or {}).get("bindings") or {}).get("canonical_ready")),
+        and bool(((health_payload.get("checks") or {}).get("bindings") or {}).get("canonical_ready"))
+        and bool(((health_payload.get("checks") or {}).get("config_resolution") or {}).get("ok")),
         features_ready=int(features_payload["counts"]["effective"]) > 0,
         templates_ready=int(templates_payload["counts"]["effective"]) > 0,
         issues_payload=issues_payload,
