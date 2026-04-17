@@ -23,6 +23,8 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_cutover_blockers_breakdown_summary,
     build_runtime_bridge_policy_summary,
     build_runtime_operating_mode_summary,
+    build_policy_breach_summary,
+    build_runtime_risk_register_summary,
     build_runtime_policy_enforcement_summary,
     build_runtime_policy_violations_summary,
     build_runtime_cutover_mode_summary,
@@ -651,6 +653,46 @@ def _build_runtime_policy_enforcement_issue(runtime_policy_enforcement: dict[str
     }
 
 
+def _build_policy_breach_summary_issue(policy_breach_summary: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((policy_breach_summary or {}).get("status") or "").strip().lower()
+    if status in {"", "clear"}:
+        return None
+    return {
+        "issue_id": "runtime_policy_breach_summary",
+        "severity": "error" if status == "breached" else "warn",
+        "source": "laws",
+        "title": "Runtime policy breach требует внимания",
+        "detail": (
+            f"{str((policy_breach_summary or {}).get('detail') or '').strip()} "
+            f"{str((policy_breach_summary or {}).get('next_step') or '').strip()}"
+        ).strip(),
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
+def _build_runtime_risk_register_issue(runtime_risk_register: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_risk_register or {}).get("status") or "").strip().lower()
+    if status in {"", "low"}:
+        return None
+    detail = (
+        f"{str((runtime_risk_register or {}).get('detail') or '').strip()} "
+        f"count={int((runtime_risk_register or {}).get('count') or 0)}. "
+        f"{str((runtime_risk_register or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "runtime_risk_register",
+        "severity": "error" if status in {"critical", "high"} else "warn",
+        "source": "laws",
+        "title": "Есть открытые runtime risks",
+        "detail": detail,
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
 def _build_bridge_shrink_checklist_issue(bridge_shrink_checklist: dict[str, Any]) -> dict[str, Any] | None:
     status = str((bridge_shrink_checklist or {}).get("status") or "").strip().lower()
     if status in {"", "ready"}:
@@ -935,6 +977,20 @@ def build_server_issues_payload(
         runtime_policy_violations=runtime_policy_violations,
         cutover_guardrails=cutover_guardrails,
     )
+    policy_breach_summary = build_policy_breach_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+    )
+    runtime_risk_register = build_runtime_risk_register_summary(
+        runtime_config_debt=runtime_config_debt,
+        runtime_shell_debt=runtime_shell_debt,
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+        policy_breach_summary=policy_breach_summary,
+        cutover_guardrails=cutover_guardrails,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=projection_bridge_readiness,
         activation_gap=activation_gap,
@@ -1047,6 +1103,12 @@ def build_server_issues_payload(
     runtime_policy_enforcement_issue = _build_runtime_policy_enforcement_issue(runtime_policy_enforcement)
     if runtime_policy_enforcement_issue is not None:
         items.append(runtime_policy_enforcement_issue)
+    policy_breach_summary_issue = _build_policy_breach_summary_issue(policy_breach_summary)
+    if policy_breach_summary_issue is not None:
+        items.append(policy_breach_summary_issue)
+    runtime_risk_register_issue = _build_runtime_risk_register_issue(runtime_risk_register)
+    if runtime_risk_register_issue is not None:
+        items.append(runtime_risk_register_issue)
     bridge_shrink_checklist_issue = _build_bridge_shrink_checklist_issue(bridge_shrink_checklist)
     if bridge_shrink_checklist_issue is not None:
         items.append(bridge_shrink_checklist_issue)
@@ -1121,7 +1183,7 @@ def execute_server_issue_action_payload(
     normalized_server = normalize_runtime_server_code(server_code)
     normalized_issue = str(issue_id or "").strip().lower()
     normalized_action = str(action or "").strip().lower()
-    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_review_signal", "laws_promotion_blockers", "laws_activation_gap", "laws_runtime_shell_debt", "laws_runtime_convergence", "laws_cutover_readiness", "laws_runtime_cutover_mode", "runtime_bridge_policy", "runtime_operating_mode", "runtime_policy_violations", "laws_cutover_guardrails", "runtime_policy_enforcement", "laws_bridge_shrink_checklist", "laws_cutover_blockers_breakdown"} and normalized_action == "recheck":
+    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_review_signal", "laws_promotion_blockers", "laws_activation_gap", "laws_runtime_shell_debt", "laws_runtime_convergence", "laws_cutover_readiness", "laws_runtime_cutover_mode", "runtime_bridge_policy", "runtime_operating_mode", "runtime_policy_violations", "laws_cutover_guardrails", "runtime_policy_enforcement", "runtime_policy_breach_summary", "runtime_risk_register", "laws_bridge_shrink_checklist", "laws_cutover_blockers_breakdown"} and normalized_action == "recheck":
         result = build_server_laws_recheck_payload(
             server_code=normalized_server,
             runtime_servers_store=runtime_servers_store,

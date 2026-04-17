@@ -1491,6 +1491,129 @@ def build_runtime_policy_enforcement_summary(
     }
 
 
+def build_policy_breach_summary(
+    *,
+    runtime_bridge_policy: dict[str, Any],
+    runtime_operating_mode: dict[str, Any],
+    runtime_policy_violations: dict[str, Any],
+    runtime_policy_enforcement: dict[str, Any],
+) -> dict[str, Any]:
+    bridge_policy = dict(runtime_bridge_policy or {})
+    operating_mode = dict(runtime_operating_mode or {})
+    violations = dict(runtime_policy_violations or {})
+    enforcement = dict(runtime_policy_enforcement or {})
+
+    bridge_policy_status = str(bridge_policy.get("status") or "").strip().lower()
+    operating_mode_status = str(operating_mode.get("status") or "").strip().lower()
+    violations_status = str(violations.get("status") or "").strip().lower()
+    enforcement_status = str(enforcement.get("status") or "").strip().lower()
+
+    if enforcement_status == "violated":
+        status = "breached"
+        detail = "Runtime policy is currently breached for this server."
+        next_step = str(
+            enforcement.get("next_step")
+            or violations.get("next_step")
+            or "Сначала снимите policy violations и восстановите runtime policy alignment."
+        ).strip()
+    elif bridge_policy_status == "prefer_projection_runtime" and (
+        operating_mode_status != "projection_runtime" or violations_status == "blocked"
+    ):
+        status = "risk_of_breach"
+        detail = "Projection-preferred policy is at risk because the effective runtime state is not fully aligned yet."
+        next_step = str(
+            violations.get("next_step")
+            or enforcement.get("next_step")
+            or "Сначала закройте оставшиеся policy gaps before they become a hard breach."
+        ).strip()
+    else:
+        status = "clear"
+        detail = "No explicit policy breach is visible in the current read model."
+        next_step = "Явных policy breaches не видно."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "bridge_policy_status": bridge_policy_status,
+        "operating_mode_status": operating_mode_status,
+        "violations_status": violations_status,
+        "enforcement_status": enforcement_status,
+    }
+
+
+def build_runtime_risk_register_summary(
+    *,
+    runtime_config_debt: dict[str, Any],
+    runtime_shell_debt: dict[str, Any],
+    runtime_policy_violations: dict[str, Any],
+    runtime_policy_enforcement: dict[str, Any],
+    policy_breach_summary: dict[str, Any],
+    cutover_guardrails: dict[str, Any],
+) -> dict[str, Any]:
+    config_debt = dict(runtime_config_debt or {})
+    shell_debt = dict(runtime_shell_debt or {})
+    violations = dict(runtime_policy_violations or {})
+    enforcement = dict(runtime_policy_enforcement or {})
+    breach = dict(policy_breach_summary or {})
+    guardrails = dict(cutover_guardrails or {})
+
+    config_debt_status = str(config_debt.get("status") or "").strip().lower()
+    shell_debt_status = str(shell_debt.get("status") or "").strip().lower()
+    violations_status = str(violations.get("status") or "").strip().lower()
+    enforcement_status = str(enforcement.get("status") or "").strip().lower()
+    breach_status = str(breach.get("status") or "").strip().lower()
+    guardrails_status = str(guardrails.get("status") or "").strip().lower()
+
+    items: list[dict[str, str]] = []
+    if config_debt_status in {"high", "medium"}:
+        items.append({"kind": "config_debt", "severity": "high" if config_debt_status == "high" else "medium", "detail": str(config_debt.get("detail") or "").strip()})
+    if shell_debt_status in {"high", "medium"}:
+        items.append({"kind": "shell_debt", "severity": "high" if shell_debt_status == "high" else "medium", "detail": str(shell_debt.get("detail") or "").strip()})
+    if violations_status == "blocked":
+        items.append({"kind": "policy_violations", "severity": "high", "detail": str(violations.get("detail") or "").strip()})
+    if breach_status == "breached":
+        items.append({"kind": "policy_breach", "severity": "critical", "detail": str(breach.get("detail") or "").strip()})
+    elif breach_status == "risk_of_breach":
+        items.append({"kind": "policy_breach_risk", "severity": "medium", "detail": str(breach.get("detail") or "").strip()})
+    if enforcement_status in {"pre_enforcement", "compatibility_hold"}:
+        items.append({"kind": "enforcement_stage", "severity": "medium", "detail": str(enforcement.get("detail") or "").strip()})
+    if guardrails_status in {"hold", "compatibility_guardrails"}:
+        items.append({"kind": "guardrails_hold", "severity": "medium", "detail": str(guardrails.get("detail") or "").strip()})
+
+    if any(item["severity"] == "critical" for item in items):
+        status = "critical"
+    elif any(item["severity"] == "high" for item in items):
+        status = "high"
+    elif items:
+        status = "medium"
+    else:
+        status = "low"
+
+    if items:
+        detail = f"{len(items)} runtime risk item(s) are currently open."
+        next_step = str(
+            breach.get("next_step")
+            or violations.get("next_step")
+            or enforcement.get("next_step")
+            or "Разберите открытые runtime risk items и сократите compatibility debt."
+        ).strip()
+    else:
+        detail = "No explicit runtime risks are visible in the current read model."
+        next_step = "Явных runtime risks не видно."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "count": len(items),
+        "items": items[:10],
+        "breach_status": breach_status,
+        "violations_status": violations_status,
+        "enforcement_status": enforcement_status,
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -1635,6 +1758,20 @@ def build_server_laws_summary_payload(
         runtime_policy_violations=runtime_policy_violations,
         cutover_guardrails=cutover_guardrails,
     )
+    policy_breach_summary = build_policy_breach_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+    )
+    runtime_risk_register = build_runtime_risk_register_summary(
+        runtime_config_debt=config_debt,
+        runtime_shell_debt=runtime_shell_debt,
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+        policy_breach_summary=policy_breach_summary,
+        cutover_guardrails=cutover_guardrails,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=bridge_readiness,
         activation_gap=activation_gap,
@@ -1675,6 +1812,8 @@ def build_server_laws_summary_payload(
         "runtime_policy_violations": runtime_policy_violations,
         "cutover_guardrails": cutover_guardrails,
         "runtime_policy_enforcement": runtime_policy_enforcement,
+        "policy_breach_summary": policy_breach_summary,
+        "runtime_risk_register": runtime_risk_register,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "latest_projection_run": _serialize_run(current_run),
@@ -1918,6 +2057,20 @@ def build_server_laws_diff_payload(
         runtime_policy_violations=runtime_policy_violations,
         cutover_guardrails=cutover_guardrails,
     )
+    policy_breach_summary = build_policy_breach_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+    )
+    runtime_risk_register = build_runtime_risk_register_summary(
+        runtime_config_debt=config_debt,
+        runtime_shell_debt=runtime_shell_debt,
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+        policy_breach_summary=policy_breach_summary,
+        cutover_guardrails=cutover_guardrails,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=bridge_readiness,
         activation_gap=activation_gap,
@@ -1955,6 +2108,8 @@ def build_server_laws_diff_payload(
         "runtime_policy_violations": runtime_policy_violations,
         "cutover_guardrails": cutover_guardrails,
         "runtime_policy_enforcement": runtime_policy_enforcement,
+        "policy_breach_summary": policy_breach_summary,
+        "runtime_risk_register": runtime_risk_register,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "summary": diff_summary,

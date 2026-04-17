@@ -19,6 +19,7 @@ Date: 2026-04-14
   - `L.runtime.3` add `runtime_policy_violations` so projection-preferred servers cannot silently drift into fallback/bootstrap/legacy debt states without an explicit operator signal
   - `L.runtime.4` add `cutover_guardrails` so cutover-hold vs compatibility-guardrails vs enforced projection posture becomes a first-class runtime/admin surface
   - `L.runtime.5` add `runtime_policy_enforcement` so the repo can distinguish enforced projection policy, pre-enforcement transition, compatibility hold, and actual policy violation states
+  - `L.runtime.6` add `policy_breach_summary` and `runtime_risk_register` so remaining compatibility debt is tracked as an explicit runtime risk surface instead of only as disconnected guardrail/enforcement fragments
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`
