@@ -503,6 +503,7 @@ def build_runtime_server_health_payload(
             "detail": f"{str(context['binding_source'] or 'runtime_bindings')}:{len(bindings)}",
             "count": len(bindings),
             "binding_source": str(context["binding_source"] or "runtime_bindings"),
+            "canonical_ready": str(context["binding_source"] or "runtime_bindings") == "source_set_bindings",
         },
         "activation": {
             "ok": bool(server and server.is_active),

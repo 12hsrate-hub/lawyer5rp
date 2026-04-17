@@ -226,6 +226,7 @@ def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
     assert payload["summary"]["ready_count"] == payload["summary"]["total_count"]
     assert payload["summary"]["observational_checks"] == ["law_set"]
     assert payload["checks"]["bindings"]["binding_source"] == "source_set_bindings"
+    assert payload["checks"]["bindings"]["canonical_ready"] is True
     assert payload["checks"]["health"]["active_law_version_id"] == 77
     assert payload["checks"]["config_resolution"]["ok"] is True
     assert payload["runtime_provenance"]["mode"] == "legacy_runtime_shell"
@@ -267,6 +268,18 @@ def test_runtime_server_health_summary_treats_law_set_as_observational_shell_che
     assert payload["summary"]["is_ready"] is True
     assert payload["summary"]["observational_checks"] == ["law_set"]
     assert payload["checks"]["bindings"]["binding_source"] == "source_set_bindings"
+    assert payload["checks"]["bindings"]["canonical_ready"] is True
+
+
+def test_runtime_server_health_payload_marks_runtime_bindings_as_non_canonical_fallback():
+    payload = build_runtime_server_health_payload(
+        server_code="blackberry",
+        runtime_servers_store=_FakeRuntimeServersStore(),
+        law_sets_store=_FakeRuntimeLawSetsStore(),
+    )
+
+    assert payload["checks"]["bindings"]["binding_source"] == "runtime_bindings"
+    assert payload["checks"]["bindings"]["canonical_ready"] is False
 
 
 def test_second_server_published_pack_health_payload_reports_release_candidate_state(monkeypatch):
