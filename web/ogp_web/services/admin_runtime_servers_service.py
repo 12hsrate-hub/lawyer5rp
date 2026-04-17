@@ -5,6 +5,7 @@ from typing import Any
 from ogp_web.server_config import build_runtime_resolution_snapshot
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
 from ogp_web.services.law_version_service import resolve_active_law_version
+from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
 from ogp_web.storage.runtime_servers_store import RuntimeServerRecord, RuntimeServersStore
 from ogp_web.storage.server_effective_law_projections_store import ServerEffectiveLawProjectionsStore
@@ -168,8 +169,8 @@ def _build_runtime_server_onboarding_payload(
     *,
     server: RuntimeServerRecord | None,
     resolution: dict[str, Any],
-    active_law_set: dict[str, Any] | None,
     bindings: list[dict[str, Any]],
+    binding_source: str,
     smoke_tests_passed: bool,
     smoke_tests_checked: bool,
 ) -> dict[str, Any]:
@@ -276,6 +277,7 @@ def _build_runtime_server_onboarding_payload(
             "has_identity_capabilities": bool(resolution.get("has_identity_capabilities")),
         },
         "states": states,
+        "binding_source": str(binding_source or "runtime_bindings"),
     }
 
 
@@ -284,6 +286,7 @@ def _collect_runtime_server_context(
     server_code: str,
     runtime_servers_store: RuntimeServersStore,
     law_sets_store: RuntimeLawSetsStore,
+    source_sets_store: LawSourceSetsStore | None = None,
     server: RuntimeServerRecord | None = None,
     include_health: bool = True,
 ) -> dict[str, Any]:
@@ -293,7 +296,10 @@ def _collect_runtime_server_context(
     active_law_set = next((item for item in law_sets if item.get("is_published")), None)
     if active_law_set is None:
         active_law_set = next((item for item in law_sets if item.get("is_active")), None)
-    bindings = law_sets_store.list_server_law_bindings(server_code=normalized_code)
+    runtime_bindings = law_sets_store.list_server_law_bindings(server_code=normalized_code)
+    source_set_bindings = list(source_sets_store.list_bindings(server_code=normalized_code)) if source_sets_store is not None else []
+    bindings = source_set_bindings if source_set_bindings else runtime_bindings
+    binding_source = "source_set_bindings" if source_set_bindings else "runtime_bindings"
     if include_health:
         try:
             active_law_version = resolve_active_law_version(server_code=normalized_code)
@@ -323,6 +329,9 @@ def _collect_runtime_server_context(
         "law_sets": law_sets,
         "active_law_set": active_law_set,
         "bindings": bindings,
+        "runtime_bindings": runtime_bindings,
+        "source_set_bindings": source_set_bindings,
+        "binding_source": binding_source,
         "active_law_version": active_law_version,
         "bundle_meta": bundle_meta,
         "chunk_count": chunk_count,
@@ -338,6 +347,7 @@ def _build_runtime_server_item_payload(
     *,
     record: RuntimeServerRecord,
     law_sets_store: RuntimeLawSetsStore,
+    source_sets_store: LawSourceSetsStore | None = None,
     store: RuntimeServersStore,
     projections_store: ServerEffectiveLawProjectionsStore | None = None,
 ) -> dict[str, Any]:
@@ -346,14 +356,15 @@ def _build_runtime_server_item_payload(
         server_code=record.code,
         runtime_servers_store=store,
         law_sets_store=law_sets_store,
+        source_sets_store=source_sets_store,
         server=record,
         include_health=False,
     )
     payload["onboarding"] = _build_runtime_server_onboarding_payload(
         server=record,
         resolution=context["resolution"],
-        active_law_set=context["active_law_set"],
         bindings=context["bindings"],
+        binding_source=str(context["binding_source"] or "runtime_bindings"),
         smoke_tests_passed=False,
         smoke_tests_checked=False,
     )
@@ -369,12 +380,14 @@ def list_runtime_servers_payload(
     *,
     store: RuntimeServersStore,
     law_sets_store: RuntimeLawSetsStore,
+    source_sets_store: LawSourceSetsStore | None = None,
     projections_store: ServerEffectiveLawProjectionsStore | None = None,
 ) -> dict[str, Any]:
     items = [
         _build_runtime_server_item_payload(
             record=record,
             law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
             store=store,
             projections_store=projections_store,
         )
@@ -387,6 +400,7 @@ def create_runtime_server_payload(
     *,
     store: RuntimeServersStore,
     law_sets_store: RuntimeLawSetsStore,
+    source_sets_store: LawSourceSetsStore | None = None,
     projections_store: ServerEffectiveLawProjectionsStore | None = None,
     code: str,
     title: str,
@@ -396,6 +410,7 @@ def create_runtime_server_payload(
         "item": _build_runtime_server_item_payload(
             record=row,
             law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
             store=store,
             projections_store=projections_store,
         )
@@ -406,6 +421,7 @@ def update_runtime_server_payload(
     *,
     store: RuntimeServersStore,
     law_sets_store: RuntimeLawSetsStore,
+    source_sets_store: LawSourceSetsStore | None = None,
     projections_store: ServerEffectiveLawProjectionsStore | None = None,
     code: str,
     title: str,
@@ -415,6 +431,7 @@ def update_runtime_server_payload(
         "item": _build_runtime_server_item_payload(
             record=row,
             law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
             store=store,
             projections_store=projections_store,
         )
@@ -425,6 +442,7 @@ def set_runtime_server_active_payload(
     *,
     store: RuntimeServersStore,
     law_sets_store: RuntimeLawSetsStore,
+    source_sets_store: LawSourceSetsStore | None = None,
     projections_store: ServerEffectiveLawProjectionsStore | None = None,
     code: str,
     is_active: bool,
@@ -434,6 +452,7 @@ def set_runtime_server_active_payload(
         "item": _build_runtime_server_item_payload(
             record=row,
             law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
             store=store,
             projections_store=projections_store,
         )
@@ -445,12 +464,14 @@ def build_runtime_server_health_payload(
     server_code: str,
     runtime_servers_store: RuntimeServersStore,
     law_sets_store: RuntimeLawSetsStore,
+    source_sets_store: LawSourceSetsStore | None = None,
     projections_store: ServerEffectiveLawProjectionsStore | None = None,
 ) -> dict[str, Any]:
     context = _collect_runtime_server_context(
         server_code=server_code,
         runtime_servers_store=runtime_servers_store,
         law_sets_store=law_sets_store,
+        source_sets_store=source_sets_store,
     )
     normalized_code = context["server_code"]
     server = context["server"]
@@ -461,8 +482,8 @@ def build_runtime_server_health_payload(
     onboarding = _build_runtime_server_onboarding_payload(
         server=server,
         resolution=context["resolution"],
-        active_law_set=active_law_set,
         bindings=bindings,
+        binding_source=str(context["binding_source"] or "runtime_bindings"),
         smoke_tests_passed=bool(server and server.is_active and active_law_version and chunk_count > 0),
         smoke_tests_checked=True,
     )
@@ -479,8 +500,9 @@ def build_runtime_server_health_payload(
         },
         "bindings": {
             "ok": bool(bindings),
-            "detail": f"bindings:{len(bindings)}",
+            "detail": f"{str(context['binding_source'] or 'runtime_bindings')}:{len(bindings)}",
             "count": len(bindings),
+            "binding_source": str(context["binding_source"] or "runtime_bindings"),
         },
         "activation": {
             "ok": bool(server and server.is_active),

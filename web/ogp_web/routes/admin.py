@@ -440,10 +440,16 @@ async def admin_runtime_servers_list(
     user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
     projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
 ):
     _ = user
-    return list_runtime_servers_payload(store=store, law_sets_store=law_sets_store, projections_store=projections_store)
+    return list_runtime_servers_payload(
+        store=store,
+        law_sets_store=law_sets_store,
+        source_sets_store=source_sets_store,
+        projections_store=projections_store,
+    )
 
 
 @router.post("/api/admin/runtime-servers")
@@ -452,6 +458,7 @@ async def admin_runtime_servers_create(
     user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
     projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
@@ -459,6 +466,7 @@ async def admin_runtime_servers_create(
         result = create_runtime_server_payload(
             store=store,
             law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
             projections_store=projections_store,
             code=payload.code,
             title=payload.title,
@@ -485,6 +493,7 @@ async def admin_runtime_servers_update(
     user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
     projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
@@ -495,6 +504,7 @@ async def admin_runtime_servers_update(
         result = update_runtime_server_payload(
             store=store,
             law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
             projections_store=projections_store,
             code=normalized_code,
             title=payload.title,
@@ -522,6 +532,7 @@ async def admin_runtime_servers_activate(
     user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
     projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
@@ -530,6 +541,7 @@ async def admin_runtime_servers_activate(
         result = set_runtime_server_active_payload(
             store=store,
             law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
             projections_store=projections_store,
             code=normalized_code,
             is_active=True,
@@ -557,6 +569,7 @@ async def admin_runtime_server_health(
     user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
     projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
@@ -566,6 +579,7 @@ async def admin_runtime_server_health(
         server_code=normalized_code,
         runtime_servers_store=store,
         law_sets_store=law_sets_store,
+        source_sets_store=source_sets_store,
         projections_store=projections_store,
     )
     if not payload["checks"]["server"]["ok"]:
@@ -1227,6 +1241,7 @@ async def admin_runtime_servers_deactivate(
     user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     store: RuntimeServersStore = Depends(get_runtime_servers_store),
     law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
     projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ):
@@ -1235,6 +1250,7 @@ async def admin_runtime_servers_deactivate(
         result = set_runtime_server_active_payload(
             store=store,
             law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
             projections_store=projections_store,
             code=normalized_code,
             is_active=False,

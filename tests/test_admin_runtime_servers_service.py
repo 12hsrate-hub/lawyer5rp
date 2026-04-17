@@ -107,6 +107,13 @@ class _NoActiveLawSetStore:
         return [{"law_set_id": 999, "law_code": "uk"}]
 
 
+class _FakeLawSourceSetsStore:
+    def list_bindings(self, *, server_code: str):
+        if server_code != "blackberry":
+            return []
+        return [type("_Binding", (), {"source_set_key": "legacy-blackberry-default", "priority": 100, "is_active": True})()]
+
+
 class _FakeProjectionRun:
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
@@ -179,6 +186,7 @@ def test_runtime_server_workflow_readiness_no_longer_depends_on_active_law_set()
     listed = list_runtime_servers_payload(
         store=_FakeRuntimeServersStore(),
         law_sets_store=_NoActiveLawSetStore(),
+        source_sets_store=_FakeLawSourceSetsStore(),
         projections_store=_FakeProjectionsStore(),
     )
 
@@ -186,6 +194,7 @@ def test_runtime_server_workflow_readiness_no_longer_depends_on_active_law_set()
     assert blackberry["onboarding"]["highest_completed_state"] == "workflow-ready"
     assert blackberry["onboarding"]["states"]["workflow-ready"]["ok"] is True
     assert "law set" not in blackberry["onboarding"]["states"]["workflow-ready"]["detail"]
+    assert blackberry["onboarding"]["binding_source"] == "source_set_bindings"
 
 
 def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
@@ -210,11 +219,13 @@ def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
         server_code="blackberry",
         runtime_servers_store=_FakeRuntimeServersStore(),
         law_sets_store=_FakeRuntimeLawSetsStore(),
+        source_sets_store=_FakeLawSourceSetsStore(),
     )
 
     assert payload["summary"]["is_ready"] is True
     assert payload["summary"]["ready_count"] == payload["summary"]["total_count"]
     assert payload["summary"]["observational_checks"] == ["law_set"]
+    assert payload["checks"]["bindings"]["binding_source"] == "source_set_bindings"
     assert payload["checks"]["health"]["active_law_version_id"] == 77
     assert payload["checks"]["config_resolution"]["ok"] is True
     assert payload["runtime_provenance"]["mode"] == "legacy_runtime_shell"
@@ -248,12 +259,14 @@ def test_runtime_server_health_summary_treats_law_set_as_observational_shell_che
         server_code="blackberry",
         runtime_servers_store=_FakeRuntimeServersStore(),
         law_sets_store=_NoActiveLawSetStore(),
+        source_sets_store=_FakeLawSourceSetsStore(),
     )
 
     assert payload["checks"]["law_set"]["ok"] is False
     assert payload["summary"]["ready_count"] == payload["summary"]["total_count"]
     assert payload["summary"]["is_ready"] is True
     assert payload["summary"]["observational_checks"] == ["law_set"]
+    assert payload["checks"]["bindings"]["binding_source"] == "source_set_bindings"
 
 
 def test_second_server_published_pack_health_payload_reports_release_candidate_state(monkeypatch):
