@@ -4,6 +4,8 @@ from typing import Any
 
 from ogp_web.services.admin_runtime_servers_service import (
     build_runtime_server_health_payload,
+    build_runtime_config_debt_summary,
+    build_runtime_config_posture_summary,
     normalize_runtime_server_code,
 )
 from ogp_web.services.admin_server_laws_workspace_service import build_projection_bridge_readiness_summary
@@ -584,6 +586,26 @@ def _build_runtime_convergence_issue(runtime_convergence: dict[str, Any]) -> dic
     }
 
 
+def _build_runtime_config_debt_issue(runtime_config_debt: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_config_debt or {}).get("status") or "").strip().lower()
+    if status not in {"medium", "high"}:
+        return None
+    reasons = ", ".join(str(item).strip() for item in list((runtime_config_debt or {}).get("reasons") or [])[:4] if str(item).strip())
+    detail = (
+        f"{str((runtime_config_debt or {}).get('detail') or '').strip()} "
+        f"reasons={int((runtime_config_debt or {}).get('reason_count') or 0)}"
+        f"{f' • sample={reasons}' if reasons else ''}. "
+        f"{str((runtime_config_debt or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "runtime_config_debt",
+        "severity": "warn",
+        "source": "runtime_config",
+        "title": "Runtime config path ещё transitional",
+        "detail": detail,
+    }
+
+
 def _build_cutover_readiness_issue(cutover_readiness: dict[str, Any]) -> dict[str, Any] | None:
     status = str((cutover_readiness or {}).get("status") or "").strip().lower()
     if status in {"", "ready_for_cutover", "monitor"}:
@@ -653,6 +675,8 @@ def _build_issues_payload(
     runtime_version_parity: dict[str, Any] | None = None,
     projection_bridge_lifecycle: dict[str, Any] | None = None,
     projection_bridge_readiness: dict[str, Any] | None = None,
+    runtime_config_posture: dict[str, Any] | None = None,
+    runtime_config_debt: dict[str, Any] | None = None,
     promotion_candidate: dict[str, Any] | None = None,
     promotion_delta: dict[str, Any] | None = None,
     promotion_blockers: dict[str, Any] | None = None,
@@ -678,6 +702,9 @@ def _build_issues_payload(
                 "detail": "Опубликуйте runtime/server pack или закрепите bootstrap pack, чтобы сервер перестал зависеть от нейтрального fallback-конфига.",
             }
         )
+    runtime_config_debt_issue = _build_runtime_config_debt_issue(dict(runtime_config_debt or {}))
+    if runtime_config_debt_issue is not None:
+        items.append(runtime_config_debt_issue)
     if not bool((checks.get("health") or {}).get("ok")):
         items.append(
             {
@@ -866,6 +893,8 @@ def build_server_workspace_payload(
     projection_bridge = dict(health_payload.get("projection_bridge") or {})
     runtime_provenance = dict(health_payload.get("runtime_provenance") or {})
     runtime_alignment = dict(health_payload.get("runtime_alignment") or {})
+    runtime_config_posture = build_runtime_config_posture_summary(health_payload=health_payload)
+    runtime_config_debt = build_runtime_config_debt_summary(health_payload=health_payload)
     runtime_item_parity = _build_runtime_item_parity(
         law_sets_store=law_sets_store,
         active_law_set_id=int(runtime_alignment.get("active_law_set_id") or 0) or None,
@@ -960,6 +989,8 @@ def build_server_workspace_payload(
         "active_law_version_id": (health_payload.get("checks") or {}).get("health", {}).get("active_law_version_id"),
         "chunk_count": (health_payload.get("checks") or {}).get("health", {}).get("chunk_count"),
         "projection_bridge": projection_bridge,
+        "runtime_config_posture": runtime_config_posture,
+        "runtime_config_debt": runtime_config_debt,
         "runtime_provenance": runtime_provenance,
         "runtime_alignment": runtime_alignment,
         "runtime_item_parity": runtime_item_parity,
@@ -981,6 +1012,8 @@ def build_server_workspace_payload(
     issues_payload = _build_issues_payload(
         health_payload=health_payload,
         dashboard_payload=dashboard_payload,
+        runtime_config_posture=runtime_config_posture,
+        runtime_config_debt=runtime_config_debt,
         runtime_item_parity=runtime_item_parity,
         runtime_version_parity=runtime_version_parity,
         projection_bridge_lifecycle=projection_bridge_lifecycle,

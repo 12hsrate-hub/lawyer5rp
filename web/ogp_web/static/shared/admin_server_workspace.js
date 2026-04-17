@@ -369,6 +369,8 @@ window.OGPAdminServerWorkspace = {
       const laws = state.lawsSummary || {};
         const bindings = Array.isArray(laws.bindings) ? laws.bindings : [];
         const projection = laws.latest_projection_run || {};
+        const runtimeConfigPosture = laws.runtime_config_posture || {};
+        const runtimeConfigDebt = laws.runtime_config_debt || {};
         const runtimeProvenance = laws.runtime_provenance || {};
         const runtimeAlignment = laws.runtime_alignment || state.lawsDiff?.runtime_alignment || {};
         const runtimeItemParity = laws.runtime_item_parity || state.lawsDiff?.runtime_item_parity || {};
@@ -415,6 +417,16 @@ window.OGPAdminServerWorkspace = {
             <div><strong>${escapeHtml(String(projection.id || "—"))}</strong></div>
             <div class="admin-user-cell__secondary">status: ${escapeHtml(String(projection.status || "none"))} • selected: ${escapeHtml(String(projection.selected_count || 0))}</div>
           </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Config posture</span>
+              <div><strong>${escapeHtml(String(runtimeConfigPosture.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeConfigPosture.next_step || runtimeConfigPosture.detail || "Runtime config posture summary is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Config debt</span>
+              <div><strong>${escapeHtml(String(runtimeConfigDebt.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeConfigDebt.detail || "Runtime config debt summary is not available yet."))}</div>
+            </div>
             <div class="legal-field">
               <span class="legal-field__label">Runtime provenance</span>
               <div><strong>${escapeHtml(String(runtimeProvenance.mode || "unknown"))}</strong></div>

@@ -980,6 +980,8 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertIn("users", payload["overview"])
         self.assertIn("access", payload["overview"])
         self.assertEqual(payload["overview"]["laws"]["binding_count"], 1)
+        self.assertEqual(payload["overview"]["laws"]["runtime_config_posture"]["status"], "bootstrap_transition")
+        self.assertEqual(payload["overview"]["laws"]["runtime_config_debt"]["status"], "medium")
         self.assertEqual(payload["overview"]["laws"]["runtime_provenance"]["mode"], "legacy_runtime_shell")
         self.assertEqual(payload["overview"]["laws"]["runtime_alignment"]["status"], "legacy_only")
         self.assertEqual(payload["overview"]["laws"]["runtime_item_parity"]["status"], "aligned")
@@ -1012,6 +1014,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertIn("laws_cutover_readiness", issue_ids)
         self.assertIn("laws_bridge_shrink_checklist", issue_ids)
         self.assertIn("laws_cutover_blockers_breakdown", issue_ids)
+        self.assertIn("runtime_config_debt", issue_ids)
         self.assertEqual(payload["readiness"]["counters"]["stale_changes"], 1)
         self.assertIsInstance(payload["activity"], list)
 
@@ -1062,6 +1065,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         payload = issues.json()
         issue_ids = {item["issue_id"] for item in payload["items"]}
         self.assertIn("runtime_config_fallback", issue_ids)
+        self.assertIn("runtime_config_debt", issue_ids)
 
     def test_runtime_server_issues_endpoint_exposes_runtime_provenance_warning_for_legacy_shell(self):
         with patch.object(
@@ -1093,6 +1097,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertIn("laws_cutover_readiness", issue_ids)
             self.assertIn("laws_bridge_shrink_checklist", issue_ids)
             self.assertIn("laws_cutover_blockers_breakdown", issue_ids)
+            self.assertIn("runtime_config_debt", issue_ids)
 
             recheck = self.client.post("/api/admin/runtime-servers/blackberry/issues/laws_runtime_provenance/recheck")
             self.assertEqual(recheck.status_code, 200)
@@ -1532,6 +1537,8 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             workspace = self.client.get("/api/admin/runtime-servers/orange/workspace")
         self.assertEqual(workspace.status_code, 200)
         self.assertEqual(workspace.json()["overview"]["laws"]["runtime_version_parity"]["status"], "aligned")
+        self.assertEqual(workspace.json()["overview"]["laws"]["runtime_config_posture"]["status"], "declared_ready")
+        self.assertEqual(workspace.json()["overview"]["laws"]["runtime_config_debt"]["status"], "low")
         self.assertEqual(workspace.json()["overview"]["laws"]["projection_bridge_lifecycle"]["status"], "activated")
         self.assertEqual(workspace.json()["overview"]["laws"]["projection_bridge_readiness"]["status"], "ready")
         self.assertEqual(workspace.json()["overview"]["laws"]["promotion_candidate"]["status"], "ready")

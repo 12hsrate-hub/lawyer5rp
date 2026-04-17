@@ -540,3 +540,79 @@ def build_runtime_server_health_payload(
             "is_ready": ready_count == len(checks),
         },
     }
+
+
+def build_runtime_config_posture_summary(*, health_payload: dict[str, Any]) -> dict[str, Any]:
+    onboarding = dict((health_payload or {}).get("onboarding") or {})
+    checks = dict((health_payload or {}).get("checks") or {})
+    config_resolution = dict(checks.get("config_resolution") or {})
+    resolution_mode = str(onboarding.get("resolution_mode") or config_resolution.get("resolution_mode") or "neutral_fallback").strip().lower()
+    highest_completed_state = str(onboarding.get("highest_completed_state") or "not-ready").strip().lower()
+    next_required_state = str(onboarding.get("next_required_state") or "").strip().lower()
+    requires_explicit_runtime_pack = bool(
+        onboarding.get("requires_explicit_runtime_pack")
+        if "requires_explicit_runtime_pack" in onboarding
+        else config_resolution.get("requires_explicit_runtime_pack")
+    )
+
+    if resolution_mode == "published_pack" and not requires_explicit_runtime_pack:
+        status = "declared_ready"
+        detail = "Runtime resolves through an explicit published pack."
+        next_step = "Config resolution looks declared and stable."
+    elif resolution_mode == "bootstrap_pack" and not requires_explicit_runtime_pack:
+        status = "bootstrap_transition"
+        detail = "Runtime still resolves through a bootstrap pack instead of a published runtime pack."
+        next_step = "Опубликуйте runtime/server pack, когда сервер будет готов выйти из bootstrap path."
+    else:
+        status = "fallback_only"
+        detail = "Runtime still depends on neutral fallback because no explicit published/bootstrap runtime pack is locked in."
+        next_step = "Опубликуйте runtime/server pack или закрепите bootstrap pack, чтобы выйти из fallback path."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "resolution_mode": resolution_mode,
+        "highest_completed_state": highest_completed_state,
+        "next_required_state": next_required_state,
+        "requires_explicit_runtime_pack": requires_explicit_runtime_pack,
+    }
+
+
+def build_runtime_config_debt_summary(*, health_payload: dict[str, Any]) -> dict[str, Any]:
+    onboarding = dict((health_payload or {}).get("onboarding") or {})
+    posture = build_runtime_config_posture_summary(health_payload=health_payload)
+    resolution_mode = str(posture.get("resolution_mode") or "neutral_fallback").strip().lower()
+    highest_completed_state = str(posture.get("highest_completed_state") or "not-ready").strip().lower()
+    reasons: list[str] = []
+
+    if resolution_mode == "neutral_fallback":
+        reasons.append("neutral_fallback")
+    elif resolution_mode == "bootstrap_pack":
+        reasons.append("bootstrap_pack")
+
+    if str(onboarding.get("highest_completed_state") or "").strip().lower() in {"", "not-ready", "bootstrap-ready"}:
+        reasons.append("onboarding_early")
+
+    if bool(posture.get("requires_explicit_runtime_pack")):
+        status = "high"
+        detail = "Runtime config debt is high because the server is still addressable only through neutral fallback."
+        next_step = "Сначала дайте серверу explicit published/bootstrap runtime pack."
+    elif resolution_mode == "bootstrap_pack":
+        status = "medium"
+        detail = "Runtime config debt is medium because the server still relies on bootstrap-pack resolution."
+        next_step = "Постепенно переводите сервер на published runtime pack."
+    else:
+        status = "low"
+        detail = "Runtime config debt looks low in the current read model."
+        next_step = "Явного config-resolution debt не видно."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "reason_count": len(reasons),
+        "reasons": reasons,
+        "resolution_mode": resolution_mode,
+        "highest_completed_state": highest_completed_state,
+    }
