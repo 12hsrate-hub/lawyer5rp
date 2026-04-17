@@ -994,8 +994,10 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertTrue(payload["checks"]["bindings"]["canonical_ready"])
         self.assertEqual(payload["runtime_provenance"]["mode"], "legacy_runtime_shell")
         self.assertTrue(payload["runtime_provenance"]["law_set_observational_only"])
+        self.assertEqual(payload["runtime_provenance"]["shell_stage"], "active_without_projection")
         self.assertEqual(payload["runtime_alignment"]["status"], "legacy_only")
         self.assertTrue(payload["runtime_alignment"]["law_set_observational_only"])
+        self.assertEqual(payload["runtime_alignment"]["shell_stage"], "active_without_projection")
         self.assertIsNone(payload["runtime_alignment"]["active_law_set_id"])
         self.assertEqual(payload["runtime_alignment"]["active_law_version_id"], 77)
 

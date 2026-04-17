@@ -57,20 +57,24 @@ def _build_runtime_provenance_issue(runtime_provenance: dict[str, Any]) -> dict[
     runtime_mode = str((runtime_provenance or {}).get("mode") or "").strip().lower()
     if runtime_mode not in {"projection_drift", "legacy_runtime_shell", "materialized_shell_only"}:
         return None
+    shell_stage = str((runtime_provenance or {}).get("shell_stage") or "").strip().lower()
     title = {
-        "projection_drift": "Runtime law shell расходится с projection bridge",
-        "legacy_runtime_shell": "Runtime law shell ещё не переведён на projection-backed provenance",
-        "materialized_shell_only": "Materialized law shell ещё не активирован в runtime",
-    }.get(runtime_mode, "Runtime law shell требует внимания")
+        "projection_drift": "Runtime shell artifact расходится с projection bridge",
+        "legacy_runtime_shell": "Runtime shell artifact всё ещё живёт вне projection-backed provenance",
+        "materialized_shell_only": "Materialized runtime shell artifact ещё не активирован",
+    }.get(runtime_mode, "Runtime shell artifact требует внимания")
+    detail = str(
+        runtime_provenance.get("detail")
+        or "Current runtime shell artifact still depends on the compatibility promotion bridge."
+    ).strip()
+    if shell_stage:
+        detail = f"{detail} stage={shell_stage}."
     return {
         "issue_id": "laws_runtime_provenance",
         "severity": "warn",
         "source": "laws",
         "title": title,
-        "detail": str(
-            runtime_provenance.get("detail")
-            or "Current runtime law shell still depends on the compatibility promotion bridge."
-        ),
+        "detail": detail,
         "available_actions": [
             {"kind": "recheck", "label": "Проверить наполнение"},
         ],
