@@ -16,6 +16,10 @@ window.OGPAdminServerWorkspace = {
       lawsSummary: null,
       lawsEffective: null,
       lawsDiff: null,
+      lawProjectionStatus: null,
+      lawSourceSetsData: null,
+      lawBindingEditor: null,
+      lawManualEditor: null,
       accessSummary: null,
       rolesData: null,
       permissionsData: null,
@@ -48,6 +52,49 @@ window.OGPAdminServerWorkspace = {
 
     function getAccessItems() {
       return Array.isArray(state.accessSummary?.items) ? state.accessSummary.items : [];
+    }
+
+    function getLawSourceSetItems() {
+      return Array.isArray(state.lawSourceSetsData?.items) ? state.lawSourceSetsData.items : [];
+    }
+
+    function getLawBindingItems() {
+      return Array.isArray(state.lawsSummary?.bindings) ? state.lawsSummary.bindings : [];
+    }
+
+    function findLawBinding(bindingId) {
+      const items = getLawBindingItems();
+      return items.find((item) => Number(item?.id || 0) === Number(bindingId || 0)) || null;
+    }
+
+    function buildLawBindingEditorState() {
+      const editor = state.lawBindingEditor;
+      if (!editor) {
+        return null;
+      }
+      const binding = editor.mode === "edit" ? findLawBinding(editor.bindingId) : null;
+      return {
+        mode: editor.mode,
+        bindingId: binding ? Number(binding.id || 0) : null,
+        sourceSetKey: String(binding?.source_set_key || ""),
+        priority: String(binding?.priority ?? 100),
+        isActive: binding ? Boolean(binding.is_active) : true,
+      };
+    }
+
+    function buildLawManualEditorState() {
+      const editor = state.lawManualEditor;
+      if (!editor) {
+        return null;
+      }
+      return {
+        mode: String(editor.mode || "create"),
+        sourceSetKey: String(editor.sourceSetKey || ""),
+        canonicalIdentityKey: String(editor.canonicalIdentityKey || ""),
+        normalizedUrl: String(editor.normalizedUrl || ""),
+        title: String(editor.title || ""),
+        bodyText: String(editor.bodyText || ""),
+      };
     }
 
     function getSelectedAccessUser() {
@@ -408,6 +455,14 @@ window.OGPAdminServerWorkspace = {
         const bridgeShrinkChecklist = laws.bridge_shrink_checklist || state.lawsDiff?.bridge_shrink_checklist || {};
         const cutoverBlockersBreakdown = laws.cutover_blockers_breakdown || state.lawsDiff?.cutover_blockers_breakdown || {};
         const effective = state.lawsEffective || {};
+      const bindingEditor = buildLawBindingEditorState();
+      const manualEditor = buildLawManualEditorState();
+      const sourceSetOptions = getLawSourceSetItems();
+      const projectionStatus = state.lawProjectionStatus || {};
+      const projectionStatusRun = projectionStatus.run || {};
+      const projectionMaterialization = projectionStatus.materialization || {};
+      const projectionActivation = projectionStatus.activation || {};
+      const projectionRuntimeAlignment = projectionStatus.runtime_alignment || {};
       const effectiveItems = Array.isArray(effective.items) ? effective.items.slice(0, 12) : [];
       const fillSummary = laws.fill_check || effective.summary || {};
       const diffSummary = laws.diff || state.lawsDiff?.summary || {};
@@ -425,6 +480,8 @@ window.OGPAdminServerWorkspace = {
             <p class="legal-section__description">Основной путь: выбрать source sets, проверить итоговую выборку законов и безопасно обновить preview без runtime activation.</p>
           </div>
           <div class="admin-section-toolbar">
+            <button type="button" id="admin-server-laws-add-manual" class="secondary-button">Добавить закон вручную</button>
+            <button type="button" id="admin-server-laws-add-binding" class="secondary-button">Добавить binding</button>
             <button type="button" id="admin-server-laws-refresh-preview" class="primary-button">Обновить законы</button>
             <button type="button" id="admin-server-laws-recheck" class="secondary-button">Проверить наполнение</button>
             <button type="button" id="admin-server-laws-reload" class="ghost-button">Обновить блок</button>
@@ -643,14 +700,101 @@ window.OGPAdminServerWorkspace = {
           <span class="legal-field__label">Source set bindings</span>
           ${
             bindings.length
-              ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Source set</th><th>Priority</th><th>Status</th></tr></thead><tbody>${bindings.map((item) => `<tr><td>${escapeHtml(String(item.source_set_key || "—"))}</td><td>${escapeHtml(String(item.priority || 0))}</td><td>${item.is_active ? "active" : "disabled"}</td></tr>`).join("")}</tbody></table>`
-              : `<p class="legal-section__description">Для сервера пока нет source set bindings. Сначала создайте или выберите source set и привяжите его в расширенном laws workspace.</p>
+              ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Source set</th><th>Priority</th><th>Status</th><th></th></tr></thead><tbody>${bindings.map((item) => `<tr><td>${escapeHtml(String(item.source_set_key || "—"))}</td><td>${escapeHtml(String(item.priority || 0))}</td><td>${item.is_active ? "active" : "disabled"}</td><td><button type="button" class="ghost-button" data-server-law-binding-edit="${escapeHtml(String(item.id || ""))}">Редактировать</button></td></tr>`).join("")}</tbody></table>`
+              : `<p class="legal-section__description">Для сервера пока нет source set bindings. Добавьте хотя бы один активный binding прямо здесь, а laws diagnostics используйте только для расширенной сверки.</p>
                  <div class="admin-section-toolbar">
                    <a class="ghost-button button-link" href="/admin/laws">Открыть laws diagnostics</a>
                    <button type="button" class="ghost-button" data-server-workspace-switch="diagnostics">Открыть диагностику</button>
                  </div>`
           }
+          ${
+            bindingEditor
+              ? `<div class="legal-subcard">
+                  <div class="legal-subcard__header">
+                    <div>
+                      <span class="legal-field__label">${bindingEditor.mode === "edit" ? "Редактирование binding" : "Новый source set binding"}</span>
+                      <p class="legal-section__description">Обычная настройка binding делается в карточке сервера. Advanced laws diagnostics остаются только для углублённой проверки.</p>
+                    </div>
+                    <div class="admin-section-toolbar">
+                      <button type="button" class="ghost-button" id="admin-server-law-binding-editor-cancel">Закрыть</button>
+                    </div>
+                  </div>
+                  <form id="admin-server-law-binding-form" class="legal-field-grid legal-field-grid--two">
+                    <label class="legal-field">
+                      <span class="legal-field__label">Source set</span>
+                      <select name="source_set_key" class="text-input" ${bindingEditor.mode === "edit" ? "disabled" : ""} required>
+                        <option value="">Выберите source set</option>
+                        ${sourceSetOptions.map((item) => {
+                          const sourceSetKey = String(item?.source_set_key || "");
+                          const title = String(item?.title || sourceSetKey);
+                          const label = title !== sourceSetKey ? `${title} (${sourceSetKey})` : sourceSetKey;
+                          return `<option value="${escapeHtml(sourceSetKey)}" ${bindingEditor.sourceSetKey === sourceSetKey ? "selected" : ""}>${escapeHtml(label)}</option>`;
+                        }).join("")}
+                      </select>
+                    </label>
+                    <label class="legal-field">
+                      <span class="legal-field__label">Priority</span>
+                      <input name="priority" type="number" min="1" max="10000" class="text-input" value="${escapeHtml(bindingEditor.priority)}" required />
+                    </label>
+                    <label class="legal-field">
+                      <span class="legal-field__label">Активен</span>
+                      <input name="is_active" type="checkbox" ${bindingEditor.isActive ? "checked" : ""} />
+                    </label>
+                    ${bindingEditor.mode === "edit" ? `<input type="hidden" name="source_set_key" value="${escapeHtml(bindingEditor.sourceSetKey)}" />` : ""}
+                    <div class="admin-section-toolbar">
+                      <button type="submit" class="primary-button">${bindingEditor.mode === "edit" ? "Сохранить binding" : "Добавить binding"}</button>
+                    </div>
+                  </form>
+                </div>`
+              : ""
+          }
         </div>
+        ${
+          manualEditor
+            ? `<div class="legal-subcard">
+                <div class="legal-subcard__header">
+                  <div>
+                    <span class="legal-field__label">${manualEditor.mode === "edit" ? "Редактирование закона" : "Новый закон вручную"}</span>
+                    <p class="legal-section__description">Этот flow создаёт новую canonical version через существующий source set revision path. Projection/apply остаются отдельным следующим шагом.</p>
+                  </div>
+                  <div class="admin-section-toolbar">
+                    <button type="button" class="ghost-button" id="admin-server-law-manual-editor-cancel">Закрыть</button>
+                  </div>
+                </div>
+                <form id="admin-server-law-manual-form" class="legal-field-grid">
+                  <label class="legal-field">
+                    <span class="legal-field__label">Source set</span>
+                    <select name="source_set_key" class="text-input" required>
+                      <option value="">Выберите source set</option>
+                      ${bindings.filter((item) => item.is_active).map((item) => {
+                        const key = String(item.source_set_key || "");
+                        return `<option value="${escapeHtml(key)}" ${manualEditor.sourceSetKey === key ? "selected" : ""}>${escapeHtml(key)}</option>`;
+                      }).join("")}
+                    </select>
+                  </label>
+                  <label class="legal-field">
+                    <span class="legal-field__label">Canonical identity key</span>
+                    <input name="canonical_identity_key" class="text-input" value="${escapeHtml(manualEditor.canonicalIdentityKey)}" placeholder="manual:..." />
+                  </label>
+                  <label class="legal-field">
+                    <span class="legal-field__label">Normalized URL</span>
+                    <input name="normalized_url" class="text-input" value="${escapeHtml(manualEditor.normalizedUrl)}" placeholder="https://example.com/law/article или manual://..." />
+                  </label>
+                  <label class="legal-field">
+                    <span class="legal-field__label">Title</span>
+                    <input name="title" class="text-input" value="${escapeHtml(manualEditor.title)}" required />
+                  </label>
+                  <label class="legal-field">
+                    <span class="legal-field__label">Body</span>
+                    <textarea name="body_text" class="text-input" rows="12" required>${escapeHtml(manualEditor.bodyText)}</textarea>
+                  </label>
+                  <div class="admin-section-toolbar">
+                    <button type="submit" class="primary-button">${manualEditor.mode === "edit" ? "Сохранить новую version" : "Добавить закон"}</button>
+                  </div>
+                </form>
+              </div>`
+            : ""
+        }
         <div class="legal-field-grid legal-field-grid--two">
           <div class="legal-field">
             <span class="legal-field__label">Проверка наполнения</span>
@@ -664,10 +808,46 @@ window.OGPAdminServerWorkspace = {
           </div>
         </div>
         <div class="legal-subcard">
+          <div class="legal-subcard__header">
+            <div>
+              <span class="legal-field__label">Projection apply</span>
+              <p class="legal-section__description">server-centric safe path: preview уже собран здесь, дальше можно approve/hold/materialize/activate без перехода в diagnostics.</p>
+            </div>
+            <div class="admin-section-toolbar">
+              <button type="button" class="ghost-button" id="admin-server-laws-approve-run" ${projection?.id ? "" : "disabled"}>Approve</button>
+              <button type="button" class="ghost-button" id="admin-server-laws-hold-run" ${projection?.id ? "" : "disabled"}>Hold</button>
+              <button type="button" class="ghost-button" id="admin-server-laws-materialize-run" ${projection?.id ? "" : "disabled"}>Materialize</button>
+              <button type="button" class="primary-button" id="admin-server-laws-activate-run" ${projection?.id ? "" : "disabled"}>Activate</button>
+            </div>
+          </div>
+          <div class="legal-field-grid legal-field-grid--two">
+            <div class="legal-field">
+              <span class="legal-field__label">Run status</span>
+              <div><strong>${escapeHtml(String(projectionStatusRun.status || projection.status || "none"))}</strong></div>
+              <div class="admin-user-cell__secondary">run: ${escapeHtml(String(projectionStatusRun.id || projection.id || "—"))} • trigger: ${escapeHtml(String(projectionStatusRun.trigger_mode || projection.trigger_mode || "manual"))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Decision</span>
+              <div><strong>${escapeHtml(String((projectionStatusRun.summary_json || {}).decision_status || projection.decision_status || "pending"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String((projectionStatusRun.summary_json || {}).decision_reason || "Decision ещё не зафиксирован."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Materialization</span>
+              <div><strong>${escapeHtml(String(projectionMaterialization.law_set_id || "—"))}</strong></div>
+              <div class="admin-user-cell__secondary">item count matches: ${projectionRuntimeAlignment.item_count_matches_materialization ? "yes" : "no"}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Activation</span>
+              <div><strong>${escapeHtml(String(projectionActivation.law_version_id || "—"))}</strong></div>
+              <div class="admin-user-cell__secondary">active matches: ${projectionRuntimeAlignment.activation_law_version_matches_active ? "yes" : "no"}</div>
+            </div>
+          </div>
+        </div>
+        <div class="legal-subcard">
           <span class="legal-field__label">Effective laws</span>
           ${
             effectiveItems.length
-              ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Закон</th><th>Источник</th><th>Обновлено</th><th>Статус</th></tr></thead><tbody>${effectiveItems.map((item) => `<tr><td><strong>${escapeHtml(String(item.title || item.canonical_identity_key || "—"))}</strong><div class="admin-user-cell__secondary">${escapeHtml(String(item.preview_excerpt || "Без preview"))}</div></td><td>${escapeHtml(String(item.selected_source_set_key || "—"))}<div class="admin-user-cell__secondary">rev ${escapeHtml(String(item.selected_revision || 0))}</div></td><td>${escapeHtml(String(item.updated_at || "—"))}</td><td>${item.has_content ? "content ready" : "missing content"}<div class="admin-user-cell__secondary">${escapeHtml(String(item.fetch_status || "—"))} / ${escapeHtml(String(item.parse_status || "—"))}</div></td></tr>`).join("")}</tbody></table>`
+              ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>Закон</th><th>Источник</th><th>Обновлено</th><th>Статус</th><th></th></tr></thead><tbody>${effectiveItems.map((item) => `<tr><td><strong>${escapeHtml(String(item.title || item.canonical_identity_key || "—"))}</strong><div class="admin-user-cell__secondary">${escapeHtml(String(item.preview_excerpt || "Без preview"))}</div></td><td>${escapeHtml(String(item.selected_source_set_key || "—"))}<div class="admin-user-cell__secondary">rev ${escapeHtml(String(item.selected_revision || 0))}</div></td><td>${escapeHtml(String(item.updated_at || "—"))}</td><td>${item.has_content ? "content ready" : "missing content"}<div class="admin-user-cell__secondary">${escapeHtml(String(item.fetch_status || "—"))} / ${escapeHtml(String(item.parse_status || "—"))}</div></td><td><button type="button" class="ghost-button" data-server-law-manual-edit="${escapeHtml(String(item.canonical_identity_key || ""))}" data-server-law-manual-source-set="${escapeHtml(String(item.selected_source_set_key || ""))}">Редактировать</button></td></tr>`).join("")}</tbody></table>`
               : `<p class="legal-section__description">Effective laws пока не рассчитаны. Нажмите «Обновить законы», чтобы получить безопасный preview, или сначала добавьте bindings.</p>
                  <div class="admin-section-toolbar">
                    <button type="button" class="ghost-button" id="admin-server-laws-refresh-preview-empty">Запустить preview</button>
@@ -1305,6 +1485,34 @@ window.OGPAdminServerWorkspace = {
       state.issuesData = issuesPayload;
     }
 
+    async function loadLawSourceSetsData() {
+      if (state.lawSourceSetsData) {
+        return state.lawSourceSetsData;
+      }
+      const response = await deps.apiFetch("/api/admin/law-source-sets");
+      const payload = await deps.parsePayload(response);
+      if (!response.ok) {
+        throw new Error(deps.formatHttpError?.(response, payload, "Не удалось загрузить список source sets.") || "Не удалось загрузить список source sets.");
+      }
+      state.lawSourceSetsData = payload;
+      return payload;
+    }
+
+    async function loadLawProjectionStatusData(runId) {
+      const normalizedRunId = Number(runId || 0);
+      if (normalizedRunId <= 0) {
+        state.lawProjectionStatus = null;
+        return null;
+      }
+      const response = await deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/law-projection-runs/${encodeURIComponent(String(normalizedRunId))}/status`);
+      const payload = await deps.parsePayload(response);
+      if (!response.ok) {
+        throw new Error(deps.formatHttpError?.(response, payload, "Не удалось загрузить projection status.") || "Не удалось загрузить projection status.");
+      }
+      state.lawProjectionStatus = payload;
+      return payload;
+    }
+
     async function runUserAction(endpoint, successMessage, body = null) {
       deps.clearMessage?.();
       deps.setStateIdle?.(deps.errorsHost);
@@ -1413,6 +1621,7 @@ window.OGPAdminServerWorkspace = {
         state.lawsSummary = lawsSummaryPayload;
         state.lawsEffective = lawsEffectivePayload;
         state.lawsDiff = lawsDiffPayload;
+        await loadLawProjectionStatusData((lawsSummaryPayload.latest_projection_run || {}).id);
         await Promise.all([loadFeaturesData(), loadTemplatesData(), loadAccessData(), loadObservabilityData()]);
         renderPanels();
         applyTabState();
@@ -1447,6 +1656,92 @@ window.OGPAdminServerWorkspace = {
       if (target.id === "admin-server-laws-open-diagnostics") {
         state.activeTab = "diagnostics";
         applyTabState();
+        return;
+      }
+      if (target.id === "admin-server-laws-add-binding") {
+        (async () => {
+          deps.clearMessage?.();
+          deps.setStateIdle?.(deps.errorsHost);
+          try {
+            await loadLawSourceSetsData();
+            state.lawBindingEditor = { mode: "create", bindingId: null };
+            renderLaws();
+          } catch (error) {
+            deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось открыть форму binding.");
+          }
+        })();
+        return;
+      }
+      if (target.id === "admin-server-laws-add-manual") {
+        const boundSourceSet = String(getLawBindingItems().find((item) => item?.is_active)?.source_set_key || "");
+        state.lawManualEditor = {
+          mode: "create",
+          sourceSetKey: boundSourceSet,
+          canonicalIdentityKey: "",
+          normalizedUrl: "",
+          title: "",
+          bodyText: "",
+        };
+        renderLaws();
+        return;
+      }
+      if (target.id === "admin-server-law-manual-editor-cancel") {
+        state.lawManualEditor = null;
+        renderLaws();
+        return;
+      }
+      const lawManualEditButton = target.closest("[data-server-law-manual-edit]");
+      if (lawManualEditButton instanceof HTMLElement) {
+        (async () => {
+          deps.clearMessage?.();
+          deps.setStateIdle?.(deps.errorsHost);
+          try {
+            const canonicalIdentityKey = String(lawManualEditButton.getAttribute("data-server-law-manual-edit") || "").trim();
+            const sourceSetKey = String(lawManualEditButton.getAttribute("data-server-law-manual-source-set") || "").trim();
+            const response = await deps.apiFetch(
+              `/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/laws/manual-editor?source_set_key=${encodeURIComponent(sourceSetKey)}&canonical_identity_key=${encodeURIComponent(canonicalIdentityKey)}`,
+            );
+            const payload = await deps.parsePayload(response);
+            if (!response.ok) {
+              deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(response, payload, "Не удалось загрузить manual law editor."));
+              return;
+            }
+            state.lawManualEditor = {
+              mode: "edit",
+              sourceSetKey: String(payload.source_set_key || ""),
+              canonicalIdentityKey: String(payload.canonical_identity_key || ""),
+              normalizedUrl: String(payload.normalized_url || ""),
+              title: String(payload.title || ""),
+              bodyText: String(payload.body_text || ""),
+            };
+            renderLaws();
+          } catch (error) {
+            deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось загрузить manual law editor.");
+          }
+        })();
+        return;
+      }
+      if (target.id === "admin-server-law-binding-editor-cancel") {
+        state.lawBindingEditor = null;
+        renderLaws();
+        return;
+      }
+      const lawBindingEditButton = target.closest("[data-server-law-binding-edit]");
+      if (lawBindingEditButton instanceof HTMLElement) {
+        (async () => {
+          deps.clearMessage?.();
+          deps.setStateIdle?.(deps.errorsHost);
+          try {
+            await loadLawSourceSetsData();
+            state.lawBindingEditor = {
+              mode: "edit",
+              bindingId: Number(lawBindingEditButton.getAttribute("data-server-law-binding-edit") || 0),
+            };
+            renderLaws();
+          } catch (error) {
+            deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось открыть редактирование binding.");
+          }
+        })();
         return;
       }
       if (target.id === "admin-server-laws-reload") {
@@ -1502,6 +1797,58 @@ window.OGPAdminServerWorkspace = {
             deps.showMessage?.("Проверка наполнения выполнена.");
           } catch (error) {
             deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось проверить наполнение законов.");
+          }
+        })();
+        return;
+      }
+      if (
+        target.id === "admin-server-laws-approve-run"
+        || target.id === "admin-server-laws-hold-run"
+        || target.id === "admin-server-laws-materialize-run"
+        || target.id === "admin-server-laws-activate-run"
+      ) {
+        (async () => {
+          deps.clearMessage?.();
+          deps.setStateIdle?.(deps.errorsHost);
+          const runId = Number((state.lawsSummary?.latest_projection_run || {}).id || 0);
+          if (runId <= 0) {
+            deps.setStateError?.(deps.errorsHost, "Нет preview run для выполнения action.");
+            return;
+          }
+          let endpoint = "";
+          let method = "POST";
+          let body = "{}";
+          let successMessage = "";
+          if (target.id === "admin-server-laws-approve-run") {
+            endpoint = `/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/law-projection-runs/${encodeURIComponent(String(runId))}/approve`;
+            body = JSON.stringify({ reason: "server_workspace_apply_flow" });
+            successMessage = "Projection run approved.";
+          } else if (target.id === "admin-server-laws-hold-run") {
+            endpoint = `/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/law-projection-runs/${encodeURIComponent(String(runId))}/hold`;
+            body = JSON.stringify({ reason: "server_workspace_manual_hold" });
+            successMessage = "Projection run held.";
+          } else if (target.id === "admin-server-laws-materialize-run") {
+            endpoint = `/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/law-projection-runs/${encodeURIComponent(String(runId))}/materialize-law-set`;
+            body = JSON.stringify({ safe_rerun: true });
+            successMessage = "Projection law set materialized.";
+          } else if (target.id === "admin-server-laws-activate-run") {
+            endpoint = `/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/law-projection-runs/${encodeURIComponent(String(runId))}/activate-runtime`;
+            body = JSON.stringify({ safe_rerun: true });
+            successMessage = "Projection activated into runtime.";
+          }
+          try {
+            const response = await deps.apiFetch(endpoint, { method, body });
+            const payload = await deps.parsePayload(response);
+            if (!response.ok) {
+              deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(response, payload, "Не удалось выполнить projection action."));
+              return;
+            }
+            await loadWorkspace();
+            state.activeTab = "laws";
+            applyTabState();
+            deps.showMessage?.(successMessage);
+          } catch (error) {
+            deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось выполнить projection action.");
           }
         })();
         return;
@@ -1918,6 +2265,75 @@ window.OGPAdminServerWorkspace = {
               deps.showMessage?.("Feature override сохранён как черновик.");
             } catch (error) {
               deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось сохранить feature override.");
+            }
+          })();
+          return;
+        }
+        if (form.id === "admin-server-law-binding-form") {
+          event.preventDefault();
+          (async () => {
+            const mode = state.lawBindingEditor?.mode || "create";
+            const bindingId = Number(state.lawBindingEditor?.bindingId || 0);
+            const sourceSetKey = normalizeKey(form.elements.namedItem("source_set_key")?.value);
+            const priorityRaw = String(form.elements.namedItem("priority")?.value || "").trim();
+            const payload = {
+              source_set_key: sourceSetKey,
+              priority: priorityRaw ? Number(priorityRaw) : 100,
+              is_active: Boolean(form.elements.namedItem("is_active")?.checked),
+              include_law_keys: [],
+              exclude_law_keys: [],
+              pin_policy_json: {},
+              metadata_json: {},
+            };
+            const method = mode === "edit" ? "PUT" : "POST";
+            const url = mode === "edit"
+              ? `/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/source-set-bindings/${bindingId}`
+              : `/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/source-set-bindings`;
+            try {
+              const response = await deps.apiFetch(url, { method, body: JSON.stringify(payload) });
+              const responsePayload = await deps.parsePayload(response);
+              if (!response.ok) {
+                deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(response, responsePayload, "Не удалось сохранить source set binding."));
+                return;
+              }
+              state.lawBindingEditor = null;
+              await loadWorkspace();
+              state.activeTab = "laws";
+              applyTabState();
+              deps.showMessage?.(mode === "edit" ? "Source set binding обновлён." : "Source set binding добавлен.");
+            } catch (error) {
+              deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось сохранить source set binding.");
+            }
+          })();
+          return;
+        }
+        if (form.id === "admin-server-law-manual-form") {
+          event.preventDefault();
+          (async () => {
+            const payload = {
+              source_set_key: normalizeKey(form.elements.namedItem("source_set_key")?.value),
+              canonical_identity_key: String(form.elements.namedItem("canonical_identity_key")?.value || "").trim(),
+              normalized_url: String(form.elements.namedItem("normalized_url")?.value || "").trim(),
+              title: String(form.elements.namedItem("title")?.value || "").trim(),
+              body_text: String(form.elements.namedItem("body_text")?.value || ""),
+            };
+            try {
+              const response = await deps.apiFetch(`/api/admin/runtime-servers/${encodeURIComponent(serverCode)}/laws/manual-entry`, {
+                method: "POST",
+                body: JSON.stringify(payload),
+              });
+              const responsePayload = await deps.parsePayload(response);
+              if (!response.ok) {
+                deps.setStateError?.(deps.errorsHost, deps.formatHttpError?.(response, responsePayload, "Не удалось сохранить закон вручную."));
+                return;
+              }
+              state.lawManualEditor = null;
+              await loadWorkspace();
+              state.activeTab = "laws";
+              applyTabState();
+              deps.showMessage?.("Ручная canonical version сохранена.");
+            } catch (error) {
+              deps.setStateError?.(deps.errorsHost, error?.message || "Не удалось сохранить закон вручную.");
             }
           })();
           return;
