@@ -371,6 +371,7 @@ window.OGPAdminServerWorkspace = {
         const projection = laws.latest_projection_run || {};
         const runtimeConfigPosture = laws.runtime_config_posture || {};
         const runtimeConfigDebt = laws.runtime_config_debt || {};
+        const runtimeResolutionPolicy = laws.runtime_resolution_policy || {};
         const runtimeProvenance = laws.runtime_provenance || {};
         const runtimeAlignment = laws.runtime_alignment || state.lawsDiff?.runtime_alignment || {};
         const runtimeItemParity = laws.runtime_item_parity || state.lawsDiff?.runtime_item_parity || {};
@@ -385,6 +386,7 @@ window.OGPAdminServerWorkspace = {
         const runtimeShellDebt = laws.runtime_shell_debt || state.lawsDiff?.runtime_shell_debt || {};
         const runtimeConvergence = laws.runtime_convergence || state.lawsDiff?.runtime_convergence || {};
         const cutoverReadiness = laws.cutover_readiness || state.lawsDiff?.cutover_readiness || {};
+        const runtimeCutoverMode = laws.runtime_cutover_mode || state.lawsDiff?.runtime_cutover_mode || {};
         const bridgeShrinkChecklist = laws.bridge_shrink_checklist || state.lawsDiff?.bridge_shrink_checklist || {};
         const cutoverBlockersBreakdown = laws.cutover_blockers_breakdown || state.lawsDiff?.cutover_blockers_breakdown || {};
         const effective = state.lawsEffective || {};
@@ -426,6 +428,11 @@ window.OGPAdminServerWorkspace = {
               <span class="legal-field__label">Config debt</span>
               <div><strong>${escapeHtml(String(runtimeConfigDebt.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeConfigDebt.detail || "Runtime config debt summary is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Resolution policy</span>
+              <div><strong>${escapeHtml(String(runtimeResolutionPolicy.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeResolutionPolicy.next_step || runtimeResolutionPolicy.detail || "Runtime resolution policy summary is not available yet."))}</div>
             </div>
             <div class="legal-field">
               <span class="legal-field__label">Runtime provenance</span>
@@ -496,6 +503,11 @@ window.OGPAdminServerWorkspace = {
               <span class="legal-field__label">Cutover readiness</span>
               <div><strong>${escapeHtml(String(cutoverReadiness.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">${escapeHtml(String(cutoverReadiness.detail || "Cutover readiness summary is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Cutover mode</span>
+              <div><strong>${escapeHtml(String(runtimeCutoverMode.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeCutoverMode.next_step || runtimeCutoverMode.detail || "Runtime cutover mode summary is not available yet."))}</div>
             </div>
             <div class="legal-field">
               <span class="legal-field__label">Bridge shrink checklist</span>

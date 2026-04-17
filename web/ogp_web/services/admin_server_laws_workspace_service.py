@@ -6,6 +6,7 @@ from ogp_web.services.admin_law_projection_service import (
     preview_server_effective_law_projection_payload,
 )
 from ogp_web.services.admin_runtime_servers_service import (
+    build_runtime_config_debt_summary,
     build_runtime_server_health_payload,
     normalize_runtime_server_code,
 )
@@ -1117,6 +1118,51 @@ def build_cutover_blockers_breakdown_summary(
     }
 
 
+def build_runtime_cutover_mode_summary(
+    *,
+    cutover_readiness: dict[str, Any],
+    runtime_convergence: dict[str, Any],
+    runtime_shell_debt: dict[str, Any],
+    runtime_config_debt: dict[str, Any],
+) -> dict[str, Any]:
+    cutover = dict(cutover_readiness or {})
+    convergence = dict(runtime_convergence or {})
+    shell_debt = dict(runtime_shell_debt or {})
+    config_debt = dict(runtime_config_debt or {})
+
+    cutover_status = str(cutover.get("status") or "").strip().lower()
+    convergence_status = str(convergence.get("status") or "").strip().lower()
+    shell_debt_status = str(shell_debt.get("status") or "").strip().lower()
+    config_debt_status = str(config_debt.get("status") or "").strip().lower()
+
+    if cutover_status == "ready_for_cutover" and convergence_status == "converged" and shell_debt_status == "low" and config_debt_status == "low":
+        status = "projection_preferred"
+        detail = "Server now looks suitable for a projection-preferred runtime posture."
+        next_step = "Можно рассматривать controlled shrinking compatibility bridge для этого сервера."
+    elif config_debt_status == "high" or cutover_status in {"compatibility_dependent", "needs_activation_alignment", "not_ready"}:
+        status = "compatibility_mode"
+        detail = "Server still depends on compatibility-era runtime paths."
+        next_step = str(cutover.get("next_step") or config_debt.get("next_step") or "Сначала снимите compatibility dependencies.").strip()
+    elif config_debt_status == "medium" or cutover_status in {"stabilize_first", "monitor"} or convergence_status in {"advancing", "compatibility_mode"}:
+        status = "cutover_candidate"
+        detail = "Server is moving toward projection-preferred runtime, but it is still transitional."
+        next_step = str(cutover.get("next_step") or convergence.get("next_step") or "Продолжайте стабилизировать convergence и config path.").strip()
+    else:
+        status = "observe"
+        detail = "Runtime cutover mode is not decisive yet in the current read model."
+        next_step = "Продолжайте следить за cutover readiness, shell debt и config policy."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "cutover_status": cutover_status,
+        "convergence_status": convergence_status,
+        "shell_debt_status": shell_debt_status,
+        "config_debt_status": config_debt_status,
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -1218,6 +1264,15 @@ def build_server_laws_summary_payload(
         runtime_shell_debt=runtime_shell_debt,
         activation_gap=activation_gap,
     )
+    config_debt = dict((health_payload.get("runtime_config_debt") or {}))
+    if not config_debt:
+        config_debt = build_runtime_config_debt_summary(health_payload=health_payload)
+    runtime_cutover_mode = build_runtime_cutover_mode_summary(
+        cutover_readiness=cutover_readiness,
+        runtime_convergence=runtime_convergence,
+        runtime_shell_debt=runtime_shell_debt,
+        runtime_config_debt=config_debt,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=bridge_readiness,
         activation_gap=activation_gap,
@@ -1251,6 +1306,7 @@ def build_server_laws_summary_payload(
         "runtime_shell_debt": runtime_shell_debt,
         "runtime_convergence": runtime_convergence,
         "cutover_readiness": cutover_readiness,
+        "runtime_cutover_mode": runtime_cutover_mode,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "latest_projection_run": _serialize_run(current_run),
@@ -1451,6 +1507,15 @@ def build_server_laws_diff_payload(
         runtime_shell_debt=runtime_shell_debt,
         activation_gap=activation_gap,
     )
+    config_debt = dict((health_payload.get("runtime_config_debt") or {}))
+    if not config_debt:
+        config_debt = build_runtime_config_debt_summary(health_payload=health_payload)
+    runtime_cutover_mode = build_runtime_cutover_mode_summary(
+        cutover_readiness=cutover_readiness,
+        runtime_convergence=runtime_convergence,
+        runtime_shell_debt=runtime_shell_debt,
+        runtime_config_debt=config_debt,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=bridge_readiness,
         activation_gap=activation_gap,
@@ -1481,6 +1546,7 @@ def build_server_laws_diff_payload(
         "runtime_shell_debt": runtime_shell_debt,
         "runtime_convergence": runtime_convergence,
         "cutover_readiness": cutover_readiness,
+        "runtime_cutover_mode": runtime_cutover_mode,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "summary": diff_summary,

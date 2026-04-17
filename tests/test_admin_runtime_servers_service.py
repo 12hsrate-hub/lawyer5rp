@@ -12,6 +12,7 @@ for candidate in (ROOT_DIR, WEB_DIR):
 from ogp_web.services.admin_runtime_servers_service import (
     build_runtime_config_debt_summary,
     build_runtime_config_posture_summary,
+    build_runtime_resolution_policy_summary,
     build_runtime_server_health_payload,
     create_runtime_server_payload,
     list_runtime_servers_payload,
@@ -25,6 +26,7 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_cutover_readiness_summary,
     build_promotion_blockers_summary,
     build_promotion_review_signal_summary,
+    build_runtime_cutover_mode_summary,
     build_runtime_convergence_summary,
 )
 from ogp_web.services.law_version_service import ResolvedLawVersion
@@ -296,8 +298,11 @@ def test_runtime_config_posture_and_debt_distinguish_published_bootstrap_and_fal
     assert build_runtime_config_debt_summary(health_payload=fallback_health)["status"] == "high"
     assert build_runtime_config_posture_summary(health_payload=bootstrap_health)["status"] == "bootstrap_transition"
     assert build_runtime_config_debt_summary(health_payload=bootstrap_health)["status"] == "medium"
+    assert build_runtime_resolution_policy_summary(health_payload=bootstrap_health)["status"] == "transitional_bootstrap"
     assert build_runtime_config_posture_summary(health_payload=published_health)["status"] == "declared_ready"
     assert build_runtime_config_debt_summary(health_payload=published_health)["status"] == "low"
+    assert build_runtime_resolution_policy_summary(health_payload=published_health)["status"] == "declared_runtime"
+    assert build_runtime_resolution_policy_summary(health_payload=fallback_health)["status"] == "compatibility_exception"
 
 
 def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
@@ -359,3 +364,11 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         cutover_readiness=cutover_readiness,
     )
     assert cutover_blockers_breakdown["status"] == "clear"
+
+    runtime_cutover_mode = build_runtime_cutover_mode_summary(
+        cutover_readiness=cutover_readiness,
+        runtime_convergence=runtime_convergence,
+        runtime_shell_debt=runtime_shell_debt,
+        runtime_config_debt={"status": "low", "detail": "Low.", "next_step": ""},
+    )
+    assert runtime_cutover_mode["status"] == "projection_preferred"
