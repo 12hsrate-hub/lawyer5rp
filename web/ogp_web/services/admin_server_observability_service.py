@@ -23,6 +23,10 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_cutover_blockers_breakdown_summary,
     build_runtime_bridge_policy_summary,
     build_runtime_operating_mode_summary,
+    build_runtime_governance_contract_summary,
+    build_legacy_path_allowance_summary,
+    build_compatibility_exit_scorecard_summary,
+    build_runtime_breach_categories_summary,
     build_policy_breach_summary,
     build_runtime_risk_register_summary,
     build_runtime_policy_enforcement_summary,
@@ -693,6 +697,89 @@ def _build_runtime_risk_register_issue(runtime_risk_register: dict[str, Any]) ->
     }
 
 
+def _build_runtime_governance_contract_issue(runtime_governance_contract: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_governance_contract or {}).get("status") or "").strip().lower()
+    if status in {"", "projection_contract", "observe"}:
+        return None
+    return {
+        "issue_id": "runtime_governance_contract",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Runtime governance contract ещё не projection-grade",
+        "detail": (
+            f"{str((runtime_governance_contract or {}).get('detail') or '').strip()} "
+            f"{str((runtime_governance_contract or {}).get('next_step') or '').strip()}"
+        ).strip(),
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
+def _build_legacy_path_allowance_issue(legacy_path_allowance: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((legacy_path_allowance or {}).get("status") or "").strip().lower()
+    if status in {"", "denied", "observe"}:
+        return None
+    allowed_paths = ", ".join(str(item) for item in list((legacy_path_allowance or {}).get("allowed_paths") or []) if str(item).strip())
+    detail = str((legacy_path_allowance or {}).get("detail") or "").strip()
+    if allowed_paths:
+        detail = f"{detail} allowed={allowed_paths}.".strip()
+    return {
+        "issue_id": "legacy_path_allowance",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Legacy path allowance всё ещё открыт",
+        "detail": f"{detail} {str((legacy_path_allowance or {}).get('next_step') or '').strip()}".strip(),
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
+def _build_compatibility_exit_scorecard_issue(compatibility_exit_scorecard: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((compatibility_exit_scorecard or {}).get("status") or "").strip().lower()
+    if status in {"", "ready_to_exit", "observe"}:
+        return None
+    return {
+        "issue_id": "compatibility_exit_scorecard",
+        "severity": "error" if status == "not_ready" else "warn",
+        "source": "laws",
+        "title": "Compatibility exit scorecard требует внимания",
+        "detail": (
+            f"{str((compatibility_exit_scorecard or {}).get('detail') or '').strip()} "
+            f"{str((compatibility_exit_scorecard or {}).get('next_step') or '').strip()}"
+        ).strip(),
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
+def _build_runtime_breach_categories_issue(runtime_breach_categories: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_breach_categories or {}).get("status") or "").strip().lower()
+    if status in {"", "clear"}:
+        return None
+    category_counts = dict((runtime_breach_categories or {}).get("category_counts") or {})
+    detail = (
+        f"{str((runtime_breach_categories or {}).get('detail') or '').strip()} "
+        f"config={int(category_counts.get('config') or 0)} "
+        f"legacy_path={int(category_counts.get('legacy_path') or 0)} "
+        f"policy={int(category_counts.get('policy') or 0)} "
+        f"cutover={int(category_counts.get('cutover') or 0)}. "
+        f"{str((runtime_breach_categories or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "runtime_breach_categories",
+        "severity": "error" if status == "breached" else "warn",
+        "source": "laws",
+        "title": "Runtime breach categories требуют внимания",
+        "detail": detail,
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
 def _build_bridge_shrink_checklist_issue(bridge_shrink_checklist: dict[str, Any]) -> dict[str, Any] | None:
     status = str((bridge_shrink_checklist or {}).get("status") or "").strip().lower()
     if status in {"", "ready"}:
@@ -991,6 +1078,19 @@ def build_server_issues_payload(
         policy_breach_summary=policy_breach_summary,
         cutover_guardrails=cutover_guardrails,
     )
+    runtime_governance_contract = build_runtime_governance_contract_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+        runtime_resolution_policy=runtime_resolution_policy,
+    )
+    legacy_path_allowance = build_legacy_path_allowance_summary(
+        runtime_governance_contract=runtime_governance_contract,
+        runtime_resolution_policy=runtime_resolution_policy,
+        runtime_config_posture=runtime_config_posture,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_shell_debt=runtime_shell_debt,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=projection_bridge_readiness,
         activation_gap=activation_gap,
@@ -1003,6 +1103,20 @@ def build_server_issues_payload(
         runtime_shell_debt=runtime_shell_debt,
         activation_gap=activation_gap,
         cutover_readiness=cutover_readiness,
+    )
+    compatibility_exit_scorecard = build_compatibility_exit_scorecard_summary(
+        bridge_shrink_checklist=bridge_shrink_checklist,
+        cutover_blockers_breakdown=cutover_blockers_breakdown,
+        runtime_risk_register=runtime_risk_register,
+        policy_breach_summary=policy_breach_summary,
+        legacy_path_allowance=legacy_path_allowance,
+    )
+    runtime_breach_categories = build_runtime_breach_categories_summary(
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_risk_register=runtime_risk_register,
+        policy_breach_summary=policy_breach_summary,
+        legacy_path_allowance=legacy_path_allowance,
+        cutover_blockers_breakdown=cutover_blockers_breakdown,
     )
     items: list[dict[str, Any]] = []
     if bool(onboarding.get("requires_explicit_runtime_pack")):
@@ -1109,6 +1223,18 @@ def build_server_issues_payload(
     runtime_risk_register_issue = _build_runtime_risk_register_issue(runtime_risk_register)
     if runtime_risk_register_issue is not None:
         items.append(runtime_risk_register_issue)
+    runtime_governance_contract_issue = _build_runtime_governance_contract_issue(runtime_governance_contract)
+    if runtime_governance_contract_issue is not None:
+        items.append(runtime_governance_contract_issue)
+    legacy_path_allowance_issue = _build_legacy_path_allowance_issue(legacy_path_allowance)
+    if legacy_path_allowance_issue is not None:
+        items.append(legacy_path_allowance_issue)
+    compatibility_exit_scorecard_issue = _build_compatibility_exit_scorecard_issue(compatibility_exit_scorecard)
+    if compatibility_exit_scorecard_issue is not None:
+        items.append(compatibility_exit_scorecard_issue)
+    runtime_breach_categories_issue = _build_runtime_breach_categories_issue(runtime_breach_categories)
+    if runtime_breach_categories_issue is not None:
+        items.append(runtime_breach_categories_issue)
     bridge_shrink_checklist_issue = _build_bridge_shrink_checklist_issue(bridge_shrink_checklist)
     if bridge_shrink_checklist_issue is not None:
         items.append(bridge_shrink_checklist_issue)
@@ -1183,7 +1309,7 @@ def execute_server_issue_action_payload(
     normalized_server = normalize_runtime_server_code(server_code)
     normalized_issue = str(issue_id or "").strip().lower()
     normalized_action = str(action or "").strip().lower()
-    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_review_signal", "laws_promotion_blockers", "laws_activation_gap", "laws_runtime_shell_debt", "laws_runtime_convergence", "laws_cutover_readiness", "laws_runtime_cutover_mode", "runtime_bridge_policy", "runtime_operating_mode", "runtime_policy_violations", "laws_cutover_guardrails", "runtime_policy_enforcement", "runtime_policy_breach_summary", "runtime_risk_register", "laws_bridge_shrink_checklist", "laws_cutover_blockers_breakdown"} and normalized_action == "recheck":
+    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_review_signal", "laws_promotion_blockers", "laws_activation_gap", "laws_runtime_shell_debt", "laws_runtime_convergence", "laws_cutover_readiness", "laws_runtime_cutover_mode", "runtime_bridge_policy", "runtime_operating_mode", "runtime_policy_violations", "laws_cutover_guardrails", "runtime_policy_enforcement", "runtime_policy_breach_summary", "runtime_risk_register", "runtime_governance_contract", "legacy_path_allowance", "compatibility_exit_scorecard", "runtime_breach_categories", "laws_bridge_shrink_checklist", "laws_cutover_blockers_breakdown"} and normalized_action == "recheck":
         result = build_server_laws_recheck_payload(
             server_code=normalized_server,
             runtime_servers_store=runtime_servers_store,

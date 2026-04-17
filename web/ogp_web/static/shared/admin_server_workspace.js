@@ -394,6 +394,10 @@ window.OGPAdminServerWorkspace = {
         const runtimePolicyEnforcement = laws.runtime_policy_enforcement || state.lawsDiff?.runtime_policy_enforcement || {};
         const policyBreachSummary = laws.policy_breach_summary || state.lawsDiff?.policy_breach_summary || {};
         const runtimeRiskRegister = laws.runtime_risk_register || state.lawsDiff?.runtime_risk_register || {};
+        const runtimeGovernanceContract = laws.runtime_governance_contract || state.lawsDiff?.runtime_governance_contract || {};
+        const legacyPathAllowance = laws.legacy_path_allowance || state.lawsDiff?.legacy_path_allowance || {};
+        const compatibilityExitScorecard = laws.compatibility_exit_scorecard || state.lawsDiff?.compatibility_exit_scorecard || {};
+        const runtimeBreachCategories = laws.runtime_breach_categories || state.lawsDiff?.runtime_breach_categories || {};
         const bridgeShrinkChecklist = laws.bridge_shrink_checklist || state.lawsDiff?.bridge_shrink_checklist || {};
         const cutoverBlockersBreakdown = laws.cutover_blockers_breakdown || state.lawsDiff?.cutover_blockers_breakdown || {};
         const effective = state.lawsEffective || {};
@@ -550,6 +554,26 @@ window.OGPAdminServerWorkspace = {
               <span class="legal-field__label">Risk register</span>
               <div><strong>${escapeHtml(String(runtimeRiskRegister.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeRiskRegister.detail || "Runtime risk register is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Governance contract</span>
+              <div><strong>${escapeHtml(String(runtimeGovernanceContract.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeGovernanceContract.next_step || runtimeGovernanceContract.detail || "Runtime governance contract is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Legacy path allowance</span>
+              <div><strong>${escapeHtml(String(legacyPathAllowance.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(legacyPathAllowance.next_step || legacyPathAllowance.detail || "Legacy path allowance summary is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Exit scorecard</span>
+              <div><strong>${escapeHtml(String(compatibilityExitScorecard.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(compatibilityExitScorecard.next_step || compatibilityExitScorecard.detail || "Compatibility exit scorecard is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Breach categories</span>
+              <div><strong>${escapeHtml(String(runtimeBreachCategories.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeBreachCategories.detail || "Runtime breach categories are not available yet."))}</div>
             </div>
             <div class="legal-field">
               <span class="legal-field__label">Bridge shrink checklist</span>
