@@ -238,9 +238,13 @@ def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
     assert payload["runtime_provenance"]["is_projection_backed"] is False
     assert payload["runtime_provenance"]["law_set_observational_only"] is True
     assert payload["runtime_provenance"]["runtime_shell_artifact_present"] is True
+    assert payload["runtime_provenance"]["shell_role"] == "runtime_shell_artifact"
+    assert payload["runtime_provenance"]["shell_stage"] == "active_without_projection"
     assert payload["runtime_alignment"]["status"] == "legacy_only"
     assert payload["runtime_alignment"]["law_set_observational_only"] is True
     assert payload["runtime_alignment"]["runtime_shell_artifact_present"] is True
+    assert payload["runtime_alignment"]["shell_role"] == "runtime_shell_artifact"
+    assert payload["runtime_alignment"]["shell_stage"] == "active_without_projection"
     assert payload["runtime_alignment"]["active_law_set_id"] == 1
     assert payload["runtime_alignment"]["active_law_version_id"] == 77
     assert payload["onboarding"]["highest_completed_state"] == "rollout-ready"
@@ -281,8 +285,10 @@ def test_runtime_server_health_summary_treats_law_set_as_observational_shell_che
     assert payload["checks"]["bindings"]["canonical_ready"] is True
     assert payload["runtime_provenance"]["mode"] == "legacy_runtime_shell"
     assert payload["runtime_provenance"]["law_set_observational_only"] is True
+    assert payload["runtime_provenance"]["shell_stage"] == "active_without_projection"
     assert payload["runtime_alignment"]["status"] == "legacy_only"
     assert payload["runtime_alignment"]["law_set_observational_only"] is True
+    assert payload["runtime_alignment"]["shell_stage"] == "active_without_projection"
     assert payload["runtime_alignment"]["active_law_set_id"] is None
     assert payload["runtime_alignment"]["active_law_version_id"] == 77
 

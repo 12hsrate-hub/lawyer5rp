@@ -43,6 +43,7 @@ Date: 2026-04-14
   - `L.runtime.26` mark projection-bridge lifecycle and runtime-version parity as `law_set_observational_only` across server-centric laws/issues surfaces so operators stop reading legacy `law_set` ids as operational readiness truth
   - `L.runtime.27` align issues fallback health with canonical binding truth: even when runtime health construction fails, observability fallback now keeps canonical source-set binding counts as the only readiness basis and demotes legacy `law_set` detail to observational shell metadata instead of reviving old fallback semantics
   - `L.runtime.28` make base runtime health itself law-version-first: provenance/alignment detail no longer changes meaning based on `active_law_set`, `law_set` checks now use generic observational metadata, and core health exposes `law_set_observational_only` / `runtime_shell_artifact_present` so even the lowest-level runtime health payload stops implying that `law_set` is part of operational readiness truth
+  - `L.runtime.29` expose explicit runtime shell artifact role/stage in base health and use that artifact wording in workspace/issues: server-centric surfaces now talk about `runtime shell artifact` stages like `active_without_projection` and `materialized_only` instead of implying that the remaining legacy shell is a normal steady-state runtime mode
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`

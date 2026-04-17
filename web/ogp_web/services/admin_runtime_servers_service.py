@@ -94,18 +94,28 @@ def _build_runtime_laws_provenance_summary(
     if matches_active and projection_run_id > 0:
         mode = "projection_backed"
         detail = "Current active runtime law_version is explained by a promoted projection run."
+        shell_role = "projection_backed_runtime"
+        shell_stage = "activated"
     elif projection_run_id > 0 and projected_law_version_id > 0 and active_law_version_id > 0:
         mode = "projection_drift"
         detail = "Projection activation exists, but it no longer matches the current active runtime law_version."
+        shell_role = "runtime_shell_artifact"
+        shell_stage = "drifted"
     elif active_law_version_id > 0:
         mode = "legacy_runtime_shell"
         detail = "Active runtime law_version shell exists, but no promoted projection currently explains it."
+        shell_role = "runtime_shell_artifact"
+        shell_stage = "active_without_projection"
     elif active_law_set_id > 0:
         mode = "materialized_shell_only"
         detail = "A runtime law_set shell exists, but there is no active runtime law_version yet."
+        shell_role = "runtime_shell_artifact"
+        shell_stage = "materialized_only"
     else:
         mode = "uninitialized"
         detail = "No runtime law shell is active yet."
+        shell_role = "no_runtime_shell"
+        shell_stage = "missing"
 
     return {
         "mode": mode,
@@ -119,6 +129,8 @@ def _build_runtime_laws_provenance_summary(
         "binding_count": int(binding_count),
         "law_set_observational_only": True,
         "runtime_shell_artifact_present": bool(active_law_set_id or active_law_version_id),
+        "shell_role": shell_role,
+        "shell_stage": shell_stage,
     }
 
 
@@ -141,18 +153,28 @@ def _build_runtime_alignment_summary(
     if projection_run_id > 0 and matches_active_law_version:
         status = "aligned"
         detail = "Promoted projection matches the current active runtime law_version."
+        shell_role = "projection_backed_runtime"
+        shell_stage = "activated"
     elif projection_run_id > 0 and active_law_version_id > 0 and (projected_law_version_id > 0 or projected_law_set_id > 0):
         status = "drift"
         detail = "Promoted projection exists, but the active runtime shell no longer matches it exactly."
+        shell_role = "runtime_shell_artifact"
+        shell_stage = "drifted"
     elif active_law_version_id > 0:
         status = "legacy_only"
         detail = "Active runtime law_version shell exists without an aligned promoted projection."
+        shell_role = "runtime_shell_artifact"
+        shell_stage = "active_without_projection"
     elif active_law_set_id > 0:
         status = "pending_activation"
         detail = "Runtime law_set shell exists, but there is no active runtime law_version yet."
+        shell_role = "runtime_shell_artifact"
+        shell_stage = "materialized_only"
     else:
         status = "uninitialized"
         detail = "Runtime alignment cannot be checked before a runtime shell exists."
+        shell_role = "no_runtime_shell"
+        shell_stage = "missing"
 
     return {
         "status": status,
@@ -166,6 +188,8 @@ def _build_runtime_alignment_summary(
         "matches_active_law_version": matches_active_law_version if projected_law_version_id > 0 else None,
         "law_set_observational_only": True,
         "runtime_shell_artifact_present": bool(active_law_set_id or active_law_version_id),
+        "shell_role": shell_role,
+        "shell_stage": shell_stage,
     }
 
 
