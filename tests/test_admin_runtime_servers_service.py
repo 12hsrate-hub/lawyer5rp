@@ -680,8 +680,18 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
 
 
 def test_runtime_shell_artifact_only_allowance_is_limited_not_broad_compatibility():
+    runtime_governance_contract = build_runtime_governance_contract_summary(
+        runtime_bridge_policy={"status": "keep_compatibility", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        runtime_operating_mode={"status": "compatibility_runtime", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        runtime_policy_enforcement={"status": "enforced", "detail": "", "next_step": ""},
+        runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": ""},
+    )
+
+    assert runtime_governance_contract["status"] == "transitional_contract"
+    assert "runtime-shell-artifact transition contract" in runtime_governance_contract["detail"]
+
     legacy_path_allowance = build_legacy_path_allowance_summary(
-        runtime_governance_contract={"status": "compatibility_contract", "detail": "", "next_step": ""},
+        runtime_governance_contract=runtime_governance_contract,
         runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
         runtime_config_posture={"status": "declared_ready", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
         runtime_operating_mode={"status": "compatibility_runtime", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
@@ -705,7 +715,7 @@ def test_runtime_shell_artifact_only_allowance_is_limited_not_broad_compatibilit
         legacy_path_allowance=legacy_path_allowance,
         runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
         runtime_operating_mode={"status": "compatibility_runtime", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
-        runtime_governance_contract={"status": "compatibility_contract", "detail": "", "next_step": ""},
+        runtime_governance_contract=runtime_governance_contract,
     )
 
     assert legacy_path_controls["status"] == "transition_controls"
@@ -769,7 +779,7 @@ def test_runtime_shell_artifact_only_allowance_is_limited_not_broad_compatibilit
     assert runtime_exception_register_after_exit["status"] == "clear"
 
     projection_runtime_gate = build_projection_runtime_gate_summary(
-        runtime_governance_contract={"status": "compatibility_contract", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        runtime_governance_contract=runtime_governance_contract,
         compatibility_exit_scorecard=compatibility_exit_scorecard,
         runtime_policy_enforcement={"status": "enforced", "detail": "", "next_step": ""},
         runtime_breach_categories=runtime_breach_categories,

@@ -65,6 +65,7 @@ Date: 2026-04-14
   - `L.runtime.48` make `projection_runtime_gate` and `shrink_sequence` reflect the same final-tail posture, so a low-risk `runtime_shell_artifact` carry now reads as the last planned shrink pass rather than as an undifferentiated guarded queue
   - `L.runtime.49` stop shell-artifact-only tails from inflating `runtime_breach_categories`: once fallback/bootstrap are already gone, a final `runtime_shell_artifact` carry no longer counts as a broad legacy-path breach category by itself
   - `L.runtime.50` stop shell-artifact-only exit passes from reopening `runtime_exception_register`: a final `exit_in_progress` artifact-tail state now stays visible through controls/gate/sequence without reappearing as a carried explicit exception
+  - `L.runtime.51` narrow `runtime_governance_contract` for final shell-artifact tails from broad `compatibility_contract` to `transitional_contract`, so the last declared-runtime artifact carry is classified as a bounded transition instead of a full compatibility regime
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`

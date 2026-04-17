@@ -1704,6 +1704,12 @@ def build_runtime_governance_contract_summary(
     resolution_status = str(resolution.get("status") or "").strip().lower()
     shell_role = str(operating_mode.get("shell_role") or bridge_policy.get("shell_role") or "").strip().lower()
     shell_stage = str(operating_mode.get("shell_stage") or bridge_policy.get("shell_stage") or "").strip().lower()
+    artifact_tail_contract = (
+        shell_role == "runtime_shell_artifact"
+        and resolution_status == "declared_runtime"
+        and enforcement_status in {"enforced", "pre_enforcement"}
+        and bridge_policy_status in {"keep_compatibility", "stabilize_for_cutover"}
+    )
 
     if (
         bridge_policy_status == "prefer_projection_runtime"
@@ -1714,6 +1720,10 @@ def build_runtime_governance_contract_summary(
         status = "projection_contract"
         detail = "Server satisfies the declared projection-runtime governance contract in the current read model."
         next_step = "Удерживайте projection runtime contract и не допускайте возврата к compatibility paths."
+    elif artifact_tail_contract:
+        status = "transitional_contract"
+        detail = "Server is down to a final runtime-shell-artifact transition contract."
+        next_step = "Доведите последний runtime shell artifact tail до fully removed/blocked state."
     elif (
         bridge_policy_status == "keep_compatibility"
         or operating_mode_status == "compatibility_runtime"
@@ -1804,14 +1814,14 @@ def build_legacy_path_allowance_summary(
         status = "denied"
         detail = "Legacy runtime paths should no longer be required for this server."
         next_step = "Сохраняйте legacy path allowance закрытым и отслеживайте только regressions."
-    elif contract_status == "transitional_contract":
-        status = "limited"
-        detail = "Only transitional legacy paths should still be tolerated while cutover stabilizes."
-        next_step = str(contract.get("next_step") or "Постепенно убирайте bootstrap/runtime-shell-artifact allowance.").strip()
     elif only_shell_artifact_allowance:
         status = "limited"
         detail = "Only runtime-shell-artifact carry remains tolerated while the last compatibility debt is being reduced."
         next_step = str(contract.get("next_step") or "Постепенно снимайте runtime shell artifact carry и доводите path allowance до denied.").strip()
+    elif contract_status == "transitional_contract":
+        status = "limited"
+        detail = "Only transitional legacy paths should still be tolerated while cutover stabilizes."
+        next_step = str(contract.get("next_step") or "Постепенно убирайте bootstrap/runtime-shell-artifact allowance.").strip()
     elif contract_status == "compatibility_contract" or allowance_items:
         status = "compatibility_allowed"
         detail = "Compatibility-era paths are still allowed for this server in the current runtime contract."
