@@ -302,17 +302,15 @@ def _runtime_version_parity_summary(*, health_payload: dict[str, Any]) -> dict[s
         detail = "There is not enough runtime/projection version data to compare law_version parity."
 
     drift_summary = ""
+    shell_artifact_present = bool(active_law_set_id or projected_law_set_id)
     if status in {"drift", "legacy_only", "pending_activation"}:
         drift_parts: list[str] = []
         if active_law_version_id > 0:
             drift_parts.append(f"active_version={active_law_version_id}")
         if projected_law_version_id > 0:
             drift_parts.append(f"projected_version={projected_law_version_id}")
-        if not drift_parts:
-            if active_law_set_id > 0:
-                drift_parts.append(f"active_law_set={active_law_set_id}")
-            if projected_law_set_id > 0:
-                drift_parts.append(f"projected_law_set={projected_law_set_id}")
+        if not drift_parts and shell_artifact_present:
+            drift_parts.append("runtime_shell_artifact_present")
         drift_summary = "; ".join(drift_parts)
 
     return {
@@ -326,10 +324,8 @@ def _runtime_version_parity_summary(*, health_payload: dict[str, Any]) -> dict[s
         "matches_active_law_version": (
             projected_law_version_id > 0 and active_law_version_id > 0 and projected_law_version_id == active_law_version_id
         ),
-        "matches_active_law_set": (
-            projected_law_set_id > 0 and active_law_set_id > 0 and projected_law_set_id == active_law_set_id
-        ),
         "law_set_observational_only": True,
+        "shell_artifact_present": shell_artifact_present,
         "shell_role": str(runtime_alignment.get("shell_role") or runtime_provenance.get("shell_role") or "").strip().lower() or None,
         "shell_stage": str(runtime_alignment.get("shell_stage") or runtime_provenance.get("shell_stage") or "").strip().lower() or None,
         "drift_summary": drift_summary,
@@ -360,7 +356,7 @@ def _projection_bridge_lifecycle_summary(*, health_payload: dict[str, Any]) -> d
         detail = "Projection bridge has an activation record, but it no longer matches the current runtime law_version."
     elif law_set_id > 0:
         status = "materialized"
-        detail = "Projection bridge materialized a runtime law_set shell, but no active runtime law_version is aligned yet."
+        detail = "Projection bridge materialized a runtime shell artifact, but no active runtime law_version is aligned yet."
     else:
         status = "preview_only"
         detail = "Projection bridge currently exists only as a preview/decision run without materialization."
@@ -379,6 +375,7 @@ def _projection_bridge_lifecycle_summary(*, health_payload: dict[str, Any]) -> d
         "active_law_version_id": active_law_version_id or None,
         "matches_active_law_version": matches_active if law_version_id > 0 else None,
         "law_set_observational_only": True,
+        "shell_artifact_present": bool(law_set_id),
         "shell_role": shell_role or None,
         "shell_stage": shell_stage or None,
     }
@@ -1165,6 +1162,8 @@ def build_runtime_cutover_mode_summary(
     config_debt_status = str(config_debt.get("status") or "").strip().lower()
     shell_role = str(convergence.get("shell_role") or shell_debt.get("shell_role") or "").strip().lower()
     shell_stage = str(convergence.get("shell_stage") or shell_debt.get("shell_stage") or "").strip().lower()
+    config_path_role = str(config_debt.get("path_role") or "").strip().lower()
+    config_path_stage = str(config_debt.get("path_stage") or "").strip().lower()
 
     if cutover_status == "ready_for_cutover" and convergence_status == "converged" and shell_debt_status == "low" and config_debt_status == "low":
         status = "projection_preferred"
@@ -1193,6 +1192,8 @@ def build_runtime_cutover_mode_summary(
         "config_debt_status": config_debt_status,
         "shell_role": shell_role or None,
         "shell_stage": shell_stage or None,
+        "config_path_role": config_path_role or None,
+        "config_path_stage": config_path_stage or None,
     }
 
 
@@ -1211,6 +1212,8 @@ def build_runtime_bridge_policy_summary(
     cutover_status = str(cutover.get("status") or "").strip().lower()
     shell_role = str(cutover_mode.get("shell_role") or cutover.get("shell_role") or "").strip().lower()
     shell_stage = str(cutover_mode.get("shell_stage") or cutover.get("shell_stage") or "").strip().lower()
+    config_path_role = str(resolution.get("path_role") or "").strip().lower()
+    config_path_stage = str(resolution.get("path_stage") or "").strip().lower()
 
     if resolution_status == "declared_runtime" and cutover_mode_status == "projection_preferred":
         status = "prefer_projection_runtime"
@@ -1255,6 +1258,8 @@ def build_runtime_bridge_policy_summary(
         "cutover_readiness_status": cutover_status,
         "shell_role": shell_role or None,
         "shell_stage": shell_stage or None,
+        "config_path_role": config_path_role or None,
+        "config_path_stage": config_path_stage or None,
     }
 
 
@@ -1276,6 +1281,8 @@ def build_runtime_operating_mode_summary(
     cutover_mode_status = str(cutover_mode.get("status") or "").strip().lower()
     shell_role = str(cutover_mode.get("shell_role") or provenance.get("shell_role") or "").strip().lower()
     shell_stage = str(cutover_mode.get("shell_stage") or provenance.get("shell_stage") or "").strip().lower()
+    config_path_role = str(config_posture.get("path_role") or "").strip().lower()
+    config_path_stage = str(config_posture.get("path_stage") or "").strip().lower()
 
     if (
         bridge_policy_status == "prefer_projection_runtime"
@@ -1322,6 +1329,8 @@ def build_runtime_operating_mode_summary(
         "cutover_mode_status": cutover_mode_status,
         "shell_role": shell_role or None,
         "shell_stage": shell_stage or None,
+        "config_path_role": config_path_role or None,
+        "config_path_stage": config_path_stage or None,
     }
 
 
@@ -1349,6 +1358,8 @@ def build_runtime_policy_violations_summary(
     cutover_status = str(cutover.get("status") or "").strip().lower()
     shell_role = str(operating_mode.get("shell_role") or shell_debt.get("shell_role") or provenance.get("shell_role") or "").strip().lower()
     shell_stage = str(operating_mode.get("shell_stage") or shell_debt.get("shell_stage") or provenance.get("shell_stage") or "").strip().lower()
+    config_path_role = str(config_posture.get("path_role") or "").strip().lower()
+    config_path_stage = str(config_posture.get("path_stage") or "").strip().lower()
 
     items: list[dict[str, str]] = []
 
@@ -1420,6 +1431,8 @@ def build_runtime_policy_violations_summary(
         "operating_mode_status": operating_mode_status,
         "shell_role": shell_role or None,
         "shell_stage": shell_stage or None,
+        "config_path_role": config_path_role or None,
+        "config_path_stage": config_path_stage or None,
     }
 
 
@@ -1766,6 +1779,8 @@ def build_legacy_path_allowance_summary(
     shell_debt_status = str(shell_debt.get("status") or "").strip().lower()
     shell_role = str(operating_mode.get("shell_role") or shell_debt.get("shell_role") or "").strip().lower()
     shell_stage = str(operating_mode.get("shell_stage") or shell_debt.get("shell_stage") or "").strip().lower()
+    config_path_role = str(resolution.get("path_role") or config_posture.get("path_role") or "").strip().lower()
+    config_path_stage = str(resolution.get("path_stage") or config_posture.get("path_stage") or "").strip().lower()
 
     allowance_items: list[str] = []
     if resolution_status == "compatibility_exception":
@@ -1813,6 +1828,8 @@ def build_legacy_path_allowance_summary(
         "shell_debt_status": shell_debt_status,
         "shell_role": shell_role or None,
         "shell_stage": shell_stage or None,
+        "config_path_role": config_path_role or None,
+        "config_path_stage": config_path_stage or None,
     }
 
 
@@ -1989,6 +2006,8 @@ def build_legacy_path_controls_summary(
     contract_status = str(contract.get("status") or "").strip().lower()
     shell_role = str(operating_mode.get("shell_role") or allowance.get("shell_role") or "").strip().lower()
     shell_stage = str(operating_mode.get("shell_stage") or allowance.get("shell_stage") or "").strip().lower()
+    config_path_role = str(resolution.get("path_role") or "").strip().lower()
+    config_path_stage = str(resolution.get("path_stage") or "").strip().lower()
 
     control_items: list[dict[str, str]] = []
 
@@ -2047,6 +2066,8 @@ def build_legacy_path_controls_summary(
         "items": control_items[:10],
         "shell_role": shell_role or None,
         "shell_stage": shell_stage or None,
+        "config_path_role": config_path_role or None,
+        "config_path_stage": config_path_stage or None,
     }
 
 
@@ -2234,6 +2255,8 @@ def build_compatibility_path_matrix_summary(
     resolution_status = str(resolution.get("status") or "").strip().lower()
     shell_role = str(controls.get("shell_role") or exception_register.get("shell_role") or "").strip().lower()
     shell_stage = str(controls.get("shell_stage") or exception_register.get("shell_stage") or "").strip().lower()
+    config_path_role = str(resolution.get("path_role") or "").strip().lower()
+    config_path_stage = str(resolution.get("path_stage") or "").strip().lower()
 
     def _find_control(path: str) -> dict[str, Any]:
         for item in control_items:
@@ -2311,6 +2334,8 @@ def build_compatibility_path_matrix_summary(
         "items": paths,
         "shell_role": shell_role or None,
         "shell_stage": shell_stage or None,
+        "config_path_role": config_path_role or None,
+        "config_path_stage": config_path_stage or None,
     }
 
 

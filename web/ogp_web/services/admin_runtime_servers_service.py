@@ -569,6 +569,20 @@ def build_runtime_server_health_payload(
             ),
             "resolution_mode": str(onboarding.get("resolution_mode") or "neutral_fallback"),
             "requires_explicit_runtime_pack": bool(onboarding.get("requires_explicit_runtime_pack")),
+            "path_role": (
+                "declared_runtime_path"
+                if str(onboarding.get("resolution_mode") or "").strip().lower() == "published_pack"
+                else "transitional_runtime_path"
+                if str(onboarding.get("resolution_mode") or "").strip().lower() == "bootstrap_pack"
+                else "compatibility_exception_path"
+            ),
+            "path_stage": (
+                "published"
+                if str(onboarding.get("resolution_mode") or "").strip().lower() == "published_pack"
+                else "bootstrap"
+                if str(onboarding.get("resolution_mode") or "").strip().lower() == "bootstrap_pack"
+                else "fallback"
+            ),
         },
     }
     required_check_codes = ("server", "bindings", "activation", "health", "config_resolution")
@@ -628,20 +642,28 @@ def build_runtime_config_posture_summary(*, health_payload: dict[str, Any]) -> d
         status = "declared_ready"
         detail = "Runtime resolves through an explicit published pack."
         next_step = "Config resolution looks declared and stable."
+        path_role = "declared_runtime_path"
+        path_stage = "published"
     elif resolution_mode == "bootstrap_pack" and not requires_explicit_runtime_pack:
         status = "bootstrap_transition"
         detail = "Runtime still resolves through a bootstrap pack instead of a published runtime pack."
         next_step = "Опубликуйте runtime/server pack, когда сервер будет готов выйти из bootstrap path."
+        path_role = "transitional_runtime_path"
+        path_stage = "bootstrap"
     else:
         status = "fallback_only"
         detail = "Runtime still depends on neutral fallback because no explicit published/bootstrap runtime pack is locked in."
         next_step = "Опубликуйте runtime/server pack или закрепите bootstrap pack, чтобы выйти из fallback path."
+        path_role = "compatibility_exception_path"
+        path_stage = "fallback"
 
     return {
         "status": status,
         "detail": detail,
         "next_step": next_step,
         "resolution_mode": resolution_mode,
+        "path_role": path_role,
+        "path_stage": path_stage,
         "highest_completed_state": highest_completed_state,
         "next_required_state": next_required_state,
         "requires_explicit_runtime_pack": requires_explicit_runtime_pack,
@@ -683,6 +705,8 @@ def build_runtime_config_debt_summary(*, health_payload: dict[str, Any]) -> dict
         "reason_count": len(reasons),
         "reasons": reasons,
         "resolution_mode": resolution_mode,
+        "path_role": str(posture.get("path_role") or "").strip().lower() or None,
+        "path_stage": str(posture.get("path_stage") or "").strip().lower() or None,
         "highest_completed_state": highest_completed_state,
     }
 
@@ -713,4 +737,6 @@ def build_runtime_resolution_policy_summary(*, health_payload: dict[str, Any]) -
         "posture_status": posture_status,
         "debt_status": debt_status,
         "resolution_mode": str(posture.get("resolution_mode") or "").strip().lower(),
+        "path_role": str(posture.get("path_role") or "").strip().lower() or None,
+        "path_stage": str(posture.get("path_stage") or "").strip().lower() or None,
     }
