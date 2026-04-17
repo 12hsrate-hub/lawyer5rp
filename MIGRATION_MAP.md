@@ -7,11 +7,11 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase L`
-- Active task: `move runtime multi-server policy from observability into explicit governance, allowance, and exit contracts`
+- Active task: `turn runtime governance contracts into explicit shrinking controls and gate decisions`
 - Status: `in_progress`
 - Last completed phase: `Phase K`
 - Inventory slices completed: `6`
-- Next slice: `turn governance/allowance/exit summaries into controlled compatibility-path shrinking work`
+- Next slice: `start bounded shrinking of individual compatibility paths using the new control/gate layer`
 - Last updated: `2026-04-17`
 - Accelerated runtime phase:
   - `L.runtime.1` add a single `runtime_bridge_policy` verdict so runtime cutover posture is no longer inferred from multiple lower-level summaries
@@ -21,6 +21,7 @@ Date: 2026-04-14
   - `L.runtime.5` add `runtime_policy_enforcement` so the repo can distinguish enforced projection policy, pre-enforcement transition, compatibility hold, and actual policy violation states
   - `L.runtime.6` add `policy_breach_summary` and `runtime_risk_register` so remaining compatibility debt is tracked as an explicit runtime risk surface instead of only as disconnected guardrail/enforcement fragments
   - `L.runtime.7` add `runtime_governance_contract`, `legacy_path_allowance`, `compatibility_exit_scorecard`, and `runtime_breach_categories` so each server now exposes an explicit governance contract, what legacy paths are still allowed, how far it is from exiting compatibility, and which breach categories still keep the bridge alive
+  - `L.runtime.8` add `legacy_path_controls`, `projection_runtime_gate`, `compatibility_shrink_decision`, and `runtime_exception_register` so runtime/admin surfaces now express not just governance posture but concrete shrinking controls, gate state, and explicit carried exceptions per server
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`
