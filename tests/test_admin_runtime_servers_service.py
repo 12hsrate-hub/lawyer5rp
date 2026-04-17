@@ -574,6 +574,7 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": ""},
     )
     assert runtime_governance_contract["status"] == "projection_contract"
+    assert runtime_governance_contract["shell_stage"] == "activated"
     legacy_path_allowance = build_legacy_path_allowance_summary(
         runtime_governance_contract=runtime_governance_contract,
         runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": ""},
@@ -582,6 +583,7 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         runtime_shell_debt=runtime_shell_debt,
     )
     assert legacy_path_allowance["status"] == "denied"
+    assert legacy_path_allowance["shell_stage"] == "activated"
     compatibility_exit_scorecard = build_compatibility_exit_scorecard_summary(
         bridge_shrink_checklist=bridge_shrink_checklist,
         cutover_blockers_breakdown=cutover_blockers_breakdown,
@@ -590,6 +592,7 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         legacy_path_allowance=legacy_path_allowance,
     )
     assert compatibility_exit_scorecard["status"] == "ready_to_exit"
+    assert compatibility_exit_scorecard["shell_stage"] == "activated"
     runtime_breach_categories = build_runtime_breach_categories_summary(
         runtime_policy_violations=runtime_policy_violations,
         runtime_risk_register=runtime_risk_register,
@@ -598,6 +601,7 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         cutover_blockers_breakdown=cutover_blockers_breakdown,
     )
     assert runtime_breach_categories["status"] == "clear"
+    assert runtime_breach_categories["shell_stage"] == "activated"
     legacy_path_controls = build_legacy_path_controls_summary(
         legacy_path_allowance=legacy_path_allowance,
         runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": ""},
@@ -605,6 +609,7 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         runtime_governance_contract=runtime_governance_contract,
     )
     assert legacy_path_controls["status"] == "projection_controls"
+    assert legacy_path_controls["shell_stage"] == "activated"
     projection_runtime_gate = build_projection_runtime_gate_summary(
         runtime_governance_contract=runtime_governance_contract,
         compatibility_exit_scorecard=compatibility_exit_scorecard,
@@ -612,12 +617,14 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         runtime_breach_categories=runtime_breach_categories,
     )
     assert projection_runtime_gate["status"] == "open"
+    assert projection_runtime_gate["shell_stage"] == "activated"
     compatibility_shrink_decision = build_compatibility_shrink_decision_summary(
         projection_runtime_gate=projection_runtime_gate,
         legacy_path_controls=legacy_path_controls,
         runtime_risk_register=runtime_risk_register,
     )
     assert compatibility_shrink_decision["status"] == "shrink_now"
+    assert compatibility_shrink_decision["shell_stage"] == "activated"
     runtime_exception_register = build_runtime_exception_register_summary(
         legacy_path_allowance=legacy_path_allowance,
         runtime_policy_violations=runtime_policy_violations,
@@ -625,6 +632,7 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         compatibility_exit_scorecard=compatibility_exit_scorecard,
     )
     assert runtime_exception_register["status"] == "clear"
+    assert runtime_exception_register["shell_stage"] == "activated"
     compatibility_path_matrix = build_compatibility_path_matrix_summary(
         legacy_path_controls=legacy_path_controls,
         runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": ""},
