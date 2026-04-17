@@ -22,6 +22,7 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_cutover_blockers_breakdown_summary,
     build_cutover_readiness_summary,
     build_promotion_blockers_summary,
+    build_promotion_review_signal_summary,
     build_runtime_convergence_summary,
 )
 from ogp_web.services.law_version_service import ResolvedLawVersion
@@ -255,6 +256,14 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         projection_bridge_lifecycle={"status": "activated", "detail": "Activated."},
     )
     assert promotion_blockers["status"] == "review"
+
+    promotion_review_signal = build_promotion_review_signal_summary(
+        promotion_candidate={"status": "review_needed", "detail": "Latest projection candidate differs from the previous baseline and should be reviewed.", "next_step": "Проверьте diff и подтвердите, что изменения ожидаемы.", "counts": {"selected_count": 1, "changed": 1}},
+        promotion_delta={"status": "attention", "detail": "Latest projection candidate has changes or content gaps that deserve review.", "counts": {"added": 1, "removed": 0, "changed": 1, "missing_content": 0, "error_count": 0}},
+        promotion_blockers=promotion_blockers,
+    )
+    assert promotion_review_signal["status"] == "review"
+    assert promotion_review_signal["counts"]["advisory_count"] == 2
 
     activation_gap = build_activation_gap_summary(
         projection_bridge_readiness={"status": "ready", "detail": "Bridge readiness signals are green.", "blockers": [], "next_step": ""},

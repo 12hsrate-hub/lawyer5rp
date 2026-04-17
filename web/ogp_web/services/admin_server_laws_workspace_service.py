@@ -562,6 +562,64 @@ def build_promotion_delta_summary(
     }
 
 
+def build_promotion_review_signal_summary(
+    *,
+    promotion_candidate: dict[str, Any],
+    promotion_delta: dict[str, Any],
+    promotion_blockers: dict[str, Any],
+) -> dict[str, Any]:
+    candidate = dict(promotion_candidate or {})
+    delta = dict(promotion_delta or {})
+    blockers = dict(promotion_blockers or {})
+
+    candidate_status = str(candidate.get("status") or "").strip().lower()
+    delta_status = str(delta.get("status") or "").strip().lower()
+    blockers_status = str(blockers.get("status") or "").strip().lower()
+    blocker_items = [
+        dict(item)
+        for item in list(blockers.get("items") or [])
+        if isinstance(item, dict)
+    ]
+    advisory_items = [
+        item
+        for item in blocker_items
+        if str(item.get("kind") or "").strip().lower() in {"candidate_review_needed", "delta_attention"}
+    ]
+
+    if blockers_status == "blocked":
+        status = "deferred"
+        detail = "Hard blockers still take priority over advisory promotion review."
+        next_step = str(blockers.get("next_step") or "Сначала устраните hard blockers, затем вернитесь к review delta.").strip()
+    elif blockers_status == "review" or candidate_status == "review_needed" or delta_status == "attention":
+        status = "review"
+        detail = "Only advisory promotion review signals remain in the current read model."
+        next_step = str(candidate.get("next_step") or "Проверьте diff и подтвердите, что изменения ожидаемы.").strip()
+    else:
+        status = "stable"
+        detail = "No standalone promotion review signal remains in the current read model."
+        next_step = "Отдельных advisory review signal не видно."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "counts": {
+            "candidate_selected_count": int((candidate.get("counts") or {}).get("selected_count") or 0),
+            "candidate_changed": int((candidate.get("counts") or {}).get("changed") or 0),
+            "delta_added": int((delta.get("counts") or {}).get("added") or 0),
+            "delta_removed": int((delta.get("counts") or {}).get("removed") or 0),
+            "delta_changed": int((delta.get("counts") or {}).get("changed") or 0),
+            "delta_missing_content": int((delta.get("counts") or {}).get("missing_content") or 0),
+            "delta_error_count": int((delta.get("counts") or {}).get("error_count") or 0),
+            "advisory_count": len(advisory_items),
+        },
+        "items": advisory_items[:4],
+        "candidate_status": candidate_status,
+        "delta_status": delta_status,
+        "blockers_status": blockers_status,
+    }
+
+
 def build_promotion_blockers_summary(
     *,
     projection_bridge_readiness: dict[str, Any],
@@ -1132,6 +1190,11 @@ def build_server_laws_summary_payload(
         runtime_version_parity=runtime_version_parity,
         projection_bridge_lifecycle=projection_bridge_lifecycle,
     )
+    promotion_review_signal = build_promotion_review_signal_summary(
+        promotion_candidate=promotion_candidate,
+        promotion_delta=promotion_delta,
+        promotion_blockers=promotion_blockers,
+    )
     activation_gap = build_activation_gap_summary(
         projection_bridge_readiness=bridge_readiness,
         runtime_version_parity=runtime_version_parity,
@@ -1183,6 +1246,7 @@ def build_server_laws_summary_payload(
         "promotion_candidate": promotion_candidate,
         "promotion_delta": promotion_delta,
         "promotion_blockers": promotion_blockers,
+        "promotion_review_signal": promotion_review_signal,
         "activation_gap": activation_gap,
         "runtime_shell_debt": runtime_shell_debt,
         "runtime_convergence": runtime_convergence,
@@ -1359,6 +1423,11 @@ def build_server_laws_diff_payload(
         runtime_version_parity=runtime_version_parity,
         projection_bridge_lifecycle=projection_bridge_lifecycle,
     )
+    promotion_review_signal = build_promotion_review_signal_summary(
+        promotion_candidate=promotion_candidate,
+        promotion_delta=promotion_delta,
+        promotion_blockers=promotion_blockers,
+    )
     activation_gap = build_activation_gap_summary(
         projection_bridge_readiness=bridge_readiness,
         runtime_version_parity=runtime_version_parity,
@@ -1407,6 +1476,7 @@ def build_server_laws_diff_payload(
         "promotion_candidate": promotion_candidate,
         "promotion_delta": promotion_delta,
         "promotion_blockers": promotion_blockers,
+        "promotion_review_signal": promotion_review_signal,
         "activation_gap": activation_gap,
         "runtime_shell_debt": runtime_shell_debt,
         "runtime_convergence": runtime_convergence,
