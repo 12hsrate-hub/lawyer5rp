@@ -1791,6 +1791,8 @@ def build_legacy_path_allowance_summary(
         allowance_items.append("runtime_shell_artifact")
     elif shell_debt_status in {"high", "medium"}:
         allowance_items.append("legacy_shell_debt")
+    allowance_kinds = set(allowance_items)
+    only_shell_artifact_allowance = bool(allowance_kinds) and allowance_kinds.issubset({"runtime_shell_artifact", "legacy_shell_debt"})
 
     if (
         contract_status == "projection_contract"
@@ -1806,6 +1808,10 @@ def build_legacy_path_allowance_summary(
         status = "limited"
         detail = "Only transitional legacy paths should still be tolerated while cutover stabilizes."
         next_step = str(contract.get("next_step") or "Постепенно убирайте bootstrap/runtime-shell-artifact allowance.").strip()
+    elif only_shell_artifact_allowance:
+        status = "limited"
+        detail = "Only runtime-shell-artifact carry remains tolerated while the last compatibility debt is being reduced."
+        next_step = str(contract.get("next_step") or "Постепенно снимайте runtime shell artifact carry и доводите path allowance до denied.").strip()
     elif contract_status == "compatibility_contract" or allowance_items:
         status = "compatibility_allowed"
         detail = "Compatibility-era paths are still allowed for this server in the current runtime contract."
@@ -2027,8 +2033,17 @@ def build_legacy_path_controls_summary(
     elif contract_status == "projection_contract":
         _control("bootstrap_pack", "blocked", "Bootstrap pack should no longer be part of the steady-state runtime path.")
 
-    if operating_mode_status == "compatibility_runtime":
+    runtime_shell_limited_tail = (
+        allowance_status == "limited"
+        and shell_role == "runtime_shell_artifact"
+        and resolution_status == "declared_runtime"
+        and config_path_stage == "published"
+    )
+
+    if operating_mode_status == "compatibility_runtime" and not runtime_shell_limited_tail:
         _control("runtime_shell_artifact", "allowed", "Runtime shell artifact is still part of the active runtime contract.")
+    elif runtime_shell_limited_tail:
+        _control("runtime_shell_artifact", "transition_only", "Runtime shell artifact is the only remaining bounded transitional carry.")
     elif allowance_status in {"limited", "compatibility_allowed"}:
         _control("runtime_shell_artifact", "transition_only", "Runtime shell artifact should only remain as a transitional/rollback shell.")
     else:
@@ -2141,10 +2156,21 @@ def build_compatibility_shrink_decision_summary(
     shell_role = str(gate.get("shell_role") or controls.get("shell_role") or risk_register.get("shell_role") or "").strip().lower()
     shell_stage = str(gate.get("shell_stage") or controls.get("shell_stage") or risk_register.get("shell_stage") or "").strip().lower()
 
+    artifact_tail_ready = (
+        shell_role == "runtime_shell_artifact"
+        and gate_status == "guarded"
+        and controls_status == "transition_controls"
+        and risk_status == "low"
+    )
+
     if gate_status == "open" and controls_status == "projection_controls" and risk_status == "low":
         status = "shrink_now"
         detail = "Server is a clean candidate for the next controlled compatibility-path shrinking step."
         next_step = "Можно планировать следующий bounded bridge-shrinking step для этого сервера."
+    elif artifact_tail_ready:
+        status = "shrink_now"
+        detail = "Only runtime-shell-artifact tail remains, so the next bounded shrinking step can target it directly."
+        next_step = "Планируйте следующий bounded shrink step прямо на runtime shell artifact tail."
     elif gate_status == "guarded" and controls_status in {"transition_controls", "projection_controls"} and risk_status in {"medium", "low"}:
         status = "shrink_after_stabilization"
         detail = "Server is close to bridge shrinking, but still needs stabilization before the next control step."
@@ -2186,7 +2212,10 @@ def build_runtime_exception_register_summary(
     allowance_status = str(allowance.get("status") or "").strip().lower()
     if allowance_status in {"compatibility_allowed", "limited"}:
         for path in list(allowance.get("allowed_paths") or [])[:10]:
-            items.append({"kind": "legacy_path", "detail": str(path)})
+            normalized_path = str(path or "").strip().lower()
+            if normalized_path == "runtime_shell_artifact":
+                continue
+            items.append({"kind": "legacy_path", "detail": normalized_path})
 
     for item in list(violations.get("items") or [])[:10]:
         detail = str((item or {}).get("detail") or "").strip()
@@ -2358,12 +2387,29 @@ def build_next_shrink_step_summary(
     shell_role = str(decision.get("shell_role") or matrix.get("shell_role") or "").strip().lower()
     shell_stage = str(decision.get("shell_stage") or matrix.get("shell_stage") or "").strip().lower()
 
+    preferred_path = ""
+    if shell_role == "runtime_shell_artifact":
+        preferred_path = "runtime_shell_artifact"
+
     candidate: dict[str, Any] | None = None
-    for preferred_status in ("active_exception", "transition_path"):
-        for item in matrix_items:
-            if str((item or {}).get("status") or "").strip().lower() == preferred_status:
-                candidate = dict(item or {})
+    if preferred_path:
+        for preferred_status in ("active_exception", "transition_path"):
+            for item in matrix_items:
+                if (
+                    str((item or {}).get("path") or "").strip().lower() == preferred_path
+                    and str((item or {}).get("status") or "").strip().lower() == preferred_status
+                ):
+                    candidate = dict(item or {})
+                    break
+            if candidate is not None:
                 break
+
+    for preferred_status in ("active_exception", "transition_path"):
+        if candidate is None:
+            for item in matrix_items:
+                if str((item or {}).get("status") or "").strip().lower() == preferred_status:
+                    candidate = dict(item or {})
+                    break
         if candidate is not None:
             break
 

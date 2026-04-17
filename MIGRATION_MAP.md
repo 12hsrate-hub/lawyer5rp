@@ -57,6 +57,10 @@ Date: 2026-04-14
   - `L.runtime.40` rename the remaining shrinking path from `legacy_runtime_shell` to `runtime_shell_artifact` in allowance/controls/matrix planning so the last operator-facing compatibility path reads as a rollback/artifact concern instead of a normal runtime mode
   - `L.runtime.41` finish the same artifact wording in shell-debt guidance so high-level debt/next-step text also talks about `runtime shell artifact` dependence instead of `legacy shell path`
   - `L.runtime.42` demote `runtime_shell_artifact` from `active_exception` to `transition_path` inside the compatibility path matrix so the remaining shell artifact no longer reads like a first-class exception path even when compatibility is still being held
+  - `L.runtime.43` stop carrying `runtime_shell_artifact` as a legacy-path exception in the explicit exception register; it now remains visible through transition controls, matrix, shell-debt, and risk surfaces, but no longer inflates the broad exception list like `neutral_fallback`
+  - `L.runtime.44` narrow `legacy_path_allowance` for shell-artifact-only carry from `compatibility_allowed` to `limited`, so a server that no longer depends on fallback/bootstrap does not keep reading as broadly compatibility-allowed just because the runtime shell artifact still exists
+  - `L.runtime.45` narrow `legacy_path_controls` for shell-artifact-only carry so the remaining runtime shell artifact is treated as `transition_only`, not an explicitly allowed legacy path, once fallback/bootstrap are already gone and config resolution is published
+  - `L.runtime.46` make shell-artifact-only tails plan the next shrink step directly: when the only remaining carry is a low-risk `runtime_shell_artifact` transition path, shrinking decisions can move straight to `shrink_now` and target that artifact tail instead of holding for broad compatibility stabilization
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`

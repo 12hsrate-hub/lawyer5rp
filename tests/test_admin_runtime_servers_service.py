@@ -677,3 +677,63 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         runtime_cutover_mode={"status": "compatibility_mode", "detail": "", "next_step": ""},
         cutover_readiness={"status": "needs_activation_alignment", "detail": "", "next_step": ""},
     )["status"] == "keep_compatibility"
+
+
+def test_runtime_shell_artifact_only_allowance_is_limited_not_broad_compatibility():
+    legacy_path_allowance = build_legacy_path_allowance_summary(
+        runtime_governance_contract={"status": "compatibility_contract", "detail": "", "next_step": ""},
+        runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
+        runtime_config_posture={"status": "declared_ready", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
+        runtime_operating_mode={"status": "compatibility_runtime", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        runtime_shell_debt={"status": "high", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+    )
+
+    assert legacy_path_allowance["status"] == "limited"
+    assert "runtime-shell-artifact" in legacy_path_allowance["detail"]
+    assert legacy_path_allowance["allowed_paths"] == ["runtime_shell_artifact"]
+
+    runtime_exception_register = build_runtime_exception_register_summary(
+        legacy_path_allowance=legacy_path_allowance,
+        runtime_policy_violations={"status": "clear", "items": []},
+        runtime_breach_categories={"status": "clear", "items": []},
+        compatibility_exit_scorecard={"status": "observe", "detail": "", "next_step": ""},
+    )
+
+    assert runtime_exception_register["status"] == "clear"
+
+    legacy_path_controls = build_legacy_path_controls_summary(
+        legacy_path_allowance=legacy_path_allowance,
+        runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
+        runtime_operating_mode={"status": "compatibility_runtime", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        runtime_governance_contract={"status": "compatibility_contract", "detail": "", "next_step": ""},
+    )
+
+    assert legacy_path_controls["status"] == "transition_controls"
+    runtime_shell_control = next(
+        item for item in legacy_path_controls["items"] if item["path"] == "runtime_shell_artifact"
+    )
+    assert runtime_shell_control["status"] == "transition_only"
+
+    compatibility_shrink_decision = build_compatibility_shrink_decision_summary(
+        projection_runtime_gate={"status": "guarded", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        legacy_path_controls=legacy_path_controls,
+        runtime_risk_register={"status": "low", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+    )
+
+    assert compatibility_shrink_decision["status"] == "shrink_now"
+    assert "runtime-shell-artifact tail" in compatibility_shrink_decision["detail"]
+
+    compatibility_path_matrix = build_compatibility_path_matrix_summary(
+        legacy_path_controls=legacy_path_controls,
+        runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
+        runtime_exception_register=runtime_exception_register,
+    )
+
+    next_shrink_step = build_next_shrink_step_summary(
+        compatibility_shrink_decision=compatibility_shrink_decision,
+        compatibility_path_matrix=compatibility_path_matrix,
+        runtime_exception_register=runtime_exception_register,
+    )
+
+    assert next_shrink_step["status"] == "ready_step"
+    assert next_shrink_step["target_path"] == "runtime_shell_artifact"
