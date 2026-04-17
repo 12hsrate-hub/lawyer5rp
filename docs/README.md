@@ -34,6 +34,7 @@ This directory keeps active operational docs plus two active planning-source doc
 - `docs/archive/YYYY-MM/` - historical plans, superseded planning docs, audits, and one-off materials
 
 Files moved out of active planning in this cleanup live in `docs/archive/2026-04/`.
+RC history artifacts (including Orange multi-server RC reports) are stored under `docs/archive/` by month.
 
 ## Rules
 
