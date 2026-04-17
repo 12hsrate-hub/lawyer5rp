@@ -779,6 +779,26 @@ class _FakeCanonicalLawDocumentVersionsStore:
 
 class _FakeLawSourceSetsStore:
     def list_bindings(self, *, server_code: str):
+        if server_code == "orange":
+            return [
+                type(
+                    "_Binding",
+                    (),
+                    {
+                        "id": 12,
+                        "server_code": server_code,
+                        "source_set_key": "legacy-orange-default",
+                        "priority": 100,
+                        "is_active": True,
+                        "include_law_keys": [],
+                        "exclude_law_keys": [],
+                        "pin_policy_json": {},
+                        "metadata_json": {},
+                        "created_at": "2026-04-16T04:00:00+00:00",
+                        "updated_at": "2026-04-16T04:00:00+00:00",
+                    },
+                )()
+            ]
         if server_code != "blackberry":
             return []
         return [
@@ -1060,7 +1080,12 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["server"]["code"], "blackberry")
         self.assertIn(payload["readiness"]["overall_status"], {"not_configured", "partial", "ready", "error"})
-        self.assertEqual(payload["readiness"]["blocks"]["laws"]["status"], "partial")
+        self.assertEqual(payload["readiness"]["blocks"]["laws"]["status"], "ready")
+        self.assertEqual(payload["health"]["checks"]["bindings"]["binding_source"], "source_set_bindings")
+        self.assertTrue(payload["health"]["checks"]["bindings"]["canonical_ready"])
+        self.assertEqual(payload["health"]["checks"]["bindings"]["source_set_binding_count"], 1)
+        self.assertEqual(payload["health"]["checks"]["bindings"]["runtime_binding_count"], 1)
+        self.assertFalse(payload["health"]["checks"]["bindings"]["uses_runtime_bindings_fallback"])
         self.assertIn("laws", payload["overview"])
         self.assertIn("features", payload["overview"])
         self.assertIn("templates", payload["overview"])
@@ -1170,6 +1195,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertGreaterEqual(issues_payload["count"], 1)
         issue_ids = {item["issue_id"] for item in issues_payload["items"]}
         self.assertIn("laws_runtime_health", issue_ids)
+        self.assertNotIn("laws_bindings_runtime_fallback", issue_ids)
 
         recheck = self.client.post("/api/admin/runtime-servers/blackberry/issues/laws_runtime_health/recheck")
         self.assertEqual(recheck.status_code, 200)
@@ -1253,7 +1279,13 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["overview"]["laws"]["health"]["active_law_version_id"], 77)
         self.assertEqual(payload["health"]["checks"]["bindings"]["binding_source"], "runtime_bindings")
+        self.assertFalse(payload["health"]["checks"]["bindings"]["ok"])
         self.assertFalse(payload["health"]["checks"]["bindings"]["canonical_ready"])
+        self.assertEqual(payload["health"]["checks"]["bindings"]["runtime_binding_count"], 1)
+        self.assertEqual(payload["health"]["checks"]["bindings"]["source_set_binding_count"], 0)
+        self.assertTrue(payload["health"]["checks"]["bindings"]["uses_runtime_bindings_fallback"])
+        self.assertFalse(payload["health"]["summary"]["is_ready"])
+        self.assertIn("runtime_bindings", payload["health"]["summary"]["observational_checks"])
         self.assertEqual(payload["readiness"]["blocks"]["laws"]["status"], "partial")
 
     def test_runtime_server_issues_endpoint_exposes_runtime_provenance_warning_for_legacy_shell(self):
@@ -1584,6 +1616,8 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(effective.status_code, 200)
         self.assertEqual(diff.status_code, 200)
         self.assertEqual(summary.json()["binding_count"], 1)
+        self.assertEqual(summary.json()["binding_source"], "source_set_bindings")
+        self.assertTrue(summary.json()["canonical_binding_ready"])
         self.assertEqual(summary.json()["runtime_provenance"]["mode"], "legacy_runtime_shell")
         self.assertEqual(summary.json()["runtime_alignment"]["status"], "legacy_only")
         self.assertEqual(summary.json()["runtime_item_parity"]["status"], "aligned")
@@ -1623,6 +1657,9 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(effective.json()["items"][0]["title"], "Уголовный кодекс v2")
         self.assertEqual(diff.json()["runtime_alignment"]["status"], "legacy_only")
         self.assertEqual(diff.json()["runtime_item_parity"]["status"], "aligned")
+        self.assertEqual(diff.json()["binding_count"], 1)
+        self.assertEqual(diff.json()["binding_source"], "source_set_bindings")
+        self.assertTrue(diff.json()["canonical_binding_ready"])
         self.assertEqual(diff.json()["runtime_version_parity"]["status"], "legacy_only")
         self.assertEqual(diff.json()["projection_bridge_lifecycle"]["status"], "preview_only")
         self.assertEqual(diff.json()["projection_bridge_readiness"]["status"], "action_required")
@@ -1811,6 +1848,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
                 chunk_count=9,
             ),
         ):
+            self.client.app.dependency_overrides[get_law_source_sets_store] = lambda: _FakeLawSourceSetsStore()
             response = self.client.get("/api/admin/runtime-servers/orange/health")
 
         self.assertEqual(response.status_code, 200)
@@ -1841,6 +1879,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
                 chunk_count=9,
             ),
         ):
+            self.client.app.dependency_overrides[get_law_source_sets_store] = lambda: _FakeLawSourceSetsStore()
             workspace = self.client.get("/api/admin/runtime-servers/orange/workspace")
         self.assertEqual(workspace.status_code, 200)
         self.assertEqual(workspace.json()["overview"]["laws"]["runtime_version_parity"]["status"], "aligned")

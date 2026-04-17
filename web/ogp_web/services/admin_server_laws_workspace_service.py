@@ -2344,8 +2344,10 @@ def build_server_laws_summary_payload(
         server_code=normalized_server,
         runtime_servers_store=runtime_servers_store,
         law_sets_store=law_sets_store,
+        source_sets_store=source_sets_store,
         projections_store=projections_store,
     )
+    bindings_check = dict(((health_payload.get("checks") or {}).get("bindings") or {}))
     bindings = [
         _serialize_binding(item)
         for item in source_sets_store.list_bindings(server_code=normalized_server)
@@ -2569,6 +2571,8 @@ def build_server_laws_summary_payload(
         "server_code": normalized_server,
         "bindings": bindings,
         "binding_count": len(bindings),
+        "binding_source": str(bindings_check.get("binding_source") or ""),
+        "canonical_binding_ready": bool(bindings_check.get("canonical_ready")),
         "health": dict((health_payload.get("checks") or {}).get("health") or {}),
         "projection_bridge": dict(health_payload.get("projection_bridge") or {}),
         "runtime_provenance": dict(health_payload.get("runtime_provenance") or {}),
@@ -2720,6 +2724,7 @@ def build_server_laws_diff_payload(
     server_code: str,
     runtime_servers_store: RuntimeServersStore,
     law_sets_store: RuntimeLawSetsStore,
+    source_sets_store: LawSourceSetsStore,
     projections_store: ServerEffectiveLawProjectionsStore,
 ) -> dict[str, Any]:
     normalized_server = normalize_runtime_server_code(server_code)
@@ -2730,8 +2735,11 @@ def build_server_laws_diff_payload(
         server_code=normalized_server,
         runtime_servers_store=runtime_servers_store,
         law_sets_store=law_sets_store,
+        source_sets_store=source_sets_store,
         projections_store=projections_store,
     )
+    bindings_check = dict(((health_payload.get("checks") or {}).get("bindings") or {}))
+    canonical_bindings = list(source_sets_store.list_bindings(server_code=normalized_server))
     current_run, previous_run = _latest_projection_runs(projections_store, server_code=normalized_server)
     current_items = projections_store.list_items(projection_run_id=int(current_run.id)) if current_run is not None else []
     previous_items = projections_store.list_items(projection_run_id=int(previous_run.id)) if previous_run is not None else []
@@ -2747,7 +2755,7 @@ def build_server_laws_diff_payload(
     runtime_version_parity = _runtime_version_parity_summary(health_payload=health_payload)
     projection_bridge_lifecycle = _projection_bridge_lifecycle_summary(health_payload=health_payload)
     bridge_readiness = build_projection_bridge_readiness_summary(
-        binding_count=int(((health_payload.get("checks") or {}).get("bindings") or {}).get("count") or 0),
+        binding_count=len(canonical_bindings),
         projection_bridge_lifecycle=projection_bridge_lifecycle,
         runtime_version_parity=runtime_version_parity,
         fill_summary={},
@@ -2944,6 +2952,9 @@ def build_server_laws_diff_payload(
     )
     return {
         "server_code": normalized_server,
+        "binding_count": len(canonical_bindings),
+        "binding_source": str(bindings_check.get("binding_source") or ""),
+        "canonical_binding_ready": bool(bindings_check.get("canonical_ready")),
         "current_run": _serialize_run(current_run),
         "baseline_run": _serialize_run(previous_run),
         "runtime_alignment": dict(health_payload.get("runtime_alignment") or {}),

@@ -678,6 +678,7 @@ async def admin_runtime_server_issues(
     user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
     law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
     dashboard_service: AdminDashboardService = Depends(get_admin_dashboard_service),
     projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
@@ -686,6 +687,7 @@ async def admin_runtime_server_issues(
         server_code=server_code,
         runtime_servers_store=runtime_servers_store,
         law_sets_store=law_sets_store,
+        source_sets_store=source_sets_store,
         dashboard_service=dashboard_service,
         projections_store=projections_store,
         username=user.username,
@@ -1220,6 +1222,7 @@ async def admin_runtime_server_laws_diff(
     user: AuthUser = Depends(requires_permission("manage_laws")),
     runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
     law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
     projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
 ):
     _ = user
@@ -1228,6 +1231,7 @@ async def admin_runtime_server_laws_diff(
             server_code=server_code,
             runtime_servers_store=runtime_servers_store,
             law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
             projections_store=projections_store,
         )
     except KeyError as exc:
