@@ -277,6 +277,7 @@ def _runtime_item_parity_summary(
 
 def _runtime_version_parity_summary(*, health_payload: dict[str, Any]) -> dict[str, Any]:
     runtime_alignment = dict((health_payload or {}).get("runtime_alignment") or {})
+    runtime_provenance = dict((health_payload or {}).get("runtime_provenance") or {})
     projection_bridge = dict((health_payload or {}).get("projection_bridge") or {})
     active_law_set_id = int(runtime_alignment.get("active_law_set_id") or 0)
     active_law_version_id = int(runtime_alignment.get("active_law_version_id") or 0)
@@ -329,6 +330,8 @@ def _runtime_version_parity_summary(*, health_payload: dict[str, Any]) -> dict[s
             projected_law_set_id > 0 and active_law_set_id > 0 and projected_law_set_id == active_law_set_id
         ),
         "law_set_observational_only": True,
+        "shell_role": str(runtime_alignment.get("shell_role") or runtime_provenance.get("shell_role") or "").strip().lower() or None,
+        "shell_stage": str(runtime_alignment.get("shell_stage") or runtime_provenance.get("shell_stage") or "").strip().lower() or None,
         "drift_summary": drift_summary,
     }
 
@@ -343,6 +346,8 @@ def _projection_bridge_lifecycle_summary(*, health_payload: dict[str, Any]) -> d
     matches_active = bool(projection_bridge.get("matches_active_law_version"))
     active_law_version_id = int(runtime_alignment.get("active_law_version_id") or 0)
     runtime_mode = str(runtime_provenance.get("mode") or "").strip().lower()
+    shell_role = str(runtime_provenance.get("shell_role") or "").strip().lower()
+    shell_stage = str(runtime_provenance.get("shell_stage") or "").strip().lower()
 
     if run_id <= 0:
         status = "uninitialized"
@@ -374,6 +379,8 @@ def _projection_bridge_lifecycle_summary(*, health_payload: dict[str, Any]) -> d
         "active_law_version_id": active_law_version_id or None,
         "matches_active_law_version": matches_active if law_version_id > 0 else None,
         "law_set_observational_only": True,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -757,6 +764,7 @@ def build_activation_gap_summary(
     readiness_status = str(readiness.get("status") or "").strip().lower()
     version_status = str(version_parity.get("status") or "").strip().lower()
     lifecycle_status = str(lifecycle.get("status") or "").strip().lower()
+    shell_stage = str(version_parity.get("shell_stage") or lifecycle.get("shell_stage") or "").strip().lower()
 
     if lifecycle_status == "activated" and version_status == "aligned":
         status = "closed"
@@ -791,6 +799,7 @@ def build_activation_gap_summary(
         "projected_law_version_id": version_parity.get("projected_law_version_id"),
         "lifecycle_status": lifecycle_status,
         "version_status": version_status,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -809,6 +818,7 @@ def build_runtime_shell_debt_summary(
     provenance_mode = str(provenance.get("mode") or "").strip().lower()
     version_status = str(version_parity.get("status") or "").strip().lower()
     lifecycle_status = str(lifecycle.get("status") or "").strip().lower()
+    shell_stage = str(provenance.get("shell_stage") or version_parity.get("shell_stage") or lifecycle.get("shell_stage") or "").strip().lower()
     resolution_mode = str(onboarding_payload.get("resolution_mode") or "").strip().lower()
 
     reasons: list[str] = []
@@ -852,6 +862,7 @@ def build_runtime_shell_debt_summary(
         "provenance_mode": provenance_mode,
         "version_status": version_status,
         "lifecycle_status": lifecycle_status,
+        "shell_stage": shell_stage or None,
         "resolution_mode": resolution_mode,
     }
 
