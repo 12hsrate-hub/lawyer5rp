@@ -282,6 +282,8 @@ def test_runtime_server_health_payload_marks_runtime_bindings_as_non_canonical_f
 
     assert payload["checks"]["bindings"]["binding_source"] == "runtime_bindings"
     assert payload["checks"]["bindings"]["ok"] is False
+    assert payload["checks"]["bindings"]["count"] == 0
+    assert payload["checks"]["bindings"]["detail"] == "source_set_bindings:0"
     assert payload["checks"]["bindings"]["canonical_ready"] is False
     assert payload["checks"]["bindings"]["runtime_binding_count"] == 1
     assert payload["checks"]["bindings"]["source_set_binding_count"] == 0

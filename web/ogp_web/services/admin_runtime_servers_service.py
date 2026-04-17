@@ -169,7 +169,6 @@ def _build_runtime_server_onboarding_payload(
     *,
     server: RuntimeServerRecord | None,
     resolution: dict[str, Any],
-    bindings: list[dict[str, Any]],
     source_set_bindings: list[dict[str, Any]] | None,
     runtime_bindings: list[dict[str, Any]] | None,
     binding_source: str,
@@ -305,7 +304,7 @@ def _collect_runtime_server_context(
         active_law_set = next((item for item in law_sets if item.get("is_active")), None)
     runtime_bindings = law_sets_store.list_server_law_bindings(server_code=normalized_code)
     source_set_bindings = list(source_sets_store.list_bindings(server_code=normalized_code)) if source_sets_store is not None else []
-    bindings = source_set_bindings if source_set_bindings else runtime_bindings
+    bindings = source_set_bindings
     binding_source = "source_set_bindings" if source_set_bindings else "runtime_bindings"
     if include_health:
         try:
@@ -370,7 +369,6 @@ def _build_runtime_server_item_payload(
     payload["onboarding"] = _build_runtime_server_onboarding_payload(
         server=record,
         resolution=context["resolution"],
-        bindings=context["bindings"],
         source_set_bindings=context["source_set_bindings"],
         runtime_bindings=context["runtime_bindings"],
         binding_source=str(context["binding_source"] or "runtime_bindings"),
@@ -491,7 +489,6 @@ def build_runtime_server_health_payload(
     onboarding = _build_runtime_server_onboarding_payload(
         server=server,
         resolution=context["resolution"],
-        bindings=bindings,
         source_set_bindings=context["source_set_bindings"],
         runtime_bindings=context["runtime_bindings"],
         binding_source=str(context["binding_source"] or "runtime_bindings"),
@@ -511,8 +508,8 @@ def build_runtime_server_health_payload(
         },
         "bindings": {
             "ok": bool(onboarding.get("canonical_binding_ready")),
-            "detail": f"{str(context['binding_source'] or 'runtime_bindings')}:{len(bindings)}",
-            "count": len(bindings),
+            "detail": f"source_set_bindings:{len(context['source_set_bindings'] or [])}",
+            "count": len(context["source_set_bindings"] or []),
             "binding_source": str(context["binding_source"] or "runtime_bindings"),
             "canonical_ready": str(context["binding_source"] or "runtime_bindings") == "source_set_bindings",
             "source_set_binding_count": len(context["source_set_bindings"] or []),

@@ -1280,6 +1280,8 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(payload["overview"]["laws"]["health"]["active_law_version_id"], 77)
         self.assertEqual(payload["health"]["checks"]["bindings"]["binding_source"], "runtime_bindings")
         self.assertFalse(payload["health"]["checks"]["bindings"]["ok"])
+        self.assertEqual(payload["health"]["checks"]["bindings"]["count"], 0)
+        self.assertEqual(payload["health"]["checks"]["bindings"]["detail"], "source_set_bindings:0")
         self.assertFalse(payload["health"]["checks"]["bindings"]["canonical_ready"])
         self.assertEqual(payload["health"]["checks"]["bindings"]["runtime_binding_count"], 1)
         self.assertEqual(payload["health"]["checks"]["bindings"]["source_set_binding_count"], 0)
