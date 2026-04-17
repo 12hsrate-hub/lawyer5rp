@@ -21,7 +21,8 @@ This directory keeps active operational docs plus two active planning-source doc
 - `domain_rollout_su_online.md` - domain and nginx setup
 - `MODEL_POLICY_SLO.md` - policy, KPI, and SLO targets
 - `AI_QUALITY_COST_RUNBOOK_ADMIN.md` - admin quality/cost runbook
-- `FEATURE_FLAGS.md` - active feature-flag reference
+- `FEATURE_FLAGS.md` - canonical feature-flag reference (including rollout state matrix)
+- `archive/2026-04/FEATURE_FLAG_MATRIX.md` - archived matrix doc (superseded by `FEATURE_FLAGS.md`)
 - `ACCEPTANCE_CHECKLIST.md` - release acceptance gates
 - `CODEX_RUN_GUIDE.md` - execution guide for Codex-driven task work
 - `../RETRY_IDEMPOTENCY_MATRIX.md` - current retry/idempotency contract and gaps
