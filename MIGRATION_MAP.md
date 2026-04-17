@@ -37,6 +37,8 @@ Date: 2026-04-14
   - `L.runtime.20` align server workspace and issues with canonical binding truth: both surfaces now build runtime health through `LawSourceSetsStore`, so canonical `source-set bindings` stay the only operational readiness basis outside the narrow runtime shell fallback path
   - `L.runtime.21` remove hidden runtime-binding fallback from workspace bridge-readiness: server workspace now computes projection bridge binding count from canonical source-set bindings only, instead of silently borrowing legacy runtime-binding counts when canonical bindings are absent
   - `L.runtime.22` remove runtime-bindings from health binding counts: runtime-server health now reports `checks.bindings.count/detail` from canonical source-set bindings only, while legacy runtime bindings survive only as separate fallback-debt counters
+  - `L.runtime.23` remove active-law-set dependence from runtime provenance/alignment interpretation when an active runtime law_version already exists: `law_set` stays only as an observational shell artifact, not as a prerequisite for reading runtime shell state
+  - `L.runtime.24` demote `law_set` to a true observational-only check in runtime health summary: it now advertises `observational_only=true` and only appears in `observational_checks` when it is actually missing or requires attention
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`

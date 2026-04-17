@@ -226,7 +226,8 @@ def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
 
     assert payload["summary"]["is_ready"] is True
     assert payload["summary"]["ready_count"] == payload["summary"]["total_count"]
-    assert payload["summary"]["observational_checks"] == ["law_set"]
+    assert payload["summary"]["observational_checks"] == []
+    assert payload["checks"]["law_set"]["observational_only"] is True
     assert payload["checks"]["bindings"]["binding_source"] == "source_set_bindings"
     assert payload["checks"]["bindings"]["canonical_ready"] is True
     assert payload["checks"]["health"]["active_law_version_id"] == 77
@@ -269,8 +270,13 @@ def test_runtime_server_health_summary_treats_law_set_as_observational_shell_che
     assert payload["summary"]["ready_count"] == payload["summary"]["total_count"]
     assert payload["summary"]["is_ready"] is True
     assert payload["summary"]["observational_checks"] == ["law_set"]
+    assert payload["checks"]["law_set"]["observational_only"] is True
     assert payload["checks"]["bindings"]["binding_source"] == "source_set_bindings"
     assert payload["checks"]["bindings"]["canonical_ready"] is True
+    assert payload["runtime_provenance"]["mode"] == "legacy_runtime_shell"
+    assert payload["runtime_alignment"]["status"] == "legacy_only"
+    assert payload["runtime_alignment"]["active_law_set_id"] is None
+    assert payload["runtime_alignment"]["active_law_version_id"] == 77
 
 
 def test_runtime_server_health_payload_marks_runtime_bindings_as_non_canonical_fallback():
@@ -289,6 +295,7 @@ def test_runtime_server_health_payload_marks_runtime_bindings_as_non_canonical_f
     assert payload["checks"]["bindings"]["source_set_binding_count"] == 0
     assert payload["checks"]["bindings"]["uses_runtime_bindings_fallback"] is True
     assert payload["summary"]["is_ready"] is False
+    assert payload["checks"]["law_set"]["observational_only"] is True
     assert "runtime_bindings" in payload["summary"]["observational_checks"]
     assert payload["onboarding"]["highest_completed_state"] == "bootstrap-ready"
     assert payload["onboarding"]["uses_runtime_bindings_fallback"] is True
