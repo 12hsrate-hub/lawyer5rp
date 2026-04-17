@@ -988,8 +988,13 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertTrue(payload["summary"]["is_ready"])
         self.assertEqual(payload["summary"]["ready_count"], payload["summary"]["total_count"])
         self.assertEqual(payload["summary"]["observational_checks"], ["law_set"])
+        self.assertTrue(payload["checks"]["law_set"]["observational_only"])
         self.assertEqual(payload["checks"]["bindings"]["binding_source"], "source_set_bindings")
         self.assertTrue(payload["checks"]["bindings"]["canonical_ready"])
+        self.assertEqual(payload["runtime_provenance"]["mode"], "legacy_runtime_shell")
+        self.assertEqual(payload["runtime_alignment"]["status"], "legacy_only")
+        self.assertIsNone(payload["runtime_alignment"]["active_law_set_id"])
+        self.assertEqual(payload["runtime_alignment"]["active_law_version_id"], 77)
 
     def test_runtime_server_update_rejects_code_mismatch(self):
         response = self.client.put("/api/admin/runtime-servers/city2", json={"code": "city3", "title": "Wrong"})

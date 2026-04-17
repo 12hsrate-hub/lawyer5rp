@@ -97,9 +97,13 @@ def _build_runtime_laws_provenance_summary(
     elif projection_run_id > 0 and projected_law_version_id > 0 and active_law_version_id > 0:
         mode = "projection_drift"
         detail = "Projection activation exists, but it no longer matches the current active runtime law_version."
-    elif active_law_set_id > 0 and active_law_version_id > 0:
+    elif active_law_version_id > 0:
         mode = "legacy_runtime_shell"
-        detail = "Runtime law_set/law_version shell is active, but no promoted projection currently explains it."
+        detail = (
+            "Active runtime law_version shell exists, but no promoted projection currently explains it."
+            if active_law_set_id <= 0
+            else "Runtime law_set/law_version shell is active, but no promoted projection currently explains it."
+        )
     elif active_law_set_id > 0:
         mode = "materialized_shell_only"
         detail = "A runtime law_set shell exists, but there is no active runtime law_version yet."
@@ -139,12 +143,16 @@ def _build_runtime_alignment_summary(
     if projection_run_id > 0 and matches_active_law_version:
         status = "aligned"
         detail = "Promoted projection matches the current active runtime law_version."
-    elif projection_run_id > 0 and (projected_law_version_id > 0 or projected_law_set_id > 0):
+    elif projection_run_id > 0 and active_law_version_id > 0 and (projected_law_version_id > 0 or projected_law_set_id > 0):
         status = "drift"
         detail = "Promoted projection exists, but the active runtime shell no longer matches it exactly."
-    elif active_law_set_id > 0 and active_law_version_id > 0:
+    elif active_law_version_id > 0:
         status = "legacy_only"
-        detail = "Active runtime shell exists without an aligned promoted projection."
+        detail = (
+            "Active runtime law_version shell exists without an aligned promoted projection."
+            if active_law_set_id <= 0
+            else "Active runtime shell exists without an aligned promoted projection."
+        )
     elif active_law_set_id > 0:
         status = "pending_activation"
         detail = "Runtime law_set shell exists, but there is no active runtime law_version yet."
@@ -505,6 +513,7 @@ def build_runtime_server_health_payload(
             "ok": bool(active_law_set),
             "detail": str(active_law_set.get("name") or "") if active_law_set else "law_set_missing",
             "law_set_id": int(active_law_set.get("id")) if active_law_set and active_law_set.get("id") is not None else None,
+            "observational_only": True,
         },
         "bindings": {
             "ok": bool(onboarding.get("canonical_binding_ready")),
@@ -559,7 +568,9 @@ def build_runtime_server_health_payload(
         active_law_version=active_law_version,
         projection_bridge=projection_bridge,
     )
-    observational_checks = ["law_set"]
+    observational_checks: list[str] = []
+    if not checks["law_set"]["ok"]:
+        observational_checks.append("law_set")
     if bool(onboarding.get("uses_runtime_bindings_fallback")):
         observational_checks.append("runtime_bindings")
     return {
