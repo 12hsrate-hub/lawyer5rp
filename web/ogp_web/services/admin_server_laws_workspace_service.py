@@ -1430,6 +1430,67 @@ def build_cutover_guardrails_summary(
     }
 
 
+def build_runtime_policy_enforcement_summary(
+    *,
+    runtime_bridge_policy: dict[str, Any],
+    runtime_operating_mode: dict[str, Any],
+    runtime_policy_violations: dict[str, Any],
+    cutover_guardrails: dict[str, Any],
+) -> dict[str, Any]:
+    bridge_policy = dict(runtime_bridge_policy or {})
+    operating_mode = dict(runtime_operating_mode or {})
+    violations = dict(runtime_policy_violations or {})
+    guardrails = dict(cutover_guardrails or {})
+
+    bridge_policy_status = str(bridge_policy.get("status") or "").strip().lower()
+    operating_mode_status = str(operating_mode.get("status") or "").strip().lower()
+    violations_status = str(violations.get("status") or "").strip().lower()
+    guardrails_status = str(guardrails.get("status") or "").strip().lower()
+
+    if bridge_policy_status == "prefer_projection_runtime" and violations_status == "clear" and guardrails_status == "enforced":
+        status = "enforced"
+        detail = "Projection-preferred runtime policy is actively enforced for this server."
+        next_step = "Поддерживайте текущий projection-first runtime posture без деградации в compatibility paths."
+    elif bridge_policy_status == "prefer_projection_runtime" and violations_status == "blocked":
+        status = "violated"
+        detail = "Server violates its projection-preferred runtime policy in the current read model."
+        next_step = str(
+            violations.get("next_step")
+            or guardrails.get("next_step")
+            or "Сначала снимите policy violations и восстановите projection guardrails."
+        ).strip()
+    elif bridge_policy_status == "stabilize_for_cutover" or guardrails_status == "hold":
+        status = "pre_enforcement"
+        detail = "Server is still in a pre-enforcement runtime policy stage."
+        next_step = str(
+            guardrails.get("next_step")
+            or bridge_policy.get("next_step")
+            or "Сначала стабилизируйте cutover path, затем переходите к strict policy enforcement."
+        ).strip()
+    elif bridge_policy_status == "keep_compatibility" or operating_mode_status == "compatibility_runtime":
+        status = "compatibility_hold"
+        detail = "Runtime policy still intentionally holds this server in compatibility mode."
+        next_step = str(
+            bridge_policy.get("next_step")
+            or operating_mode.get("next_step")
+            or "Сначала снимите compatibility dependencies."
+        ).strip()
+    else:
+        status = "observe"
+        detail = "Runtime policy enforcement is not decisive yet in the current read model."
+        next_step = "Продолжайте наблюдать violations, guardrails и operating mode."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "bridge_policy_status": bridge_policy_status,
+        "operating_mode_status": operating_mode_status,
+        "violations_status": violations_status,
+        "guardrails_status": guardrails_status,
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -1568,6 +1629,12 @@ def build_server_laws_summary_payload(
         runtime_policy_violations=runtime_policy_violations,
         cutover_readiness=cutover_readiness,
     )
+    runtime_policy_enforcement = build_runtime_policy_enforcement_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_violations=runtime_policy_violations,
+        cutover_guardrails=cutover_guardrails,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=bridge_readiness,
         activation_gap=activation_gap,
@@ -1607,6 +1674,7 @@ def build_server_laws_summary_payload(
         "runtime_operating_mode": runtime_operating_mode,
         "runtime_policy_violations": runtime_policy_violations,
         "cutover_guardrails": cutover_guardrails,
+        "runtime_policy_enforcement": runtime_policy_enforcement,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "latest_projection_run": _serialize_run(current_run),
@@ -1844,6 +1912,12 @@ def build_server_laws_diff_payload(
         runtime_policy_violations=runtime_policy_violations,
         cutover_readiness=cutover_readiness,
     )
+    runtime_policy_enforcement = build_runtime_policy_enforcement_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_violations=runtime_policy_violations,
+        cutover_guardrails=cutover_guardrails,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=bridge_readiness,
         activation_gap=activation_gap,
@@ -1880,6 +1954,7 @@ def build_server_laws_diff_payload(
         "runtime_operating_mode": runtime_operating_mode,
         "runtime_policy_violations": runtime_policy_violations,
         "cutover_guardrails": cutover_guardrails,
+        "runtime_policy_enforcement": runtime_policy_enforcement,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "summary": diff_summary,
