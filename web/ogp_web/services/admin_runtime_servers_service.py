@@ -507,7 +507,8 @@ def build_runtime_server_health_payload(
             "requires_explicit_runtime_pack": bool(onboarding.get("requires_explicit_runtime_pack")),
         },
     }
-    ready_count = sum(1 for item in checks.values() if item.get("ok"))
+    required_check_codes = ("server", "bindings", "activation", "health", "config_resolution")
+    ready_count = sum(1 for code in required_check_codes if checks.get(code, {}).get("ok"))
     projection_bridge = _build_projection_bridge_summary(
         server_code=normalized_code,
         projections_store=projections_store,
@@ -533,8 +534,10 @@ def build_runtime_server_health_payload(
         "runtime_alignment": runtime_alignment,
         "summary": {
             "ready_count": ready_count,
-            "total_count": len(checks),
-            "is_ready": ready_count == len(checks),
+            "total_count": len(required_check_codes),
+            "is_ready": ready_count == len(required_check_codes),
+            "observed_check_count": len(checks),
+            "observational_checks": ["law_set"],
         },
     }
 
