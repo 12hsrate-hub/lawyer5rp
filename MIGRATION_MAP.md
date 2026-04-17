@@ -443,7 +443,7 @@ This file remains the canonical migration map and seam inventory, but it is no l
 - current RC candidate recommendation is `orange`
 - second-server complaint runtime remains explicitly out of scope for the first RC
 - Phase C progress:
-  - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
+  - `docs/architecture/UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
   - Initial glossary baseline added in `docs/ADMIN_GLOSSARY.md`.
   - Explicit page-shell subdomains are in place for servers, laws, templates, features, and rules.
@@ -883,7 +883,7 @@ Fallback criteria:
   - `H.1a` is complete at the code/seed level via `REHAB_ROLLOUT_GAP_MAP.md`
   - current H.1b target is runtime verification of effective rehab inventory, validation, and provenance coverage
 - Phase F outcome:
-  - provenance baseline mapped in `PROVENANCE_SCHEMA.md` for `blackberry + complaint`
+  - provenance baseline mapped in `docs/architecture/PROVENANCE_SCHEMA.md` for `blackberry + complaint`
   - read-only provenance assembler and API added for `document_version_id`
   - generated document snapshot enriched with provenance payload
   - admin dashboard now includes provenance lookup by both `document version id` and `generated document id`

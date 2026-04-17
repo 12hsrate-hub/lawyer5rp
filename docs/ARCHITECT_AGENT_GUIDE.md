@@ -270,7 +270,7 @@ Primary deliverable:
 Possible secondary deliverables:
 - `MIGRATION_MAP.md`
 - `DATA_MODEL_DRAFT.md`
-- `UI_ADMIN_STRUCTURE.md`
+- `docs/architecture/UI_ADMIN_STRUCTURE.md`
 - `LEGACY_RISKS.md`
 - `ARCHITECTURE_NOTES.md`
 

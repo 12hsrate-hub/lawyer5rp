@@ -1,43 +1,58 @@
 # Docs Index
 
-This directory keeps active operational docs plus two active planning-source documents.
+Use this page as the canonical docs map for active work.
 
-## Canonical Planning Inputs
+## Start Here
 
-- `../PLANS.md` - main execution plan and canonical phased backlog
-- `../MIGRATION_MAP.md` - migration seams, route/service/storage map, and cutover baseline
-- `PRODUCT_BRIEF.md` - active product and architecture brief for future planning
-- `ARCHITECT_AGENT_GUIDE.md` - active planning rules and architecture guidance for Codex
+- [`../README.md`](../README.md) - repository-level overview and primary orientation.
+- [`README.md`](./README.md) - this docs index and navigation policy.
+- [`index.md`](./index.md) - quick friendly navigator for common entrypoints.
 
-## Operational Docs
+## Operations
 
-- `OPERATIONS_INDEX.md` - primary entrypoint for deploy/run/rollback docs
-- `RUNBOOK.md` - incident handling for point3 legal mode
-- `ASYNC_OPERATIONS_RUNBOOK.md` - async jobs, law rebuild, and exam import ops response
-- `ROLL_OUT.md` - rollout stages and go/no-go rules
-- `ROLLBACK_PLAYBOOK.md` - rollback procedure by feature flag
-- `github_deploy.md` - GitHub-to-server deploy flow
-- `postgresql_migrations.md` - PostgreSQL migration flow
-- `domain_rollout_su_online.md` - domain and nginx setup
-- `MODEL_POLICY_SLO.md` - policy, KPI, and SLO targets
-- `AI_QUALITY_COST_RUNBOOK_ADMIN.md` - admin quality/cost runbook
-- `FEATURE_FLAGS.md` - active feature-flag reference
-- `ACCEPTANCE_CHECKLIST.md` - release acceptance gates
-- `CODEX_RUN_GUIDE.md` - execution guide for Codex-driven task work
-- `../RETRY_IDEMPOTENCY_MATRIX.md` - current retry/idempotency contract and gaps
-- `exam_scoring_incident_runbook.md` - exam scoring incident response
-- `exam_scoring_rollout_gates_and_kpis.md` - exam scoring rollout gates
+- [`OPERATIONS_INDEX.md`](./OPERATIONS_INDEX.md) - canonical operations/deploy/runbook entrypoint.
+- [`RUNBOOK.md`](./RUNBOOK.md) - incident handling for point3 legal mode.
+- [`ASYNC_OPERATIONS_RUNBOOK.md`](./ASYNC_OPERATIONS_RUNBOOK.md) - async jobs, law rebuild, and exam import operations.
+- [`ROLL_OUT.md`](./ROLL_OUT.md) - rollout stages and go/no-go rules.
+- [`ROLLBACK_PLAYBOOK.md`](./ROLLBACK_PLAYBOOK.md) - rollback procedure by feature flag.
+- [`github_deploy.md`](./github_deploy.md) - GitHub-to-server deploy flow.
+- [`postgresql_migrations.md`](./postgresql_migrations.md) - PostgreSQL migration flow.
+- [`domain_rollout_su_online.md`](./domain_rollout_su_online.md) - domain and nginx setup.
+- [`MODEL_POLICY_SLO.md`](./MODEL_POLICY_SLO.md) - policy, KPI, and SLO targets.
+- [`AI_QUALITY_COST_RUNBOOK_ADMIN.md`](./AI_QUALITY_COST_RUNBOOK_ADMIN.md) - admin quality/cost runbook.
+- [`FEATURE_FLAGS.md`](./FEATURE_FLAGS.md) - active feature-flag reference.
+- [`ACCEPTANCE_CHECKLIST.md`](./ACCEPTANCE_CHECKLIST.md) - release acceptance gates.
 
-## ADR And Archive Rules
+## Architecture
 
-- `docs/adr/` - ADRs and active architectural invariants only
-- `docs/archive/YYYY-MM/` - historical plans, superseded planning docs, audits, and one-off materials
+- [`../PLANS.md`](../PLANS.md) - canonical phased execution backlog.
+- [`../MIGRATION_MAP.md`](../MIGRATION_MAP.md) - canonical migration seams and cutover baseline.
+- [`PRODUCT_BRIEF.md`](./PRODUCT_BRIEF.md) - active product and architecture brief.
+- [`ARCHITECT_AGENT_GUIDE.md`](./ARCHITECT_AGENT_GUIDE.md) - planning rules and architecture guidance for Codex.
+- [`architecture/PROVENANCE_SCHEMA.md`](./architecture/PROVENANCE_SCHEMA.md) - provenance contract baseline.
+- [`architecture/UI_ADMIN_STRUCTURE.md`](./architecture/UI_ADMIN_STRUCTURE.md) - admin IA and boundary policy.
+- [`architecture/LEGACY_ADAPTERS_LIST.md`](./architecture/LEGACY_ADAPTERS_LIST.md) - compatibility adapter inventory.
 
-Files moved out of active planning in this cleanup live in `docs/archive/2026-04/`.
+## Governance
 
-## Rules
+Canonical governance/source-of-truth files:
 
-- There must be only one active root execution plan: `PLANS.md`.
-- There must be only one active root migration map: `MIGRATION_MAP.md`.
-- Product/architecture prompt docs live in `docs/PRODUCT_BRIEF.md` and `docs/ARCHITECT_AGENT_GUIDE.md`.
-- If a document is no longer part of current operations or the canonical planning set, archive it.
+- [`../README.md`](../README.md)
+- [`README.md`](./README.md)
+- [`OPERATIONS_INDEX.md`](./OPERATIONS_INDEX.md)
+- [`../PLANS.md`](../PLANS.md)
+- [`../MIGRATION_MAP.md`](../MIGRATION_MAP.md)
+
+Related references:
+
+- [`../LAW_PLATFORM_RULES.md`](../LAW_PLATFORM_RULES.md)
+- [`../NEW_SERVER_CHECKLIST.md`](../NEW_SERVER_CHECKLIST.md)
+- [`templates/COMPATIBILITY_SEAM_NOTE.md`](./templates/COMPATIBILITY_SEAM_NOTE.md)
+- [`seams/README.md`](./seams/README.md)
+
+## Archive
+
+- Active ADRs/invariants: [`adr/`](./adr/)
+- Historical docs: [`archive/YYYY-MM/`](./archive/)
+
+Files moved out of active planning/operations belong in `docs/archive/YYYY-MM/`.

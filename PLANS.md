@@ -788,7 +788,7 @@ Status: `done`
 - Ban raw internal identifiers in visible labels by default.
 
 ### Deliverables
-- `UI_ADMIN_STRUCTURE.md`
+- `docs/architecture/UI_ADMIN_STRUCTURE.md`
 - read-only pages for pilot domain entities
 - initial glossary
 - `docs/ADMIN_GLOSSARY.md`
@@ -947,7 +947,7 @@ Persist minimum explainability metadata for generated outputs:
 
 Status update:
 - `in_progress`
-- provenance baseline documented in `PROVENANCE_SCHEMA.md`
+- provenance baseline documented in `docs/architecture/PROVENANCE_SCHEMA.md`
 - read-only trace assembler implemented for `document_version_id`
 - read-only API surface added for `GET /api/document-versions/{version_id}/provenance`
 - generated document snapshot now includes provenance as a first traceable read surface
@@ -1327,7 +1327,7 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `I.1i` is complete on production commit `ef329f4`: `law_qa_test` page rendering now reuses shared law-context helpers instead of direct `server_config.law_qa_*` reads
 - immediate next step is `I.1j bounded seam selection after the accepted law-QA page context reuse`
 - Phase F completed:
-  - provenance baseline documented in `PROVENANCE_SCHEMA.md`
+  - provenance baseline documented in `docs/architecture/PROVENANCE_SCHEMA.md`
   - read-only provenance assembler implemented for `document_version_id`
   - read-only provenance API added at `/api/document-versions/{id}/provenance`
   - generated document snapshot now includes `generation_snapshot_id` and `provenance`

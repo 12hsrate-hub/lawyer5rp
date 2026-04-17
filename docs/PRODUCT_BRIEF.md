@@ -305,7 +305,7 @@ The plan must stage them, constrain them, and define how they will be closed.
 Опционально затем:
 - `ARCHITECTURE_NOTES.md`
 - `MIGRATION_MAP.md`
-- `UI_ADMIN_STRUCTURE.md`
+- `docs/architecture/UI_ADMIN_STRUCTURE.md`
 - `DATA_MODEL_DRAFT.md`
 
 Но первый и обязательный документ — `PLANS.md`.
