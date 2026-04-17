@@ -398,6 +398,10 @@ window.OGPAdminServerWorkspace = {
         const legacyPathAllowance = laws.legacy_path_allowance || state.lawsDiff?.legacy_path_allowance || {};
         const compatibilityExitScorecard = laws.compatibility_exit_scorecard || state.lawsDiff?.compatibility_exit_scorecard || {};
         const runtimeBreachCategories = laws.runtime_breach_categories || state.lawsDiff?.runtime_breach_categories || {};
+        const legacyPathControls = laws.legacy_path_controls || state.lawsDiff?.legacy_path_controls || {};
+        const projectionRuntimeGate = laws.projection_runtime_gate || state.lawsDiff?.projection_runtime_gate || {};
+        const compatibilityShrinkDecision = laws.compatibility_shrink_decision || state.lawsDiff?.compatibility_shrink_decision || {};
+        const runtimeExceptionRegister = laws.runtime_exception_register || state.lawsDiff?.runtime_exception_register || {};
         const bridgeShrinkChecklist = laws.bridge_shrink_checklist || state.lawsDiff?.bridge_shrink_checklist || {};
         const cutoverBlockersBreakdown = laws.cutover_blockers_breakdown || state.lawsDiff?.cutover_blockers_breakdown || {};
         const effective = state.lawsEffective || {};
@@ -574,6 +578,26 @@ window.OGPAdminServerWorkspace = {
               <span class="legal-field__label">Breach categories</span>
               <div><strong>${escapeHtml(String(runtimeBreachCategories.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeBreachCategories.detail || "Runtime breach categories are not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Legacy path controls</span>
+              <div><strong>${escapeHtml(String(legacyPathControls.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(legacyPathControls.next_step || legacyPathControls.detail || "Legacy path controls are not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Projection runtime gate</span>
+              <div><strong>${escapeHtml(String(projectionRuntimeGate.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(projectionRuntimeGate.next_step || projectionRuntimeGate.detail || "Projection runtime gate is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Shrink decision</span>
+              <div><strong>${escapeHtml(String(compatibilityShrinkDecision.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(compatibilityShrinkDecision.next_step || compatibilityShrinkDecision.detail || "Compatibility shrink decision is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Exception register</span>
+              <div><strong>${escapeHtml(String(runtimeExceptionRegister.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeExceptionRegister.detail || "Runtime exception register is not available yet."))}</div>
             </div>
             <div class="legal-field">
               <span class="legal-field__label">Bridge shrink checklist</span>

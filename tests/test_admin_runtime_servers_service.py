@@ -32,6 +32,10 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_legacy_path_allowance_summary,
     build_compatibility_exit_scorecard_summary,
     build_runtime_breach_categories_summary,
+    build_legacy_path_controls_summary,
+    build_projection_runtime_gate_summary,
+    build_compatibility_shrink_decision_summary,
+    build_runtime_exception_register_summary,
     build_policy_breach_summary,
     build_runtime_risk_register_summary,
     build_runtime_policy_enforcement_summary,
@@ -466,6 +470,33 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         cutover_blockers_breakdown=cutover_blockers_breakdown,
     )
     assert runtime_breach_categories["status"] == "clear"
+    legacy_path_controls = build_legacy_path_controls_summary(
+        legacy_path_allowance=legacy_path_allowance,
+        runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": ""},
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_governance_contract=runtime_governance_contract,
+    )
+    assert legacy_path_controls["status"] == "projection_controls"
+    projection_runtime_gate = build_projection_runtime_gate_summary(
+        runtime_governance_contract=runtime_governance_contract,
+        compatibility_exit_scorecard=compatibility_exit_scorecard,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+        runtime_breach_categories=runtime_breach_categories,
+    )
+    assert projection_runtime_gate["status"] == "open"
+    compatibility_shrink_decision = build_compatibility_shrink_decision_summary(
+        projection_runtime_gate=projection_runtime_gate,
+        legacy_path_controls=legacy_path_controls,
+        runtime_risk_register=runtime_risk_register,
+    )
+    assert compatibility_shrink_decision["status"] == "shrink_now"
+    runtime_exception_register = build_runtime_exception_register_summary(
+        legacy_path_allowance=legacy_path_allowance,
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_breach_categories=runtime_breach_categories,
+        compatibility_exit_scorecard=compatibility_exit_scorecard,
+    )
+    assert runtime_exception_register["status"] == "clear"
     assert build_runtime_bridge_policy_summary(
         runtime_resolution_policy={"status": "compatibility_exception", "detail": "", "next_step": ""},
         runtime_cutover_mode={"status": "compatibility_mode", "detail": "", "next_step": ""},

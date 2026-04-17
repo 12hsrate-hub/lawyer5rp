@@ -26,6 +26,10 @@ from ogp_web.services.admin_server_laws_workspace_service import build_runtime_g
 from ogp_web.services.admin_server_laws_workspace_service import build_legacy_path_allowance_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_compatibility_exit_scorecard_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_breach_categories_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_legacy_path_controls_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_projection_runtime_gate_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_compatibility_shrink_decision_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_runtime_exception_register_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_policy_breach_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_risk_register_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_policy_enforcement_summary
@@ -861,6 +865,73 @@ def _build_runtime_breach_categories_issue(runtime_breach_categories: dict[str, 
     }
 
 
+def _build_legacy_path_controls_issue(legacy_path_controls: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((legacy_path_controls or {}).get("status") or "").strip().lower()
+    if status in {"", "projection_controls", "observe"}:
+        return None
+    return {
+        "issue_id": "legacy_path_controls",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Legacy path controls ещё не доведены до blocked state",
+        "detail": (
+            f"{str((legacy_path_controls or {}).get('detail') or '').strip()} "
+            f"{str((legacy_path_controls or {}).get('next_step') or '').strip()}"
+        ).strip(),
+    }
+
+
+def _build_projection_runtime_gate_issue(projection_runtime_gate: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((projection_runtime_gate or {}).get("status") or "").strip().lower()
+    if status in {"", "open", "observe"}:
+        return None
+    return {
+        "issue_id": "projection_runtime_gate",
+        "severity": "error" if status == "blocked" else "warn",
+        "source": "laws",
+        "title": "Projection runtime gate ещё не открыт",
+        "detail": (
+            f"{str((projection_runtime_gate or {}).get('detail') or '').strip()} "
+            f"{str((projection_runtime_gate or {}).get('next_step') or '').strip()}"
+        ).strip(),
+    }
+
+
+def _build_compatibility_shrink_decision_issue(compatibility_shrink_decision: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((compatibility_shrink_decision or {}).get("status") or "").strip().lower()
+    if status in {"", "shrink_now", "observe"}:
+        return None
+    severity = "error" if status == "hold_compatibility" else "warn"
+    return {
+        "issue_id": "compatibility_shrink_decision",
+        "severity": severity,
+        "source": "laws",
+        "title": "Compatibility shrinking decision требует внимания",
+        "detail": (
+            f"{str((compatibility_shrink_decision or {}).get('detail') or '').strip()} "
+            f"{str((compatibility_shrink_decision or {}).get('next_step') or '').strip()}"
+        ).strip(),
+    }
+
+
+def _build_runtime_exception_register_issue(runtime_exception_register: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_exception_register or {}).get("status") or "").strip().lower()
+    if status in {"", "clear"}:
+        return None
+    detail = (
+        f"{str((runtime_exception_register or {}).get('detail') or '').strip()} "
+        f"count={int((runtime_exception_register or {}).get('count') or 0)}. "
+        f"{str((runtime_exception_register or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "runtime_exception_register",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Есть открытые runtime exceptions",
+        "detail": detail,
+    }
+
+
 def _build_bridge_shrink_checklist_issue(bridge_shrink_checklist: dict[str, Any]) -> dict[str, Any] | None:
     status = str((bridge_shrink_checklist or {}).get("status") or "").strip().lower()
     if status in {"", "ready"}:
@@ -933,6 +1004,10 @@ def _build_issues_payload(
     legacy_path_allowance: dict[str, Any] | None = None,
     compatibility_exit_scorecard: dict[str, Any] | None = None,
     runtime_breach_categories: dict[str, Any] | None = None,
+    legacy_path_controls: dict[str, Any] | None = None,
+    projection_runtime_gate: dict[str, Any] | None = None,
+    compatibility_shrink_decision: dict[str, Any] | None = None,
+    runtime_exception_register: dict[str, Any] | None = None,
     bridge_shrink_checklist: dict[str, Any] | None = None,
     cutover_blockers_breakdown: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -1066,6 +1141,18 @@ def _build_issues_payload(
     runtime_breach_categories_issue = _build_runtime_breach_categories_issue(dict(runtime_breach_categories or {}))
     if runtime_breach_categories_issue is not None:
         items.append(runtime_breach_categories_issue)
+    legacy_path_controls_issue = _build_legacy_path_controls_issue(dict(legacy_path_controls or {}))
+    if legacy_path_controls_issue is not None:
+        items.append(legacy_path_controls_issue)
+    projection_runtime_gate_issue = _build_projection_runtime_gate_issue(dict(projection_runtime_gate or {}))
+    if projection_runtime_gate_issue is not None:
+        items.append(projection_runtime_gate_issue)
+    compatibility_shrink_decision_issue = _build_compatibility_shrink_decision_issue(dict(compatibility_shrink_decision or {}))
+    if compatibility_shrink_decision_issue is not None:
+        items.append(compatibility_shrink_decision_issue)
+    runtime_exception_register_issue = _build_runtime_exception_register_issue(dict(runtime_exception_register or {}))
+    if runtime_exception_register_issue is not None:
+        items.append(runtime_exception_register_issue)
     bridge_shrink_checklist_issue = _build_bridge_shrink_checklist_issue(dict(bridge_shrink_checklist or {}))
     if bridge_shrink_checklist_issue is not None:
         items.append(bridge_shrink_checklist_issue)
@@ -1341,6 +1428,29 @@ def build_server_workspace_payload(
         legacy_path_allowance=legacy_path_allowance,
         cutover_blockers_breakdown=cutover_blockers_breakdown,
     )
+    legacy_path_controls = build_legacy_path_controls_summary(
+        legacy_path_allowance=legacy_path_allowance,
+        runtime_resolution_policy=runtime_resolution_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_governance_contract=runtime_governance_contract,
+    )
+    projection_runtime_gate = build_projection_runtime_gate_summary(
+        runtime_governance_contract=runtime_governance_contract,
+        compatibility_exit_scorecard=compatibility_exit_scorecard,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+        runtime_breach_categories=runtime_breach_categories,
+    )
+    compatibility_shrink_decision = build_compatibility_shrink_decision_summary(
+        projection_runtime_gate=projection_runtime_gate,
+        legacy_path_controls=legacy_path_controls,
+        runtime_risk_register=runtime_risk_register,
+    )
+    runtime_exception_register = build_runtime_exception_register_summary(
+        legacy_path_allowance=legacy_path_allowance,
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_breach_categories=runtime_breach_categories,
+        compatibility_exit_scorecard=compatibility_exit_scorecard,
+    )
     laws_summary = {
         "active_source_set_bindings": [
             {
@@ -1384,6 +1494,10 @@ def build_server_workspace_payload(
         "legacy_path_allowance": legacy_path_allowance,
         "compatibility_exit_scorecard": compatibility_exit_scorecard,
         "runtime_breach_categories": runtime_breach_categories,
+        "legacy_path_controls": legacy_path_controls,
+        "projection_runtime_gate": projection_runtime_gate,
+        "compatibility_shrink_decision": compatibility_shrink_decision,
+        "runtime_exception_register": runtime_exception_register,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "health": (health_payload.get("checks") or {}).get("health", {}),
@@ -1418,6 +1532,10 @@ def build_server_workspace_payload(
         legacy_path_allowance=legacy_path_allowance,
         compatibility_exit_scorecard=compatibility_exit_scorecard,
         runtime_breach_categories=runtime_breach_categories,
+        legacy_path_controls=legacy_path_controls,
+        projection_runtime_gate=projection_runtime_gate,
+        compatibility_shrink_decision=compatibility_shrink_decision,
+        runtime_exception_register=runtime_exception_register,
         bridge_shrink_checklist=bridge_shrink_checklist,
         cutover_blockers_breakdown=cutover_blockers_breakdown,
     )

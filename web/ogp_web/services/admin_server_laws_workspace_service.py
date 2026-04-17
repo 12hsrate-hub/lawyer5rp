@@ -1895,6 +1895,237 @@ def build_runtime_breach_categories_summary(
     }
 
 
+def build_legacy_path_controls_summary(
+    *,
+    legacy_path_allowance: dict[str, Any],
+    runtime_resolution_policy: dict[str, Any],
+    runtime_operating_mode: dict[str, Any],
+    runtime_governance_contract: dict[str, Any],
+) -> dict[str, Any]:
+    allowance = dict(legacy_path_allowance or {})
+    resolution = dict(runtime_resolution_policy or {})
+    operating_mode = dict(runtime_operating_mode or {})
+    contract = dict(runtime_governance_contract or {})
+
+    allowance_status = str(allowance.get("status") or "").strip().lower()
+    resolution_status = str(resolution.get("status") or "").strip().lower()
+    operating_mode_status = str(operating_mode.get("status") or "").strip().lower()
+    contract_status = str(contract.get("status") or "").strip().lower()
+
+    control_items: list[dict[str, str]] = []
+
+    def _control(path: str, status: str, detail: str) -> None:
+        control_items.append({"path": path, "status": status, "detail": detail})
+
+    if resolution_status == "compatibility_exception":
+        _control("neutral_fallback", "allowed", "Neutral fallback is still tolerated under the current runtime contract.")
+    elif contract_status == "projection_contract":
+        _control("neutral_fallback", "blocked", "Neutral fallback should no longer be relied on for this server.")
+    else:
+        _control("neutral_fallback", "transition_only", "Neutral fallback should remain exceptional and temporary.")
+
+    if resolution_status == "transitional_bootstrap":
+        bootstrap_status = "transition_only" if contract_status != "compatibility_contract" else "allowed"
+        _control("bootstrap_pack", bootstrap_status, "Bootstrap pack remains a transitional runtime-config path.")
+    elif contract_status == "projection_contract":
+        _control("bootstrap_pack", "blocked", "Bootstrap pack should no longer be part of the steady-state runtime path.")
+
+    if operating_mode_status == "compatibility_runtime":
+        _control("legacy_runtime_shell", "allowed", "Legacy runtime shell is still part of the active runtime contract.")
+    elif allowance_status in {"limited", "compatibility_allowed"}:
+        _control("legacy_runtime_shell", "transition_only", "Legacy runtime shell should only remain as a transitional/rollback shell.")
+    else:
+        _control("legacy_runtime_shell", "blocked", "Legacy runtime shell should no longer be required as an active path.")
+
+    blocked_count = sum(1 for item in control_items if item["status"] == "blocked")
+    transition_only_count = sum(1 for item in control_items if item["status"] == "transition_only")
+    allowed_count = sum(1 for item in control_items if item["status"] == "allowed")
+
+    if allowed_count > 0:
+        status = "compatibility_controls"
+        detail = "Some legacy runtime paths are still explicitly allowed for this server."
+        next_step = str(allowance.get("next_step") or "Сначала снимите compatibility allowances.").strip()
+    elif transition_only_count > 0:
+        status = "transition_controls"
+        detail = "Legacy paths are limited to transitional use only in the current contract."
+        next_step = str(contract.get("next_step") or "Доведите transitional controls до fully blocked state.").strip()
+    elif blocked_count > 0:
+        status = "projection_controls"
+        detail = "Legacy runtime paths are blocked by the current projection-grade contract."
+        next_step = "Поддерживайте blocked controls и отслеживайте только regressions."
+    else:
+        status = "observe"
+        detail = "Legacy-path controls are not decisive yet in the current read model."
+        next_step = "Продолжайте наблюдать allowance и governance contract."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "count": len(control_items),
+        "blocked_count": blocked_count,
+        "transition_only_count": transition_only_count,
+        "allowed_count": allowed_count,
+        "items": control_items[:10],
+    }
+
+
+def build_projection_runtime_gate_summary(
+    *,
+    runtime_governance_contract: dict[str, Any],
+    compatibility_exit_scorecard: dict[str, Any],
+    runtime_policy_enforcement: dict[str, Any],
+    runtime_breach_categories: dict[str, Any],
+) -> dict[str, Any]:
+    contract = dict(runtime_governance_contract or {})
+    scorecard = dict(compatibility_exit_scorecard or {})
+    enforcement = dict(runtime_policy_enforcement or {})
+    breach_categories = dict(runtime_breach_categories or {})
+
+    contract_status = str(contract.get("status") or "").strip().lower()
+    scorecard_status = str(scorecard.get("status") or "").strip().lower()
+    enforcement_status = str(enforcement.get("status") or "").strip().lower()
+    breach_status = str(breach_categories.get("status") or "").strip().lower()
+
+    if (
+        contract_status == "projection_contract"
+        and scorecard_status == "ready_to_exit"
+        and enforcement_status == "enforced"
+        and breach_status == "clear"
+    ):
+        status = "open"
+        detail = "Projection-runtime gate is open for this server in the current read model."
+        next_step = "Используйте сервер как candidate для controlled compatibility shrinking."
+    elif breach_status == "breached" or enforcement_status == "violated":
+        status = "blocked"
+        detail = "Projection-runtime gate is blocked by policy breach/enforcement failure."
+        next_step = str(enforcement.get("next_step") or breach_categories.get("next_step") or "Сначала снимите hard breach.").strip()
+    elif scorecard_status in {"exit_in_progress", "not_ready"} or contract_status in {"transitional_contract", "compatibility_contract"}:
+        status = "guarded"
+        detail = "Projection-runtime gate is still guarded while compatibility debt is being reduced."
+        next_step = str(scorecard.get("next_step") or contract.get("next_step") or "Сначала закройте remaining exit blockers.").strip()
+    else:
+        status = "observe"
+        detail = "Projection-runtime gate is not decisive yet in the current read model."
+        next_step = "Продолжайте наблюдать governance contract и exit scorecard."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "contract_status": contract_status,
+        "scorecard_status": scorecard_status,
+        "enforcement_status": enforcement_status,
+        "breach_status": breach_status,
+    }
+
+
+def build_compatibility_shrink_decision_summary(
+    *,
+    projection_runtime_gate: dict[str, Any],
+    legacy_path_controls: dict[str, Any],
+    runtime_risk_register: dict[str, Any],
+) -> dict[str, Any]:
+    gate = dict(projection_runtime_gate or {})
+    controls = dict(legacy_path_controls or {})
+    risk_register = dict(runtime_risk_register or {})
+
+    gate_status = str(gate.get("status") or "").strip().lower()
+    controls_status = str(controls.get("status") or "").strip().lower()
+    risk_status = str(risk_register.get("status") or "").strip().lower()
+
+    if gate_status == "open" and controls_status == "projection_controls" and risk_status == "low":
+        status = "shrink_now"
+        detail = "Server is a clean candidate for the next controlled compatibility-path shrinking step."
+        next_step = "Можно планировать следующий bounded bridge-shrinking step для этого сервера."
+    elif gate_status == "guarded" and controls_status in {"transition_controls", "projection_controls"} and risk_status in {"medium", "low"}:
+        status = "shrink_after_stabilization"
+        detail = "Server is close to bridge shrinking, but still needs stabilization before the next control step."
+        next_step = str(gate.get("next_step") or controls.get("next_step") or "Сначала закройте remaining transitional gaps.").strip()
+    elif gate_status == "blocked" or controls_status == "compatibility_controls" or risk_status in {"critical", "high"}:
+        status = "hold_compatibility"
+        detail = "Server should remain on the current compatibility path until risks and control gaps are reduced."
+        next_step = str(risk_register.get("next_step") or gate.get("next_step") or "Сначала снимите runtime risks и allowances.").strip()
+    else:
+        status = "observe"
+        detail = "Compatibility-shrinking decision is not decisive yet in the current read model."
+        next_step = "Продолжайте наблюдать gate, controls и runtime risks."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "gate_status": gate_status,
+        "controls_status": controls_status,
+        "risk_status": risk_status,
+    }
+
+
+def build_runtime_exception_register_summary(
+    *,
+    legacy_path_allowance: dict[str, Any],
+    runtime_policy_violations: dict[str, Any],
+    runtime_breach_categories: dict[str, Any],
+    compatibility_exit_scorecard: dict[str, Any],
+) -> dict[str, Any]:
+    allowance = dict(legacy_path_allowance or {})
+    violations = dict(runtime_policy_violations or {})
+    breach_categories = dict(runtime_breach_categories or {})
+    scorecard = dict(compatibility_exit_scorecard or {})
+
+    items: list[dict[str, str]] = []
+    allowance_status = str(allowance.get("status") or "").strip().lower()
+    if allowance_status in {"compatibility_allowed", "limited"}:
+        for path in list(allowance.get("allowed_paths") or [])[:10]:
+            items.append({"kind": "legacy_path", "detail": str(path)})
+
+    for item in list(violations.get("items") or [])[:10]:
+        detail = str((item or {}).get("detail") or "").strip()
+        if detail:
+            items.append({"kind": "policy_violation", "detail": detail})
+
+    for item in list(breach_categories.get("items") or [])[:10]:
+        detail = str((item or {}).get("detail") or "").strip()
+        category = str((item or {}).get("category") or "breach")
+        if detail:
+            items.append({"kind": category, "detail": detail})
+
+    scorecard_status = str(scorecard.get("status") or "").strip().lower()
+    if scorecard_status in {"not_ready", "exit_in_progress"}:
+        items.append({"kind": "exit_scorecard", "detail": str(scorecard.get("detail") or "").strip()})
+
+    deduped: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        key = (str(item.get("kind") or "").strip().lower(), str(item.get("detail") or "").strip())
+        if not key[0] or not key[1] or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+
+    if deduped:
+        status = "open"
+        detail = f"{len(deduped)} runtime exception(s) are still explicitly carried by this server."
+        next_step = str(
+            scorecard.get("next_step")
+            or breach_categories.get("next_step")
+            or allowance.get("next_step")
+            or "Постепенно закрывайте explicit runtime exceptions."
+        ).strip()
+    else:
+        status = "clear"
+        detail = "No explicit runtime exceptions are visible in the current read model."
+        next_step = "Явных runtime exceptions не видно."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "count": len(deduped),
+        "items": deduped[:10],
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -2096,6 +2327,29 @@ def build_server_laws_summary_payload(
         legacy_path_allowance=legacy_path_allowance,
         cutover_blockers_breakdown=cutover_blockers_breakdown,
     )
+    legacy_path_controls = build_legacy_path_controls_summary(
+        legacy_path_allowance=legacy_path_allowance,
+        runtime_resolution_policy=runtime_resolution_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_governance_contract=runtime_governance_contract,
+    )
+    projection_runtime_gate = build_projection_runtime_gate_summary(
+        runtime_governance_contract=runtime_governance_contract,
+        compatibility_exit_scorecard=compatibility_exit_scorecard,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+        runtime_breach_categories=runtime_breach_categories,
+    )
+    compatibility_shrink_decision = build_compatibility_shrink_decision_summary(
+        projection_runtime_gate=projection_runtime_gate,
+        legacy_path_controls=legacy_path_controls,
+        runtime_risk_register=runtime_risk_register,
+    )
+    runtime_exception_register = build_runtime_exception_register_summary(
+        legacy_path_allowance=legacy_path_allowance,
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_breach_categories=runtime_breach_categories,
+        compatibility_exit_scorecard=compatibility_exit_scorecard,
+    )
     return {
         "server_code": normalized_server,
         "bindings": bindings,
@@ -2129,6 +2383,10 @@ def build_server_laws_summary_payload(
         "legacy_path_allowance": legacy_path_allowance,
         "compatibility_exit_scorecard": compatibility_exit_scorecard,
         "runtime_breach_categories": runtime_breach_categories,
+        "legacy_path_controls": legacy_path_controls,
+        "projection_runtime_gate": projection_runtime_gate,
+        "compatibility_shrink_decision": compatibility_shrink_decision,
+        "runtime_exception_register": runtime_exception_register,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "latest_projection_run": _serialize_run(current_run),
@@ -2429,6 +2687,29 @@ def build_server_laws_diff_payload(
         legacy_path_allowance=legacy_path_allowance,
         cutover_blockers_breakdown=cutover_blockers_breakdown,
     )
+    legacy_path_controls = build_legacy_path_controls_summary(
+        legacy_path_allowance=legacy_path_allowance,
+        runtime_resolution_policy=runtime_resolution_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_governance_contract=runtime_governance_contract,
+    )
+    projection_runtime_gate = build_projection_runtime_gate_summary(
+        runtime_governance_contract=runtime_governance_contract,
+        compatibility_exit_scorecard=compatibility_exit_scorecard,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+        runtime_breach_categories=runtime_breach_categories,
+    )
+    compatibility_shrink_decision = build_compatibility_shrink_decision_summary(
+        projection_runtime_gate=projection_runtime_gate,
+        legacy_path_controls=legacy_path_controls,
+        runtime_risk_register=runtime_risk_register,
+    )
+    runtime_exception_register = build_runtime_exception_register_summary(
+        legacy_path_allowance=legacy_path_allowance,
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_breach_categories=runtime_breach_categories,
+        compatibility_exit_scorecard=compatibility_exit_scorecard,
+    )
     return {
         "server_code": normalized_server,
         "current_run": _serialize_run(current_run),
@@ -2459,6 +2740,10 @@ def build_server_laws_diff_payload(
         "legacy_path_allowance": legacy_path_allowance,
         "compatibility_exit_scorecard": compatibility_exit_scorecard,
         "runtime_breach_categories": runtime_breach_categories,
+        "legacy_path_controls": legacy_path_controls,
+        "projection_runtime_gate": projection_runtime_gate,
+        "compatibility_shrink_decision": compatibility_shrink_decision,
+        "runtime_exception_register": runtime_exception_register,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "summary": diff_summary,
