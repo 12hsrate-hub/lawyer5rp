@@ -42,3 +42,4 @@ Archived materials are intentionally excluded from the active-links lists above.
 - There must be only one active root migration map: `MIGRATION_MAP.md`.
 - Product/architecture prompt docs live in `docs/PRODUCT_BRIEF.md` and `docs/ARCHITECT_AGENT_GUIDE.md`.
 - If a document is no longer part of current operations or the canonical planning set, archive it.
+- In `docs/archive/`, use relative links that resolve from the current file's folder (e.g., links from `docs/archive/YYYY-MM/*.md` to docs root should start with `../../`).
