@@ -840,15 +840,15 @@ def build_runtime_shell_debt_summary(
     if not deduped_reasons:
         status = "low"
         detail = "Runtime shell debt looks low in the current read model."
-        next_step = "Legacy runtime shell dependence is not currently a visible blocker."
+        next_step = "Runtime shell artifact dependence is not currently a visible blocker."
     elif provenance_mode == "legacy_runtime_shell" or version_status == "legacy_only":
         status = "high"
-        detail = "Runtime still depends heavily on the legacy shell path."
-        next_step = "Сведите зависимость к projection-backed runtime shell и controlled activation path."
+        detail = "Runtime still depends heavily on the runtime shell artifact path."
+        next_step = "Сведите зависимость к projection-backed runtime and a controlled activation path."
     else:
         status = "medium"
         detail = "Runtime still carries compatibility shell debt that deserves follow-up."
-        next_step = "Сведите activation/provenance drift и проверьте shell dependence через безопасный recheck."
+        next_step = "Сведите activation/provenance drift и проверьте runtime shell artifact dependence через безопасный recheck."
 
     return {
         "status": status,
@@ -1788,7 +1788,7 @@ def build_legacy_path_allowance_summary(
     elif resolution_status == "transitional_bootstrap":
         allowance_items.append("bootstrap_pack")
     if operating_mode_status == "compatibility_runtime":
-        allowance_items.append("legacy_runtime_shell")
+        allowance_items.append("runtime_shell_artifact")
     elif shell_debt_status in {"high", "medium"}:
         allowance_items.append("legacy_shell_debt")
 
@@ -1805,7 +1805,7 @@ def build_legacy_path_allowance_summary(
     elif contract_status == "transitional_contract":
         status = "limited"
         detail = "Only transitional legacy paths should still be tolerated while cutover stabilizes."
-        next_step = str(contract.get("next_step") or "Постепенно убирайте bootstrap/legacy shell allowance.").strip()
+        next_step = str(contract.get("next_step") or "Постепенно убирайте bootstrap/runtime-shell-artifact allowance.").strip()
     elif contract_status == "compatibility_contract" or allowance_items:
         status = "compatibility_allowed"
         detail = "Compatibility-era paths are still allowed for this server in the current runtime contract."
@@ -2028,11 +2028,11 @@ def build_legacy_path_controls_summary(
         _control("bootstrap_pack", "blocked", "Bootstrap pack should no longer be part of the steady-state runtime path.")
 
     if operating_mode_status == "compatibility_runtime":
-        _control("legacy_runtime_shell", "allowed", "Legacy runtime shell is still part of the active runtime contract.")
+        _control("runtime_shell_artifact", "allowed", "Runtime shell artifact is still part of the active runtime contract.")
     elif allowance_status in {"limited", "compatibility_allowed"}:
-        _control("legacy_runtime_shell", "transition_only", "Legacy runtime shell should only remain as a transitional/rollback shell.")
+        _control("runtime_shell_artifact", "transition_only", "Runtime shell artifact should only remain as a transitional/rollback shell.")
     else:
-        _control("legacy_runtime_shell", "blocked", "Legacy runtime shell should no longer be required as an active path.")
+        _control("runtime_shell_artifact", "blocked", "Runtime shell artifact should no longer be required as an active path.")
 
     blocked_count = sum(1 for item in control_items if item["status"] == "blocked")
     transition_only_count = sum(1 for item in control_items if item["status"] == "transition_only")
@@ -2270,7 +2270,7 @@ def build_compatibility_path_matrix_summary(
 
     paths: list[dict[str, str]] = []
 
-    for path_name in ("neutral_fallback", "bootstrap_pack", "legacy_runtime_shell"):
+    for path_name in ("neutral_fallback", "bootstrap_pack", "runtime_shell_artifact"):
         control = _find_control(path_name)
         control_status = str(control.get("status") or "observe").strip().lower()
         detail = str(control.get("detail") or "").strip()
@@ -2278,6 +2278,8 @@ def build_compatibility_path_matrix_summary(
         if path_name == "neutral_fallback" and resolution_status == "compatibility_exception":
             path_status = "active_exception"
         elif path_name == "bootstrap_pack" and resolution_status == "transitional_bootstrap":
+            path_status = "transition_path"
+        elif path_name == "runtime_shell_artifact" and control_status == "allowed":
             path_status = "transition_path"
         elif control_status == "allowed":
             path_status = "active_exception"
@@ -2292,8 +2294,8 @@ def build_compatibility_path_matrix_summary(
             detail = detail or "Neutral fallback still appears in the carried runtime exceptions."
         if path_name == "bootstrap_pack" and _has_exception_fragment("bootstrap"):
             detail = detail or "Bootstrap pack still appears in the carried runtime exceptions."
-        if path_name == "legacy_runtime_shell" and _has_exception_fragment("legacy"):
-            detail = detail or "Legacy runtime shell still appears in the carried runtime exceptions."
+        if path_name == "runtime_shell_artifact" and (_has_exception_fragment("legacy") or _has_exception_fragment("shell")):
+            detail = detail or "Runtime shell artifact still appears in the carried runtime exceptions."
 
         paths.append(
             {
