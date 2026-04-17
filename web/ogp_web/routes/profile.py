@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from ogp_web.dependencies import get_user_store, requires_permission
+from ogp_web.server_config import ServerUnavailableError
 from ogp_web.schemas import DraftSwitchAction, ProfileResponse, RepresentativePayload, SelectedServerPayload, SelectedServerResponse
 from ogp_web.services.auth_service import AuthUser, require_user
 from ogp_web.services.complaint_draft_schema import classify_switch_actions, normalize_complaint_draft
@@ -46,7 +47,7 @@ async def profile_selected_server(
 ) -> SelectedServerResponse:
     try:
         selected = store.set_selected_server_code(user.username, payload.server_code)
-    except ValueError as exc:
+    except (ValueError, ServerUnavailableError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[str(exc)]) from exc
 
     target_config = resolve_user_server_config(store, user.username, server_code=selected)

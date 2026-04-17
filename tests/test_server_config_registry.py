@@ -42,6 +42,7 @@ class ServerConfigRegistryTests(unittest.TestCase):
 
         self.assertEqual(snapshot["resolution_mode"], "neutral_fallback")
         self.assertTrue(snapshot["requires_explicit_runtime_pack"])
+        self.assertFalse(snapshot["is_runtime_addressable"])
         self.assertFalse(snapshot["has_runtime_metadata"])
         self.assertFalse(snapshot["has_identity_capabilities"])
 
@@ -56,7 +57,7 @@ class ServerConfigRegistryTests(unittest.TestCase):
         self.assertEqual(pack["status"], "published")
         self.assertEqual(pack["metadata"]["template_bindings"]["complaint"]["template_key"], "complaint_orange_v1")
 
-    def test_runtime_fallback_config_is_neutral_for_db_only_server(self):
+    def test_db_only_server_is_no_longer_runtime_addressable_through_neutral_fallback(self):
         with patch("ogp_web.server_config.registry._load_codes_from_config_repo", return_value=None), patch(
             "ogp_web.server_config.registry._load_server_rows_from_db",
             return_value=[
@@ -65,23 +66,18 @@ class ServerConfigRegistryTests(unittest.TestCase):
         ):
             runtime_configs = registry._load_runtime_server_configs()
 
-        self.assertIn("orange", runtime_configs)
+        self.assertNotIn("orange", runtime_configs)
         self.assertIn(registry.DEFAULT_SERVER_CODE, runtime_configs)
-        orange = runtime_configs["orange"]
-        self.assertEqual(orange.code, "orange")
-        self.assertEqual(orange.name, "Orange City")
-        self.assertEqual(orange.app_title, "Orange City")
-        self.assertEqual(orange.law_qa_sources, ())
-        self.assertEqual(orange.feature_flags, frozenset())
-        self.assertEqual(orange.enabled_pages, frozenset())
-        self.assertEqual(orange.complaint_forum_url, "")
-        self.assertEqual(orange.exam_sheet_url, "")
-        self.assertEqual(orange.procedure_types, ())
-        self.assertEqual(orange.form_schema, {})
-        self.assertEqual(orange.validation_profiles, {})
-        self.assertEqual(orange.template_bindings, {})
-        self.assertEqual(orange.document_builder, {})
-        self.assertEqual(orange.terminology, {})
+
+    def test_get_server_config_rejects_db_only_server_without_runtime_pack(self):
+        with patch("ogp_web.server_config.registry._load_codes_from_config_repo", return_value=None), patch(
+            "ogp_web.server_config.registry._load_server_rows_from_db",
+            return_value=[
+                {"code": "orange", "title": "Orange City", "is_active": True},
+            ],
+        ):
+            with self.assertRaises(registry.ServerUnavailableError):
+                registry.get_server_config("orange")
 
     def test_inactive_db_only_server_is_not_runtime_addressable(self):
         with patch("ogp_web.server_config.registry._load_codes_from_config_repo", return_value=None), patch(
@@ -141,6 +137,7 @@ class ServerConfigRegistryTests(unittest.TestCase):
 
         self.assertEqual(snapshot["resolution_mode"], "published_pack")
         self.assertFalse(snapshot["requires_explicit_runtime_pack"])
+        self.assertTrue(snapshot["is_runtime_addressable"])
         self.assertTrue(snapshot["has_runtime_metadata"])
         self.assertTrue(snapshot["has_identity_capabilities"])
 

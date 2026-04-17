@@ -273,6 +273,7 @@ def _build_runtime_server_onboarding_payload(
         "rollback_reference": rollback_reference,
         "smoke_tests_checked": smoke_tests_checked,
         "resolution": {
+            "is_runtime_addressable": bool(resolution.get("is_runtime_addressable")),
             "has_published_pack": bool(resolution.get("has_published_pack")),
             "has_bootstrap_pack": bool(resolution.get("has_bootstrap_pack")),
             "has_runtime_metadata": bool(resolution.get("has_runtime_metadata")),

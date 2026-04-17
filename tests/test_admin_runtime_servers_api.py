@@ -874,6 +874,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertFalse(created.json()["item"]["is_active"])
         self.assertEqual(created.json()["item"]["onboarding"]["highest_completed_state"], "not-ready")
         self.assertEqual(created.json()["item"]["onboarding"]["resolution_mode"], "neutral_fallback")
+        self.assertFalse(created.json()["item"]["onboarding"]["resolution"]["is_runtime_addressable"])
         self.assertIsNone(created.json()["item"]["projection_bridge"])
 
         updated = self.client.put("/api/admin/runtime-servers/city2", json={"code": "city2", "title": "City 2 RU"})
@@ -939,6 +940,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertEqual(payload_before["onboarding"]["highest_completed_state"], "not-ready")
             self.assertEqual(payload_before["onboarding"]["resolution_mode"], "neutral_fallback")
             self.assertTrue(payload_before["onboarding"]["requires_explicit_runtime_pack"])
+            self.assertFalse(payload_before["onboarding"]["resolution"]["is_runtime_addressable"])
 
             activated = self.client.post("/api/admin/runtime-servers/city2/activate")
             self.assertEqual(activated.status_code, 200)
@@ -1669,6 +1671,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(payload["onboarding"]["resolution_mode"], "published_pack")
         self.assertFalse(payload["onboarding"]["uses_transitional_fallback"])
         self.assertFalse(payload["onboarding"]["requires_explicit_runtime_pack"])
+        self.assertTrue(payload["onboarding"]["resolution"]["is_runtime_addressable"])
         self.assertTrue(payload["checks"]["config_resolution"]["ok"])
         self.assertEqual(payload["runtime_provenance"]["mode"], "projection_backed")
         self.assertTrue(payload["runtime_provenance"]["is_projection_backed"])
