@@ -7,12 +7,17 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase L`
-- Active task: `prepare orange as the first staged multi-server release candidate`
+- Active task: `tighten runtime multi-server guardrails beyond observability-only diagnostics`
 - Status: `in_progress`
 - Last completed phase: `Phase K`
 - Inventory slices completed: `6`
-- Next slice: `record RC operator artifacts and finalize orange release-evidence regression coverage`
-- Last updated: `2026-04-16`
+- Next slice: `convert runtime bridge policy into operating-mode, violation, and guardrail enforcement signals`
+- Last updated: `2026-04-17`
+- Accelerated runtime phase:
+  - `L.runtime.1` add a single `runtime_bridge_policy` verdict so runtime cutover posture is no longer inferred from multiple lower-level summaries
+  - `L.runtime.2` add declared `runtime_operating_mode` so each server is classified as `projection_runtime`, `transitional_runtime`, or `compatibility_runtime`
+  - `L.runtime.3` add `runtime_policy_violations` so projection-preferred servers cannot silently drift into fallback/bootstrap/legacy debt states without an explicit operator signal
+  - `L.runtime.4` add `cutover_guardrails` so cutover-hold vs compatibility-guardrails vs enforced projection posture becomes a first-class runtime/admin surface
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`

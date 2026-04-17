@@ -7,6 +7,7 @@ from ogp_web.services.admin_law_projection_service import (
 )
 from ogp_web.services.admin_runtime_servers_service import (
     build_runtime_config_debt_summary,
+    build_runtime_config_posture_summary,
     build_runtime_resolution_policy_summary,
     build_runtime_server_health_payload,
     normalize_runtime_server_code,
@@ -1222,6 +1223,213 @@ def build_runtime_bridge_policy_summary(
     }
 
 
+def build_runtime_operating_mode_summary(
+    *,
+    runtime_bridge_policy: dict[str, Any],
+    runtime_config_posture: dict[str, Any],
+    runtime_provenance: dict[str, Any],
+    runtime_cutover_mode: dict[str, Any],
+) -> dict[str, Any]:
+    bridge_policy = dict(runtime_bridge_policy or {})
+    config_posture = dict(runtime_config_posture or {})
+    provenance = dict(runtime_provenance or {})
+    cutover_mode = dict(runtime_cutover_mode or {})
+
+    bridge_policy_status = str(bridge_policy.get("status") or "").strip().lower()
+    config_posture_status = str(config_posture.get("status") or "").strip().lower()
+    provenance_mode = str(provenance.get("mode") or "").strip().lower()
+    cutover_mode_status = str(cutover_mode.get("status") or "").strip().lower()
+
+    if (
+        bridge_policy_status == "prefer_projection_runtime"
+        and config_posture_status == "declared_ready"
+        and provenance_mode == "projection_backed"
+        and cutover_mode_status == "projection_preferred"
+    ):
+        status = "projection_runtime"
+        detail = "Server is operating in a projection-first runtime mode in the current read model."
+        next_step = "Сохраняйте projection-backed runtime как основной operating mode."
+    elif bridge_policy_status == "keep_compatibility" or config_posture_status == "fallback_only":
+        status = "compatibility_runtime"
+        detail = "Server still operates in a compatibility-oriented runtime mode."
+        next_step = str(
+            bridge_policy.get("next_step")
+            or config_posture.get("next_step")
+            or "Сначала снимите compatibility dependencies."
+        ).strip()
+    elif (
+        bridge_policy_status == "stabilize_for_cutover"
+        or config_posture_status == "bootstrap_transition"
+        or cutover_mode_status in {"cutover_candidate", "observe"}
+    ):
+        status = "transitional_runtime"
+        detail = "Server is in a transitional runtime mode while cutover and config stabilization continue."
+        next_step = str(
+            bridge_policy.get("next_step")
+            or cutover_mode.get("next_step")
+            or config_posture.get("next_step")
+            or "Продолжайте стабилизировать runtime bridge и config path."
+        ).strip()
+    else:
+        status = "observe"
+        detail = "Runtime operating mode is not decisive yet in the current read model."
+        next_step = "Продолжайте наблюдать bridge policy, config posture и runtime provenance."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "bridge_policy_status": bridge_policy_status,
+        "config_posture_status": config_posture_status,
+        "provenance_mode": provenance_mode,
+        "cutover_mode_status": cutover_mode_status,
+    }
+
+
+def build_runtime_policy_violations_summary(
+    *,
+    runtime_bridge_policy: dict[str, Any],
+    runtime_operating_mode: dict[str, Any],
+    runtime_config_posture: dict[str, Any],
+    runtime_provenance: dict[str, Any],
+    runtime_shell_debt: dict[str, Any],
+    cutover_readiness: dict[str, Any],
+) -> dict[str, Any]:
+    bridge_policy = dict(runtime_bridge_policy or {})
+    operating_mode = dict(runtime_operating_mode or {})
+    config_posture = dict(runtime_config_posture or {})
+    provenance = dict(runtime_provenance or {})
+    shell_debt = dict(runtime_shell_debt or {})
+    cutover = dict(cutover_readiness or {})
+
+    bridge_policy_status = str(bridge_policy.get("status") or "").strip().lower()
+    operating_mode_status = str(operating_mode.get("status") or "").strip().lower()
+    config_posture_status = str(config_posture.get("status") or "").strip().lower()
+    provenance_mode = str(provenance.get("mode") or "").strip().lower()
+    shell_debt_status = str(shell_debt.get("status") or "").strip().lower()
+    cutover_status = str(cutover.get("status") or "").strip().lower()
+
+    items: list[dict[str, str]] = []
+
+    if bridge_policy_status == "prefer_projection_runtime" and config_posture_status != "declared_ready":
+        items.append(
+            {
+                "kind": "projection_policy_requires_declared_runtime",
+                "detail": "Projection-preferred policy is set while config posture is not declared-ready.",
+            }
+        )
+    if bridge_policy_status == "prefer_projection_runtime" and provenance_mode != "projection_backed":
+        items.append(
+            {
+                "kind": "projection_policy_without_projection_runtime",
+                "detail": "Projection-preferred policy is set while runtime provenance is not projection-backed.",
+            }
+        )
+    if bridge_policy_status == "prefer_projection_runtime" and shell_debt_status != "low":
+        items.append(
+            {
+                "kind": "projection_policy_with_shell_debt",
+                "detail": "Projection-preferred policy is set while runtime shell debt is not low.",
+            }
+        )
+    if bridge_policy_status == "prefer_projection_runtime" and cutover_status != "ready_for_cutover":
+        items.append(
+            {
+                "kind": "projection_policy_without_cutover_readiness",
+                "detail": "Projection-preferred policy is set while cutover readiness is not fully green.",
+            }
+        )
+    if operating_mode_status == "projection_runtime" and bridge_policy_status != "prefer_projection_runtime":
+        items.append(
+            {
+                "kind": "projection_runtime_without_projection_policy",
+                "detail": "Projection runtime operating mode is visible without a matching projection-preferred bridge policy.",
+            }
+        )
+
+    deduped: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in items:
+        kind = str(item.get("kind") or "").strip().lower()
+        if not kind or kind in seen:
+            continue
+        seen.add(kind)
+        deduped.append(item)
+
+    if deduped:
+        status = "blocked"
+        detail = f"{len(deduped)} runtime policy violation(s) still require attention."
+        next_step = str(
+            bridge_policy.get("next_step")
+            or cutover.get("next_step")
+            or "Сначала уберите policy violations перед дальнейшим cutover tightening."
+        ).strip()
+    else:
+        status = "clear"
+        detail = "No explicit runtime policy violations are visible in the current read model."
+        next_step = "Явных policy violations не видно."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "count": len(deduped),
+        "items": deduped[:10],
+        "bridge_policy_status": bridge_policy_status,
+        "operating_mode_status": operating_mode_status,
+    }
+
+
+def build_cutover_guardrails_summary(
+    *,
+    runtime_bridge_policy: dict[str, Any],
+    runtime_operating_mode: dict[str, Any],
+    runtime_policy_violations: dict[str, Any],
+    cutover_readiness: dict[str, Any],
+) -> dict[str, Any]:
+    bridge_policy = dict(runtime_bridge_policy or {})
+    operating_mode = dict(runtime_operating_mode or {})
+    violations = dict(runtime_policy_violations or {})
+    cutover = dict(cutover_readiness or {})
+
+    bridge_policy_status = str(bridge_policy.get("status") or "").strip().lower()
+    operating_mode_status = str(operating_mode.get("status") or "").strip().lower()
+    violations_status = str(violations.get("status") or "").strip().lower()
+    cutover_status = str(cutover.get("status") or "").strip().lower()
+
+    if bridge_policy_status == "prefer_projection_runtime" and violations_status == "clear" and cutover_status == "ready_for_cutover":
+        status = "enforced"
+        detail = "Cutover guardrails are aligned with a projection-preferred runtime policy."
+        next_step = "Не допускайте деградации сервера обратно в transitional or compatibility paths."
+    elif bridge_policy_status == "keep_compatibility":
+        status = "compatibility_guardrails"
+        detail = "Guardrails still require compatibility-oriented runtime constraints."
+        next_step = str(bridge_policy.get("next_step") or "Сначала снимите compatibility dependencies.").strip()
+    elif violations_status == "blocked" or cutover_status not in {"ready_for_cutover", "monitor"} or operating_mode_status == "transitional_runtime":
+        status = "hold"
+        detail = "Cutover guardrails should still hold the server in a transitional state."
+        next_step = str(
+            violations.get("next_step")
+            or cutover.get("next_step")
+            or bridge_policy.get("next_step")
+            or "Сначала снимите violations и стабилизируйте cutover path."
+        ).strip()
+    else:
+        status = "observe"
+        detail = "Cutover guardrails are not decisive yet in the current read model."
+        next_step = "Продолжайте наблюдать policy violations и operating mode."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "bridge_policy_status": bridge_policy_status,
+        "operating_mode_status": operating_mode_status,
+        "violations_status": violations_status,
+        "cutover_status": cutover_status,
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -1340,6 +1548,26 @@ def build_server_laws_summary_payload(
         runtime_cutover_mode=runtime_cutover_mode,
         cutover_readiness=cutover_readiness,
     )
+    runtime_operating_mode = build_runtime_operating_mode_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_config_posture=dict((health_payload.get("runtime_config_posture") or {})) or build_runtime_config_posture_summary(health_payload=health_payload),
+        runtime_provenance=dict(health_payload.get("runtime_provenance") or {}),
+        runtime_cutover_mode=runtime_cutover_mode,
+    )
+    runtime_policy_violations = build_runtime_policy_violations_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_config_posture=dict((health_payload.get("runtime_config_posture") or {})) or build_runtime_config_posture_summary(health_payload=health_payload),
+        runtime_provenance=dict(health_payload.get("runtime_provenance") or {}),
+        runtime_shell_debt=runtime_shell_debt,
+        cutover_readiness=cutover_readiness,
+    )
+    cutover_guardrails = build_cutover_guardrails_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_violations=runtime_policy_violations,
+        cutover_readiness=cutover_readiness,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=bridge_readiness,
         activation_gap=activation_gap,
@@ -1376,6 +1604,9 @@ def build_server_laws_summary_payload(
         "cutover_readiness": cutover_readiness,
         "runtime_cutover_mode": runtime_cutover_mode,
         "runtime_bridge_policy": runtime_bridge_policy,
+        "runtime_operating_mode": runtime_operating_mode,
+        "runtime_policy_violations": runtime_policy_violations,
+        "cutover_guardrails": cutover_guardrails,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "latest_projection_run": _serialize_run(current_run),
@@ -1593,6 +1824,26 @@ def build_server_laws_diff_payload(
         runtime_cutover_mode=runtime_cutover_mode,
         cutover_readiness=cutover_readiness,
     )
+    runtime_operating_mode = build_runtime_operating_mode_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_config_posture=dict((health_payload.get("runtime_config_posture") or {})) or build_runtime_config_posture_summary(health_payload=health_payload),
+        runtime_provenance=dict(health_payload.get("runtime_provenance") or {}),
+        runtime_cutover_mode=runtime_cutover_mode,
+    )
+    runtime_policy_violations = build_runtime_policy_violations_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_config_posture=dict((health_payload.get("runtime_config_posture") or {})) or build_runtime_config_posture_summary(health_payload=health_payload),
+        runtime_provenance=dict(health_payload.get("runtime_provenance") or {}),
+        runtime_shell_debt=runtime_shell_debt,
+        cutover_readiness=cutover_readiness,
+    )
+    cutover_guardrails = build_cutover_guardrails_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_violations=runtime_policy_violations,
+        cutover_readiness=cutover_readiness,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=bridge_readiness,
         activation_gap=activation_gap,
@@ -1626,6 +1877,9 @@ def build_server_laws_diff_payload(
         "cutover_readiness": cutover_readiness,
         "runtime_cutover_mode": runtime_cutover_mode,
         "runtime_bridge_policy": runtime_bridge_policy,
+        "runtime_operating_mode": runtime_operating_mode,
+        "runtime_policy_violations": runtime_policy_violations,
+        "cutover_guardrails": cutover_guardrails,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "summary": diff_summary,

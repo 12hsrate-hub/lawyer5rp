@@ -21,7 +21,10 @@ from ogp_web.services.admin_server_laws_workspace_service import build_runtime_s
 from ogp_web.services.admin_server_laws_workspace_service import build_bridge_shrink_checklist_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_cutover_blockers_breakdown_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_bridge_policy_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_runtime_operating_mode_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_runtime_policy_violations_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_cutover_mode_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_cutover_guardrails_summary
 from ogp_web.services.content_workflow_service import ContentWorkflowService
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
@@ -677,6 +680,56 @@ def _build_runtime_bridge_policy_issue(runtime_bridge_policy: dict[str, Any]) ->
     }
 
 
+def _build_runtime_operating_mode_issue(runtime_operating_mode: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_operating_mode or {}).get("status") or "").strip().lower()
+    if status not in {"compatibility_runtime", "transitional_runtime"}:
+        return None
+    return {
+        "issue_id": "runtime_operating_mode",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Runtime operating mode ещё не projection-first",
+        "detail": (
+            f"{str((runtime_operating_mode or {}).get('detail') or '').strip()} "
+            f"{str((runtime_operating_mode or {}).get('next_step') or '').strip()}"
+        ).strip(),
+    }
+
+
+def _build_runtime_policy_violations_issue(runtime_policy_violations: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_policy_violations or {}).get("status") or "").strip().lower()
+    if status in {"", "clear"}:
+        return None
+    detail = (
+        f"{str((runtime_policy_violations or {}).get('detail') or '').strip()} "
+        f"count={int((runtime_policy_violations or {}).get('count') or 0)}. "
+        f"{str((runtime_policy_violations or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "runtime_policy_violations",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Есть runtime policy violations",
+        "detail": detail,
+    }
+
+
+def _build_cutover_guardrails_issue(cutover_guardrails: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((cutover_guardrails or {}).get("status") or "").strip().lower()
+    if status in {"", "enforced", "observe"}:
+        return None
+    return {
+        "issue_id": "laws_cutover_guardrails",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Cutover guardrails ещё удерживают сервер",
+        "detail": (
+            f"{str((cutover_guardrails or {}).get('detail') or '').strip()} "
+            f"{str((cutover_guardrails or {}).get('next_step') or '').strip()}"
+        ).strip(),
+    }
+
+
 def _build_bridge_shrink_checklist_issue(bridge_shrink_checklist: dict[str, Any]) -> dict[str, Any] | None:
     status = str((bridge_shrink_checklist or {}).get("status") or "").strip().lower()
     if status in {"", "ready"}:
@@ -739,6 +792,9 @@ def _build_issues_payload(
     cutover_readiness: dict[str, Any] | None = None,
     runtime_cutover_mode: dict[str, Any] | None = None,
     runtime_bridge_policy: dict[str, Any] | None = None,
+    runtime_operating_mode: dict[str, Any] | None = None,
+    runtime_policy_violations: dict[str, Any] | None = None,
+    cutover_guardrails: dict[str, Any] | None = None,
     bridge_shrink_checklist: dict[str, Any] | None = None,
     cutover_blockers_breakdown: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -842,6 +898,15 @@ def _build_issues_payload(
     runtime_bridge_policy_issue = _build_runtime_bridge_policy_issue(dict(runtime_bridge_policy or {}))
     if runtime_bridge_policy_issue is not None:
         items.append(runtime_bridge_policy_issue)
+    runtime_operating_mode_issue = _build_runtime_operating_mode_issue(dict(runtime_operating_mode or {}))
+    if runtime_operating_mode_issue is not None:
+        items.append(runtime_operating_mode_issue)
+    runtime_policy_violations_issue = _build_runtime_policy_violations_issue(dict(runtime_policy_violations or {}))
+    if runtime_policy_violations_issue is not None:
+        items.append(runtime_policy_violations_issue)
+    cutover_guardrails_issue = _build_cutover_guardrails_issue(dict(cutover_guardrails or {}))
+    if cutover_guardrails_issue is not None:
+        items.append(cutover_guardrails_issue)
     bridge_shrink_checklist_issue = _build_bridge_shrink_checklist_issue(dict(bridge_shrink_checklist or {}))
     if bridge_shrink_checklist_issue is not None:
         items.append(bridge_shrink_checklist_issue)
@@ -1037,6 +1102,26 @@ def build_server_workspace_payload(
         runtime_cutover_mode=runtime_cutover_mode,
         cutover_readiness=cutover_readiness,
     )
+    runtime_operating_mode = build_runtime_operating_mode_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_config_posture=runtime_config_posture,
+        runtime_provenance=runtime_provenance,
+        runtime_cutover_mode=runtime_cutover_mode,
+    )
+    runtime_policy_violations = build_runtime_policy_violations_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_config_posture=runtime_config_posture,
+        runtime_provenance=runtime_provenance,
+        runtime_shell_debt=runtime_shell_debt,
+        cutover_readiness=cutover_readiness,
+    )
+    cutover_guardrails = build_cutover_guardrails_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_violations=runtime_policy_violations,
+        cutover_readiness=cutover_readiness,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=projection_bridge_readiness,
         activation_gap=activation_gap,
@@ -1083,6 +1168,9 @@ def build_server_workspace_payload(
         "cutover_readiness": cutover_readiness,
         "runtime_cutover_mode": runtime_cutover_mode,
         "runtime_bridge_policy": runtime_bridge_policy,
+        "runtime_operating_mode": runtime_operating_mode,
+        "runtime_policy_violations": runtime_policy_violations,
+        "cutover_guardrails": cutover_guardrails,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "health": (health_payload.get("checks") or {}).get("health", {}),
@@ -1107,6 +1195,9 @@ def build_server_workspace_payload(
         cutover_readiness=cutover_readiness,
         runtime_cutover_mode=runtime_cutover_mode,
         runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_violations=runtime_policy_violations,
+        cutover_guardrails=cutover_guardrails,
         bridge_shrink_checklist=bridge_shrink_checklist,
         cutover_blockers_breakdown=cutover_blockers_breakdown,
     )

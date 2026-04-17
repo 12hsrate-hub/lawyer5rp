@@ -27,8 +27,11 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_promotion_blockers_summary,
     build_promotion_review_signal_summary,
     build_runtime_bridge_policy_summary,
+    build_runtime_operating_mode_summary,
+    build_runtime_policy_violations_summary,
     build_runtime_cutover_mode_summary,
     build_runtime_convergence_summary,
+    build_cutover_guardrails_summary,
 )
 from ogp_web.services.law_version_service import ResolvedLawVersion
 from tests.second_server_fixtures import orange_published_pack
@@ -379,6 +382,29 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         cutover_readiness=cutover_readiness,
     )
     assert runtime_bridge_policy["status"] == "prefer_projection_runtime"
+    runtime_operating_mode = build_runtime_operating_mode_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_config_posture={"status": "declared_ready", "detail": "", "next_step": ""},
+        runtime_provenance={"mode": "projection_backed", "detail": ""},
+        runtime_cutover_mode=runtime_cutover_mode,
+    )
+    assert runtime_operating_mode["status"] == "projection_runtime"
+    runtime_policy_violations = build_runtime_policy_violations_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_config_posture={"status": "declared_ready", "detail": "", "next_step": ""},
+        runtime_provenance={"mode": "projection_backed", "detail": ""},
+        runtime_shell_debt=runtime_shell_debt,
+        cutover_readiness=cutover_readiness,
+    )
+    assert runtime_policy_violations["status"] == "clear"
+    cutover_guardrails = build_cutover_guardrails_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_violations=runtime_policy_violations,
+        cutover_readiness=cutover_readiness,
+    )
+    assert cutover_guardrails["status"] == "enforced"
     assert build_runtime_bridge_policy_summary(
         runtime_resolution_policy={"status": "compatibility_exception", "detail": "", "next_step": ""},
         runtime_cutover_mode={"status": "compatibility_mode", "detail": "", "next_step": ""},
