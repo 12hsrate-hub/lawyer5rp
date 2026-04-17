@@ -1060,6 +1060,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["server"]["code"], "blackberry")
         self.assertIn(payload["readiness"]["overall_status"], {"not_configured", "partial", "ready", "error"})
+        self.assertEqual(payload["readiness"]["blocks"]["laws"]["status"], "partial")
         self.assertIn("laws", payload["overview"])
         self.assertIn("features", payload["overview"])
         self.assertIn("templates", payload["overview"])
@@ -1214,6 +1215,46 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(issues.status_code, 200)
         issue_ids = {item["issue_id"] for item in issues.json()["items"]}
         self.assertIn("laws_bindings_runtime_fallback", issue_ids)
+
+    def test_runtime_server_workspace_marks_laws_block_partial_when_only_runtime_bindings_exist(self):
+        created = self.client.post("/api/admin/runtime-servers", json={"code": "city2", "title": "City 2"})
+        self.assertEqual(created.status_code, 200)
+
+        created_law_set = self.client.post(
+            "/api/admin/runtime-servers/city2/law-sets",
+            json={"name": "City 2 Draft", "is_active": True, "items": [{"law_code": "city2_law", "priority": 10}]},
+        )
+        self.assertEqual(created_law_set.status_code, 200)
+        law_set_id = created_law_set.json()["law_set"]["id"]
+        published = self.client.post(f"/api/admin/law-sets/{law_set_id}/publish")
+        self.assertEqual(published.status_code, 200)
+        binding = self.client.post(
+            "/api/admin/runtime-servers/city2/law-bindings",
+            json={"law_code": "city2_law", "source_id": 1, "priority": 25, "law_set_id": law_set_id},
+        )
+        self.assertEqual(binding.status_code, 200)
+
+        with patch.object(
+            admin_runtime_servers_service,
+            "resolve_active_law_version",
+            return_value=ResolvedLawVersion(
+                id=77,
+                server_code="city2",
+                generated_at_utc="2026-04-14T00:00:00+00:00",
+                effective_from="2026-04-14",
+                effective_to="",
+                fingerprint="city2-runtime-fp",
+                chunk_count=12,
+            ),
+        ):
+            response = self.client.get("/api/admin/runtime-servers/city2/workspace")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["overview"]["laws"]["health"]["active_law_version_id"], 77)
+        self.assertEqual(payload["health"]["checks"]["bindings"]["binding_source"], "runtime_bindings")
+        self.assertFalse(payload["health"]["checks"]["bindings"]["canonical_ready"])
+        self.assertEqual(payload["readiness"]["blocks"]["laws"]["status"], "partial")
 
     def test_runtime_server_issues_endpoint_exposes_runtime_provenance_warning_for_legacy_shell(self):
         with patch.object(
