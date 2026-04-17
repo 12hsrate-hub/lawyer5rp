@@ -230,11 +230,17 @@ def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
     assert payload["checks"]["law_set"]["observational_only"] is True
     assert payload["checks"]["bindings"]["binding_source"] == "source_set_bindings"
     assert payload["checks"]["bindings"]["canonical_ready"] is True
+    assert payload["checks"]["law_set"]["detail"] == "law_set_present"
     assert payload["checks"]["health"]["active_law_version_id"] == 77
+    assert payload["checks"]["health"]["runtime_shell_artifact_present"] is True
     assert payload["checks"]["config_resolution"]["ok"] is True
     assert payload["runtime_provenance"]["mode"] == "legacy_runtime_shell"
     assert payload["runtime_provenance"]["is_projection_backed"] is False
+    assert payload["runtime_provenance"]["law_set_observational_only"] is True
+    assert payload["runtime_provenance"]["runtime_shell_artifact_present"] is True
     assert payload["runtime_alignment"]["status"] == "legacy_only"
+    assert payload["runtime_alignment"]["law_set_observational_only"] is True
+    assert payload["runtime_alignment"]["runtime_shell_artifact_present"] is True
     assert payload["runtime_alignment"]["active_law_set_id"] == 1
     assert payload["runtime_alignment"]["active_law_version_id"] == 77
     assert payload["onboarding"]["highest_completed_state"] == "rollout-ready"
@@ -274,7 +280,9 @@ def test_runtime_server_health_summary_treats_law_set_as_observational_shell_che
     assert payload["checks"]["bindings"]["binding_source"] == "source_set_bindings"
     assert payload["checks"]["bindings"]["canonical_ready"] is True
     assert payload["runtime_provenance"]["mode"] == "legacy_runtime_shell"
+    assert payload["runtime_provenance"]["law_set_observational_only"] is True
     assert payload["runtime_alignment"]["status"] == "legacy_only"
+    assert payload["runtime_alignment"]["law_set_observational_only"] is True
     assert payload["runtime_alignment"]["active_law_set_id"] is None
     assert payload["runtime_alignment"]["active_law_version_id"] == 77
 
@@ -296,6 +304,7 @@ def test_runtime_server_health_payload_marks_runtime_bindings_as_non_canonical_f
     assert payload["checks"]["bindings"]["uses_runtime_bindings_fallback"] is True
     assert payload["summary"]["is_ready"] is False
     assert payload["checks"]["law_set"]["observational_only"] is True
+    assert payload["checks"]["health"]["runtime_shell_artifact_present"] is True
     assert "runtime_bindings" in payload["summary"]["observational_checks"]
     assert payload["onboarding"]["highest_completed_state"] == "bootstrap-ready"
     assert payload["onboarding"]["uses_runtime_bindings_fallback"] is True

@@ -99,11 +99,7 @@ def _build_runtime_laws_provenance_summary(
         detail = "Projection activation exists, but it no longer matches the current active runtime law_version."
     elif active_law_version_id > 0:
         mode = "legacy_runtime_shell"
-        detail = (
-            "Active runtime law_version shell exists, but no promoted projection currently explains it."
-            if active_law_set_id <= 0
-            else "Runtime law_set/law_version shell is active, but no promoted projection currently explains it."
-        )
+        detail = "Active runtime law_version shell exists, but no promoted projection currently explains it."
     elif active_law_set_id > 0:
         mode = "materialized_shell_only"
         detail = "A runtime law_set shell exists, but there is no active runtime law_version yet."
@@ -121,6 +117,8 @@ def _build_runtime_laws_provenance_summary(
         "active_law_set_id": active_law_set_id or None,
         "active_law_version_id": active_law_version_id or None,
         "binding_count": int(binding_count),
+        "law_set_observational_only": True,
+        "runtime_shell_artifact_present": bool(active_law_set_id or active_law_version_id),
     }
 
 
@@ -148,11 +146,7 @@ def _build_runtime_alignment_summary(
         detail = "Promoted projection exists, but the active runtime shell no longer matches it exactly."
     elif active_law_version_id > 0:
         status = "legacy_only"
-        detail = (
-            "Active runtime law_version shell exists without an aligned promoted projection."
-            if active_law_set_id <= 0
-            else "Active runtime shell exists without an aligned promoted projection."
-        )
+        detail = "Active runtime law_version shell exists without an aligned promoted projection."
     elif active_law_set_id > 0:
         status = "pending_activation"
         detail = "Runtime law_set shell exists, but there is no active runtime law_version yet."
@@ -170,6 +164,8 @@ def _build_runtime_alignment_summary(
         "active_law_version_id": active_law_version_id or None,
         "matches_active_law_set": matches_active_law_set if projected_law_set_id > 0 else None,
         "matches_active_law_version": matches_active_law_version if projected_law_version_id > 0 else None,
+        "law_set_observational_only": True,
+        "runtime_shell_artifact_present": bool(active_law_set_id or active_law_version_id),
     }
 
 
@@ -511,7 +507,7 @@ def build_runtime_server_health_payload(
         },
         "law_set": {
             "ok": bool(active_law_set),
-            "detail": str(active_law_set.get("name") or "") if active_law_set else "law_set_missing",
+            "detail": "law_set_present" if active_law_set else "law_set_missing",
             "law_set_id": int(active_law_set.get("id")) if active_law_set and active_law_set.get("id") is not None else None,
             "observational_only": True,
         },
@@ -538,6 +534,7 @@ def build_runtime_server_health_payload(
             ),
             "active_law_version_id": int(active_law_version.id) if active_law_version else None,
             "chunk_count": chunk_count,
+            "runtime_shell_artifact_present": bool(active_law_set or active_law_version),
         },
         "config_resolution": {
             "ok": not bool(onboarding.get("requires_explicit_runtime_pack")),
