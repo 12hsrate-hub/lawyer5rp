@@ -1,3 +1,5 @@
+# obsolete working board
+
 # Exam Scoring Board
 
 > Обновлять статус после каждого PR.
