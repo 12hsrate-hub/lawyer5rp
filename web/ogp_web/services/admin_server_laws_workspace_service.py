@@ -1614,6 +1614,287 @@ def build_runtime_risk_register_summary(
     }
 
 
+def build_runtime_governance_contract_summary(
+    *,
+    runtime_bridge_policy: dict[str, Any],
+    runtime_operating_mode: dict[str, Any],
+    runtime_policy_enforcement: dict[str, Any],
+    runtime_resolution_policy: dict[str, Any],
+) -> dict[str, Any]:
+    bridge_policy = dict(runtime_bridge_policy or {})
+    operating_mode = dict(runtime_operating_mode or {})
+    enforcement = dict(runtime_policy_enforcement or {})
+    resolution = dict(runtime_resolution_policy or {})
+
+    bridge_policy_status = str(bridge_policy.get("status") or "").strip().lower()
+    operating_mode_status = str(operating_mode.get("status") or "").strip().lower()
+    enforcement_status = str(enforcement.get("status") or "").strip().lower()
+    resolution_status = str(resolution.get("status") or "").strip().lower()
+
+    if (
+        bridge_policy_status == "prefer_projection_runtime"
+        and operating_mode_status == "projection_runtime"
+        and enforcement_status == "enforced"
+        and resolution_status == "declared_runtime"
+    ):
+        status = "projection_contract"
+        detail = "Server satisfies the declared projection-runtime governance contract in the current read model."
+        next_step = "Удерживайте projection runtime contract и не допускайте возврата к compatibility paths."
+    elif (
+        bridge_policy_status == "keep_compatibility"
+        or operating_mode_status == "compatibility_runtime"
+        or enforcement_status == "compatibility_hold"
+        or resolution_status == "compatibility_exception"
+    ):
+        status = "compatibility_contract"
+        detail = "Server still operates under a compatibility-focused runtime governance contract."
+        next_step = str(
+            bridge_policy.get("next_step")
+            or enforcement.get("next_step")
+            or "Сначала снимите compatibility dependencies и стабилизируйте cutover path."
+        ).strip()
+    elif (
+        bridge_policy_status == "stabilize_for_cutover"
+        or operating_mode_status == "transitional_runtime"
+        or enforcement_status == "pre_enforcement"
+        or resolution_status == "transitional_bootstrap"
+    ):
+        status = "transitional_contract"
+        detail = "Server is in a transitional runtime governance contract while compatibility debt is being shrunk."
+        next_step = str(
+            enforcement.get("next_step")
+            or bridge_policy.get("next_step")
+            or "Продолжайте shrinking blockers до projection-runtime contract."
+        ).strip()
+    else:
+        status = "observe"
+        detail = "Runtime governance contract is not decisive yet in the current read model."
+        next_step = "Продолжайте наблюдать bridge policy, operating mode и enforcement."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "bridge_policy_status": bridge_policy_status,
+        "operating_mode_status": operating_mode_status,
+        "enforcement_status": enforcement_status,
+        "resolution_policy_status": resolution_status,
+    }
+
+
+def build_legacy_path_allowance_summary(
+    *,
+    runtime_governance_contract: dict[str, Any],
+    runtime_resolution_policy: dict[str, Any],
+    runtime_config_posture: dict[str, Any],
+    runtime_operating_mode: dict[str, Any],
+    runtime_shell_debt: dict[str, Any],
+) -> dict[str, Any]:
+    contract = dict(runtime_governance_contract or {})
+    resolution = dict(runtime_resolution_policy or {})
+    config_posture = dict(runtime_config_posture or {})
+    operating_mode = dict(runtime_operating_mode or {})
+    shell_debt = dict(runtime_shell_debt or {})
+
+    contract_status = str(contract.get("status") or "").strip().lower()
+    resolution_status = str(resolution.get("status") or "").strip().lower()
+    config_posture_status = str(config_posture.get("status") or "").strip().lower()
+    operating_mode_status = str(operating_mode.get("status") or "").strip().lower()
+    shell_debt_status = str(shell_debt.get("status") or "").strip().lower()
+
+    allowance_items: list[str] = []
+    if resolution_status == "compatibility_exception":
+        allowance_items.append("neutral_fallback")
+    elif resolution_status == "transitional_bootstrap":
+        allowance_items.append("bootstrap_pack")
+    if operating_mode_status == "compatibility_runtime":
+        allowance_items.append("legacy_runtime_shell")
+    elif shell_debt_status in {"high", "medium"}:
+        allowance_items.append("legacy_shell_debt")
+
+    if (
+        contract_status == "projection_contract"
+        and resolution_status == "declared_runtime"
+        and config_posture_status == "declared_ready"
+        and operating_mode_status == "projection_runtime"
+        and shell_debt_status == "low"
+    ):
+        status = "denied"
+        detail = "Legacy runtime paths should no longer be required for this server."
+        next_step = "Сохраняйте legacy path allowance закрытым и отслеживайте только regressions."
+    elif contract_status == "transitional_contract":
+        status = "limited"
+        detail = "Only transitional legacy paths should still be tolerated while cutover stabilizes."
+        next_step = str(contract.get("next_step") or "Постепенно убирайте bootstrap/legacy shell allowance.").strip()
+    elif contract_status == "compatibility_contract" or allowance_items:
+        status = "compatibility_allowed"
+        detail = "Compatibility-era paths are still allowed for this server in the current runtime contract."
+        next_step = str(contract.get("next_step") or "Сначала снимите compatibility dependencies.").strip()
+    else:
+        status = "observe"
+        detail = "Legacy path allowance is not decisive yet in the current read model."
+        next_step = "Продолжайте наблюдать resolution policy и shell debt."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "allowed_paths": allowance_items[:10],
+        "count": len(allowance_items),
+        "contract_status": contract_status,
+        "resolution_policy_status": resolution_status,
+        "config_posture_status": config_posture_status,
+        "operating_mode_status": operating_mode_status,
+        "shell_debt_status": shell_debt_status,
+    }
+
+
+def build_compatibility_exit_scorecard_summary(
+    *,
+    bridge_shrink_checklist: dict[str, Any],
+    cutover_blockers_breakdown: dict[str, Any],
+    runtime_risk_register: dict[str, Any],
+    policy_breach_summary: dict[str, Any],
+    legacy_path_allowance: dict[str, Any],
+) -> dict[str, Any]:
+    checklist = dict(bridge_shrink_checklist or {})
+    blockers = dict(cutover_blockers_breakdown or {})
+    risk_register = dict(runtime_risk_register or {})
+    breach = dict(policy_breach_summary or {})
+    allowance = dict(legacy_path_allowance or {})
+
+    checklist_status = str(checklist.get("status") or "").strip().lower()
+    blockers_status = str(blockers.get("status") or "").strip().lower()
+    risk_status = str(risk_register.get("status") or "").strip().lower()
+    breach_status = str(breach.get("status") or "").strip().lower()
+    allowance_status = str(allowance.get("status") or "").strip().lower()
+
+    if (
+        checklist_status == "ready"
+        and blockers_status == "clear"
+        and risk_status == "low"
+        and breach_status == "clear"
+        and allowance_status == "denied"
+    ):
+        status = "ready_to_exit"
+        detail = "Server looks ready to exit compatibility runtime handling in the current read model."
+        next_step = "Используйте этот сервер как кандидат на controlled compatibility-bridge shrinking."
+    elif checklist_status in {"in_progress", "ready"} and blockers_status != "clear":
+        status = "exit_in_progress"
+        detail = "Compatibility exit is underway, but blocker categories still require attention."
+        next_step = str(blockers.get("next_step") or checklist.get("next_step") or "Закройте remaining blocker categories.").strip()
+    elif allowance_status == "compatibility_allowed" or risk_status in {"critical", "high"} or breach_status == "breached":
+        status = "not_ready"
+        detail = "Server is not ready to exit compatibility paths yet."
+        next_step = str(
+            breach.get("next_step")
+            or risk_register.get("next_step")
+            or allowance.get("next_step")
+            or "Сначала снимите runtime risks и compatibility allowances."
+        ).strip()
+    else:
+        status = "observe"
+        detail = "Compatibility exit scorecard is not decisive yet in the current read model."
+        next_step = "Продолжайте наблюдать checklist, blockers, risk register и allowance."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "checklist_status": checklist_status,
+        "blockers_status": blockers_status,
+        "risk_status": risk_status,
+        "breach_status": breach_status,
+        "allowance_status": allowance_status,
+    }
+
+
+def build_runtime_breach_categories_summary(
+    *,
+    runtime_policy_violations: dict[str, Any],
+    runtime_risk_register: dict[str, Any],
+    policy_breach_summary: dict[str, Any],
+    legacy_path_allowance: dict[str, Any],
+    cutover_blockers_breakdown: dict[str, Any],
+) -> dict[str, Any]:
+    violations = dict(runtime_policy_violations or {})
+    risk_register = dict(runtime_risk_register or {})
+    breach = dict(policy_breach_summary or {})
+    allowance = dict(legacy_path_allowance or {})
+    blockers = dict(cutover_blockers_breakdown or {})
+
+    category_counts = {"config": 0, "legacy_path": 0, "policy": 0, "cutover": 0}
+    items: list[dict[str, str]] = []
+
+    allowance_status = str(allowance.get("status") or "").strip().lower()
+    if allowance_status in {"compatibility_allowed", "limited"}:
+        category_counts["legacy_path"] += max(1, int(allowance.get("count") or 0))
+        items.append({"category": "legacy_path", "detail": str(allowance.get("detail") or "").strip()})
+
+    for item in list(violations.get("items") or []):
+        kind = str((item or {}).get("kind") or "").strip().lower()
+        detail = str((item or {}).get("detail") or "").strip()
+        if "declared_runtime" in kind:
+            category_counts["config"] += 1
+            items.append({"category": "config", "detail": detail})
+        elif "projection_policy" in kind or "policy" in kind:
+            category_counts["policy"] += 1
+            items.append({"category": "policy", "detail": detail})
+        else:
+            category_counts["cutover"] += 1
+            items.append({"category": "cutover", "detail": detail})
+
+    breach_status = str(breach.get("status") or "").strip().lower()
+    if breach_status in {"risk_of_breach", "breached"}:
+        category_counts["policy"] += 1
+        items.append({"category": "policy", "detail": str(breach.get("detail") or "").strip()})
+
+    for item in list(risk_register.get("items") or []):
+        kind = str((item or {}).get("kind") or "").strip().lower()
+        detail = str((item or {}).get("detail") or "").strip()
+        if kind == "config_debt":
+            category_counts["config"] += 1
+            items.append({"category": "config", "detail": detail})
+        elif kind in {"shell_debt", "guardrails_hold"}:
+            category_counts["legacy_path"] += 1
+            items.append({"category": "legacy_path", "detail": detail})
+        elif kind in {"policy_violations", "policy_breach", "policy_breach_risk", "enforcement_stage"}:
+            category_counts["policy"] += 1
+            items.append({"category": "policy", "detail": detail})
+
+    blocker_counts = dict(blockers.get("category_counts") or {})
+    category_counts["cutover"] += int(blocker_counts.get("promotion") or 0) + int(blocker_counts.get("activation") or 0) + int(blocker_counts.get("cutover") or 0)
+    category_counts["legacy_path"] += int(blocker_counts.get("shell_debt") or 0)
+
+    total = sum(category_counts.values())
+    if breach_status == "breached":
+        status = "breached"
+        detail = "At least one runtime breach category is already in a breached state."
+        next_step = str(breach.get("next_step") or "Сначала снимите hard policy breach.").strip()
+    elif total > 0:
+        status = "attention"
+        detail = f"{total} runtime breach-category signal(s) still require attention."
+        next_step = str(
+            blockers.get("next_step")
+            or risk_register.get("next_step")
+            or allowance.get("next_step")
+            or "Разберите category-level runtime risks перед дальнейшим shrinking."
+        ).strip()
+    else:
+        status = "clear"
+        detail = "No explicit runtime breach categories are visible in the current read model."
+        next_step = "Явных runtime breach categories не видно."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "count": total,
+        "category_counts": category_counts,
+        "items": items[:10],
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -1718,6 +1999,9 @@ def build_server_laws_summary_payload(
     config_debt = dict((health_payload.get("runtime_config_debt") or {}))
     if not config_debt:
         config_debt = build_runtime_config_debt_summary(health_payload=health_payload)
+    runtime_config_posture = dict((health_payload.get("runtime_config_posture") or {}))
+    if not runtime_config_posture:
+        runtime_config_posture = build_runtime_config_posture_summary(health_payload=health_payload)
     runtime_resolution_policy = dict((health_payload.get("runtime_resolution_policy") or {}))
     if not runtime_resolution_policy:
         runtime_resolution_policy = build_runtime_resolution_policy_summary(health_payload=health_payload)
@@ -1734,14 +2018,14 @@ def build_server_laws_summary_payload(
     )
     runtime_operating_mode = build_runtime_operating_mode_summary(
         runtime_bridge_policy=runtime_bridge_policy,
-        runtime_config_posture=dict((health_payload.get("runtime_config_posture") or {})) or build_runtime_config_posture_summary(health_payload=health_payload),
+        runtime_config_posture=runtime_config_posture,
         runtime_provenance=dict(health_payload.get("runtime_provenance") or {}),
         runtime_cutover_mode=runtime_cutover_mode,
     )
     runtime_policy_violations = build_runtime_policy_violations_summary(
         runtime_bridge_policy=runtime_bridge_policy,
         runtime_operating_mode=runtime_operating_mode,
-        runtime_config_posture=dict((health_payload.get("runtime_config_posture") or {})) or build_runtime_config_posture_summary(health_payload=health_payload),
+        runtime_config_posture=runtime_config_posture,
         runtime_provenance=dict(health_payload.get("runtime_provenance") or {}),
         runtime_shell_debt=runtime_shell_debt,
         cutover_readiness=cutover_readiness,
@@ -1785,6 +2069,33 @@ def build_server_laws_summary_payload(
         activation_gap=activation_gap,
         cutover_readiness=cutover_readiness,
     )
+    runtime_governance_contract = build_runtime_governance_contract_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+        runtime_resolution_policy=runtime_resolution_policy,
+    )
+    legacy_path_allowance = build_legacy_path_allowance_summary(
+        runtime_governance_contract=runtime_governance_contract,
+        runtime_resolution_policy=runtime_resolution_policy,
+        runtime_config_posture=runtime_config_posture,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_shell_debt=runtime_shell_debt,
+    )
+    compatibility_exit_scorecard = build_compatibility_exit_scorecard_summary(
+        bridge_shrink_checklist=bridge_shrink_checklist,
+        cutover_blockers_breakdown=cutover_blockers_breakdown,
+        runtime_risk_register=runtime_risk_register,
+        policy_breach_summary=policy_breach_summary,
+        legacy_path_allowance=legacy_path_allowance,
+    )
+    runtime_breach_categories = build_runtime_breach_categories_summary(
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_risk_register=runtime_risk_register,
+        policy_breach_summary=policy_breach_summary,
+        legacy_path_allowance=legacy_path_allowance,
+        cutover_blockers_breakdown=cutover_blockers_breakdown,
+    )
     return {
         "server_code": normalized_server,
         "bindings": bindings,
@@ -1814,6 +2125,10 @@ def build_server_laws_summary_payload(
         "runtime_policy_enforcement": runtime_policy_enforcement,
         "policy_breach_summary": policy_breach_summary,
         "runtime_risk_register": runtime_risk_register,
+        "runtime_governance_contract": runtime_governance_contract,
+        "legacy_path_allowance": legacy_path_allowance,
+        "compatibility_exit_scorecard": compatibility_exit_scorecard,
+        "runtime_breach_categories": runtime_breach_categories,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "latest_projection_run": _serialize_run(current_run),
@@ -2017,6 +2332,9 @@ def build_server_laws_diff_payload(
     config_debt = dict((health_payload.get("runtime_config_debt") or {}))
     if not config_debt:
         config_debt = build_runtime_config_debt_summary(health_payload=health_payload)
+    runtime_config_posture = dict((health_payload.get("runtime_config_posture") or {}))
+    if not runtime_config_posture:
+        runtime_config_posture = build_runtime_config_posture_summary(health_payload=health_payload)
     runtime_resolution_policy = dict((health_payload.get("runtime_resolution_policy") or {}))
     if not runtime_resolution_policy:
         runtime_resolution_policy = build_runtime_resolution_policy_summary(health_payload=health_payload)
@@ -2033,14 +2351,14 @@ def build_server_laws_diff_payload(
     )
     runtime_operating_mode = build_runtime_operating_mode_summary(
         runtime_bridge_policy=runtime_bridge_policy,
-        runtime_config_posture=dict((health_payload.get("runtime_config_posture") or {})) or build_runtime_config_posture_summary(health_payload=health_payload),
+        runtime_config_posture=runtime_config_posture,
         runtime_provenance=dict(health_payload.get("runtime_provenance") or {}),
         runtime_cutover_mode=runtime_cutover_mode,
     )
     runtime_policy_violations = build_runtime_policy_violations_summary(
         runtime_bridge_policy=runtime_bridge_policy,
         runtime_operating_mode=runtime_operating_mode,
-        runtime_config_posture=dict((health_payload.get("runtime_config_posture") or {})) or build_runtime_config_posture_summary(health_payload=health_payload),
+        runtime_config_posture=runtime_config_posture,
         runtime_provenance=dict(health_payload.get("runtime_provenance") or {}),
         runtime_shell_debt=runtime_shell_debt,
         cutover_readiness=cutover_readiness,
@@ -2084,6 +2402,33 @@ def build_server_laws_diff_payload(
         activation_gap=activation_gap,
         cutover_readiness=cutover_readiness,
     )
+    runtime_governance_contract = build_runtime_governance_contract_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+        runtime_resolution_policy=runtime_resolution_policy,
+    )
+    legacy_path_allowance = build_legacy_path_allowance_summary(
+        runtime_governance_contract=runtime_governance_contract,
+        runtime_resolution_policy=runtime_resolution_policy,
+        runtime_config_posture=runtime_config_posture,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_shell_debt=runtime_shell_debt,
+    )
+    compatibility_exit_scorecard = build_compatibility_exit_scorecard_summary(
+        bridge_shrink_checklist=bridge_shrink_checklist,
+        cutover_blockers_breakdown=cutover_blockers_breakdown,
+        runtime_risk_register=runtime_risk_register,
+        policy_breach_summary=policy_breach_summary,
+        legacy_path_allowance=legacy_path_allowance,
+    )
+    runtime_breach_categories = build_runtime_breach_categories_summary(
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_risk_register=runtime_risk_register,
+        policy_breach_summary=policy_breach_summary,
+        legacy_path_allowance=legacy_path_allowance,
+        cutover_blockers_breakdown=cutover_blockers_breakdown,
+    )
     return {
         "server_code": normalized_server,
         "current_run": _serialize_run(current_run),
@@ -2110,6 +2455,10 @@ def build_server_laws_diff_payload(
         "runtime_policy_enforcement": runtime_policy_enforcement,
         "policy_breach_summary": policy_breach_summary,
         "runtime_risk_register": runtime_risk_register,
+        "runtime_governance_contract": runtime_governance_contract,
+        "legacy_path_allowance": legacy_path_allowance,
+        "compatibility_exit_scorecard": compatibility_exit_scorecard,
+        "runtime_breach_categories": runtime_breach_categories,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "summary": diff_summary,
