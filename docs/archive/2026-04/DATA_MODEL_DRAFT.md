@@ -1,3 +1,5 @@
+> **Status:** Historical / archived
+
 # DATA_MODEL_DRAFT.md
 
 Status: Phase B complete baseline

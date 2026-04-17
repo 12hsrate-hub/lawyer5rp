@@ -1,3 +1,5 @@
+> **Status:** Historical / archived
+
 # EDITABLE_WORKFLOW_CHECKLIST.md
 
 Status: draft  
