@@ -387,6 +387,7 @@ window.OGPAdminServerWorkspace = {
         const runtimeConvergence = laws.runtime_convergence || state.lawsDiff?.runtime_convergence || {};
         const cutoverReadiness = laws.cutover_readiness || state.lawsDiff?.cutover_readiness || {};
         const runtimeCutoverMode = laws.runtime_cutover_mode || state.lawsDiff?.runtime_cutover_mode || {};
+        const runtimeBridgePolicy = laws.runtime_bridge_policy || state.lawsDiff?.runtime_bridge_policy || {};
         const bridgeShrinkChecklist = laws.bridge_shrink_checklist || state.lawsDiff?.bridge_shrink_checklist || {};
         const cutoverBlockersBreakdown = laws.cutover_blockers_breakdown || state.lawsDiff?.cutover_blockers_breakdown || {};
         const effective = state.lawsEffective || {};
@@ -508,6 +509,11 @@ window.OGPAdminServerWorkspace = {
               <span class="legal-field__label">Cutover mode</span>
               <div><strong>${escapeHtml(String(runtimeCutoverMode.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeCutoverMode.next_step || runtimeCutoverMode.detail || "Runtime cutover mode summary is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Bridge policy</span>
+              <div><strong>${escapeHtml(String(runtimeBridgePolicy.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeBridgePolicy.next_step || runtimeBridgePolicy.detail || "Runtime bridge policy summary is not available yet."))}</div>
             </div>
             <div class="legal-field">
               <span class="legal-field__label">Bridge shrink checklist</span>
