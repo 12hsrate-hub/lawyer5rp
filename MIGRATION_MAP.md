@@ -61,6 +61,10 @@ Date: 2026-04-14
   - `L.runtime.44` narrow `legacy_path_allowance` for shell-artifact-only carry from `compatibility_allowed` to `limited`, so a server that no longer depends on fallback/bootstrap does not keep reading as broadly compatibility-allowed just because the runtime shell artifact still exists
   - `L.runtime.45` narrow `legacy_path_controls` for shell-artifact-only carry so the remaining runtime shell artifact is treated as `transition_only`, not an explicitly allowed legacy path, once fallback/bootstrap are already gone and config resolution is published
   - `L.runtime.46` make shell-artifact-only tails plan the next shrink step directly: when the only remaining carry is a low-risk `runtime_shell_artifact` transition path, shrinking decisions can move straight to `shrink_now` and target that artifact tail instead of holding for broad compatibility stabilization
+  - `L.runtime.47` narrow `compatibility_exit_scorecard` for shell-artifact-only tails from generic observe/not-ready posture to `exit_in_progress`, so final-tail servers read as being in the last bounded exit pass instead of broad compatibility hold
+  - `L.runtime.48` make `projection_runtime_gate` and `shrink_sequence` reflect the same final-tail posture, so a low-risk `runtime_shell_artifact` carry now reads as the last planned shrink pass rather than as an undifferentiated guarded queue
+  - `L.runtime.49` stop shell-artifact-only tails from inflating `runtime_breach_categories`: once fallback/bootstrap are already gone, a final `runtime_shell_artifact` carry no longer counts as a broad legacy-path breach category by itself
+  - `L.runtime.50` stop shell-artifact-only exit passes from reopening `runtime_exception_register`: a final `exit_in_progress` artifact-tail state now stays visible through controls/gate/sequence without reappearing as a carried explicit exception
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`
