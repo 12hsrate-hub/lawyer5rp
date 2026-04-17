@@ -989,10 +989,13 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["ready_count"], payload["summary"]["total_count"])
         self.assertEqual(payload["summary"]["observational_checks"], ["law_set"])
         self.assertTrue(payload["checks"]["law_set"]["observational_only"])
+        self.assertEqual(payload["checks"]["law_set"]["detail"], "law_set_missing")
         self.assertEqual(payload["checks"]["bindings"]["binding_source"], "source_set_bindings")
         self.assertTrue(payload["checks"]["bindings"]["canonical_ready"])
         self.assertEqual(payload["runtime_provenance"]["mode"], "legacy_runtime_shell")
+        self.assertTrue(payload["runtime_provenance"]["law_set_observational_only"])
         self.assertEqual(payload["runtime_alignment"]["status"], "legacy_only")
+        self.assertTrue(payload["runtime_alignment"]["law_set_observational_only"])
         self.assertIsNone(payload["runtime_alignment"]["active_law_set_id"])
         self.assertEqual(payload["runtime_alignment"]["active_law_version_id"], 77)
 
