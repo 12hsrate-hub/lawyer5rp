@@ -802,6 +802,31 @@ class _FakeLawSourceSetsStore:
         ]
 
 
+class _City2SourceSetsStore(_FakeLawSourceSetsStore):
+    def list_bindings(self, *, server_code: str):
+        if server_code == "city2":
+            return [
+                type(
+                    "_Binding",
+                    (),
+                    {
+                        "id": 21,
+                        "server_code": server_code,
+                        "source_set_key": "city2-default",
+                        "priority": 100,
+                        "is_active": True,
+                        "include_law_keys": [],
+                        "exclude_law_keys": [],
+                        "pin_policy_json": {},
+                        "metadata_json": {},
+                        "created_at": "2026-04-16T04:00:00+00:00",
+                        "updated_at": "2026-04-16T04:00:00+00:00",
+                    },
+                )()
+            ]
+        return super().list_bindings(server_code=server_code)
+
+
 class _FakeAdminDashboardService:
     def get_dashboard(self, *, username: str, server_id: str):
         _ = username
@@ -881,6 +906,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         blackberry = next(item for item in listed.json()["items"] if item["code"] == "blackberry")
         orange = next(item for item in listed.json()["items"] if item["code"] == "orange")
         self.assertEqual(blackberry["onboarding"]["highest_completed_state"], "workflow-ready")
+        self.assertEqual(blackberry["onboarding"]["binding_source"], "source_set_bindings")
         self.assertEqual(orange["projection_bridge"]["run_id"], 4)
         self.assertEqual(orange["projection_bridge"]["law_set_id"], 2)
         self.assertEqual(orange["projection_bridge"]["law_version_id"], 88)
@@ -916,6 +942,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         blackberry = next(item for item in response.json()["items"] if item["code"] == "blackberry")
         self.assertEqual(blackberry["onboarding"]["highest_completed_state"], "workflow-ready")
         self.assertNotIn("law set", blackberry["onboarding"]["states"]["workflow-ready"]["detail"])
+        self.assertEqual(blackberry["onboarding"]["binding_source"], "source_set_bindings")
 
     def test_runtime_server_health_treats_law_set_as_observational_shell_check(self):
         self.client.app.dependency_overrides[get_runtime_law_sets_store] = lambda: _NoActiveLawSetStore()
@@ -941,6 +968,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertTrue(payload["summary"]["is_ready"])
         self.assertEqual(payload["summary"]["ready_count"], payload["summary"]["total_count"])
         self.assertEqual(payload["summary"]["observational_checks"], ["law_set"])
+        self.assertEqual(payload["checks"]["bindings"]["binding_source"], "source_set_bindings")
 
     def test_runtime_server_update_rejects_code_mismatch(self):
         response = self.client.put("/api/admin/runtime-servers/city2", json={"code": "city3", "title": "Wrong"})
@@ -948,6 +976,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertIn("server_code_mismatch", response.json().get("detail", []))
 
     def test_runtime_server_health_and_setup_flow(self):
+        self.client.app.dependency_overrides[get_law_source_sets_store] = lambda: _City2SourceSetsStore()
         created = self.client.post("/api/admin/runtime-servers", json={"code": "city2", "title": "City 2"})
         self.assertEqual(created.status_code, 200)
 
@@ -990,6 +1019,7 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertFalse(payload_before["checks"]["activation"]["ok"])
             self.assertTrue(payload_before["checks"]["health"]["ok"])
             self.assertFalse(payload_before["checks"]["config_resolution"]["ok"])
+            self.assertEqual(payload_before["checks"]["bindings"]["binding_source"], "source_set_bindings")
             self.assertEqual(payload_before["onboarding"]["highest_completed_state"], "not-ready")
             self.assertEqual(payload_before["onboarding"]["resolution_mode"], "neutral_fallback")
             self.assertTrue(payload_before["onboarding"]["requires_explicit_runtime_pack"])
