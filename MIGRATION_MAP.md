@@ -66,6 +66,7 @@ Date: 2026-04-14
   - `L.runtime.49` stop shell-artifact-only tails from inflating `runtime_breach_categories`: once fallback/bootstrap are already gone, a final `runtime_shell_artifact` carry no longer counts as a broad legacy-path breach category by itself
   - `L.runtime.50` stop shell-artifact-only exit passes from reopening `runtime_exception_register`: a final `exit_in_progress` artifact-tail state now stays visible through controls/gate/sequence without reappearing as a carried explicit exception
   - `L.runtime.51` narrow `runtime_governance_contract` for final shell-artifact tails from broad `compatibility_contract` to `transitional_contract`, so the last declared-runtime artifact carry is classified as a bounded transition instead of a full compatibility regime
+  - `L.runtime.52` narrow final shell-artifact tails in the higher policy stack too: when config resolution is already declared-runtime, the remaining `runtime_shell_artifact` carry now maps to `cutover_candidate`, `stabilize_for_cutover`, and `transitional_runtime` instead of keeping the whole server in broad compatibility-mode semantics
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`

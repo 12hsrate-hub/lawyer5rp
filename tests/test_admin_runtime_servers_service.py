@@ -680,9 +680,36 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
 
 
 def test_runtime_shell_artifact_only_allowance_is_limited_not_broad_compatibility():
+    runtime_cutover_mode = build_runtime_cutover_mode_summary(
+        cutover_readiness={"status": "stabilize_first", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        runtime_convergence={"status": "blocked", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        runtime_shell_debt={"status": "high", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        runtime_config_debt={"status": "low", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
+    )
+
+    assert runtime_cutover_mode["status"] == "cutover_candidate"
+    assert "runtime-shell-artifact tail" in runtime_cutover_mode["detail"]
+
+    runtime_bridge_policy = build_runtime_bridge_policy_summary(
+        runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
+        runtime_cutover_mode=runtime_cutover_mode,
+        cutover_readiness={"status": "stabilize_first", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+    )
+
+    assert runtime_bridge_policy["status"] == "stabilize_for_cutover"
+
+    runtime_operating_mode = build_runtime_operating_mode_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_config_posture={"status": "declared_ready", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
+        runtime_provenance={"mode": "legacy_runtime_shell", "detail": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        runtime_cutover_mode=runtime_cutover_mode,
+    )
+
+    assert runtime_operating_mode["status"] == "transitional_runtime"
+
     runtime_governance_contract = build_runtime_governance_contract_summary(
-        runtime_bridge_policy={"status": "keep_compatibility", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
-        runtime_operating_mode={"status": "compatibility_runtime", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
         runtime_policy_enforcement={"status": "enforced", "detail": "", "next_step": ""},
         runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": ""},
     )
@@ -694,7 +721,7 @@ def test_runtime_shell_artifact_only_allowance_is_limited_not_broad_compatibilit
         runtime_governance_contract=runtime_governance_contract,
         runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
         runtime_config_posture={"status": "declared_ready", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
-        runtime_operating_mode={"status": "compatibility_runtime", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        runtime_operating_mode=runtime_operating_mode,
         runtime_shell_debt={"status": "high", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
     )
 
@@ -714,7 +741,7 @@ def test_runtime_shell_artifact_only_allowance_is_limited_not_broad_compatibilit
     legacy_path_controls = build_legacy_path_controls_summary(
         legacy_path_allowance=legacy_path_allowance,
         runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
-        runtime_operating_mode={"status": "compatibility_runtime", "detail": "", "next_step": "", "shell_role": "runtime_shell_artifact", "shell_stage": "active_without_projection"},
+        runtime_operating_mode=runtime_operating_mode,
         runtime_governance_contract=runtime_governance_contract,
     )
 
