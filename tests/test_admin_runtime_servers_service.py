@@ -99,6 +99,14 @@ class _FakeRuntimeLawSetsStore:
         return [{"law_set_id": 1, "law_code": "uk"}]
 
 
+class _NoActiveLawSetStore:
+    def list_law_sets(self, *, server_code: str):
+        return []
+
+    def list_server_law_bindings(self, *, server_code: str):
+        return [{"law_set_id": 999, "law_code": "uk"}]
+
+
 class _FakeProjectionRun:
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
@@ -165,6 +173,19 @@ def test_runtime_server_list_payload_exposes_projection_bridge_summary_without_h
     assert orange_item["projection_bridge"]["law_set_id"] == 2
     assert orange_item["projection_bridge"]["law_version_id"] == 88
     assert orange_item["projection_bridge"]["matches_active_law_version"] is None
+
+
+def test_runtime_server_workflow_readiness_no_longer_depends_on_active_law_set():
+    listed = list_runtime_servers_payload(
+        store=_FakeRuntimeServersStore(),
+        law_sets_store=_NoActiveLawSetStore(),
+        projections_store=_FakeProjectionsStore(),
+    )
+
+    blackberry = listed["items"][0]
+    assert blackberry["onboarding"]["highest_completed_state"] == "workflow-ready"
+    assert blackberry["onboarding"]["states"]["workflow-ready"]["ok"] is True
+    assert "law set" not in blackberry["onboarding"]["states"]["workflow-ready"]["detail"]
 
 
 def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
