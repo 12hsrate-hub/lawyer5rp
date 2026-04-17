@@ -28,6 +28,7 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_promotion_review_signal_summary,
     build_runtime_bridge_policy_summary,
     build_runtime_operating_mode_summary,
+    build_runtime_policy_enforcement_summary,
     build_runtime_policy_violations_summary,
     build_runtime_cutover_mode_summary,
     build_runtime_convergence_summary,
@@ -405,6 +406,13 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         cutover_readiness=cutover_readiness,
     )
     assert cutover_guardrails["status"] == "enforced"
+    runtime_policy_enforcement = build_runtime_policy_enforcement_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_violations=runtime_policy_violations,
+        cutover_guardrails=cutover_guardrails,
+    )
+    assert runtime_policy_enforcement["status"] == "enforced"
     assert build_runtime_bridge_policy_summary(
         runtime_resolution_policy={"status": "compatibility_exception", "detail": "", "next_step": ""},
         runtime_cutover_mode={"status": "compatibility_mode", "detail": "", "next_step": ""},
