@@ -234,6 +234,8 @@ def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
     assert payload["checks"]["health"]["active_law_version_id"] == 77
     assert payload["checks"]["health"]["runtime_shell_artifact_present"] is True
     assert payload["checks"]["config_resolution"]["ok"] is True
+    assert payload["checks"]["config_resolution"]["path_role"] == "transitional_runtime_path"
+    assert payload["checks"]["config_resolution"]["path_stage"] == "bootstrap"
     assert payload["runtime_provenance"]["mode"] == "legacy_runtime_shell"
     assert payload["runtime_provenance"]["is_projection_backed"] is False
     assert payload["runtime_provenance"]["law_set_observational_only"] is True
@@ -291,6 +293,8 @@ def test_runtime_server_health_summary_treats_law_set_as_observational_shell_che
     assert payload["runtime_alignment"]["shell_stage"] == "active_without_projection"
     assert payload["runtime_alignment"]["active_law_set_id"] is None
     assert payload["runtime_alignment"]["active_law_version_id"] == 77
+    assert payload["checks"]["config_resolution"]["path_role"] == "transitional_runtime_path"
+    assert payload["checks"]["config_resolution"]["path_stage"] == "bootstrap"
 
 
 def test_runtime_server_health_payload_marks_runtime_bindings_as_non_canonical_fallback():
@@ -314,6 +318,8 @@ def test_runtime_server_health_payload_marks_runtime_bindings_as_non_canonical_f
     assert "runtime_bindings" in payload["summary"]["observational_checks"]
     assert payload["onboarding"]["highest_completed_state"] == "bootstrap-ready"
     assert payload["onboarding"]["uses_runtime_bindings_fallback"] is True
+    assert payload["checks"]["config_resolution"]["path_role"] == "transitional_runtime_path"
+    assert payload["checks"]["config_resolution"]["path_stage"] == "bootstrap"
 
 
 def test_second_server_published_pack_health_payload_reports_release_candidate_state(monkeypatch):
@@ -428,13 +434,22 @@ def test_runtime_config_posture_and_debt_distinguish_published_bootstrap_and_fal
     }
 
     assert build_runtime_config_posture_summary(health_payload=fallback_health)["status"] == "fallback_only"
+    assert build_runtime_config_posture_summary(health_payload=fallback_health)["path_role"] == "compatibility_exception_path"
+    assert build_runtime_config_posture_summary(health_payload=fallback_health)["path_stage"] == "fallback"
     assert build_runtime_config_debt_summary(health_payload=fallback_health)["status"] == "high"
+    assert build_runtime_config_debt_summary(health_payload=fallback_health)["path_role"] == "compatibility_exception_path"
     assert build_runtime_config_posture_summary(health_payload=bootstrap_health)["status"] == "bootstrap_transition"
+    assert build_runtime_config_posture_summary(health_payload=bootstrap_health)["path_role"] == "transitional_runtime_path"
+    assert build_runtime_config_posture_summary(health_payload=bootstrap_health)["path_stage"] == "bootstrap"
     assert build_runtime_config_debt_summary(health_payload=bootstrap_health)["status"] == "medium"
     assert build_runtime_resolution_policy_summary(health_payload=bootstrap_health)["status"] == "transitional_bootstrap"
+    assert build_runtime_resolution_policy_summary(health_payload=bootstrap_health)["path_stage"] == "bootstrap"
     assert build_runtime_config_posture_summary(health_payload=published_health)["status"] == "declared_ready"
+    assert build_runtime_config_posture_summary(health_payload=published_health)["path_role"] == "declared_runtime_path"
+    assert build_runtime_config_posture_summary(health_payload=published_health)["path_stage"] == "published"
     assert build_runtime_config_debt_summary(health_payload=published_health)["status"] == "low"
     assert build_runtime_resolution_policy_summary(health_payload=published_health)["status"] == "declared_runtime"
+    assert build_runtime_resolution_policy_summary(health_payload=published_health)["path_role"] == "declared_runtime_path"
     assert build_runtime_resolution_policy_summary(health_payload=fallback_health)["status"] == "compatibility_exception"
 
 
@@ -505,29 +520,32 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         cutover_readiness=cutover_readiness,
         runtime_convergence=runtime_convergence,
         runtime_shell_debt=runtime_shell_debt,
-        runtime_config_debt={"status": "low", "detail": "Low.", "next_step": ""},
+        runtime_config_debt={"status": "low", "detail": "Low.", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
     )
     assert runtime_cutover_mode["status"] == "projection_preferred"
     assert runtime_cutover_mode["shell_stage"] == "activated"
+    assert runtime_cutover_mode["config_path_stage"] == "published"
     runtime_bridge_policy = build_runtime_bridge_policy_summary(
-        runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": ""},
+        runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
         runtime_cutover_mode=runtime_cutover_mode,
         cutover_readiness=cutover_readiness,
     )
     assert runtime_bridge_policy["status"] == "prefer_projection_runtime"
     assert runtime_bridge_policy["shell_stage"] == "activated"
+    assert runtime_bridge_policy["config_path_stage"] == "published"
     runtime_operating_mode = build_runtime_operating_mode_summary(
         runtime_bridge_policy=runtime_bridge_policy,
-        runtime_config_posture={"status": "declared_ready", "detail": "", "next_step": ""},
+        runtime_config_posture={"status": "declared_ready", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
         runtime_provenance={"mode": "projection_backed", "detail": "", "shell_role": "projection_backed_runtime", "shell_stage": "activated"},
         runtime_cutover_mode=runtime_cutover_mode,
     )
     assert runtime_operating_mode["status"] == "projection_runtime"
     assert runtime_operating_mode["shell_stage"] == "activated"
+    assert runtime_operating_mode["config_path_stage"] == "published"
     runtime_policy_violations = build_runtime_policy_violations_summary(
         runtime_bridge_policy=runtime_bridge_policy,
         runtime_operating_mode=runtime_operating_mode,
-        runtime_config_posture={"status": "declared_ready", "detail": "", "next_step": ""},
+        runtime_config_posture={"status": "declared_ready", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
         runtime_provenance={"mode": "projection_backed", "detail": "", "shell_role": "projection_backed_runtime", "shell_stage": "activated"},
         runtime_shell_debt=runtime_shell_debt,
         cutover_readiness=cutover_readiness,
@@ -577,13 +595,14 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
     assert runtime_governance_contract["shell_stage"] == "activated"
     legacy_path_allowance = build_legacy_path_allowance_summary(
         runtime_governance_contract=runtime_governance_contract,
-        runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": ""},
-        runtime_config_posture={"status": "declared_ready", "detail": "", "next_step": ""},
+        runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
+        runtime_config_posture={"status": "declared_ready", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
         runtime_operating_mode=runtime_operating_mode,
         runtime_shell_debt=runtime_shell_debt,
     )
     assert legacy_path_allowance["status"] == "denied"
     assert legacy_path_allowance["shell_stage"] == "activated"
+    assert legacy_path_allowance["config_path_stage"] == "published"
     compatibility_exit_scorecard = build_compatibility_exit_scorecard_summary(
         bridge_shrink_checklist=bridge_shrink_checklist,
         cutover_blockers_breakdown=cutover_blockers_breakdown,
@@ -604,12 +623,13 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
     assert runtime_breach_categories["shell_stage"] == "activated"
     legacy_path_controls = build_legacy_path_controls_summary(
         legacy_path_allowance=legacy_path_allowance,
-        runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": ""},
+        runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": "", "path_role": "declared_runtime_path", "path_stage": "published"},
         runtime_operating_mode=runtime_operating_mode,
         runtime_governance_contract=runtime_governance_contract,
     )
     assert legacy_path_controls["status"] == "projection_controls"
     assert legacy_path_controls["shell_stage"] == "activated"
+    assert legacy_path_controls["config_path_stage"] == "published"
     projection_runtime_gate = build_projection_runtime_gate_summary(
         runtime_governance_contract=runtime_governance_contract,
         compatibility_exit_scorecard=compatibility_exit_scorecard,

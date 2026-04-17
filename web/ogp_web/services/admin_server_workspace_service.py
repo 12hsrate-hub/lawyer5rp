@@ -316,17 +316,15 @@ def _build_runtime_version_parity(*, health_payload: dict[str, Any]) -> dict[str
         detail = "There is not enough runtime/projection version data to compare law_version parity."
 
     drift_summary = ""
+    shell_artifact_present = bool(active_law_set_id or projected_law_set_id)
     if status in {"drift", "legacy_only", "pending_activation"}:
         drift_parts: list[str] = []
         if active_law_version_id > 0:
             drift_parts.append(f"active_version={active_law_version_id}")
         if projected_law_version_id > 0:
             drift_parts.append(f"projected_version={projected_law_version_id}")
-        if not drift_parts:
-            if active_law_set_id > 0:
-                drift_parts.append(f"active_law_set={active_law_set_id}")
-            if projected_law_set_id > 0:
-                drift_parts.append(f"projected_law_set={projected_law_set_id}")
+        if not drift_parts and shell_artifact_present:
+            drift_parts.append("runtime_shell_artifact_present")
         drift_summary = "; ".join(drift_parts)
 
     return {
@@ -340,10 +338,8 @@ def _build_runtime_version_parity(*, health_payload: dict[str, Any]) -> dict[str
         "matches_active_law_version": (
             projected_law_version_id > 0 and active_law_version_id > 0 and projected_law_version_id == active_law_version_id
         ),
-        "matches_active_law_set": (
-            projected_law_set_id > 0 and active_law_set_id > 0 and projected_law_set_id == active_law_set_id
-        ),
         "law_set_observational_only": True,
+        "shell_artifact_present": shell_artifact_present,
         "shell_role": str(runtime_alignment.get("shell_role") or runtime_provenance.get("shell_role") or "").strip().lower() or None,
         "shell_stage": str(runtime_alignment.get("shell_stage") or runtime_provenance.get("shell_stage") or "").strip().lower() or None,
         "drift_summary": drift_summary,
@@ -374,7 +370,7 @@ def _build_projection_bridge_lifecycle(*, health_payload: dict[str, Any]) -> dic
         detail = "Projection bridge has an activation record, but it no longer matches the current runtime law_version."
     elif law_set_id > 0:
         status = "materialized"
-        detail = "Projection bridge materialized a runtime law_set shell, but no active runtime law_version is aligned yet."
+        detail = "Projection bridge materialized a runtime shell artifact, but no active runtime law_version is aligned yet."
     else:
         status = "preview_only"
         detail = "Projection bridge currently exists only as a preview/decision run without materialization."
@@ -393,6 +389,7 @@ def _build_projection_bridge_lifecycle(*, health_payload: dict[str, Any]) -> dic
         "active_law_version_id": active_law_version_id or None,
         "matches_active_law_version": matches_active if law_version_id > 0 else None,
         "law_set_observational_only": True,
+        "shell_artifact_present": bool(law_set_id),
         "shell_role": shell_role or None,
         "shell_stage": shell_stage or None,
     }
