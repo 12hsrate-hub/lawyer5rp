@@ -388,6 +388,9 @@ window.OGPAdminServerWorkspace = {
         const cutoverReadiness = laws.cutover_readiness || state.lawsDiff?.cutover_readiness || {};
         const runtimeCutoverMode = laws.runtime_cutover_mode || state.lawsDiff?.runtime_cutover_mode || {};
         const runtimeBridgePolicy = laws.runtime_bridge_policy || state.lawsDiff?.runtime_bridge_policy || {};
+        const runtimeOperatingMode = laws.runtime_operating_mode || state.lawsDiff?.runtime_operating_mode || {};
+        const runtimePolicyViolations = laws.runtime_policy_violations || state.lawsDiff?.runtime_policy_violations || {};
+        const cutoverGuardrails = laws.cutover_guardrails || state.lawsDiff?.cutover_guardrails || {};
         const bridgeShrinkChecklist = laws.bridge_shrink_checklist || state.lawsDiff?.bridge_shrink_checklist || {};
         const cutoverBlockersBreakdown = laws.cutover_blockers_breakdown || state.lawsDiff?.cutover_blockers_breakdown || {};
         const effective = state.lawsEffective || {};
@@ -514,6 +517,21 @@ window.OGPAdminServerWorkspace = {
               <span class="legal-field__label">Bridge policy</span>
               <div><strong>${escapeHtml(String(runtimeBridgePolicy.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeBridgePolicy.next_step || runtimeBridgePolicy.detail || "Runtime bridge policy summary is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Operating mode</span>
+              <div><strong>${escapeHtml(String(runtimeOperatingMode.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeOperatingMode.next_step || runtimeOperatingMode.detail || "Runtime operating mode summary is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Policy violations</span>
+              <div><strong>${escapeHtml(String(runtimePolicyViolations.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimePolicyViolations.detail || "Runtime policy violations summary is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Cutover guardrails</span>
+              <div><strong>${escapeHtml(String(cutoverGuardrails.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(cutoverGuardrails.next_step || cutoverGuardrails.detail || "Cutover guardrails summary is not available yet."))}</div>
             </div>
             <div class="legal-field">
               <span class="legal-field__label">Bridge shrink checklist</span>
