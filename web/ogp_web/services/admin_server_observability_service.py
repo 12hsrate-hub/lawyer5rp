@@ -53,6 +53,106 @@ from ogp_web.storage.runtime_servers_store import RuntimeServersStore
 from ogp_web.storage.server_effective_law_projections_store import ServerEffectiveLawProjectionsStore
 
 
+def _build_audit_summary(items: list[dict[str, Any]]) -> dict[str, Any]:
+    kind_counts: dict[str, int] = {}
+    error_event_count = 0
+    change_event_count = 0
+    for item in items:
+        kind = str(item.get("kind") or "event").strip().lower() or "event"
+        kind_counts[kind] = kind_counts.get(kind, 0) + 1
+        if kind == "metric_event" and str(item.get("severity") or "").strip().lower() == "error":
+            error_event_count += 1
+        if kind in {"workflow_audit", "content_audit", "law_projection"}:
+            change_event_count += 1
+    latest = dict(items[0] or {}) if items else {}
+    status = "partial" if error_event_count > 0 else "ready"
+    detail = f"events={len(items)}; change_events={change_event_count}; error_events={error_event_count}"
+    next_step = (
+        "Проверьте последние operator changes и error events внутри server workspace."
+        if items
+        else "История пока пустая. Следите за этим блоком после следующих server-level changes или retry/recheck действий."
+    )
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "counts": {
+            "events": len(items),
+            "change_events": change_event_count,
+            "error_events": error_event_count,
+            "kind_counts": kind_counts,
+        },
+        "latest": {
+            "kind": str(latest.get("kind") or ""),
+            "title": str(latest.get("title") or ""),
+            "created_at": str(latest.get("created_at") or ""),
+        },
+    }
+
+
+def _build_issues_summary(items: list[dict[str, Any]]) -> dict[str, Any]:
+    error_count = sum(1 for item in items if str(item.get("severity") or "").strip().lower() == "error")
+    warning_count = sum(1 for item in items if str(item.get("severity") or "").strip().lower() == "warn")
+    actionable_items = [item for item in items if list(item.get("available_actions") or [])]
+    primary_item = next(
+        (
+            item
+            for item in items
+            if str(item.get("severity") or "").strip().lower() == "error"
+            and list(item.get("available_actions") or [])
+        ),
+        None,
+    )
+    if primary_item is None:
+        primary_item = next(
+            (
+                item
+                for item in items
+                if str(item.get("severity") or "").strip().lower() == "warn"
+                and list(item.get("available_actions") or [])
+            ),
+            None,
+        )
+    if primary_item is None:
+        primary_item = items[0] if items else None
+    if error_count > 0:
+        status = "error"
+    elif warning_count > 0:
+        status = "partial"
+    else:
+        status = "ready"
+    detail = (
+        f"errors={error_count}; warnings={warning_count}; "
+        f"unresolved={len(items)}; actions={len(actionable_items)}"
+    )
+    if primary_item is not None:
+        primary_actions = list(primary_item.get("available_actions") or [])
+        next_step = (
+            f"Начните с «{str(primary_item.get('title') or primary_item.get('issue_id') or 'issue').strip()}»."
+        )
+        if primary_actions:
+            first_action = dict(primary_actions[0] or {})
+            next_step = f"{next_step} Safe action: {str(first_action.get('label') or first_action.get('kind') or 'action').strip()}."
+    else:
+        next_step = "Критичных сигналов по серверу сейчас нет."
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "counts": {
+            "errors": error_count,
+            "warnings": warning_count,
+            "unresolved": len(items),
+            "actionable": len(actionable_items),
+        },
+        "primary_issue": {
+            "issue_id": str((primary_item or {}).get("issue_id") or ""),
+            "title": str((primary_item or {}).get("title") or ""),
+            "source": str((primary_item or {}).get("source") or ""),
+        },
+    }
+
+
 def _build_runtime_provenance_issue(runtime_provenance: dict[str, Any]) -> dict[str, Any] | None:
     runtime_mode = str((runtime_provenance or {}).get("mode") or "").strip().lower()
     if runtime_mode not in {"projection_drift", "legacy_runtime_shell", "materialized_shell_only"}:
@@ -1067,11 +1167,13 @@ def build_server_audit_payload(
                 }
             )
     items.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    visible_items = items[:60]
     return {
         "ok": True,
         "server_code": normalized_server,
-        "items": items[:60],
-        "count": len(items[:60]),
+        "items": visible_items,
+        "count": len(visible_items),
+        "summary": _build_audit_summary(visible_items),
     }
 
 
@@ -1529,6 +1631,7 @@ def build_server_issues_payload(
             }
         )
     unresolved = [item for item in items if str(item.get("severity") or "") in {"warn", "error"}]
+    summary = _build_issues_summary(unresolved)
     return {
         "ok": True,
         "server_code": normalized_server,
@@ -1537,6 +1640,7 @@ def build_server_issues_payload(
         "unresolved_count": len(unresolved),
         "error_count": sum(1 for item in items if item["severity"] == "error"),
         "warning_count": sum(1 for item in items if item["severity"] == "warn"),
+        "summary": summary,
     }
 
 

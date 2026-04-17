@@ -36,6 +36,7 @@ from ogp_web.routes.jobs import router as jobs_router
 from ogp_web.routes.document_builder import router as document_builder_router
 from ogp_web.routes.pages import router as pages_router
 from ogp_web.routes.profile import router as profile_router
+from ogp_web.routes.runtime_context import router as runtime_context_router
 from ogp_web.routes.validation import router as validation_router
 from ogp_web.server_config import get_server_config, resolve_default_server_code
 from ogp_web.services.auth_service import _get_secret_key, get_current_user, is_admin_user
@@ -444,6 +445,7 @@ def create_app(
     app.include_router(exam_import_router)
     app.include_router(jobs_router)
     app.include_router(document_builder_router)
+    app.include_router(runtime_context_router)
     app.include_router(admin_router)
     return app
 

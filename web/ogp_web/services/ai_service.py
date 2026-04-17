@@ -43,8 +43,8 @@ from ogp_web.services.server_context_service import (
     resolve_server_ai_context_settings,
     server_has_feature,
     resolve_server_config,
-    resolve_server_law_bundle_path,
 )
+from ogp_web.services.runtime_pack_reader_service import resolve_runtime_pack_law_bundle_path
 from ogp_web.services.point3_pipeline import (
     MODE_FACTUAL_FALLBACK_EXPANDED,
     RemediationOutcome,
@@ -1785,7 +1785,10 @@ def _build_suggest_forced_norms(
     if not _suggest_is_mask_exception_case(query):
         return ()
     try:
-        bundle_path = resolve_server_law_bundle_path(server_code=server_code)
+        bundle_path = resolve_runtime_pack_law_bundle_path(server_code=server_code)
+        if not bundle_path:
+            server_config = resolve_server_config(server_code=server_code, fallback_server_code=DEFAULT_SERVER_CODE)
+            bundle_path = str(getattr(server_config, "law_qa_bundle_path", "") or "").strip()
         if not bundle_path:
             return ()
         if law_version_id is None:

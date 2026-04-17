@@ -18,7 +18,8 @@
           "incident",
           "evidence"
         ]
-      }
+      },
+      "court_claim_default": {}
     },
     "law_qa_sources": [
       "https://forum.gta5rp.com/forums/zakonodatelnaja-baza.102/"

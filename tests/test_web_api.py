@@ -40,7 +40,7 @@ from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
 from tests.temp_helpers import make_temporary_directory
-from tests.second_server_fixtures import orange_published_pack
+from tests.second_server_fixtures import blackberry_published_pack, orange_published_pack
 from tests.test_web_storage import (
     FakeAdminMetricsPostgresBackend,
     FakeExamAnswersPostgresBackend,
@@ -338,9 +338,200 @@ class WebApiTests(unittest.TestCase):
             else:
                 os.environ["OGP_FEATURE_FLAG_PILOT_RUNTIME_ADAPTER_V1_MODE"] = previous_adapter_mode
 
+    def test_generate_uses_adapter_snapshot_for_selected_second_server_when_adapter_active(self):
+        previous_adapter_mode = os.environ.get("OGP_FEATURE_FLAG_PILOT_RUNTIME_ADAPTER_V1_MODE")
+        original_builder = complaint_route.build_generation_context_snapshot
+        original_loader = complaint_route.resolve_pilot_complaint_runtime_context.__globals__["_load_published_content_version"]
+        original_meta_loader = complaint_route.resolve_pilot_complaint_runtime_context.__globals__["load_law_bundle_meta"]
+        try:
+            os.environ["OGP_FEATURE_FLAG_PILOT_RUNTIME_ADAPTER_V1_MODE"] = "all"
+            self._register_verify_and_login("adapter_snapshot_orange", "adapter_snapshot_orange@example.com")
+            with patch("ogp_web.server_config.registry._load_codes_from_config_repo", return_value=None), patch(
+                "ogp_web.server_config.registry._load_server_rows_from_db",
+                return_value=[
+                    {"code": "blackberry", "title": "BlackBerry", "is_active": True},
+                    {"code": "orange", "title": "Orange City", "is_active": True},
+                ],
+            ), patch(
+                "ogp_web.server_config.registry._load_effective_pack_from_db",
+                side_effect=lambda *, server_code, at_timestamp=None: orange_published_pack() if server_code == "orange" else None,
+            ):
+                switch_response = self.client.patch("/api/profile/selected-server", json={"server_code": "orange"})
+                self.assertEqual(switch_response.status_code, 200)
+
+                response = self.client.put(
+                    "/api/profile",
+                    json={
+                        "name": "Rep",
+                        "passport": "AA",
+                        "address": "Addr",
+                        "phone": "1234567",
+                        "discord": "disc",
+                        "passport_scan_url": "https://example.com/rep",
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+
+                def fail_legacy_snapshot(*args, **kwargs):
+                    raise AssertionError("legacy snapshot builder should not be called when adapter flow is active")
+
+                complaint_route.build_generation_context_snapshot = fail_legacy_snapshot
+
+                def fake_load_published_version(repository, *, server_code, content_type, content_key):
+                    _ = repository
+                    published = {
+                        ("procedures", "complaint"): {"id": 301, "version_number": 1, "payload_json": {"procedure_code": "complaint", "document_kind": "complaint"}},
+                        ("forms", "complaint_form"): {"id": 302, "version_number": 1, "payload_json": {"form_code": "complaint_form"}},
+                        ("validation_rules", "complaint_default"): {"id": 303, "version_number": 1, "payload_json": {"rule_code": "complaint_default"}},
+                        ("templates", "complaint_orange_v1"): {"id": 304, "version_number": 2, "payload_json": {"template_code": "complaint_orange_v1"}},
+                        ("laws", "law_sources_manifest"): {"id": 305, "version_number": 1, "payload_json": {"key": "law_sources_manifest"}},
+                    }
+                    return published.get((content_type, content_key))
+
+                complaint_route.resolve_pilot_complaint_runtime_context.__globals__["_load_published_content_version"] = fake_load_published_version
+                complaint_route.resolve_pilot_complaint_runtime_context.__globals__["load_law_bundle_meta"] = (
+                    lambda server_code: type("Meta", (), {"fingerprint": "orange_law_hash"})()
+                )
+
+                response = self.client.post(
+                    "/api/generate",
+                    json={
+                        "appeal_no": "5678",
+                        "org": "GOV",
+                        "subject_names": "John Doe",
+                        "situation_description": "Описание",
+                        "violation_short": "Нарушение",
+                        "event_dt": "08.04.2026 14:30",
+                        "today_date": "08.04.2026",
+                        "victim": {
+                            "name": "Victim",
+                            "passport": "BB",
+                            "address": "Addr",
+                            "phone": "7654321",
+                            "discord": "victim",
+                            "passport_scan_url": "https://example.com/victim",
+                        },
+                        "contract_url": "https://example.com/contract",
+                        "bar_request_url": "",
+                        "official_answer_url": "",
+                        "mail_notice_url": "",
+                        "arrest_record_url": "",
+                        "personnel_file_url": "",
+                        "video_fix_urls": [],
+                        "provided_video_urls": [],
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+        finally:
+            complaint_route.build_generation_context_snapshot = original_builder
+            complaint_route.resolve_pilot_complaint_runtime_context.__globals__["_load_published_content_version"] = original_loader
+            complaint_route.resolve_pilot_complaint_runtime_context.__globals__["load_law_bundle_meta"] = original_meta_loader
+            if previous_adapter_mode is None:
+                os.environ.pop("OGP_FEATURE_FLAG_PILOT_RUNTIME_ADAPTER_V1_MODE", None)
+            else:
+                os.environ["OGP_FEATURE_FLAG_PILOT_RUNTIME_ADAPTER_V1_MODE"] = previous_adapter_mode
+
+    def test_generate_falls_back_to_legacy_snapshot_when_selected_server_lacks_complaint_binding(self):
+        previous_adapter_mode = os.environ.get("OGP_FEATURE_FLAG_PILOT_RUNTIME_ADAPTER_V1_MODE")
+        original_builder = complaint_route.build_generation_context_snapshot
+        original_resolver = complaint_route.resolve_pilot_complaint_runtime_context
+        try:
+            os.environ["OGP_FEATURE_FLAG_PILOT_RUNTIME_ADAPTER_V1_MODE"] = "all"
+            self._register_verify_and_login("adapter_snapshot_orange_fallback", "adapter_snapshot_orange_fallback@example.com")
+            missing_binding_pack = orange_published_pack()
+            metadata = dict(missing_binding_pack.get("metadata") or {})
+            template_bindings = dict(metadata.get("template_bindings") or {})
+            template_bindings.pop("complaint", None)
+            metadata["template_bindings"] = template_bindings
+            missing_binding_pack["metadata"] = metadata
+            with patch("ogp_web.server_config.registry._load_codes_from_config_repo", return_value=None), patch(
+                "ogp_web.server_config.registry._load_server_rows_from_db",
+                return_value=[
+                    {"code": "blackberry", "title": "BlackBerry", "is_active": True},
+                    {"code": "orange", "title": "Orange City", "is_active": True},
+                ],
+            ), patch(
+                "ogp_web.server_config.registry._load_effective_pack_from_db",
+                side_effect=lambda *, server_code, at_timestamp=None: missing_binding_pack if server_code == "orange" else None,
+            ):
+                switch_response = self.client.patch("/api/profile/selected-server", json={"server_code": "orange"})
+                self.assertEqual(switch_response.status_code, 200)
+
+                response = self.client.put(
+                    "/api/profile",
+                    json={
+                        "name": "Rep",
+                        "passport": "AA",
+                        "address": "Addr",
+                        "phone": "1234567",
+                        "discord": "disc",
+                        "passport_scan_url": "https://example.com/rep",
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+
+                def fake_legacy_snapshot(store, user, *, document_kind):
+                    self.assertEqual(document_kind, "complaint")
+                    return {
+                        "server": {"id": "orange", "code": "orange"},
+                        "template_version": {"id": "legacy_template"},
+                        "law_version_set": {"hash": "legacy_law_hash"},
+                        "validation_rules_version": {"hash": "legacy_validation_hash"},
+                        "effective_config_snapshot": {"template_version": "legacy_template"},
+                        "content_workflow": {"applied_published_versions": {"template_version": "legacy_template"}},
+                        "feature_flags": [],
+                    }
+
+                def fail_adapter(*args, **kwargs):
+                    raise AssertionError("adapter resolver should not be called without complaint template binding")
+
+                complaint_route.build_generation_context_snapshot = fake_legacy_snapshot
+                complaint_route.resolve_pilot_complaint_runtime_context = fail_adapter
+
+                response = self.client.post(
+                    "/api/generate",
+                    json={
+                        "appeal_no": "5680",
+                        "org": "GOV",
+                        "subject_names": "John Doe",
+                        "situation_description": "Описание",
+                        "violation_short": "Нарушение",
+                        "event_dt": "08.04.2026 14:30",
+                        "today_date": "08.04.2026",
+                        "victim": {
+                            "name": "Victim",
+                            "passport": "BB",
+                            "address": "Addr",
+                            "phone": "7654321",
+                            "discord": "victim",
+                            "passport_scan_url": "https://example.com/victim",
+                        },
+                        "contract_url": "https://example.com/contract",
+                        "bar_request_url": "",
+                        "official_answer_url": "",
+                        "mail_notice_url": "",
+                        "arrest_record_url": "",
+                        "personnel_file_url": "",
+                        "video_fix_urls": [],
+                        "provided_video_urls": [],
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+        finally:
+            complaint_route.build_generation_context_snapshot = original_builder
+            complaint_route.resolve_pilot_complaint_runtime_context = original_resolver
+            if previous_adapter_mode is None:
+                os.environ.pop("OGP_FEATURE_FLAG_PILOT_RUNTIME_ADAPTER_V1_MODE", None)
+            else:
+                os.environ["OGP_FEATURE_FLAG_PILOT_RUNTIME_ADAPTER_V1_MODE"] = previous_adapter_mode
+
     def test_document_builder_bundle_endpoint(self):
         self._register_verify_and_login("tester", "bundle_tester@example.com")
-        response = self.client.get("/api/document-builder/bundle", params={"server_id": "blackberry", "document_type": "court_claim"})
+        with patch(
+            "ogp_web.server_config.registry._load_effective_pack_from_db",
+            side_effect=lambda *, server_code, at_timestamp=None: blackberry_published_pack() if server_code == "blackberry" else None,
+        ):
+            response = self.client.get("/api/document-builder/bundle", params={"server_id": "blackberry", "document_type": "court_claim"})
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["bundle_version"], "1.0.0")
@@ -2108,19 +2299,23 @@ class WebApiTests(unittest.TestCase):
                         "excerpt_preview": "Фрагмент",
                     }
                 ],
-            },
-        )()
-        try:
-            response = self.client.post(
-                "/api/ai/law-qa-test",
-                json={
-                    "server_code": "blackberry",
-                    "model": "gpt-5.4",
-                    "question": "Какая норма регулирует доступ адвоката?",
-                    "max_answer_chars": 2000,
-                    "law_version_id": 88,
                 },
-            )
+            )()
+        try:
+            with patch(
+                "ogp_web.server_config.registry._load_effective_pack_from_db",
+                side_effect=lambda *, server_code, at_timestamp=None: blackberry_published_pack() if server_code == "blackberry" else None,
+            ):
+                response = self.client.post(
+                    "/api/ai/law-qa-test",
+                    json={
+                        "server_code": "blackberry",
+                        "model": "gpt-5.4",
+                        "question": "Какая норма регулирует доступ адвоката?",
+                        "max_answer_chars": 2000,
+                        "law_version_id": 88,
+                    },
+                )
         finally:
             complaint_route.ai_service.answer_law_question_details = original
             complaint_route.run_retrieval = original_run_retrieval
@@ -2897,7 +3092,11 @@ class WebApiTests(unittest.TestCase):
 
     def test_law_qa_test_page_available_for_tester(self):
         self._register_verify_and_login("tester", "tester_law_page@example.com")
-        response = self.client.get("/law-qa-test")
+        with patch(
+            "ogp_web.server_config.registry._load_effective_pack_from_db",
+            side_effect=lambda *, server_code, at_timestamp=None: blackberry_published_pack() if server_code == "blackberry" else None,
+        ):
+            response = self.client.get("/law-qa-test")
         self.assertEqual(response.status_code, 200)
         self.assertIn("law-server-code", response.text)
         self.assertIn("gpt-5.4-mini", response.text)
@@ -2907,12 +3106,24 @@ class WebApiTests(unittest.TestCase):
 
     def test_court_claim_test_page_available_for_tester_with_in_development_state(self):
         self._register_verify_and_login("tester", "tester_court_claim_page@example.com")
-        response = self.client.get("/court-claim-test")
+        with patch(
+            "ogp_web.server_config.registry._load_effective_pack_from_db",
+            side_effect=lambda *, server_code, at_timestamp=None: blackberry_published_pack() if server_code == "blackberry" else None,
+        ):
+            response = self.client.get("/court-claim-test")
         self.assertEqual(response.status_code, 200)
         self.assertIn("court-claim-form", response.text)
         self.assertIn("Тестовый раздел", response.text)
         self.assertIn("Форма находится в разработке", response.text)
         self.assertIn("court-claim-in-development", response.text)
+
+    def test_law_qa_test_page_forbidden_for_user_without_tester_access(self):
+        self._register_verify_and_login("plainlawpageuser", "plainlawpageuser@example.com")
+
+        response = self.client.get("/law-qa-test")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("court_claims", response.json()["detail"][0])
 
     def test_law_qa_test_endpoint_forbidden_for_user_without_tester_access(self):
         self._register_verify_and_login("plainlawuser", "plainlawuser@example.com")
@@ -2935,14 +3146,18 @@ class WebApiTests(unittest.TestCase):
         original = complaint_route.ai_service.answer_law_question_details
         complaint_route.ai_service.answer_law_question_details = lambda payload: (_ for _ in ()).throw(RuntimeError("boom"))
         try:
-            response = self.client.post(
-                "/api/ai/law-qa-test",
-                json={
-                    "server_code": "blackberry",
-                    "question": "test question",
-                    "max_answer_chars": 2000,
-                },
-            )
+            with patch(
+                "ogp_web.server_config.registry._load_effective_pack_from_db",
+                side_effect=lambda *, server_code, at_timestamp=None: blackberry_published_pack() if server_code == "blackberry" else None,
+            ):
+                response = self.client.post(
+                    "/api/ai/law-qa-test",
+                    json={
+                        "server_code": "blackberry",
+                        "question": "test question",
+                        "max_answer_chars": 2000,
+                    },
+                )
         finally:
             complaint_route.ai_service.answer_law_question_details = original
 

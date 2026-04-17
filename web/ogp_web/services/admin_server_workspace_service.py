@@ -39,10 +39,18 @@ from ogp_web.services.admin_server_laws_workspace_service import build_runtime_p
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_policy_violations_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_cutover_mode_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_cutover_guardrails_summary
+from ogp_web.services.admin_server_access_workspace_service import build_server_access_summary_payload
+from ogp_web.services.runtime_server_pack_service import build_runtime_server_pack_publish_blockers_payload
 from ogp_web.services.content_workflow_service import ContentWorkflowService
+from ogp_web.services.admin_server_content_workspace_service import (
+    build_content_workspace_summary,
+    list_server_features_payload,
+    list_server_templates_payload,
+)
 from ogp_web.storage.admin_metrics_store import AdminMetricsStore
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
+from ogp_web.storage.runtime_server_packs_store import RuntimeServerPacksStore
 from ogp_web.storage.runtime_servers_store import RuntimeServersStore
 from ogp_web.storage.server_effective_law_projections_store import ServerEffectiveLawProjectionsStore
 from ogp_web.storage.user_store import UserStore
@@ -116,6 +124,10 @@ def _build_effective_content_items(
         }
     effective_items = sorted(effective_map.values(), key=lambda item: (item["source_scope"] != "server", item["title"].lower()))
     published_count = sum(1 for item in effective_items if str(item.get("status") or "").strip().lower() == "published")
+    summary = build_content_workspace_summary(
+        effective_items=effective_items,
+        content_type=content_type,
+    )
     return {
         "effective_items": effective_items,
         "counts": {
@@ -124,48 +136,7 @@ def _build_effective_content_items(
             "effective": len(effective_items),
             "published_effective": published_count,
         },
-    }
-
-
-def _filter_users_for_server(user_store: UserStore, *, server_code: str, limit: int = 200) -> list[dict[str, Any]]:
-    users = user_store.list_users(limit=limit)
-    items: list[dict[str, Any]] = []
-    for row in users:
-        item = dict(row or {})
-        selected_server = str(item.get("selected_server_code") or item.get("server_code") or "").strip().lower()
-        if selected_server != server_code:
-            continue
-        items.append(item)
-    return items
-
-
-def _build_access_summary(user_store: UserStore, *, server_code: str, users: list[dict[str, Any]]) -> dict[str, Any]:
-    permission_totals: dict[str, int] = {}
-    items: list[dict[str, Any]] = []
-    for row in users:
-        username = str(row.get("username") or "").strip().lower()
-        if not username:
-            continue
-        permission_codes = sorted(user_store.get_permission_codes(username, server_code=server_code))
-        for code in permission_codes:
-            permission_totals[code] = permission_totals.get(code, 0) + 1
-        items.append(
-            {
-                "username": username,
-                "display_name": str(row.get("username") or username),
-                "permissions": permission_codes,
-                "is_tester": bool(row.get("is_tester")),
-                "is_gka": bool(row.get("is_gka")),
-                "is_blocked": bool(row.get("access_blocked")),
-                "is_deactivated": bool(row.get("deactivated_at")),
-            }
-        )
-    return {
-        "items": items,
-        "permission_totals": [
-            {"code": code, "count": count}
-            for code, count in sorted(permission_totals.items(), key=lambda item: (-item[1], item[0]))
-        ],
+        "summary": summary,
     }
 
 
@@ -1298,13 +1269,27 @@ def _build_issues_payload(
 def _build_readiness_payload(
     *,
     laws_ready: bool,
+    law_context_readiness: dict[str, Any] | None,
     features_ready: bool,
     templates_ready: bool,
     issues_payload: dict[str, Any],
     runtime_provenance: dict[str, Any],
 ) -> dict[str, Any]:
+    law_context = dict(law_context_readiness or {})
+    law_status = str(law_context.get("status") or "").strip().lower()
+    law_mode = str(law_context.get("mode") or "").strip().lower()
+    law_reason_code = str(law_context.get("reason_code") or "").strip().lower()
+    laws_block_status = "ready" if laws_ready else "partial"
+    if law_status == "ready_with_compatibility":
+        laws_block_status = "partial"
     blocks = {
-        "laws": {"status": "ready" if laws_ready else "partial"},
+        "laws": {
+            "status": laws_block_status,
+            "law_context_status": law_status or None,
+            "law_context_mode": law_mode or None,
+            "reason_code": law_reason_code or None,
+            "detail": str(law_context.get("reason_detail") or "").strip() or None,
+        },
         "features": {"status": "ready" if features_ready else "partial"},
         "templates": {"status": "ready" if templates_ready else "partial"},
     }
@@ -1330,10 +1315,372 @@ def _build_readiness_payload(
     }
 
 
+def _build_onboarding_workspace_summary(
+    *,
+    server_code: str,
+    health_payload: dict[str, Any],
+    readiness_payload: dict[str, Any],
+    features_payload: dict[str, Any],
+    templates_payload: dict[str, Any],
+    access_payload: dict[str, Any],
+    runtime_truth: dict[str, Any],
+    candidate_runtime_truth: dict[str, Any],
+    runtime_pack_payload: dict[str, Any],
+) -> dict[str, Any]:
+    onboarding = dict((health_payload.get("onboarding") or {}))
+    resolution = dict(onboarding.get("resolution") or {})
+    states = dict(onboarding.get("states") or {})
+    readiness_blocks = dict((readiness_payload or {}).get("blocks") or {})
+    feature_counts = dict((features_payload or {}).get("counts") or {})
+    template_counts = dict((templates_payload or {}).get("counts") or {})
+    feature_summary = dict((features_payload or {}).get("summary") or {})
+    template_summary = dict((templates_payload or {}).get("summary") or {})
+    access_items = list((access_payload or {}).get("items") or [])
+    active_access_count = sum(
+        1
+        for item in access_items
+        if not bool(item.get("is_blocked")) and not bool(item.get("is_deactivated"))
+    )
+    runtime_ready = bool(states.get("bootstrap-ready", {}).get("ok"))
+    laws_ready = str((readiness_blocks.get("laws") or {}).get("status") or "").strip().lower() == "ready"
+    laws_block = dict(readiness_blocks.get("laws") or {})
+    features_ready = int(feature_counts.get("effective") or 0) > 0
+    templates_ready = int(template_counts.get("effective") or 0) > 0
+    feature_workflow_pending = str(feature_summary.get("status") or "").strip().lower() == "workflow_pending"
+    template_workflow_pending = str(template_summary.get("status") or "").strip().lower() == "workflow_pending"
+    access_ready = active_access_count > 0
+    runtime_truth_payload = dict(runtime_truth or {})
+    candidate_runtime_truth_payload = dict(candidate_runtime_truth or {})
+    runtime_pack_summary = dict(runtime_pack_payload or {})
+    current_runtime_blocked = int(runtime_truth_payload.get("blocked_count") or 0) > 0
+    candidate_runtime_blocked = int(candidate_runtime_truth_payload.get("blocked_count") or 0) > 0
+    candidate_can_publish = bool(runtime_pack_summary.get("can_publish"))
+
+    steps = [
+        {
+            "code": "runtime",
+            "title": "Runtime config",
+            "status": "ready" if runtime_ready else "partial",
+            "detail": (
+                "Server resolves through an explicit runtime pack path."
+                if runtime_ready
+                else (
+                    "Server still needs a published/bootstrap runtime pack before it can be treated as onboarding-ready."
+                    if bool(onboarding.get("requires_explicit_runtime_pack"))
+                    else str(states.get("bootstrap-ready", {}).get("detail") or "Runtime path still needs setup.")
+                )
+            ),
+            "action_tab": "diagnostics" if not runtime_ready else "laws",
+            "action_label": "Открыть diagnostics" if not runtime_ready else "Перейти к законам",
+        },
+        {
+            "code": "laws",
+            "title": "Законы",
+            "status": "ready" if laws_ready else "partial",
+            "detail": (
+                "Canonical bindings, selected-server law context, and explicit runtime path are ready for the laws workspace."
+                if laws_ready
+                else (
+                    str(laws_block.get("detail") or "").strip()
+                    or (
+                        f"bindings={int(onboarding.get('source_set_binding_count') or 0)}; "
+                        f"canonical_ready={bool(onboarding.get('canonical_binding_ready'))}; "
+                        f"law_context={str(onboarding.get('law_context_status') or 'unknown')}"
+                    )
+                )
+            ),
+            "action_tab": "laws",
+            "action_label": "Открыть законы",
+        },
+        {
+            "code": "features",
+            "title": "Функции",
+            "status": "ready" if features_ready and not feature_workflow_pending else "partial",
+            "detail": str(
+                feature_summary.get("detail")
+                or (
+                    f"effective={int(feature_counts.get('effective') or 0)}; "
+                    f"server_overrides={int(feature_counts.get('server') or 0)}"
+                )
+            ),
+            "action_tab": "features",
+            "action_label": "Открыть функции" if not feature_workflow_pending else "Завершить workflow функций",
+        },
+        {
+            "code": "templates",
+            "title": "Шаблоны",
+            "status": "ready" if templates_ready and not template_workflow_pending else "partial",
+            "detail": str(
+                template_summary.get("detail")
+                or (
+                    f"effective={int(template_counts.get('effective') or 0)}; "
+                    f"server_overrides={int(template_counts.get('server') or 0)}"
+                )
+            ),
+            "action_tab": "templates",
+            "action_label": "Открыть шаблоны" if not template_workflow_pending else "Завершить workflow шаблонов",
+        },
+        {
+            "code": "access",
+            "title": "Доступ",
+            "status": "ready" if access_ready else "partial",
+            "detail": (
+                f"active_users={active_access_count}; total_users={len(access_items)}"
+            ),
+            "action_tab": "access",
+            "action_label": "Открыть доступ",
+        },
+    ]
+    next_focus = next((step for step in steps if step["status"] != "ready"), None)
+    effective_states = {state_code: dict(states.get(state_code) or {}) for state_code in ("bootstrap-ready", "workflow-ready", "rollout-ready", "production-ready")}
+    if bool(effective_states.get("workflow-ready", {}).get("ok")) and (candidate_runtime_blocked or not candidate_can_publish):
+        workflow_missing: list[str] = []
+        if candidate_runtime_blocked:
+            workflow_missing.append("candidate runtime truth")
+        if not candidate_can_publish:
+            workflow_missing.append("publish blockers")
+        effective_states["workflow-ready"] = {
+            "ok": False,
+            "detail": f"missing: {', '.join(workflow_missing)}",
+        }
+    if bool(effective_states.get("rollout-ready", {}).get("ok")) and (
+        current_runtime_blocked or candidate_runtime_blocked or not candidate_can_publish or not laws_ready
+    ):
+        rollout_missing: list[str] = []
+        if current_runtime_blocked:
+            rollout_missing.append("current runtime truth")
+        if candidate_runtime_blocked:
+            rollout_missing.append("candidate runtime truth")
+        if not candidate_can_publish:
+            rollout_missing.append("publish blockers")
+        if not laws_ready:
+            rollout_missing.append("selected-server law context")
+        effective_states["rollout-ready"] = {
+            "ok": False,
+            "detail": f"missing: {', '.join(rollout_missing)}",
+        }
+
+    state_cards = []
+    state_order = ("bootstrap-ready", "workflow-ready", "rollout-ready", "production-ready")
+    highest_completed_state = "not-ready"
+    for state_code in state_order:
+        item = dict(effective_states.get(state_code) or {})
+        if bool(item.get("ok")):
+            highest_completed_state = state_code
+        state_cards.append(
+            {
+                "code": state_code,
+                "status": "ready" if bool(item.get("ok")) else "partial",
+                "ok": bool(item.get("ok")),
+                "detail": str(item.get("detail") or "").strip(),
+            }
+        )
+    next_required_state = ""
+    if highest_completed_state == "not-ready":
+        next_required_state = state_order[0]
+    else:
+        try:
+            next_index = state_order.index(highest_completed_state) + 1
+        except ValueError:
+            next_index = 0
+        if next_index < len(state_order):
+            next_required_state = state_order[next_index]
+
+    return {
+        "primary_path": f"/admin/servers/{server_code}",
+        "usable_in_admin": True,
+        "usable_in_admin_detail": "Server workspace is available and should be used as the primary onboarding path.",
+        "highest_completed_state": highest_completed_state,
+        "next_required_state": next_required_state,
+        "server_workspace_confirmed": True,
+        "rollback_reference": str(onboarding.get("rollback_reference") or "").strip(),
+        "states": state_cards,
+        "steps": steps,
+        "next_focus": dict(next_focus or {}),
+        "resolution": {
+            "mode": str(onboarding.get("resolution_mode") or ""),
+            "label": str(onboarding.get("resolution_label") or ""),
+            "is_runtime_addressable": bool(resolution.get("is_runtime_addressable")),
+            "has_published_pack": bool(resolution.get("has_published_pack")),
+            "has_bootstrap_pack": bool(resolution.get("has_bootstrap_pack")),
+        },
+    }
+
+
+def _build_runtime_focus_summary(
+    *,
+    runtime_truth: dict[str, Any],
+    candidate_runtime_truth: dict[str, Any],
+) -> dict[str, Any]:
+    def _pick_focus(payload: dict[str, Any], *, source: str) -> dict[str, Any] | None:
+        items = [dict(item or {}) for item in list(payload.get("items") or [])]
+        blocked_item = next((item for item in items if str(item.get("route_status") or "").strip().lower() == "blocked"), None)
+        focus_item = blocked_item or next(
+            (
+                item
+                for item in items
+                if str(item.get("route_status") or "").strip().lower() not in {"", "ready"}
+            ),
+            None,
+        )
+        if focus_item is None:
+            return None
+        section_code = str(focus_item.get("section_code") or focus_item.get("capability_code") or "").strip()
+        route_status = str(focus_item.get("route_status") or "").strip().lower()
+        reason_code = str(focus_item.get("route_reason_code") or "").strip()
+        reason_detail = str(focus_item.get("route_reason_detail") or "").strip()
+        if route_status == "blocked":
+            message = (
+                f"Candidate publish still leaves {section_code} blocked."
+                if source == "candidate"
+                else f"Live runtime still keeps {section_code} blocked."
+            )
+        elif route_status == "ready_with_compatibility":
+            message = (
+                f"Candidate publish still leaves {section_code} on a compatibility path."
+                if source == "candidate"
+                else f"Live runtime still serves {section_code} through a compatibility path."
+            )
+        else:
+            message = f"{section_code} still needs runtime convergence."
+        if "template_binding" in reason_code:
+            next_action = "Declare an explicit published template binding before the next publish."
+        elif "validation_profile" in reason_code:
+            next_action = "Declare an explicit published validation profile before the next publish."
+        elif reason_code == "no_projection":
+            next_action = "Finish law projection approval/materialize/activate before cutover."
+        elif reason_code == "no_active_runtime_version":
+            next_action = "Activate a runtime law version before cutover."
+        else:
+            next_action = "Inspect the shared runtime truth verdict and resolve the blocking dependency."
+        return {
+            "status": route_status or str(payload.get("status") or "partial"),
+            "source": source,
+            "section_code": section_code,
+            "route_status": route_status,
+            "reason_code": reason_code,
+            "reason_detail": reason_detail,
+            "message": message,
+            "next_action": next_action,
+        }
+
+    candidate_focus = _pick_focus(candidate_runtime_truth, source="candidate")
+    if candidate_focus is not None:
+        return candidate_focus
+    current_focus = _pick_focus(runtime_truth, source="current")
+    if current_focus is not None:
+        return current_focus
+    return {
+        "status": "ready",
+        "source": "current",
+        "section_code": "",
+        "route_status": "ready",
+        "reason_code": "",
+        "reason_detail": "",
+        "message": "Current runtime truth and candidate publish truth are aligned for migrated flows.",
+        "next_action": "No immediate runtime cutover action is required.",
+    }
+
+
+def _build_strict_cutover_candidates_summary(
+    *,
+    runtime_truth: dict[str, Any],
+    candidate_runtime_truth: dict[str, Any],
+) -> dict[str, Any]:
+    def _next_action_for(status: str, reason_code: str, *, section_code: str) -> str:
+        if status == "strict_active":
+            return f"Strict cutover is already active for {section_code}; keep the rollback env ready for incidents."
+        if status == "strict_safe":
+            return f"Published runtime is already live for {section_code}; enabling strict env should be a safe operational no-op."
+        if "template_binding" in reason_code:
+            return "Declare an explicit published template binding before the next publish."
+        if "validation_profile" in reason_code:
+            return "Declare an explicit published validation profile before the next publish."
+        if status == "ready_to_flip":
+            return f"Enable OGP_STRICT_PUBLISHED_RUNTIME_SECTIONS={section_code} after the next publish smoke passes."
+        return "Inspect candidate publish truth and resolve the blocking dependency before strict rollout."
+
+    current_items = {
+        str(item.get("section_code") or "").strip(): dict(item or {})
+        for item in list(runtime_truth.get("items") or [])
+        if str(item.get("section_code") or "").strip()
+    }
+    candidate_items = {
+        str(item.get("section_code") or "").strip(): dict(item or {})
+        for item in list(candidate_runtime_truth.get("items") or [])
+        if str(item.get("section_code") or "").strip()
+    }
+    items: list[dict[str, Any]] = []
+    ready_to_flip_count = 0
+    strict_active_count = 0
+    blocked_count = 0
+    for section_code, current_item in current_items.items():
+        runtime_requirement = dict(current_item.get("runtime_requirement") or {})
+        if str(current_item.get("target_truth") or "").strip().lower() != "published_pack":
+            continue
+        candidate_item = candidate_items.get(section_code, {})
+        strict_enabled = bool(runtime_requirement.get("strict_cutover_enabled"))
+        current_route_status = str(current_item.get("route_status") or "").strip().lower()
+        candidate_route_status = str(candidate_item.get("route_status") or "").strip().lower()
+        candidate_reason_code = str(candidate_item.get("route_reason_code") or "").strip()
+        if strict_enabled and current_route_status == "ready":
+            status = "strict_active"
+            detail = "Strict cutover is already active for this capability."
+        elif strict_enabled and candidate_route_status == "ready":
+            status = "pending_publish"
+            detail = "Strict cutover is enabled, but the next published pack still needs to become live."
+        elif candidate_route_status == "ready":
+            if current_route_status == "ready_with_compatibility":
+                status = "ready_to_flip"
+                detail = "Candidate publish truth is ready; strict cutover can replace bootstrap compatibility."
+            else:
+                status = "strict_safe"
+                detail = "Live runtime already uses a published-pack path; enabling strict cutover should be safe."
+        else:
+            status = "not_ready"
+            detail = str(candidate_item.get("route_reason_detail") or current_item.get("route_reason_detail") or "Candidate publish truth is not ready for strict cutover.")
+        if status == "ready_to_flip":
+            ready_to_flip_count += 1
+        if status in {"strict_active", "strict_safe"}:
+            strict_active_count += 1
+        if status == "not_ready":
+            blocked_count += 1
+        items.append(
+            {
+                "section_code": section_code,
+                "status": status,
+                "strict_enabled": strict_enabled,
+                "current_route_status": current_route_status,
+                "candidate_route_status": candidate_route_status or "unknown",
+                "reason_code": candidate_reason_code or str(current_item.get("route_reason_code") or ""),
+                "detail": detail,
+                "next_action": _next_action_for(
+                    status,
+                    candidate_reason_code or str(current_item.get("route_reason_code") or ""),
+                    section_code=section_code,
+                ),
+                "strict_env": f"OGP_STRICT_PUBLISHED_RUNTIME_SECTIONS={section_code}",
+                "rollback_env": f"OGP_RELAXED_PUBLISHED_RUNTIME_SECTIONS={section_code}",
+            }
+        )
+    summary_status = "blocked"
+    if items and blocked_count == 0:
+        summary_status = "ready" if ready_to_flip_count > 0 or strict_active_count == len(items) else "partial"
+    return {
+        "status": summary_status,
+        "total_count": len(items),
+        "ready_to_flip_count": ready_to_flip_count,
+        "strict_active_count": strict_active_count,
+        "blocked_count": blocked_count,
+        "items": items,
+    }
+
+
 def build_server_workspace_payload(
     *,
     server_code: str,
     runtime_servers_store: RuntimeServersStore,
+    runtime_server_packs_store: RuntimeServerPacksStore,
     law_sets_store: RuntimeLawSetsStore,
     projections_store: ServerEffectiveLawProjectionsStore | None,
     workflow_service: ContentWorkflowService,
@@ -1352,14 +1699,32 @@ def build_server_workspace_payload(
         projections_store=projections_store,
     )
     dashboard_payload = dashboard_service.get_dashboard(username=username, server_id=normalized_server)
-    features_payload = _build_effective_content_items(workflow_service, server_code=normalized_server, content_type="features")
-    templates_payload = _build_effective_content_items(workflow_service, server_code=normalized_server, content_type="templates")
-    server_users = _filter_users_for_server(user_store, server_code=normalized_server)
-    access_payload = _build_access_summary(user_store, server_code=normalized_server, users=server_users)
+    features_payload = list_server_features_payload(
+        workflow_service=workflow_service,
+        server_code=normalized_server,
+    )
+    templates_payload = list_server_templates_payload(
+        workflow_service=workflow_service,
+        server_code=normalized_server,
+    )
+    access_payload = build_server_access_summary_payload(user_store=user_store, server_code=normalized_server)
+    runtime_pack_payload = build_runtime_server_pack_publish_blockers_payload(
+        server_code=normalized_server,
+        runtime_servers_store=runtime_servers_store,
+        runtime_server_packs_store=runtime_server_packs_store,
+        law_sets_store=law_sets_store,
+        source_sets_store=source_sets_store,
+        projections_store=projections_store,
+        workflow_service=workflow_service,
+        user_store=user_store,
+    )
+    server_users = list((access_payload or {}).get("items") or [])
     source_set_bindings = source_sets_store.list_bindings(server_code=normalized_server)
     projection_bridge = dict(health_payload.get("projection_bridge") or {})
     runtime_provenance = dict(health_payload.get("runtime_provenance") or {})
     runtime_alignment = dict(health_payload.get("runtime_alignment") or {})
+    law_context_readiness = dict(health_payload.get("law_context_readiness") or {})
+    runtime_requirements = dict(health_payload.get("runtime_requirements") or {})
     runtime_config_posture = build_runtime_config_posture_summary(health_payload=health_payload)
     runtime_config_debt = build_runtime_config_debt_summary(health_payload=health_payload)
     runtime_resolution_policy = build_runtime_resolution_policy_summary(health_payload=health_payload)
@@ -1568,6 +1933,8 @@ def build_server_workspace_payload(
         "binding_count": len(source_set_bindings),
         "active_law_version_id": (health_payload.get("checks") or {}).get("health", {}).get("active_law_version_id"),
         "chunk_count": (health_payload.get("checks") or {}).get("health", {}).get("chunk_count"),
+        "law_context_readiness": law_context_readiness,
+        "runtime_requirements": runtime_requirements,
         "projection_bridge": projection_bridge,
         "runtime_config_posture": runtime_config_posture,
         "runtime_config_debt": runtime_config_debt,
@@ -1650,13 +2017,34 @@ def build_server_workspace_payload(
         cutover_blockers_breakdown=cutover_blockers_breakdown,
     )
     readiness_payload = _build_readiness_payload(
-        laws_ready=bool((health_payload.get("checks") or {}).get("health", {}).get("ok"))
-        and bool(((health_payload.get("checks") or {}).get("bindings") or {}).get("canonical_ready"))
+        laws_ready=bool((law_context_readiness or {}).get("is_ready"))
+        and str((law_context_readiness or {}).get("status") or "").strip().lower() == "ready"
         and bool(((health_payload.get("checks") or {}).get("config_resolution") or {}).get("ok")),
+        law_context_readiness=law_context_readiness,
         features_ready=int(features_payload["counts"]["effective"]) > 0,
         templates_ready=int(templates_payload["counts"]["effective"]) > 0,
         issues_payload=issues_payload,
         runtime_provenance=runtime_provenance,
+    )
+    onboarding_summary = _build_onboarding_workspace_summary(
+        server_code=normalized_server,
+        health_payload=health_payload,
+        readiness_payload=readiness_payload,
+        features_payload=features_payload,
+        templates_payload=templates_payload,
+        access_payload=access_payload,
+        runtime_truth=runtime_requirements,
+        candidate_runtime_truth=dict(runtime_pack_payload.get("candidate_runtime_requirements") or {}),
+        runtime_pack_payload=runtime_pack_payload,
+    )
+    candidate_runtime_truth = dict(runtime_pack_payload.get("candidate_runtime_requirements") or {})
+    runtime_focus = _build_runtime_focus_summary(
+        runtime_truth=runtime_requirements,
+        candidate_runtime_truth=candidate_runtime_truth,
+    )
+    strict_cutover_candidates = _build_strict_cutover_candidates_summary(
+        runtime_truth=runtime_requirements,
+        candidate_runtime_truth=candidate_runtime_truth,
     )
     activity = _build_recent_activity(
         metrics_store=metrics_store,
@@ -1672,12 +2060,15 @@ def build_server_workspace_payload(
         "readiness": readiness_payload,
         "overview": {
             "laws": laws_summary,
+            "runtime_truth": runtime_requirements,
             "features": {
                 **features_payload["counts"],
+                "summary": dict(features_payload.get("summary") or {}),
                 "items": features_payload["effective_items"][:20],
             },
             "templates": {
                 **templates_payload["counts"],
+                "summary": dict(templates_payload.get("summary") or {}),
                 "items": templates_payload["effective_items"][:20],
             },
             "users": {
@@ -1685,6 +2076,11 @@ def build_server_workspace_payload(
                 "items": server_users[:20],
             },
             "access": access_payload,
+            "onboarding": onboarding_summary,
+            "candidate_runtime_truth": candidate_runtime_truth,
+            "runtime_focus": runtime_focus,
+            "strict_cutover_candidates": strict_cutover_candidates,
+            "runtime_pack": runtime_pack_payload,
             "dashboard": dashboard_payload,
         },
         "activity": activity,

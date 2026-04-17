@@ -20,6 +20,7 @@ from ogp_web.dependencies import (
     get_admin_metrics_store,
     get_admin_task_ops_service,
     get_exam_answers_store,
+    get_runtime_server_packs_store,
     get_user_store,
     requires_permission,
 )
@@ -57,6 +58,9 @@ from ogp_web.schemas import (
     AdminPasswordResetPayload,
     AdminQuotaPayload,
     AdminRuntimeServerPayload,
+    AdminRuntimeServerPackDraftPayload,
+    AdminRuntimeServerPackPublishPayload,
+    AdminRuntimeServerPackRollbackPayload,
     AdminUserRoleAssignmentPayload,
     DocumentVersionProvenanceResponse,
 )
@@ -100,6 +104,13 @@ from ogp_web.services.admin_runtime_servers_service import (
 from ogp_web.services.admin_server_workspace_service import (
     build_server_activity_payload,
     build_server_workspace_payload,
+)
+from ogp_web.services.runtime_server_pack_service import (
+    build_runtime_server_pack_draft_payload,
+    build_runtime_server_pack_publish_blockers_payload,
+    publish_runtime_server_pack_payload,
+    rollback_runtime_server_pack_payload,
+    update_runtime_server_pack_draft_payload,
 )
 from ogp_web.services.admin_server_access_workspace_service import (
     assign_user_role_payload,
@@ -201,6 +212,7 @@ from ogp_web.services.admin_user_mutations_service import (
 from ogp_web.services.synthetic_runner_service import SyntheticRunnerService
 from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_store import UserStore
+from ogp_web.storage.runtime_server_packs_store import RuntimeServerPacksStore
 from ogp_web.storage.runtime_servers_store import RuntimeServerRecord, RuntimeServersStore
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
 from ogp_web.storage.canonical_law_documents_store import CanonicalLawDocumentsStore
@@ -621,6 +633,7 @@ async def admin_runtime_server_workspace(
     server_code: str,
     user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
     runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    runtime_server_packs_store: RuntimeServerPacksStore = Depends(get_runtime_server_packs_store),
     law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
     projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
     workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
@@ -633,6 +646,7 @@ async def admin_runtime_server_workspace(
         payload = build_server_workspace_payload(
             server_code=server_code,
             runtime_servers_store=runtime_servers_store,
+            runtime_server_packs_store=runtime_server_packs_store,
             law_sets_store=law_sets_store,
             projections_store=projections_store,
             workflow_service=workflow_service,
@@ -645,6 +659,200 @@ async def admin_runtime_server_workspace(
     except KeyError as exc:
         _raise_not_found(exc)
     return _admin_ok(**payload)
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/pack-draft")
+async def admin_runtime_server_pack_draft(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
+    runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    runtime_server_packs_store: RuntimeServerPacksStore = Depends(get_runtime_server_packs_store),
+    law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    user_store: UserStore = Depends(get_user_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+):
+    _ = user
+    try:
+        payload = build_runtime_server_pack_draft_payload(
+            server_code=server_code,
+            runtime_servers_store=runtime_servers_store,
+            runtime_server_packs_store=runtime_server_packs_store,
+            law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
+            projections_store=projections_store,
+            workflow_service=workflow_service,
+            user_store=user_store,
+        )
+    except KeyError as exc:
+        _raise_not_found(exc)
+    return _admin_ok(**payload)
+
+
+@router.put("/api/admin/runtime-servers/{server_code}/pack-draft")
+async def admin_runtime_server_pack_draft_update(
+    server_code: str,
+    payload: AdminRuntimeServerPackDraftPayload,
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
+    runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    runtime_server_packs_store: RuntimeServerPacksStore = Depends(get_runtime_server_packs_store),
+    law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    user_store: UserStore = Depends(get_user_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    normalized_code = _normalize_code(server_code)
+    try:
+        result = update_runtime_server_pack_draft_payload(
+            server_code=normalized_code,
+            metadata=payload.metadata,
+            runtime_servers_store=runtime_servers_store,
+            runtime_server_packs_store=runtime_server_packs_store,
+            law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
+            projections_store=projections_store,
+            workflow_service=workflow_service,
+            user_store=user_store,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_runtime_server_pack_draft_update",
+        username=user.username,
+        server_code=normalized_code,
+        path=f"/api/admin/runtime-servers/{normalized_code}/pack-draft",
+        method="PUT",
+        status_code=200,
+        meta={"draft_version": int(((result.get("draft") or {}).get("version") or 0) or 0)},
+    )
+    return _admin_ok(**result)
+
+
+@router.get("/api/admin/runtime-servers/{server_code}/pack-publish-blockers")
+async def admin_runtime_server_pack_publish_blockers(
+    server_code: str,
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
+    runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    runtime_server_packs_store: RuntimeServerPacksStore = Depends(get_runtime_server_packs_store),
+    law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    user_store: UserStore = Depends(get_user_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+):
+    _ = user
+    try:
+        payload = build_runtime_server_pack_publish_blockers_payload(
+            server_code=server_code,
+            runtime_servers_store=runtime_servers_store,
+            runtime_server_packs_store=runtime_server_packs_store,
+            law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
+            projections_store=projections_store,
+            workflow_service=workflow_service,
+            user_store=user_store,
+        )
+    except KeyError as exc:
+        _raise_not_found(exc)
+    return _admin_ok(**payload)
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/pack-publish")
+async def admin_runtime_server_pack_publish(
+    server_code: str,
+    payload: AdminRuntimeServerPackPublishPayload | None = None,
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
+    runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    runtime_server_packs_store: RuntimeServerPacksStore = Depends(get_runtime_server_packs_store),
+    law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    user_store: UserStore = Depends(get_user_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    normalized_code = _normalize_code(server_code)
+    _ = payload
+    try:
+        result = publish_runtime_server_pack_payload(
+            server_code=normalized_code,
+            runtime_servers_store=runtime_servers_store,
+            runtime_server_packs_store=runtime_server_packs_store,
+            law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
+            projections_store=projections_store,
+            workflow_service=workflow_service,
+            user_store=user_store,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_runtime_server_pack_publish",
+        username=user.username,
+        server_code=normalized_code,
+        path=f"/api/admin/runtime-servers/{normalized_code}/pack-publish",
+        method="POST",
+        status_code=200,
+        meta={
+            "changed": bool(result.get("changed")),
+            "published_version": int((((result.get("published_pack") or {}).get("version")) or 0) or 0),
+        },
+    )
+    return _admin_ok(**result)
+
+
+@router.post("/api/admin/runtime-servers/{server_code}/pack-rollback")
+async def admin_runtime_server_pack_rollback(
+    server_code: str,
+    payload: AdminRuntimeServerPackRollbackPayload | None = None,
+    user: AuthUser = Depends(requires_permission("manage_runtime_servers")),
+    runtime_servers_store: RuntimeServersStore = Depends(get_runtime_servers_store),
+    runtime_server_packs_store: RuntimeServerPacksStore = Depends(get_runtime_server_packs_store),
+    law_sets_store: RuntimeLawSetsStore = Depends(get_runtime_law_sets_store),
+    projections_store: ServerEffectiveLawProjectionsStore = Depends(get_server_effective_law_projections_store),
+    workflow_service: ContentWorkflowService = Depends(get_content_workflow_service),
+    user_store: UserStore = Depends(get_user_store),
+    source_sets_store: LawSourceSetsStore = Depends(get_law_source_sets_store),
+    metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
+):
+    normalized_code = _normalize_code(server_code)
+    try:
+        result = rollback_runtime_server_pack_payload(
+            server_code=normalized_code,
+            runtime_servers_store=runtime_servers_store,
+            runtime_server_packs_store=runtime_server_packs_store,
+            law_sets_store=law_sets_store,
+            source_sets_store=source_sets_store,
+            projections_store=projections_store,
+            workflow_service=workflow_service,
+            user_store=user_store,
+            target_version=int((payload.version if payload is not None else 0) or 0) or None,
+        )
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    except KeyError as exc:
+        _raise_not_found(exc)
+    metrics_store.log_event(
+        event_type="admin_runtime_server_pack_rollback",
+        username=user.username,
+        server_code=normalized_code,
+        path=f"/api/admin/runtime-servers/{normalized_code}/pack-rollback",
+        method="POST",
+        status_code=200,
+        meta={
+            "changed": bool(result.get("changed")),
+            "published_version": int((((result.get("published_pack") or {}).get("version")) or 0) or 0),
+            "target_version": int((((result.get("rollback_target") or {}).get("version")) or 0) or 0),
+        },
+    )
+    return _admin_ok(**result)
 
 
 @router.get("/api/admin/runtime-servers/{server_code}/activity")

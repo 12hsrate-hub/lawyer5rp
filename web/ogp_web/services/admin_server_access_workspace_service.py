@@ -5,6 +5,65 @@ from typing import Any
 from ogp_web.storage.user_store import UserStore
 
 
+def _build_access_operational_summary(*, items: list[dict[str, Any]]) -> dict[str, Any]:
+    active_count = 0
+    blocked_count = 0
+    deactivated_count = 0
+    tester_count = 0
+    gka_count = 0
+    assignment_count = 0
+    global_assignment_count = 0
+    for item in items:
+        is_blocked = bool(item.get("is_blocked"))
+        is_deactivated = bool(item.get("is_deactivated"))
+        if is_blocked:
+            blocked_count += 1
+        if is_deactivated:
+            deactivated_count += 1
+        if not is_blocked and not is_deactivated:
+            active_count += 1
+        if bool(item.get("is_tester")):
+            tester_count += 1
+        if bool(item.get("is_gka")):
+            gka_count += 1
+        assignments = list(item.get("assignments") or [])
+        assignment_count += len(assignments)
+        global_assignment_count += sum(1 for assignment in assignments if str(assignment.get("scope") or "").strip().lower() == "global")
+    if active_count <= 0:
+        status = "not_configured"
+        detail = f"active_users=0; total_users={len(items)}"
+        next_step = "Выберите пользователя в server workspace и назначьте хотя бы одну server/global role."
+    elif blocked_count > 0 or deactivated_count > 0:
+        status = "partial"
+        detail = (
+            f"active_users={active_count}; blocked={blocked_count}; "
+            f"deactivated={deactivated_count}; assignments={assignment_count}"
+        )
+        next_step = "Проверьте блокировки, деактивации и effective роли во вкладках «Пользователи» и «Доступ»."
+    else:
+        status = "ready"
+        detail = (
+            f"active_users={active_count}; testers={tester_count}; "
+            f"gka={gka_count}; assignments={assignment_count}"
+        )
+        next_step = "Используйте server workspace для повседневных role changes и quick access actions."
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "counts": {
+            "total_users": len(items),
+            "active_users": active_count,
+            "blocked_users": blocked_count,
+            "deactivated_users": deactivated_count,
+            "tester_users": tester_count,
+            "gka_users": gka_count,
+            "assignments": assignment_count,
+            "global_assignments": global_assignment_count,
+        },
+    }
+
+
 def list_roles_payload(*, user_store: UserStore) -> dict[str, Any]:
     items = user_store.list_roles()
     return {
@@ -56,11 +115,13 @@ def build_server_access_summary_payload(*, user_store: UserStore, server_code: s
             }
         )
     items.sort(key=lambda entry: str(entry.get("display_name") or entry.get("username") or "").lower())
+    summary = _build_access_operational_summary(items=items)
     return {
         "ok": True,
         "server_code": normalized_server,
         "items": items,
         "count": len(items),
+        "summary": summary,
         "permission_totals": [
             {"code": code, "count": count}
             for code, count in sorted(permission_totals.items(), key=lambda pair: (-pair[1], pair[0]))

@@ -69,8 +69,8 @@ A rollout step is blocked unless:
 
 ## Rollout State Matrix
 
-Status: Phase B complete baseline  
-Date: 2026-04-14  
+Status: Phase B complete baseline
+Date: 2026-04-14
 Scope: pilot scenario `blackberry + complaint`
 
 ### Purpose
@@ -98,7 +98,7 @@ Define migration rollout states and map them to concrete backend flags.
 ### Flag mapping
 
 | Rollout state | `pilot_runtime_adapter_v1` | `pilot_shadow_compare_v1` | Effective behavior |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `legacy_only` | `off` | `off` | legacy context only |
 | `shadow_compare` | `off` | `internal` / `beta` / `all` | compare adapter vs legacy, keep legacy active |
 | `new_runtime_active` | `internal` / `beta` / `all` | `internal` / `beta` / `all` | adapter context active, drift still logged |
@@ -106,7 +106,7 @@ Define migration rollout states and map them to concrete backend flags.
 ### Existing supporting flags
 
 | Flag | Role during pilot |
-|---|---|
+| --- | --- |
 | `documents_v2` | keeps case/document/version bridge active for generated outputs |
 | `validation_gate_v1` | keeps validation execution visible during pilot generation |
 | `citations_required` | independent policy gate for citation readiness |
@@ -119,6 +119,13 @@ For `blackberry + complaint`, `new_runtime_active` must not be enabled until:
 - route compatibility remains unchanged
 - provenance-critical fields still appear in generated document snapshots
 
+### Historical note
+
+The earlier standalone rollout matrix is preserved only in the April 2026 archive for historical reference.
 ### Next extension point
 
 When B.1 table design is finalized, these flags should switch from legacy-seeded adapter reads to DB-backed published entity reads without changing the rollout semantics above.
+
+### Historical note
+
+The earlier standalone rollout matrix is preserved only in the April 2026 archive for historical reference.

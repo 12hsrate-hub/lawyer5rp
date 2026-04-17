@@ -2778,7 +2778,7 @@ function derivePilotScaleOutContext({ decision, warningRows, rollbackHistory, si
     status: "ready",
     tone: "success-soft",
     note: `Pilot is stable enough to evaluate reuse. Rollback history entries: ${String(rollbackCount)}.`,
-    nextStep: "Use SCALE_OUT_CHECKLIST_TEMPLATE.md to approve the next server or procedure candidate.",
+    nextStep: "Use docs/templates/SCALE_OUT_CHECKLIST_TEMPLATE.md to approve the next server or procedure candidate.",
   };
 }
 
@@ -2818,7 +2818,7 @@ function derivePilotNextCandidateContext({ rolloutState, decision, signOff, scal
     tone: "success-soft",
     candidate: "Recommend one bounded next candidate",
     note: "Pilot observation is clean enough to approve one more tightly-scoped server or procedure candidate.",
-    nextStep: "Use SCALE_OUT_CHECKLIST_TEMPLATE.md to select a single next candidate and preserve rollback isolation.",
+    nextStep: "Use docs/templates/SCALE_OUT_CHECKLIST_TEMPLATE.md to select a single next candidate and preserve rollback isolation.",
   };
 }
 function derivePilotObservationSignOff({ rolloutState, warningRows, fallbackToLegacyUsage, rollbackHistory }) {
@@ -3132,27 +3132,27 @@ function renderPilotRolloutMarkup(payload) {
           <tbody>
             <tr>
               <td>Readiness before any rollout change</td>
-              <td><code>PILOT_ACTIVATION_CHECKLIST.md</code></td>
+              <td><code>NEW_SERVER_CHECKLIST.md</code></td>
               <td>Before enabling or expanding runtime activation.</td>
             </tr>
             <tr>
               <td>Record rollout decision and observation window</td>
-              <td><code>PILOT_CUTOVER_REPORT_TEMPLATE.md</code></td>
+              <td><code>docs/templates/PILOT_CUTOVER_REPORT_TEMPLATE.md</code></td>
               <td>Immediately after a proceed, hold, or rollback decision.</td>
             </tr>
             <tr>
               <td>Prepare next server or procedure rollout</td>
-              <td><code>SCALE_OUT_CHECKLIST_TEMPLATE.md</code></td>
+              <td><code>docs/templates/SCALE_OUT_CHECKLIST_TEMPLATE.md</code></td>
               <td>After observation is accepted and reuse starts.</td>
             </tr>
             <tr>
               <td>Log each observation-window review</td>
-              <td><code>PILOT_OBSERVATION_LOG_TEMPLATE.md</code></td>
+              <td><code>docs/templates/PILOT_OBSERVATION_LOG_TEMPLATE.md</code></td>
               <td>During steady-state monitoring before sign-off or rollback.</td>
             </tr>
             <tr>
               <td>Track legacy cleanup candidates</td>
-              <td><code>LEGACY_DEPRECATION_CANDIDATES.md</code></td>
+              <td><code>docs/LEGACY_COMPATIBILITY.md</code></td>
               <td>During observation and after rollback risk is low.</td>
             </tr>
           </tbody>
@@ -3201,7 +3201,7 @@ function renderPilotRolloutMarkup(payload) {
             </tr>
             <tr>
               <td>Review journal</td>
-              <td>Use <code>PILOT_OBSERVATION_LOG_TEMPLATE.md</code> for every observation checkpoint until sign-off.</td>
+              <td>Use <code>docs/templates/PILOT_OBSERVATION_LOG_TEMPLATE.md</code> for every observation checkpoint until sign-off.</td>
             </tr>
           </tbody>
         </table>

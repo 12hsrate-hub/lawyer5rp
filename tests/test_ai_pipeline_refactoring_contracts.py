@@ -775,8 +775,8 @@ def test_suggest_forced_norms_uses_shared_server_context_resolver(monkeypatch):
     monkeypatch.setattr(ai_service, "_suggest_is_mask_exception_case", lambda query: True)
     monkeypatch.setattr(
         ai_service,
-        "resolve_server_config",
-        lambda **kwargs: type("Cfg", (), {"law_qa_bundle_path": "/tmp/bundle.json"})(),
+        "resolve_runtime_pack_law_bundle_path",
+        lambda **kwargs: "/tmp/bundle.json",
     )
     monkeypatch.setattr(
         ai_service,

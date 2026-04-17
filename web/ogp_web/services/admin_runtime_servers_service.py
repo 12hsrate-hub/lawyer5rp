@@ -3,8 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 from ogp_web.server_config import build_runtime_resolution_snapshot
+from ogp_web.services.capability_registry_service import list_capability_definitions
+from ogp_web.services.law_context_readiness_service import build_law_context_readiness_service
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
 from ogp_web.services.law_version_service import resolve_active_law_version
+from ogp_web.services.published_runtime_gate_service import resolve_published_runtime_requirement
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
 from ogp_web.storage.runtime_servers_store import RuntimeServerRecord, RuntimeServersStore
@@ -35,6 +38,32 @@ def _build_state_entry(*, ok: bool, detail: str) -> dict[str, Any]:
         "ok": bool(ok),
         "detail": str(detail or "").strip(),
     }
+
+
+def _pack_metadata_declares_key(*, pack_metadata: dict[str, Any], key: str) -> bool:
+    return key in pack_metadata
+
+
+def _metadata_sequence_defined(value: Any) -> bool:
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return bool(tuple(str(item).strip() for item in value if str(item).strip()))
+    return False
+
+
+def _metadata_mapping_defined(value: Any) -> bool:
+    return bool(dict(value or {})) if isinstance(value, dict) else False
+
+
+def _resolve_pack_first_bool(
+    *,
+    pack_metadata: dict[str, Any],
+    keys: tuple[str, ...],
+    pack_defined: bool,
+    runtime_defined: bool,
+) -> bool:
+    if any(_pack_metadata_declares_key(pack_metadata=pack_metadata, key=key) for key in keys):
+        return bool(pack_defined)
+    return bool(runtime_defined)
 
 
 def _build_projection_bridge_summary(
@@ -193,6 +222,21 @@ def _build_runtime_alignment_summary(
     }
 
 
+def _build_law_context_readiness_payload(
+    *,
+    server_code: str,
+    runtime_servers_store: RuntimeServersStore,
+    source_sets_store: LawSourceSetsStore | None = None,
+    projections_store: ServerEffectiveLawProjectionsStore | None = None,
+) -> dict[str, Any]:
+    readiness = build_law_context_readiness_service(
+        backend=getattr(runtime_servers_store, "backend", None),
+        source_sets_store=source_sets_store,
+        projections_store=projections_store,
+    ).get_readiness(server_code=server_code)
+    return readiness.to_payload()
+
+
 def _build_runtime_server_onboarding_payload(
     *,
     server: RuntimeServerRecord | None,
@@ -202,10 +246,12 @@ def _build_runtime_server_onboarding_payload(
     binding_source: str,
     smoke_tests_passed: bool,
     smoke_tests_checked: bool,
+    law_context_readiness: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     resolution_mode = str(resolution.get("resolution_mode") or "neutral_fallback")
     resolution_label = str(resolution.get("resolution_label") or resolution_mode.replace("_", " "))
     runtime_config = resolution.get("runtime_config")
+    pack_metadata = dict(resolution.get("pack_metadata") or {})
     requires_explicit_runtime_pack = bool(resolution.get("requires_explicit_runtime_pack"))
     rollback_reference = (
         f"/api/admin/runtime-servers/{server.code}/deactivate"
@@ -217,15 +263,43 @@ def _build_runtime_server_onboarding_payload(
         or tuple(getattr(runtime_config, "procedure_types", ()) or ())
         or frozenset(getattr(runtime_config, "enabled_pages", frozenset()) or frozenset())
     )
-    law_sources_defined = bool(
+    runtime_law_sources_defined = bool(
         tuple(getattr(runtime_config, "law_qa_sources", ()) or ())
         or str(getattr(runtime_config, "law_qa_bundle_path", "") or "").strip()
     )
+    pack_law_sources_defined = bool(
+        _metadata_sequence_defined(pack_metadata.get("law_qa_sources"))
+        or str(pack_metadata.get("law_qa_bundle_path") or "").strip()
+    )
+    law_sources_defined = _resolve_pack_first_bool(
+        pack_metadata=pack_metadata,
+        keys=("law_qa_sources", "law_qa_bundle_path"),
+        pack_defined=pack_law_sources_defined,
+        runtime_defined=runtime_law_sources_defined,
+    )
     canonical_bindings_defined = bool(source_set_bindings)
     runtime_bindings_defined = bool(runtime_bindings)
-    template_bindings_defined = bool(dict(getattr(runtime_config, "template_bindings", {}) or {}))
-    validation_profiles_defined = bool(dict(getattr(runtime_config, "validation_profiles", {}) or {}))
-    feature_flags_defined = bool(frozenset(getattr(runtime_config, "feature_flags", frozenset()) or frozenset()))
+    runtime_template_bindings_defined = bool(dict(getattr(runtime_config, "template_bindings", {}) or {}))
+    template_bindings_defined = _resolve_pack_first_bool(
+        pack_metadata=pack_metadata,
+        keys=("template_bindings",),
+        pack_defined=_metadata_mapping_defined(pack_metadata.get("template_bindings")),
+        runtime_defined=runtime_template_bindings_defined,
+    )
+    runtime_validation_profiles_defined = bool(dict(getattr(runtime_config, "validation_profiles", {}) or {}))
+    validation_profiles_defined = _resolve_pack_first_bool(
+        pack_metadata=pack_metadata,
+        keys=("validation_profiles",),
+        pack_defined=_metadata_mapping_defined(pack_metadata.get("validation_profiles")),
+        runtime_defined=runtime_validation_profiles_defined,
+    )
+    runtime_feature_flags_defined = bool(frozenset(getattr(runtime_config, "feature_flags", frozenset()) or frozenset()))
+    feature_flags_defined = _resolve_pack_first_bool(
+        pack_metadata=pack_metadata,
+        keys=("feature_flags",),
+        pack_defined=_metadata_sequence_defined(pack_metadata.get("feature_flags")),
+        runtime_defined=runtime_feature_flags_defined,
+    )
     admin_visibility_defined = bool(server)
 
     bootstrap_ok = bool(server) and identity_defined and not requires_explicit_runtime_pack
@@ -314,6 +388,72 @@ def _build_runtime_server_onboarding_payload(
         "source_set_binding_count": len(source_set_bindings or []),
         "runtime_binding_count": len(runtime_bindings or []),
         "uses_runtime_bindings_fallback": bool(runtime_bindings_defined and not canonical_bindings_defined),
+        "law_context_status": str((law_context_readiness or {}).get("status") or "").strip().lower() or None,
+        "law_context_mode": str((law_context_readiness or {}).get("mode") or "").strip().lower() or None,
+        "law_context_reason_code": str((law_context_readiness or {}).get("reason_code") or "").strip().lower() or None,
+    }
+
+
+def _build_runtime_requirements_payload(
+    *,
+    resolution: dict[str, Any],
+    law_context_readiness: dict[str, Any] | None,
+) -> dict[str, Any]:
+    law_context_payload = dict(law_context_readiness or {})
+    law_context_ready = bool(law_context_payload.get("is_ready")) and str(law_context_payload.get("status") or "").strip().lower() == "ready"
+    items: list[dict[str, Any]] = []
+    compatibility_count = 0
+    blocked_count = 0
+    for capability in list_capability_definitions():
+        requirement = resolve_published_runtime_requirement(
+            capability=capability,
+            runtime_resolution_snapshot=resolution,
+        )
+        if capability.requires_law_context and not law_context_ready:
+            route_status = "blocked"
+            route_ready = False
+            route_reason_code = str(law_context_payload.get("reason_code") or "law_context_not_ready")
+            route_reason_detail = str(
+                law_context_payload.get("reason_detail") or "Selected server law context is not ready for this capability."
+            )
+        else:
+            route_ready = requirement.is_ready
+            if requirement.compatibility_mode:
+                route_status = "ready_with_compatibility"
+            else:
+                route_status = "ready" if route_ready else "blocked"
+            route_reason_code = requirement.reason_code
+            route_reason_detail = requirement.reason_detail
+        if route_status == "ready_with_compatibility":
+            compatibility_count += 1
+        if not route_ready:
+            blocked_count += 1
+        items.append(
+            {
+                "section_code": capability.section_code,
+                "capability_code": capability.capability_code,
+                "executor_code": capability.executor_code,
+                "requires_law_context": bool(capability.requires_law_context),
+                "target_truth": str(capability.target_truth or ""),
+                "route_ready": route_ready,
+                "route_status": route_status,
+                "route_reason_code": route_reason_code,
+                "route_reason_detail": route_reason_detail,
+                "runtime_requirement": requirement.to_payload(),
+            }
+        )
+    status = "blocked"
+    if blocked_count == 0:
+        status = "ready_with_compatibility" if compatibility_count > 0 else "ready"
+    return {
+        "status": status,
+        "is_ready": blocked_count == 0,
+        "compatibility_mode": compatibility_count > 0,
+        "total_count": len(items),
+        "ready_count": len(items) - blocked_count,
+        "blocked_count": blocked_count,
+        "compatibility_count": compatibility_count,
+        "items": items,
     }
 
 
@@ -396,6 +536,16 @@ def _build_runtime_server_item_payload(
         server=record,
         include_health=False,
     )
+    law_context_readiness = _build_law_context_readiness_payload(
+        server_code=record.code,
+        runtime_servers_store=store,
+        source_sets_store=source_sets_store,
+        projections_store=projections_store,
+    )
+    runtime_requirements = _build_runtime_requirements_payload(
+        resolution=context["resolution"],
+        law_context_readiness=law_context_readiness,
+    )
     payload["onboarding"] = _build_runtime_server_onboarding_payload(
         server=record,
         resolution=context["resolution"],
@@ -404,7 +554,10 @@ def _build_runtime_server_item_payload(
         binding_source=str(context["binding_source"] or "runtime_bindings"),
         smoke_tests_passed=False,
         smoke_tests_checked=False,
+        law_context_readiness=law_context_readiness,
     )
+    payload["law_context_readiness"] = law_context_readiness
+    payload["runtime_requirements"] = runtime_requirements
     payload["projection_bridge"] = _build_projection_bridge_summary(
         server_code=record.code,
         projections_store=projections_store,
@@ -516,6 +669,16 @@ def build_runtime_server_health_payload(
     bindings = context["bindings"]
     active_law_version = context["active_law_version"]
     chunk_count = context["chunk_count"]
+    law_context_readiness = _build_law_context_readiness_payload(
+        server_code=normalized_code,
+        runtime_servers_store=runtime_servers_store,
+        source_sets_store=source_sets_store,
+        projections_store=projections_store,
+    )
+    runtime_requirements = _build_runtime_requirements_payload(
+        resolution=context["resolution"],
+        law_context_readiness=law_context_readiness,
+    )
     onboarding = _build_runtime_server_onboarding_payload(
         server=server,
         resolution=context["resolution"],
@@ -524,6 +687,7 @@ def build_runtime_server_health_payload(
         binding_source=str(context["binding_source"] or "runtime_bindings"),
         smoke_tests_passed=bool(server and server.is_active and active_law_version and chunk_count > 0),
         smoke_tests_checked=True,
+        law_context_readiness=law_context_readiness,
     )
 
     checks = {
@@ -562,6 +726,27 @@ def build_runtime_server_health_payload(
             "chunk_count": chunk_count,
             "runtime_shell_artifact_present": bool(active_law_set or active_law_version),
         },
+        "law_context": {
+            "ok": bool(law_context_readiness.get("is_ready")),
+            "detail": str(law_context_readiness.get("reason_code") or law_context_readiness.get("status") or "unknown"),
+            "status": str(law_context_readiness.get("status") or ""),
+            "mode": str(law_context_readiness.get("mode") or ""),
+            "reason_code": str(law_context_readiness.get("reason_code") or ""),
+            "reason_detail": str(law_context_readiness.get("reason_detail") or ""),
+            "active_law_version_id": law_context_readiness.get("active_law_version_id"),
+            "projection_run_id": ((law_context_readiness.get("projection") or {}).get("run_id")),
+            "binding_count": len(((law_context_readiness.get("bindings") or {}).get("active_binding_ids") or [])),
+            "compatibility_mode": str(law_context_readiness.get("status") or "").strip().lower() == "ready_with_compatibility",
+        },
+        "runtime_requirements": {
+            "ok": bool(runtime_requirements.get("is_ready")),
+            "detail": str(runtime_requirements.get("status") or "unknown"),
+            "status": str(runtime_requirements.get("status") or ""),
+            "ready_count": int(runtime_requirements.get("ready_count") or 0),
+            "total_count": int(runtime_requirements.get("total_count") or 0),
+            "blocked_count": int(runtime_requirements.get("blocked_count") or 0),
+            "compatibility_count": int(runtime_requirements.get("compatibility_count") or 0),
+        },
         "config_resolution": {
             "ok": str(onboarding.get("resolution_mode") or "").strip().lower() == "published_pack"
             and not bool(onboarding.get("requires_explicit_runtime_pack")),
@@ -592,7 +777,7 @@ def build_runtime_server_health_payload(
             ),
         },
     }
-    required_check_codes = ("server", "bindings", "activation", "health", "config_resolution")
+    required_check_codes = ("server", "bindings", "activation", "health", "law_context", "runtime_requirements", "config_resolution")
     ready_count = sum(1 for code in required_check_codes if checks.get(code, {}).get("ok"))
     projection_bridge = _build_projection_bridge_summary(
         server_code=normalized_code,
@@ -619,6 +804,8 @@ def build_runtime_server_health_payload(
         "server_code": normalized_code,
         "checks": checks,
         "onboarding": onboarding,
+        "law_context_readiness": law_context_readiness,
+        "runtime_requirements": runtime_requirements,
         "projection_bridge": projection_bridge,
         "runtime_provenance": runtime_provenance,
         "runtime_alignment": runtime_alignment,
