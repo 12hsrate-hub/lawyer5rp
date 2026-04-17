@@ -381,6 +381,7 @@ window.OGPAdminServerWorkspace = {
         const activationGap = laws.activation_gap || state.lawsDiff?.activation_gap || {};
         const runtimeShellDebt = laws.runtime_shell_debt || state.lawsDiff?.runtime_shell_debt || {};
         const runtimeConvergence = laws.runtime_convergence || state.lawsDiff?.runtime_convergence || {};
+        const cutoverReadiness = laws.cutover_readiness || state.lawsDiff?.cutover_readiness || {};
         const effective = state.lawsEffective || {};
       const effectiveItems = Array.isArray(effective.items) ? effective.items.slice(0, 12) : [];
       const fillSummary = laws.fill_check || effective.summary || {};
@@ -470,6 +471,11 @@ window.OGPAdminServerWorkspace = {
               <span class="legal-field__label">Runtime convergence</span>
               <div><strong>${escapeHtml(String(runtimeConvergence.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeConvergence.detail || "Runtime convergence summary is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Cutover readiness</span>
+              <div><strong>${escapeHtml(String(cutoverReadiness.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(cutoverReadiness.detail || "Cutover readiness summary is not available yet."))}</div>
             </div>
         </div>
         <div class="legal-subcard">

@@ -825,6 +825,59 @@ def build_runtime_convergence_summary(
     }
 
 
+def build_cutover_readiness_summary(
+    *,
+    projection_bridge_readiness: dict[str, Any],
+    runtime_convergence: dict[str, Any],
+    runtime_shell_debt: dict[str, Any],
+    activation_gap: dict[str, Any],
+) -> dict[str, Any]:
+    readiness = dict(projection_bridge_readiness or {})
+    convergence = dict(runtime_convergence or {})
+    shell_debt = dict(runtime_shell_debt or {})
+    gap = dict(activation_gap or {})
+
+    readiness_status = str(readiness.get("status") or "").strip().lower()
+    convergence_status = str(convergence.get("status") or "").strip().lower()
+    shell_debt_status = str(shell_debt.get("status") or "").strip().lower()
+    gap_status = str(gap.get("status") or "").strip().lower()
+
+    if convergence_status == "converged" and shell_debt_status == "low" and gap_status == "closed":
+        status = "ready_for_cutover"
+        detail = "Server looks ready for a controlled compatibility-bridge shrinking step."
+        next_step = "Можно планировать controlled cutover review."
+    elif readiness_status == "not_configured":
+        status = "not_ready"
+        detail = str(readiness.get("detail") or "Projection bridge is not configured yet.")
+        next_step = str(readiness.get("next_step") or "Сначала завершите bindings и preview readiness.").strip()
+    elif gap_status in {"open", "drift", "blocked"}:
+        status = "needs_activation_alignment"
+        detail = "Runtime still needs activation-side alignment before any cutover discussion."
+        next_step = str(gap.get("next_step") or "Сначала закройте activation gap.").strip()
+    elif shell_debt_status in {"high", "medium"}:
+        status = "compatibility_dependent"
+        detail = "Server still depends too much on compatibility shell behavior for cutover."
+        next_step = str(shell_debt.get("next_step") or "Продолжайте сжимать runtime shell debt.").strip()
+    elif convergence_status in {"blocked", "activation_pending", "compatibility_mode"}:
+        status = "stabilize_first"
+        detail = "Server still needs convergence stabilization before considering cutover."
+        next_step = str(convergence.get("next_step") or "Сначала стабилизируйте runtime convergence.").strip()
+    else:
+        status = "monitor"
+        detail = "Server is moving toward cutover readiness, but the current read model is not decisive yet."
+        next_step = "Продолжайте следить за convergence, debt и activation gap."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "readiness_status": readiness_status,
+        "convergence_status": convergence_status,
+        "shell_debt_status": shell_debt_status,
+        "activation_gap_status": gap_status,
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -915,6 +968,12 @@ def build_server_laws_summary_payload(
         activation_gap=activation_gap,
         runtime_shell_debt=runtime_shell_debt,
     )
+    cutover_readiness = build_cutover_readiness_summary(
+        projection_bridge_readiness=bridge_readiness,
+        runtime_convergence=runtime_convergence,
+        runtime_shell_debt=runtime_shell_debt,
+        activation_gap=activation_gap,
+    )
     return {
         "server_code": normalized_server,
         "bindings": bindings,
@@ -933,6 +992,7 @@ def build_server_laws_summary_payload(
         "activation_gap": activation_gap,
         "runtime_shell_debt": runtime_shell_debt,
         "runtime_convergence": runtime_convergence,
+        "cutover_readiness": cutover_readiness,
         "latest_projection_run": _serialize_run(current_run),
         "fill_check": fill_summary,
         "diff": diff_summary,
@@ -1120,6 +1180,12 @@ def build_server_laws_diff_payload(
         activation_gap=activation_gap,
         runtime_shell_debt=runtime_shell_debt,
     )
+    cutover_readiness = build_cutover_readiness_summary(
+        projection_bridge_readiness=bridge_readiness,
+        runtime_convergence=runtime_convergence,
+        runtime_shell_debt=runtime_shell_debt,
+        activation_gap=activation_gap,
+    )
     return {
         "server_code": normalized_server,
         "current_run": _serialize_run(current_run),
@@ -1135,5 +1201,6 @@ def build_server_laws_diff_payload(
         "activation_gap": activation_gap,
         "runtime_shell_debt": runtime_shell_debt,
         "runtime_convergence": runtime_convergence,
+        "cutover_readiness": cutover_readiness,
         "summary": diff_summary,
     }
