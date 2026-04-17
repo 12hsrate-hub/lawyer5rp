@@ -16,6 +16,14 @@ from ogp_web.services.admin_runtime_servers_service import (
     set_runtime_server_active_payload,
     update_runtime_server_payload,
 )
+from ogp_web.services.admin_server_laws_workspace_service import (
+    build_activation_gap_summary,
+    build_bridge_shrink_checklist_summary,
+    build_cutover_blockers_breakdown_summary,
+    build_cutover_readiness_summary,
+    build_promotion_blockers_summary,
+    build_runtime_convergence_summary,
+)
 from ogp_web.services.law_version_service import ResolvedLawVersion
 from tests.second_server_fixtures import orange_published_pack
 
@@ -235,3 +243,56 @@ def test_second_server_published_pack_health_payload_reports_release_candidate_s
     assert payload["projection_bridge"]["law_set_id"] == 2
     assert payload["projection_bridge"]["law_version_id"] == 88
     assert payload["projection_bridge"]["matches_active_law_version"] is True
+
+
+def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
+    promotion_blockers = build_promotion_blockers_summary(
+        projection_bridge_readiness={"status": "ready", "detail": "Bridge readiness signals are green.", "blockers": [], "next_step": ""},
+        promotion_candidate={"status": "review_needed", "detail": "Latest projection candidate differs from the previous baseline and should be reviewed.", "next_step": "Проверьте diff и подтвердите, что изменения ожидаемы."},
+        promotion_delta={"status": "attention", "detail": "Latest projection candidate has changes or content gaps that deserve review."},
+        runtime_item_parity={"status": "aligned", "detail": "Aligned."},
+        runtime_version_parity={"status": "aligned", "detail": "Aligned."},
+        projection_bridge_lifecycle={"status": "activated", "detail": "Activated."},
+    )
+    assert promotion_blockers["status"] == "review"
+
+    activation_gap = build_activation_gap_summary(
+        projection_bridge_readiness={"status": "ready", "detail": "Bridge readiness signals are green.", "blockers": [], "next_step": ""},
+        runtime_version_parity={"status": "aligned", "detail": "Aligned.", "active_law_version_id": 247, "projected_law_version_id": 247},
+        projection_bridge_lifecycle={"status": "activated", "detail": "Activated."},
+        promotion_blockers=promotion_blockers,
+    )
+    assert activation_gap["status"] == "closed"
+
+    runtime_shell_debt = {"status": "low", "detail": "Runtime shell debt looks low in the current read model.", "next_step": ""}
+    runtime_convergence = build_runtime_convergence_summary(
+        promotion_blockers=promotion_blockers,
+        activation_gap=activation_gap,
+        runtime_shell_debt=runtime_shell_debt,
+    )
+    assert runtime_convergence["status"] == "converged"
+
+    cutover_readiness = build_cutover_readiness_summary(
+        projection_bridge_readiness={"status": "ready", "detail": "Bridge readiness signals are green.", "blockers": [], "next_step": ""},
+        runtime_convergence=runtime_convergence,
+        runtime_shell_debt=runtime_shell_debt,
+        activation_gap=activation_gap,
+    )
+    assert cutover_readiness["status"] == "ready_for_cutover"
+
+    bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
+        projection_bridge_readiness={"status": "ready", "detail": "Bridge readiness signals are green.", "blockers": [], "next_step": ""},
+        activation_gap=activation_gap,
+        runtime_shell_debt=runtime_shell_debt,
+        runtime_convergence=runtime_convergence,
+        cutover_readiness=cutover_readiness,
+    )
+    assert bridge_shrink_checklist["status"] == "ready"
+
+    cutover_blockers_breakdown = build_cutover_blockers_breakdown_summary(
+        promotion_blockers=promotion_blockers,
+        runtime_shell_debt=runtime_shell_debt,
+        activation_gap=activation_gap,
+        cutover_readiness=cutover_readiness,
+    )
+    assert cutover_blockers_breakdown["status"] == "clear"
