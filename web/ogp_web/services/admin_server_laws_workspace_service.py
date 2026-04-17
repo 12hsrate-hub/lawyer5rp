@@ -1164,11 +1164,20 @@ def build_runtime_cutover_mode_summary(
     shell_stage = str(convergence.get("shell_stage") or shell_debt.get("shell_stage") or "").strip().lower()
     config_path_role = str(config_debt.get("path_role") or "").strip().lower()
     config_path_stage = str(config_debt.get("path_stage") or "").strip().lower()
+    artifact_tail_candidate = (
+        shell_role == "runtime_shell_artifact"
+        and config_debt_status == "low"
+        and cutover_status in {"stabilize_first", "monitor", "ready_for_cutover"}
+    )
 
     if cutover_status == "ready_for_cutover" and convergence_status == "converged" and shell_debt_status == "low" and config_debt_status == "low":
         status = "projection_preferred"
         detail = "Server now looks suitable for a projection-preferred runtime posture."
         next_step = "Можно рассматривать controlled shrinking compatibility bridge для этого сервера."
+    elif artifact_tail_candidate:
+        status = "cutover_candidate"
+        detail = "Server is down to a final runtime-shell-artifact tail and now reads as a bounded cutover candidate."
+        next_step = "Доведите последний runtime shell artifact tail до removal/blocked state."
     elif config_debt_status == "high" or cutover_status in {"compatibility_dependent", "needs_activation_alignment", "not_ready"}:
         status = "compatibility_mode"
         detail = "Server still depends on compatibility-era runtime paths."
@@ -1797,7 +1806,9 @@ def build_legacy_path_allowance_summary(
         allowance_items.append("neutral_fallback")
     elif resolution_status == "transitional_bootstrap":
         allowance_items.append("bootstrap_pack")
-    if operating_mode_status == "compatibility_runtime":
+    if operating_mode_status == "compatibility_runtime" or (
+        operating_mode_status == "transitional_runtime" and shell_role == "runtime_shell_artifact"
+    ):
         allowance_items.append("runtime_shell_artifact")
     elif shell_debt_status in {"high", "medium"}:
         allowance_items.append("legacy_shell_debt")
