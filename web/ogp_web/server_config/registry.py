@@ -35,7 +35,7 @@ def _is_runtime_addressable_resolution(*, resolution_mode: str, has_runtime_meta
     if normalized_mode == "published_pack":
         return True
     if normalized_mode == "bootstrap_pack":
-        return True
+        return base_config is not None
     if base_config is not None:
         return True
     if has_runtime_metadata:

@@ -57,6 +57,28 @@ class ServerConfigRegistryTests(unittest.TestCase):
         self.assertEqual(pack["status"], "published")
         self.assertEqual(pack["metadata"]["template_bindings"]["complaint"]["template_key"], "complaint_orange_v1")
 
+    def test_bootstrap_pack_without_base_config_is_not_runtime_addressable(self):
+        original_bootstrap = dict(registry._BOOTSTRAP_SERVER_PACKS)
+        registry._BOOTSTRAP_SERVER_PACKS["orange"] = {
+            "server_code": "orange",
+            "version": 1,
+            "status": "published",
+            "metadata": {"organizations": ["GOV"], "procedure_types": []},
+        }
+        try:
+            snapshot = registry.build_runtime_resolution_snapshot(server_code="orange", title="Orange City")
+            self.assertEqual(snapshot["resolution_mode"], "bootstrap_pack")
+            self.assertFalse(snapshot["is_runtime_addressable"])
+            with patch("ogp_web.server_config.registry._load_codes_from_config_repo", return_value=None), patch(
+                "ogp_web.server_config.registry._load_server_rows_from_db",
+                return_value=[{"code": "orange", "title": "Orange City", "is_active": True}],
+            ):
+                with self.assertRaises(registry.ServerUnavailableError):
+                    registry.get_server_config("orange")
+        finally:
+            registry._BOOTSTRAP_SERVER_PACKS.clear()
+            registry._BOOTSTRAP_SERVER_PACKS.update(original_bootstrap)
+
     def test_db_only_server_is_no_longer_runtime_addressable_through_neutral_fallback(self):
         with patch("ogp_web.server_config.registry._load_codes_from_config_repo", return_value=None), patch(
             "ogp_web.server_config.registry._load_server_rows_from_db",
