@@ -15,6 +15,8 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_cutover_readiness_summary,
     build_runtime_convergence_summary,
     build_runtime_shell_debt_summary,
+    build_bridge_shrink_checklist_summary,
+    build_cutover_blockers_breakdown_summary,
     build_server_laws_recheck_payload,
 )
 from ogp_web.services.content_workflow_service import ContentWorkflowService
@@ -460,6 +462,53 @@ def _build_cutover_readiness_issue(cutover_readiness: dict[str, Any]) -> dict[st
     }
 
 
+def _build_bridge_shrink_checklist_issue(bridge_shrink_checklist: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((bridge_shrink_checklist or {}).get("status") or "").strip().lower()
+    if status in {"", "ready"}:
+        return None
+    detail = (
+        f"{str((bridge_shrink_checklist or {}).get('detail') or '').strip()} "
+        f"completed={int((bridge_shrink_checklist or {}).get('completed_count') or 0)}/"
+        f"{int((bridge_shrink_checklist or {}).get('total_count') or 0)}. "
+        f"{str((bridge_shrink_checklist or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "laws_bridge_shrink_checklist",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Bridge shrink checklist требует внимания",
+        "detail": detail,
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
+def _build_cutover_blockers_breakdown_issue(cutover_blockers_breakdown: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((cutover_blockers_breakdown or {}).get("status") or "").strip().lower()
+    if status in {"", "clear"}:
+        return None
+    category_counts = dict((cutover_blockers_breakdown or {}).get("category_counts") or {})
+    detail = (
+        f"{str((cutover_blockers_breakdown or {}).get('detail') or '').strip()} "
+        f"promotion={int(category_counts.get('promotion') or 0)} "
+        f"activation={int(category_counts.get('activation') or 0)} "
+        f"shell_debt={int(category_counts.get('shell_debt') or 0)} "
+        f"cutover={int(category_counts.get('cutover') or 0)}. "
+        f"{str((cutover_blockers_breakdown or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "laws_cutover_blockers_breakdown",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Cutover blockers требуют внимания",
+        "detail": detail,
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
 def build_server_audit_payload(
     *,
     server_code: str,
@@ -652,6 +701,19 @@ def build_server_issues_payload(
         runtime_shell_debt=runtime_shell_debt,
         activation_gap=activation_gap,
     )
+    bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
+        projection_bridge_readiness=projection_bridge_readiness,
+        activation_gap=activation_gap,
+        runtime_shell_debt=runtime_shell_debt,
+        runtime_convergence=runtime_convergence,
+        cutover_readiness=cutover_readiness,
+    )
+    cutover_blockers_breakdown = build_cutover_blockers_breakdown_summary(
+        promotion_blockers=promotion_blockers,
+        runtime_shell_debt=runtime_shell_debt,
+        activation_gap=activation_gap,
+        cutover_readiness=cutover_readiness,
+    )
     items: list[dict[str, Any]] = []
     if bool(onboarding.get("requires_explicit_runtime_pack")):
         items.append(
@@ -724,6 +786,12 @@ def build_server_issues_payload(
     cutover_readiness_issue = _build_cutover_readiness_issue(cutover_readiness)
     if cutover_readiness_issue is not None:
         items.append(cutover_readiness_issue)
+    bridge_shrink_checklist_issue = _build_bridge_shrink_checklist_issue(bridge_shrink_checklist)
+    if bridge_shrink_checklist_issue is not None:
+        items.append(bridge_shrink_checklist_issue)
+    cutover_blockers_breakdown_issue = _build_cutover_blockers_breakdown_issue(cutover_blockers_breakdown)
+    if cutover_blockers_breakdown_issue is not None:
+        items.append(cutover_blockers_breakdown_issue)
     integrity = dict(dashboard_payload.get("integrity") or {})
     if str(integrity.get("status") or "") in {"warn", "critical"}:
         items.append(
@@ -792,7 +860,7 @@ def execute_server_issue_action_payload(
     normalized_server = normalize_runtime_server_code(server_code)
     normalized_issue = str(issue_id or "").strip().lower()
     normalized_action = str(action or "").strip().lower()
-    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_blockers", "laws_activation_gap", "laws_runtime_shell_debt", "laws_runtime_convergence", "laws_cutover_readiness"} and normalized_action == "recheck":
+    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_blockers", "laws_activation_gap", "laws_runtime_shell_debt", "laws_runtime_convergence", "laws_cutover_readiness", "laws_bridge_shrink_checklist", "laws_cutover_blockers_breakdown"} and normalized_action == "recheck":
         result = build_server_laws_recheck_payload(
             server_code=normalized_server,
             runtime_servers_store=runtime_servers_store,
