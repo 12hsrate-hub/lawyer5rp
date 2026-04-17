@@ -1459,6 +1459,23 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("Обновите страницу", payload["message"])
         self.assertIsInstance(payload.get("switch_actions"), list)
 
+    def test_profile_selected_server_rejects_db_only_second_server_without_runtime_pack(self):
+        self._register_verify_and_login("tester_switch_orange_fallback", "draft-switch-orange-fallback@example.com")
+        with patch("ogp_web.server_config.registry._load_codes_from_config_repo", return_value=None), patch(
+            "ogp_web.server_config.registry._load_server_rows_from_db",
+            return_value=[
+                {"code": "blackberry", "title": "BlackBerry", "is_active": True},
+                {"code": "orange", "title": "Orange City", "is_active": True},
+            ],
+        ), patch(
+            "ogp_web.server_config.registry._load_effective_pack_from_db",
+            return_value=None,
+        ):
+            response = self.client.patch("/api/profile/selected-server", json={"server_code": "orange"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("недоступен", " ".join(response.json().get("detail") or []).lower())
+
     def test_complaint_draft_accepts_envelope_payload_and_flattens_document(self):
         self._register_verify_and_login("tester_envelope", "draft-envelope@example.com")
 

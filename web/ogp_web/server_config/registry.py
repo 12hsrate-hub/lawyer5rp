@@ -30,6 +30,19 @@ _RESOLUTION_MODE_LABELS = {
 }
 
 
+def _is_runtime_addressable_resolution(*, resolution_mode: str, has_runtime_metadata: bool, base_config: ServerConfig | None) -> bool:
+    normalized_mode = _normalized_code(resolution_mode)
+    if normalized_mode == "published_pack":
+        return True
+    if normalized_mode == "bootstrap_pack":
+        return True
+    if base_config is not None:
+        return True
+    if has_runtime_metadata:
+        return True
+    return False
+
+
 class ServerUnavailableError(AuthError):
     pass
 
@@ -186,6 +199,11 @@ def build_runtime_resolution_snapshot(
             or frozenset(getattr(runtime_config, "enabled_pages", frozenset()) or frozenset())
         )
     )
+    is_runtime_addressable = _is_runtime_addressable_resolution(
+        resolution_mode=resolution_mode,
+        has_runtime_metadata=bool(pack_metadata),
+        base_config=base_config,
+    )
     return {
         "server_code": normalized,
         "pack": dict(pack or {}),
@@ -194,6 +212,7 @@ def build_runtime_resolution_snapshot(
         "resolution_label": _RESOLUTION_MODE_LABELS.get(resolution_mode, resolution_mode.replace("_", " ")),
         "uses_transitional_fallback": resolution_mode != "published_pack",
         "requires_explicit_runtime_pack": resolution_mode == "neutral_fallback",
+        "is_runtime_addressable": is_runtime_addressable,
         "has_published_pack": pack.get("id") is not None,
         "has_bootstrap_pack": normalized in _BOOTSTRAP_SERVER_PACKS,
         "has_runtime_metadata": bool(pack_metadata),
@@ -245,6 +264,12 @@ def _load_runtime_server_configs() -> dict[str, ServerConfig]:
         if not bool(row.get("is_active", True)):
             continue
         base = _BASE_SERVER_CONFIGS.get(code)
+        snapshot = build_runtime_resolution_snapshot(
+            server_code=code,
+            title=str(row.get("title") or code),
+        )
+        if not bool(snapshot.get("is_runtime_addressable")):
+            continue
         resolved[code] = _build_server_config_from_pack_or_base(
             code=code,
             title=str(row.get("title") or code),

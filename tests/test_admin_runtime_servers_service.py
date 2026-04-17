@@ -140,6 +140,7 @@ def test_runtime_server_payload_helpers_cover_crud_shape():
     assert created["item"]["onboarding"]["highest_completed_state"] == "not-ready"
     assert created["item"]["onboarding"]["resolution_mode"] == "neutral_fallback"
     assert created["item"]["onboarding"]["requires_explicit_runtime_pack"] is True
+    assert created["item"]["onboarding"]["resolution"]["is_runtime_addressable"] is False
     assert created["item"]["projection_bridge"] is None
     assert updated["item"]["title"] == "City 2 RU"
     assert deactivated["item"]["is_active"] is False
@@ -254,6 +255,7 @@ def test_second_server_published_pack_health_payload_reports_release_candidate_s
     assert payload["summary"]["is_ready"] is True
     assert payload["onboarding"]["resolution_mode"] == "published_pack"
     assert payload["onboarding"]["uses_transitional_fallback"] is False
+    assert payload["onboarding"]["resolution"]["is_runtime_addressable"] is True
     assert payload["checks"]["config_resolution"]["ok"] is True
     assert payload["runtime_provenance"]["mode"] == "projection_backed"
     assert payload["runtime_provenance"]["is_projection_backed"] is True
