@@ -10,6 +10,8 @@ Primary entrypoint for deploy, rollback, and live-operations work.
 
 ## Rollout And Rollback
 
+- [`FEATURE_FLAGS.md`](./FEATURE_FLAGS.md) - canonical feature-flag reference and rollout-state mapping
+- [`PUBLISH_RELEASE_CHECKLIST.md`](./PUBLISH_RELEASE_CHECKLIST.md) - publish checklist for workflow-backed entities
 - [`ROLL_OUT.md`](./ROLL_OUT.md) - rollout stages and go/no-go criteria
 - [`ROLLBACK_PLAYBOOK.md`](./ROLLBACK_PLAYBOOK.md) - rollback triggers and procedures
 - [`RUNBOOK.md`](./RUNBOOK.md) - point3 legal mode incident handling
@@ -17,8 +19,9 @@ Primary entrypoint for deploy, rollback, and live-operations work.
 
 ## Quality And Acceptance
 
-- [`MODEL_POLICY_SLO.md`](./MODEL_POLICY_SLO.md) - KPI, SLO, and policy actions
 - [`AI_QUALITY_COST_RUNBOOK_ADMIN.md`](./AI_QUALITY_COST_RUNBOOK_ADMIN.md) - admin review cadence for quality/cost
+- [`AI_INTEGRATION.md`](./AI_INTEGRATION.md) - provenance, citation, and traceability contract
+- [`ASYNC_JOB_CONTRACTS.md`](./ASYNC_JOB_CONTRACTS.md) - canonical async state and retry/idempotency contract
 - [`ACCEPTANCE_CHECKLIST.md`](./ACCEPTANCE_CHECKLIST.md) - release acceptance gates
 
 ## Execution Docs
@@ -28,7 +31,8 @@ Primary entrypoint for deploy, rollback, and live-operations work.
 - [`PRODUCT_BRIEF.md`](./PRODUCT_BRIEF.md) - active product/architecture brief
 - [`ARCHITECT_AGENT_GUIDE.md`](./ARCHITECT_AGENT_GUIDE.md) - active planning rules for Codex
 - [`CODEX_RUN_GUIDE.md`](./CODEX_RUN_GUIDE.md) - Codex task execution loop
-- [`../RETRY_IDEMPOTENCY_MATRIX.md`](../RETRY_IDEMPOTENCY_MATRIX.md) - current retry/idempotency matrix and gaps
+- [`ADMIN_PANEL.md`](./ADMIN_PANEL.md) - admin IA and terminology baseline
+- [`LEGACY_COMPATIBILITY.md`](./LEGACY_COMPATIBILITY.md) - legacy preserve/remove baseline
 - [`adr/ADR-legal-workflow-stage.md`](./adr/ADR-legal-workflow-stage.md) - active staged-workflow invariant
 
 ## Exam Scoring

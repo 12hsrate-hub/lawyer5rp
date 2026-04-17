@@ -269,10 +269,9 @@ Primary deliverable:
 
 Possible secondary deliverables:
 - `MIGRATION_MAP.md`
-- `DATA_MODEL_DRAFT.md`
-- `UI_ADMIN_STRUCTURE.md`
-- `LEGACY_RISKS.md`
-- `ARCHITECTURE_NOTES.md`
+- `docs/ADMIN_PANEL.md`
+- `docs/AI_INTEGRATION.md`
+- `docs/LEGACY_COMPATIBILITY.md`
 
 ## Definition of good output
 A good result is:

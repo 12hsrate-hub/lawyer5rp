@@ -1,36 +1,41 @@
 # lawyer5rp
 
-OGP Builder for `lawyer5rp`: shared domain logic and a FastAPI-based web application.
+OGP Builder for `lawyer5rp`: shared domain logic plus a FastAPI-based web application with multi-server admin, law, and AI-assisted document flows.
 
 ## Project Layout
 
 - `shared/` - shared business logic used by the web app, tests, and maintenance scripts
-- `web/` - FastAPI web app, templates, static files, database integration
-- `scripts/` - migrations, backups, and maintenance utilities
+- `web/` - FastAPI web app, templates, static files, and database integration
+- `scripts/` - migrations, smoke checks, and maintenance utilities
 - `tests/` - unit and integration-style test coverage
-- `docs/` - active operational and architecture docs (see `docs/README.md`)
-- `docs/archive/` - historical plans, audits, and one-off runbooks
-- `examples/` - code starters and non-runtime examples
+- `docs/` - active operational, architecture, and product documentation
+- `docs/archive/` - historical plans, audits, rollout packets, and superseded docs
+- `examples/` - starter examples and non-runtime samples
 - `artifacts/` - generated exports and run artifacts
 
 ## Current Runtime Direction
 
 - Web runtime is PostgreSQL-only.
-- Production is already running on PostgreSQL.
+- Production is updated from a GitHub-backed checkout, not by copying local files into the live runtime.
 
-## Review Starting Points
+## Main Documentation Entry Points
 
-If you are reviewing the recent infrastructure/runtime changes, start here:
+Start here:
 
-- `web/ogp_web/app.py`
-- `web/ogp_web/rate_limit.py`
-- `web/ogp_web/db/config.py`
-- `web/ogp_web/db/factory.py`
-- `web/ogp_web/routes/auth.py`
-- `web/ogp_web/storage/user_store.py`
-- `web/ogp_web/storage/exam_answers_store.py`
-- `web/ogp_web/storage/admin_metrics_store.py`
-- `web/ogp_web/services/exam_import_tasks.py`
+- `AGENTS.md` - repository rules, deploy target, and definition of done
+- `docs/README.md` - canonical documentation index
+- `docs/OPERATIONS_INDEX.md` - deploy, rollback, and live-ops entrypoint
+
+Primary active reference docs:
+
+- `docs/ADMIN_PANEL.md` - admin IA, entrypoints, and terminology
+- `docs/AI_INTEGRATION.md` - AI/provenance contract and traceability baseline
+- `docs/ASYNC_JOB_CONTRACTS.md` - async state, retry, and idempotency contracts
+- `docs/LEGACY_COMPATIBILITY.md` - legacy seams to preserve or retire
+- `docs/FEATURE_FLAGS.md` - rollout flags and rollout-state mapping
+- `docs/AI_QUALITY_COST_RUNBOOK_ADMIN.md` - admin AI quality/cost operations
+- `docs/github_deploy.md` - GitHub-to-server deploy flow
+- `docs/postgresql_migrations.md` - migration flow
 
 ## Local Web Run
 
@@ -58,13 +63,12 @@ Recommended deploy path:
 
 1. Develop and test locally.
 2. Push to GitHub.
-3. Update the server from a GitHub checkout.
-4. Run migrations and restart the web process.
+3. Update the server from the GitHub checkout in `/srv/lawyer5rp-deploy/repo`.
+4. Run the deploy script, migrations, restart, and `/health` verification.
 
-Deploy docs:
+See:
 
 - `AGENTS.md`
-- `docs/README.md`
 - `docs/OPERATIONS_INDEX.md`
 - `docs/github_deploy.md`
 - `docs/postgresql_migrations.md`

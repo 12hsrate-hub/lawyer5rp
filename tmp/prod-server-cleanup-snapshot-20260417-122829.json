@@ -1,0 +1,357 @@
+{
+  "servers": [
+    {
+      "code": "murrieta",
+      "title": "murrieta",
+      "created_at": "2026-04-17 12:05:18.452599+03:00",
+      "is_active": true,
+      "default_law_set_id": null,
+      "settings_json": {}
+    },
+    {
+      "code": "strawberry",
+      "title": "strawberry",
+      "created_at": "2026-04-14 08:53:09.416548+03:00",
+      "is_active": false,
+      "default_law_set_id": null,
+      "settings_json": {}
+    }
+  ],
+  "server_source_set_bindings": [
+    {
+      "id": 2,
+      "server_code": "strawberry",
+      "source_set_key": "strawberry_core",
+      "priority": 100,
+      "is_active": true,
+      "include_law_keys_json": [],
+      "exclude_law_keys_json": [],
+      "pin_policy_json": {},
+      "metadata_json": {},
+      "created_at": "2026-04-16 10:36:36.240502+03:00",
+      "updated_at": "2026-04-16 10:36:36.240502+03:00"
+    }
+  ],
+  "law_sets": [
+    {
+      "id": 2,
+      "server_code": "strawberry",
+      "name": "strawberry-default",
+      "is_active": true,
+      "is_published": false,
+      "created_at": "2026-04-14 09:42:00.566678+03:00",
+      "updated_at": "2026-04-14 09:42:00.566678+03:00"
+    }
+  ],
+  "law_versions": [
+    {
+      "id": 22,
+      "server_code": "strawberry",
+      "source_type": "snapshot_import",
+      "source_ref": "/srv/lawyer5rp.ru/web/ogp_web/law_bundles/strawberry.json",
+      "generated_at_utc": "2026-04-14 08:54:48.647399+03:00",
+      "effective_from": "2026-04-14 08:54:48.647955+03:00",
+      "effective_to": null,
+      "fingerprint": "1594ed50dde45db59be64919",
+      "chunk_count": 0,
+      "meta_json": {
+        "source_count": 1
+      },
+      "created_at": "2026-04-14 08:54:48.665358+03:00"
+    }
+  ],
+  "content_items": [
+    {
+      "id": 15,
+      "server_scope": "server",
+      "server_id": "strawberry",
+      "content_type": "laws",
+      "content_key": "law_sources_manifest",
+      "title": "Law sources manifest",
+      "status": "published",
+      "current_published_version_id": 17,
+      "metadata_json": {
+        "managed_by": "law_admin_service"
+      },
+      "created_at": "2026-04-14 08:54:47.538874+03:00",
+      "updated_at": "2026-04-14 08:54:48.010755+03:00"
+    }
+  ],
+  "publish_batches": [
+    {
+      "id": 11,
+      "server_scope": "server",
+      "server_id": "strawberry",
+      "published_by": 16,
+      "rollback_of_batch_id": null,
+      "summary_json": {
+        "source": "law_admin_service"
+      },
+      "created_at": "2026-04-14 08:54:47.951014+03:00"
+    }
+  ],
+  "audit_logs": [
+    {
+      "id": 50,
+      "server_id": "strawberry",
+      "actor_user_id": 16,
+      "entity_type": "content_item",
+      "entity_id": "15",
+      "action": "create_content_item",
+      "before_json": {},
+      "after_json": {
+        "id": 15,
+        "title": "Law sources manifest",
+        "status": "draft",
+        "server_id": "strawberry",
+        "created_at": "2026-04-14T08:54:47.538874+03:00",
+        "updated_at": "2026-04-14T08:54:47.538874+03:00",
+        "content_key": "law_sources_manifest",
+        "content_type": "laws",
+        "server_scope": "server",
+        "metadata_json": {
+          "managed_by": "law_admin_service"
+        },
+        "current_published_version_id": null
+      },
+      "diff_json": {
+        "created": true
+      },
+      "request_id": "0178dbd41aa947a79bae2e10d5ecb229",
+      "metadata_json": {
+        "content_key": "law_sources_manifest",
+        "content_type": "laws"
+      },
+      "created_at": "2026-04-14 08:54:47.563375+03:00"
+    },
+    {
+      "id": 51,
+      "server_id": "strawberry",
+      "actor_user_id": 16,
+      "entity_type": "change_request",
+      "entity_id": "16",
+      "action": "create_draft_change_request",
+      "before_json": {},
+      "after_json": {
+        "id": 16,
+        "status": "draft",
+        "comment": "law_index_rebuild",
+        "created_at": "2026-04-14T08:54:47.647483+03:00",
+        "updated_at": "2026-04-14T08:54:47.647483+03:00",
+        "proposed_by": 16,
+        "base_version_id": null,
+        "content_item_id": 15,
+        "candidate_version_id": 17
+      },
+      "diff_json": {
+        "candidate_version_id": 17
+      },
+      "request_id": "0178dbd41aa947a79bae2e10d5ecb229",
+      "metadata_json": {
+        "content_item_id": 15
+      },
+      "created_at": "2026-04-14 08:54:47.672964+03:00"
+    },
+    {
+      "id": 52,
+      "server_id": "strawberry",
+      "actor_user_id": 16,
+      "entity_type": "change_request",
+      "entity_id": "16",
+      "action": "submit_for_review",
+      "before_json": {
+        "id": 16,
+        "status": "draft",
+        "comment": "law_index_rebuild",
+        "created_at": "2026-04-14T08:54:47.647483+03:00",
+        "updated_at": "2026-04-14T08:54:47.647483+03:00",
+        "proposed_by": 16,
+        "base_version_id": null,
+        "content_item_id": 15,
+        "candidate_version_id": 17
+      },
+      "after_json": {
+        "id": 16,
+        "status": "in_review",
+        "comment": "law_index_rebuild",
+        "created_at": "2026-04-14T08:54:47.647483+03:00",
+        "updated_at": "2026-04-14T08:54:47.746119+03:00",
+        "proposed_by": 16,
+        "base_version_id": null,
+        "content_item_id": 15,
+        "candidate_version_id": 17
+      },
+      "diff_json": {
+        "status": {
+          "to": "in_review",
+          "from": "draft"
+        }
+      },
+      "request_id": "0178dbd41aa947a79bae2e10d5ecb229",
+      "metadata_json": {
+        "content_item_id": 15
+      },
+      "created_at": "2026-04-14 08:54:47.770171+03:00"
+    },
+    {
+      "id": 53,
+      "server_id": "strawberry",
+      "actor_user_id": 16,
+      "entity_type": "review",
+      "entity_id": "11",
+      "action": "review_approve",
+      "before_json": {
+        "id": 16,
+        "status": "in_review",
+        "comment": "law_index_rebuild",
+        "created_at": "2026-04-14T08:54:47.647483+03:00",
+        "updated_at": "2026-04-14T08:54:47.746119+03:00",
+        "proposed_by": 16,
+        "base_version_id": null,
+        "content_item_id": 15,
+        "candidate_version_id": 17
+      },
+      "after_json": {
+        "id": 16,
+        "status": "approved",
+        "comment": "law_index_rebuild",
+        "created_at": "2026-04-14T08:54:47.647483+03:00",
+        "updated_at": "2026-04-14T08:54:47.860084+03:00",
+        "proposed_by": 16,
+        "base_version_id": null,
+        "content_item_id": 15,
+        "candidate_version_id": 17
+      },
+      "diff_json": {
+        "status": "approved",
+        "decision": "approve"
+      },
+      "request_id": "0178dbd41aa947a79bae2e10d5ecb229",
+      "metadata_json": {
+        "change_request_id": 16
+      },
+      "created_at": "2026-04-14 08:54:47.880631+03:00"
+    },
+    {
+      "id": 54,
+      "server_id": "strawberry",
+      "actor_user_id": 16,
+      "entity_type": "publish_batch",
+      "entity_id": "11",
+      "action": "publish_change_request",
+      "before_json": {
+        "current_published_version_id": null
+      },
+      "after_json": {
+        "current_published_version_id": 17
+      },
+      "diff_json": {
+        "batch_item_id": 11,
+        "change_request_id": 16
+      },
+      "request_id": "0178dbd41aa947a79bae2e10d5ecb229",
+      "metadata_json": {
+        "content_item_id": 15
+      },
+      "created_at": "2026-04-14 08:54:48.061229+03:00"
+    }
+  ],
+  "source_sets": [
+    {
+      "source_set_key": "murrietta-default",
+      "title": "Murrietta default laws",
+      "description": "Murrietta источники законов",
+      "scope": "global",
+      "created_at": "2026-04-17 12:06:58.078881+03:00",
+      "updated_at": "2026-04-17 12:06:58.078881+03:00"
+    },
+    {
+      "source_set_key": "strawberry_core",
+      "title": "strawberry",
+      "description": "https://forum.gta5rp.com/forums/server-no2-strawberry.89/",
+      "scope": "global",
+      "created_at": "2026-04-16 10:36:00.492472+03:00",
+      "updated_at": "2026-04-16 10:36:00.492472+03:00"
+    }
+  ],
+  "source_set_revisions": [
+    {
+      "id": 3,
+      "source_set_key": "murrietta-default",
+      "revision": 1,
+      "status": "draft",
+      "container_urls_json": [
+        "https://forum.gta5rp.com/forums/zakonodatelnaja-baza.1732/"
+      ],
+      "adapter_policy_json": {},
+      "metadata_json": {},
+      "created_at": "2026-04-17 12:08:12.125484+03:00",
+      "published_at": null
+    }
+  ],
+  "law_source_registry": [
+    {
+      "id": 1,
+      "name": "strawberry",
+      "kind": "url",
+      "url": "https://forum.gta5rp.com/forums/zakonodatelnaja-baza.102/",
+      "is_active": true,
+      "created_at": "2026-04-14 09:38:22.390125+03:00",
+      "updated_at": "2026-04-14 09:38:22.390125+03:00"
+    },
+    {
+      "id": 3,
+      "name": "Strawberry",
+      "kind": "url",
+      "url": "https://forum.gta5rp.com/forums/server-no2-strawberry.89/",
+      "is_active": true,
+      "created_at": "2026-04-16 09:07:47.080470+03:00",
+      "updated_at": "2026-04-16 09:07:47.080470+03:00"
+    }
+  ],
+  "server_packs": [],
+  "templates": [],
+  "user_selected_servers": [],
+  "user_server_roles": [],
+  "generation_snapshots": [],
+  "cases": [],
+  "complaint_drafts": [],
+  "source_discovery_runs": [],
+  "discovered_law_links": [],
+  "change_requests": [
+    {
+      "id": 16,
+      "content_item_id": 15,
+      "base_version_id": null,
+      "candidate_version_id": 17,
+      "status": "published",
+      "proposed_by": 16,
+      "comment": "law_index_rebuild",
+      "created_at": "2026-04-14 08:54:47.647483+03:00",
+      "updated_at": "2026-04-14 08:54:48.034916+03:00"
+    }
+  ],
+  "publish_batch_items": [
+    {
+      "id": 11,
+      "publish_batch_id": 11,
+      "content_item_id": 15,
+      "published_version_id": 17,
+      "previous_published_version_id": null,
+      "created_at": "2026-04-14 08:54:47.982266+03:00"
+    }
+  ],
+  "reviews": [
+    {
+      "id": 11,
+      "change_request_id": 16,
+      "reviewer_user_id": 16,
+      "decision": "approve",
+      "comment": "law_sources_auto_approve",
+      "diff_json": {
+        "source_urls_count": 1
+      },
+      "created_at": "2026-04-14 08:54:47.830193+03:00"
+    }
+  ]
+}

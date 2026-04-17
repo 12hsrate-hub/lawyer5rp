@@ -1,0 +1,53 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Check sync: local / origin / prod",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\check_sync_status.ps1"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Deploy to prod",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\deploy_to_prod.ps1"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Restart prod app",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\restart_prod_app.ps1"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Check PR",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\check_pr.ps1"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

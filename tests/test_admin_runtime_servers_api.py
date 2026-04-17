@@ -25,6 +25,7 @@ from ogp_web.dependencies import (
     get_canonical_law_document_versions_store,
     get_content_workflow_service,
     get_law_source_sets_store,
+    get_runtime_server_packs_store,
     get_runtime_law_sets_store,
     get_runtime_servers_store,
     get_server_effective_law_projections_store,
@@ -38,7 +39,7 @@ from ogp_web.storage.exam_answers_store import ExamAnswersStore
 from ogp_web.storage.user_repository import UserRepository
 from ogp_web.storage.user_store import UserStore
 from tests.temp_helpers import make_temporary_directory
-from tests.second_server_fixtures import orange_published_pack
+from tests.second_server_fixtures import blackberry_published_pack, orange_published_pack
 from tests.test_web_storage import (
     FakeAdminMetricsPostgresBackend,
     FakeExamAnswersPostgresBackend,
@@ -94,6 +95,103 @@ class _FakeRuntimeServersStore:
         return self._Record(**self.rows[code])
 
 
+
+
+class _FakeRuntimeServerPacksStore:
+    class _Record:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    def __init__(self):
+        self.published: dict[str, dict[str, object]] = {}
+        self.drafts: dict[str, dict[str, object]] = {}
+        self._next_id = 10
+
+    def get_latest_published_pack(self, *, server_code: str):
+        row = self.published.get(server_code)
+        return self._Record(**row) if row else None
+
+    def get_latest_draft_pack(self, *, server_code: str):
+        row = self.drafts.get(server_code)
+        return self._Record(**row) if row else None
+
+    def get_previous_published_pack(self, *, server_code: str):
+        row = self.published.get(f"{server_code}::previous")
+        return self._Record(**row) if row else None
+
+    def get_published_pack_by_version(self, *, server_code: str, version: int):
+        for row in self.published.values():
+            if str(row.get("server_code") or "").strip().lower() != str(server_code or "").strip().lower():
+                continue
+            if int(row.get("version") or 0) == int(version or 0):
+                return self._Record(**row)
+        return None
+
+    def save_draft_pack(self, *, server_code: str, metadata_json):
+        row = self.drafts.get(server_code)
+        if row is None:
+            published = self.published.get(server_code)
+            row = {
+                "id": self._next_id,
+                "server_code": server_code,
+                "version": int((published or {}).get("version") or 0) + 1,
+                "status": "draft",
+                "metadata_json": dict(metadata_json or {}),
+                "created_at": "2026-04-17T00:00:00+00:00",
+                "published_at": "",
+            }
+            self._next_id += 1
+        else:
+            row["metadata_json"] = dict(metadata_json or {})
+        self.drafts[server_code] = row
+        return self._Record(**row)
+
+    def publish_latest_draft_pack(self, *, server_code: str):
+        row = self.drafts.get(server_code)
+        if row is None:
+            raise KeyError("server_pack_draft_not_found")
+        published = {
+            **row,
+            "status": "published",
+            "published_at": "2026-04-17T01:00:00+00:00",
+        }
+        self.published[server_code] = published
+        self.drafts.pop(server_code, None)
+        return self._Record(**published)
+
+    def rollback_to_published_pack(self, *, server_code: str, target_version=None):
+        target = self.get_published_pack_by_version(server_code=server_code, version=int(target_version or 0)) if int(target_version or 0) > 0 else self.get_previous_published_pack(server_code=server_code)
+        current = self.get_latest_published_pack(server_code=server_code)
+        if target is None:
+            raise KeyError("server_pack_rollback_target_not_found")
+        if current is None:
+            raise KeyError("server_pack_published_not_found")
+        row = {
+            "id": self._next_id,
+            "server_code": server_code,
+            "version": int(current.version) + 1,
+            "status": "published",
+            "metadata_json": dict(target.metadata_json or {}),
+            "created_at": "2026-04-17T02:00:00+00:00",
+            "published_at": "2026-04-17T02:00:00+00:00",
+        }
+        self._next_id += 1
+        self.published[server_code] = row
+        return self._Record(**row)
+
+    @staticmethod
+    def to_payload(record):
+        if record is None:
+            return None
+        return {
+            "id": record.id,
+            "server_code": record.server_code,
+            "version": record.version,
+            "status": record.status,
+            "metadata": dict(record.metadata_json or {}),
+            "created_at": record.created_at,
+            "published_at": record.published_at or None,
+        }
 
 
 class _FakeContentWorkflowService:
@@ -821,6 +919,14 @@ class _FakeLawSourceSetsStore:
             )()
         ]
 
+    def list_revisions(self, *, source_set_key: str):
+        revision_map = {
+            "legacy-blackberry-default": [type("Revision", (), {"id": 111, "status": "published"})()],
+            "legacy-orange-default": [type("Revision", (), {"id": 112, "status": "published"})()],
+            "city2-default": [type("Revision", (), {"id": 121, "status": "published"})()],
+        }
+        return list(revision_map.get(source_set_key, []))
+
 
 class _City2SourceSetsStore(_FakeLawSourceSetsStore):
     def list_bindings(self, *, server_code: str):
@@ -878,12 +984,14 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         )
         app = create_app(self.user_store, self.exam_store, self.admin_store, self.task_registry)
         self.runtime_store = _FakeRuntimeServersStore()
+        self.runtime_packs_store = _FakeRuntimeServerPacksStore()
         self.runtime_law_sets_store = _FakeRuntimeLawSetsStore()
         self.projections_store = _FakeProjectionsStore()
         self.source_sets_store = _FakeLawSourceSetsStore()
         self.versions_store = _FakeCanonicalLawDocumentVersionsStore()
         self.workflow_service = _FakeContentWorkflowService()
         app.dependency_overrides[get_runtime_servers_store] = lambda: self.runtime_store
+        app.dependency_overrides[get_runtime_server_packs_store] = lambda: self.runtime_packs_store
         app.dependency_overrides[get_runtime_law_sets_store] = lambda: self.runtime_law_sets_store
         app.dependency_overrides[get_server_effective_law_projections_store] = lambda: self.projections_store
         app.dependency_overrides[get_law_source_sets_store] = lambda: self.source_sets_store
@@ -986,12 +1094,18 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         payload = response.json()
         self.assertFalse(payload["checks"]["law_set"]["ok"])
         self.assertFalse(payload["summary"]["is_ready"])
-        self.assertEqual(payload["summary"]["ready_count"], payload["summary"]["total_count"] - 1)
+        self.assertEqual(payload["summary"]["ready_count"], payload["summary"]["total_count"] - 3)
         self.assertEqual(payload["summary"]["observational_checks"], ["law_set"])
         self.assertTrue(payload["checks"]["law_set"]["observational_only"])
         self.assertEqual(payload["checks"]["law_set"]["detail"], "law_set_missing")
         self.assertEqual(payload["checks"]["bindings"]["binding_source"], "source_set_bindings")
         self.assertTrue(payload["checks"]["bindings"]["canonical_ready"])
+        self.assertFalse(payload["checks"]["law_context"]["ok"])
+        self.assertEqual(payload["checks"]["law_context"]["reason_code"], "no_active_runtime_version")
+        self.assertFalse(payload["checks"]["runtime_requirements"]["ok"])
+        self.assertEqual(payload["checks"]["runtime_requirements"]["blocked_count"], 2)
+        self.assertEqual(payload["checks"]["runtime_requirements"]["compatibility_count"], 1)
+        self.assertEqual(payload["law_context_readiness"]["bindings"]["active_binding_ids"], [11])
         self.assertFalse(payload["checks"]["config_resolution"]["ok"])
         self.assertEqual(payload["checks"]["config_resolution"]["detail"], "bootstrap_pack_requires_published_runtime")
         self.assertEqual(payload["checks"]["config_resolution"]["path_role"], "transitional_runtime_path")
@@ -1053,6 +1167,9 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertEqual(payload_before["summary"]["ready_count"], 3)
             self.assertFalse(payload_before["checks"]["activation"]["ok"])
             self.assertTrue(payload_before["checks"]["health"]["ok"])
+            self.assertFalse(payload_before["checks"]["law_context"]["ok"])
+            self.assertFalse(payload_before["checks"]["runtime_requirements"]["ok"])
+            self.assertEqual(payload_before["checks"]["runtime_requirements"]["blocked_count"], 3)
             self.assertFalse(payload_before["checks"]["config_resolution"]["ok"])
             self.assertEqual(payload_before["checks"]["bindings"]["binding_source"], "source_set_bindings")
             self.assertEqual(payload_before["onboarding"]["highest_completed_state"], "not-ready")
@@ -1067,11 +1184,279 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
             self.assertEqual(health_after.status_code, 200)
             payload_after = health_after.json()
             self.assertFalse(payload_after["summary"]["is_ready"])
-            self.assertEqual(payload_after["summary"]["ready_count"], payload_after["summary"]["total_count"] - 1)
+            self.assertEqual(payload_after["summary"]["ready_count"], payload_after["summary"]["total_count"] - 3)
             self.assertEqual(payload_after["checks"]["health"]["active_law_version_id"], 77)
+            self.assertFalse(payload_after["checks"]["law_context"]["ok"])
+            self.assertFalse(payload_after["checks"]["runtime_requirements"]["ok"])
+            self.assertEqual(payload_after["checks"]["runtime_requirements"]["blocked_count"], 3)
             self.assertFalse(payload_after["checks"]["config_resolution"]["ok"])
             self.assertEqual(payload_after["onboarding"]["highest_completed_state"], "not-ready")
             self.assertEqual(payload_after["onboarding"]["next_required_state"], "bootstrap-ready")
+
+    def test_runtime_server_pack_endpoints_expose_blockers_and_block_publish_until_ready(self):
+        with patch(
+            "ogp_web.services.runtime_server_pack_service.build_runtime_server_health_payload",
+            return_value={
+                "checks": {
+                    "bindings": {"count": 1},
+                },
+                "law_context_readiness": {
+                    "status": "blocked",
+                    "reason_code": "no_projection",
+                    "reason_detail": "Projection bridge is missing.",
+                },
+            },
+        ):
+            draft = self.client.get("/api/admin/runtime-servers/blackberry/pack-draft")
+            self.assertEqual(draft.status_code, 200)
+            self.assertEqual(draft.json()["compiler"]["status"], "blocked")
+
+            saved = self.client.put(
+                "/api/admin/runtime-servers/blackberry/pack-draft",
+                json={
+                    "metadata": {
+                        "organizations": ["GOV"],
+                        "template_bindings": {
+                            "complaint": {"template_key": "complaint_v1"},
+                            "court_claim": {"template_key": "court_claim_bbcode_v1"},
+                        },
+                        "validation_profiles": {
+                            "complaint_default": {"required_sections": ["incident"]},
+                            "court_claim_default": {},
+                        },
+                        "law_qa_sources": ["https://example.com/law"],
+                    }
+                },
+            )
+            self.assertEqual(saved.status_code, 200)
+            self.assertEqual(saved.json()["draft"]["status"], "draft")
+
+            blockers = self.client.get("/api/admin/runtime-servers/blackberry/pack-publish-blockers")
+            self.assertEqual(blockers.status_code, 200)
+            self.assertFalse(blockers.json()["can_publish"])
+            self.assertTrue(any(item["code"] == "no_projection" for item in blockers.json()["items"]))
+            self.assertEqual(blockers.json()["candidate_runtime_requirements"]["blocked_count"], 1)
+            self.assertEqual(blockers.json()["candidate_runtime_requirements"]["items"][2]["section_code"], "law_qa")
+
+            published = self.client.post("/api/admin/runtime-servers/blackberry/pack-publish", json={})
+            self.assertEqual(published.status_code, 400)
+            self.assertIn("server_pack_publish_blocked", " ".join(published.json()["detail"]))
+
+    def test_runtime_server_pack_publish_promotes_ready_compiled_pack(self):
+        self.runtime_store.rows["orange"] = {
+            "code": "orange",
+            "title": "Orange City",
+            "is_active": True,
+            "created_at": "2026-04-16T00:00:00+00:00",
+        }
+        with patch(
+            "ogp_web.services.runtime_server_pack_service.build_runtime_server_health_payload",
+            return_value={
+                "checks": {
+                    "bindings": {"count": 1},
+                },
+                "law_context_readiness": {
+                    "status": "ready",
+                    "reason_code": "ready",
+                    "reason_detail": "Ready.",
+                    "projection": {"run_id": 7},
+                },
+            },
+        ), patch(
+            "ogp_web.services.runtime_server_pack_service.build_runtime_resolution_snapshot",
+            return_value={
+                "server_code": "orange",
+                "resolution_mode": "published_pack",
+                "resolution_label": "published pack",
+                "pack": {"id": 2, "version": 3},
+                "pack_metadata": {
+                    "organizations": ["GOV", "DOJ"],
+                    "template_bindings": {
+                        "complaint": {"template_key": "complaint_orange_v1"},
+                        "court_claim": {"template_key": "court_claim_orange_v1"},
+                    },
+                    "validation_profiles": {
+                        "complaint_default": {"required_sections": ["incident", "evidence"]},
+                        "court_claim_default": {},
+                    },
+                    "law_qa_sources": ["https://example.com/orange/law"],
+                },
+            },
+        ):
+            saved = self.client.put(
+                "/api/admin/runtime-servers/orange/pack-draft",
+                json={
+                    "metadata": {
+                        "organizations": ["GOV", "DOJ"],
+                        "template_bindings": {
+                            "complaint": {"template_key": "complaint_orange_v1"},
+                            "court_claim": {"template_key": "court_claim_orange_v1"},
+                        },
+                        "validation_profiles": {
+                            "complaint_default": {"required_sections": ["incident", "evidence"]},
+                            "court_claim_default": {},
+                        },
+                        "law_qa_sources": ["https://example.com/orange/law"],
+                    }
+                },
+            )
+            self.assertEqual(saved.status_code, 200)
+
+            blockers = self.client.get("/api/admin/runtime-servers/orange/pack-publish-blockers")
+            self.assertEqual(blockers.status_code, 200)
+            self.assertTrue(blockers.json()["can_publish"])
+            self.assertEqual(blockers.json()["candidate_runtime_requirements"]["status"], "ready")
+
+            published = self.client.post("/api/admin/runtime-servers/orange/pack-publish", json={})
+            self.assertEqual(published.status_code, 200)
+            self.assertTrue(published.json()["changed"])
+            self.assertEqual(published.json()["published_pack"]["status"], "published")
+
+    def test_runtime_server_pack_publish_blockers_surface_court_claim_candidate_gap(self):
+        self.runtime_store.rows["orange"] = {
+            "code": "orange",
+            "title": "Orange City",
+            "is_active": True,
+            "created_at": "2026-04-16T00:00:00+00:00",
+        }
+        with patch(
+            "ogp_web.services.runtime_server_pack_service.build_runtime_server_health_payload",
+            return_value={
+                "checks": {
+                    "bindings": {"count": 0},
+                },
+                "law_context_readiness": {
+                    "status": "ready",
+                    "reason_code": "ready",
+                    "reason_detail": "Ready.",
+                },
+            },
+        ), patch(
+            "ogp_web.services.runtime_server_pack_service.build_runtime_resolution_snapshot",
+            return_value={
+                "server_code": "orange",
+                "resolution_mode": "published_pack",
+                "resolution_label": "published pack",
+                "pack": {"id": 2, "version": 3},
+                "pack_metadata": {
+                    "organizations": ["GOV", "DOJ"],
+                    "template_bindings": {"complaint": {"template_key": "complaint_orange_v1"}},
+                    "validation_profiles": {"complaint_default": {"required_sections": ["incident", "evidence"]}},
+                },
+            },
+        ):
+            blockers = self.client.get("/api/admin/runtime-servers/orange/pack-publish-blockers")
+
+        self.assertEqual(blockers.status_code, 200)
+        payload = blockers.json()
+        self.assertFalse(payload["can_publish"])
+        self.assertTrue(any(item["code"] == "runtime_requirement:court_claim" for item in payload["items"]))
+        court_claim_item = next(
+            item for item in payload["candidate_runtime_requirements"]["items"] if item["section_code"] == "court_claim"
+        )
+        self.assertEqual(court_claim_item["route_status"], "blocked")
+        self.assertEqual(court_claim_item["route_reason_code"], "court_claim_template_binding_missing")
+
+    def test_runtime_server_pack_publish_blockers_surface_complaint_candidate_gap(self):
+        self.runtime_store.rows["orange"] = {
+            "code": "orange",
+            "title": "Orange City",
+            "is_active": True,
+            "created_at": "2026-04-16T00:00:00+00:00",
+        }
+        with patch(
+            "ogp_web.services.runtime_server_pack_service.build_runtime_server_health_payload",
+            return_value={
+                "checks": {
+                    "bindings": {"count": 0},
+                },
+                "law_context_readiness": {
+                    "status": "ready",
+                    "reason_code": "ready",
+                    "reason_detail": "Ready.",
+                },
+            },
+        ), patch(
+            "ogp_web.services.runtime_server_pack_service.build_runtime_resolution_snapshot",
+            return_value={
+                "server_code": "orange",
+                "resolution_mode": "published_pack",
+                "resolution_label": "published pack",
+                "pack": {"id": 2, "version": 3},
+                "pack_metadata": {
+                    "organizations": ["GOV", "DOJ"],
+                    "template_bindings": {"court_claim": {"template_key": "court_claim_orange_v1"}},
+                    "validation_profiles": {"court_claim_default": {}},
+                },
+            },
+        ):
+            blockers = self.client.get("/api/admin/runtime-servers/orange/pack-publish-blockers")
+
+        self.assertEqual(blockers.status_code, 200)
+        payload = blockers.json()
+        self.assertFalse(payload["can_publish"])
+        self.assertTrue(any(item["code"] == "runtime_requirement:complaint" for item in payload["items"]))
+        complaint_item = next(
+            item for item in payload["candidate_runtime_requirements"]["items"] if item["section_code"] == "complaint"
+        )
+        self.assertEqual(complaint_item["route_status"], "blocked")
+        self.assertEqual(complaint_item["route_reason_code"], "complaint_template_binding_missing")
+
+    def test_runtime_server_pack_rollback_restores_previous_published_metadata(self):
+        self.runtime_store.rows["orange"] = {
+            "code": "orange",
+            "title": "Orange City",
+            "is_active": True,
+            "created_at": "2026-04-16T00:00:00+00:00",
+        }
+        self.runtime_packs_store.published["orange::previous"] = {
+            "id": 2,
+            "server_code": "orange",
+            "version": 2,
+            "status": "published",
+            "metadata_json": {
+                "organizations": ["GOV"],
+                "template_bindings": {
+                    "complaint": {"template_key": "complaint_orange_v1"},
+                    "court_claim": {"template_key": "court_claim_orange_v1"},
+                },
+                "validation_profiles": {
+                    "complaint_default": {"required_sections": ["incident"]},
+                    "court_claim_default": {},
+                },
+            },
+            "created_at": "2026-04-16T00:00:00+00:00",
+            "published_at": "2026-04-16T00:00:00+00:00",
+        }
+        self.runtime_packs_store.published["orange"] = {
+            "id": 3,
+            "server_code": "orange",
+            "version": 3,
+            "status": "published",
+            "metadata_json": {
+                "organizations": ["GOV", "DOJ"],
+                "template_bindings": {
+                    "complaint": {"template_key": "complaint_orange_v2"},
+                    "court_claim": {"template_key": "court_claim_orange_v2"},
+                },
+                "validation_profiles": {
+                    "complaint_default": {"required_sections": ["incident", "evidence"]},
+                    "court_claim_default": {},
+                },
+            },
+            "created_at": "2026-04-17T00:00:00+00:00",
+            "published_at": "2026-04-17T00:00:00+00:00",
+        }
+
+        response = self.client.post("/api/admin/runtime-servers/orange/pack-rollback", json={})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["changed"])
+        self.assertEqual(payload["reason"], "rolled_back")
+        self.assertEqual(payload["published_pack"]["version"], 4)
+        self.assertEqual(payload["published_pack"]["metadata"]["organizations"], ["GOV"])
+        self.assertEqual(payload["rollback_target"]["version"], 2)
 
     def test_runtime_server_workspace_endpoint_returns_server_centric_summary(self):
         with patch.object(
@@ -1107,7 +1492,30 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertIn("templates", payload["overview"])
         self.assertIn("users", payload["overview"])
         self.assertIn("access", payload["overview"])
+        self.assertIn("onboarding", payload["overview"])
+        self.assertIn("candidate_runtime_truth", payload["overview"])
+        self.assertIn("runtime_focus", payload["overview"])
+        self.assertIn("strict_cutover_candidates", payload["overview"])
+        self.assertIn("runtime_pack", payload["overview"])
+        self.assertEqual(payload["overview"]["access"]["summary"]["status"], "ready")
+        self.assertEqual(payload["overview"]["access"]["summary"]["counts"]["active_users"], 1)
         self.assertEqual(payload["overview"]["laws"]["binding_count"], 1)
+        self.assertIn(payload["overview"]["runtime_pack"]["status"], {"ready", "blocked"})
+        self.assertEqual(payload["overview"]["candidate_runtime_truth"]["status"], payload["overview"]["runtime_pack"]["candidate_runtime_requirements"]["status"])
+        self.assertEqual(payload["overview"]["runtime_focus"]["source"], "candidate")
+        self.assertEqual(payload["overview"]["runtime_focus"]["section_code"], "court_claim")
+        self.assertEqual(payload["overview"]["runtime_focus"]["route_status"], "blocked")
+        self.assertEqual(payload["overview"]["runtime_focus"]["reason_code"], "court_claim_template_binding_missing")
+        self.assertEqual(payload["overview"]["strict_cutover_candidates"]["status"], "blocked")
+        court_claim_candidate = next(
+            item for item in payload["overview"]["strict_cutover_candidates"]["items"] if item["section_code"] == "court_claim"
+        )
+        self.assertEqual(court_claim_candidate["status"], "not_ready")
+        self.assertEqual(court_claim_candidate["reason_code"], "court_claim_template_binding_missing")
+        self.assertEqual(court_claim_candidate["strict_env"], "OGP_STRICT_PUBLISHED_RUNTIME_SECTIONS=court_claim")
+        self.assertIn("Declare an explicit published template binding", court_claim_candidate["next_action"])
+        self.assertEqual(payload["overview"]["laws"]["law_context_readiness"]["reason_code"], "no_active_runtime_version")
+        self.assertEqual(payload["overview"]["laws"]["law_context_readiness"]["mode"], "canonical_bindings")
         self.assertEqual(payload["overview"]["laws"]["runtime_config_posture"]["status"], "bootstrap_transition")
         self.assertEqual(payload["overview"]["laws"]["runtime_config_posture"]["path_role"], "transitional_runtime_path")
         self.assertEqual(payload["overview"]["laws"]["runtime_config_posture"]["path_stage"], "bootstrap")
@@ -1118,6 +1526,27 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(payload["overview"]["laws"]["runtime_provenance"]["mode"], "legacy_runtime_shell")
         self.assertEqual(payload["overview"]["laws"]["runtime_alignment"]["status"], "legacy_only")
         self.assertEqual(payload["overview"]["laws"]["runtime_item_parity"]["status"], "aligned")
+        self.assertTrue(payload["overview"]["onboarding"]["usable_in_admin"])
+        self.assertEqual(payload["overview"]["onboarding"]["primary_path"], "/admin/servers/blackberry")
+        self.assertEqual(payload["overview"]["onboarding"]["highest_completed_state"], "bootstrap-ready")
+        self.assertEqual(payload["overview"]["onboarding"]["next_required_state"], "workflow-ready")
+        self.assertEqual(payload["overview"]["onboarding"]["steps"][0]["code"], "runtime")
+        self.assertEqual(payload["overview"]["onboarding"]["steps"][0]["status"], "ready")
+        self.assertEqual(payload["overview"]["onboarding"]["steps"][0]["action_tab"], "laws")
+        self.assertEqual(payload["overview"]["onboarding"]["steps"][1]["code"], "laws")
+        self.assertEqual(payload["overview"]["onboarding"]["steps"][1]["status"], "partial")
+        self.assertIn("no active runtime law version", payload["overview"]["onboarding"]["steps"][1]["detail"])
+        self.assertEqual(payload["overview"]["onboarding"]["steps"][2]["code"], "features")
+        self.assertEqual(payload["overview"]["onboarding"]["steps"][2]["status"], "ready")
+        self.assertEqual(payload["overview"]["onboarding"]["steps"][3]["code"], "templates")
+        self.assertEqual(payload["overview"]["onboarding"]["steps"][4]["code"], "access")
+        self.assertFalse(payload["overview"]["onboarding"]["states"][1]["ok"])
+        self.assertIn("candidate runtime truth", payload["overview"]["onboarding"]["states"][1]["detail"])
+        self.assertEqual(payload["overview"]["onboarding"]["next_focus"]["code"], "laws")
+        self.assertEqual(payload["overview"]["onboarding"]["rollback_reference"], "/api/admin/runtime-servers/blackberry/deactivate")
+        self.assertEqual(payload["overview"]["onboarding"]["states"][0]["code"], "bootstrap-ready")
+        self.assertEqual(payload["overview"]["features"]["summary"]["status"], "ready")
+        self.assertEqual(payload["overview"]["templates"]["summary"]["status"], "ready")
         self.assertEqual(payload["overview"]["laws"]["runtime_version_parity"]["status"], "legacy_only")
         self.assertEqual(payload["overview"]["laws"]["projection_bridge_lifecycle"]["status"], "preview_only")
         self.assertEqual(payload["overview"]["laws"]["projection_bridge_readiness"]["status"], "action_required")
@@ -1230,6 +1659,9 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["server_code"], "blackberry")
         self.assertGreaterEqual(payload["count"], 1)
+        self.assertIn(payload["summary"]["status"], {"ready", "partial"})
+        self.assertGreaterEqual(payload["summary"]["counts"]["events"], 1)
+        self.assertIn("next_step", payload["summary"])
         self.assertTrue(any(item["kind"] in {"workflow_audit", "law_projection", "content_audit"} for item in payload["items"]))
 
     def test_runtime_server_issues_endpoint_and_recheck_action_are_operator_safe(self):
@@ -1238,6 +1670,9 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         issues_payload = issues.json()
         self.assertTrue(issues_payload["ok"])
         self.assertGreaterEqual(issues_payload["count"], 1)
+        self.assertEqual(issues_payload["summary"]["status"], "error")
+        self.assertGreaterEqual(issues_payload["summary"]["counts"]["actionable"], 1)
+        self.assertIn("Начните с", issues_payload["summary"]["next_step"])
         issue_ids = {item["issue_id"] for item in issues_payload["items"]}
         self.assertIn("laws_runtime_health", issue_ids)
         self.assertNotIn("laws_bindings_runtime_fallback", issue_ids)
@@ -1334,6 +1769,69 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertFalse(payload["health"]["summary"]["is_ready"])
         self.assertIn("runtime_bindings", payload["health"]["summary"]["observational_checks"])
         self.assertEqual(payload["readiness"]["blocks"]["laws"]["status"], "partial")
+
+    def test_runtime_server_workspace_onboarding_marks_content_steps_partial_when_workflow_is_pending(self):
+        created_feature = self.client.post(
+            "/api/admin/runtime-servers/blackberry/features",
+            json={
+                "title": "Проверка теста",
+                "key": "law_qa_retrieval",
+                "status": "draft",
+                "feature_flag": "law_qa_retrieval",
+                "config": {
+                    "feature_code": "law_qa_retrieval",
+                    "enabled": True,
+                    "rollout": "server_override",
+                    "owner": "ops",
+                    "notes": "server feature override",
+                    "order": 2,
+                },
+            },
+        )
+        self.assertEqual(created_feature.status_code, 200)
+        feature_change_request_id = int(created_feature.json()["change_request"]["id"])
+        feature_workflow = self.client.post(
+            "/api/admin/runtime-servers/blackberry/features/law_qa_retrieval/workflow",
+            json={"action": "submit_for_review", "change_request_id": feature_change_request_id},
+        )
+        self.assertEqual(feature_workflow.status_code, 200)
+
+        created_template = self.client.post(
+            "/api/admin/runtime-servers/blackberry/templates",
+            json={
+                "title": "Жалоба",
+                "key": "complaint_template_v1",
+                "status": "draft",
+                "output_format": "bbcode",
+                "config": {
+                    "template_code": "complaint_template_v1",
+                    "title": "Жалоба",
+                    "body": "[b]{{document_title}}[/b]\\n{{result}}\\n{{server_code}}",
+                    "format": "bbcode",
+                    "status": "draft",
+                    "notes": "server template override",
+                },
+            },
+        )
+        self.assertEqual(created_template.status_code, 200)
+        template_change_request_id = int(created_template.json()["change_request"]["id"])
+        template_workflow = self.client.post(
+            "/api/admin/runtime-servers/blackberry/templates/complaint_template_v1/workflow",
+            json={"action": "submit_for_review", "change_request_id": template_change_request_id},
+        )
+        self.assertEqual(template_workflow.status_code, 200)
+
+        response = self.client.get("/api/admin/runtime-servers/blackberry/workspace")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        feature_step = next(item for item in payload["overview"]["onboarding"]["steps"] if item["code"] == "features")
+        template_step = next(item for item in payload["overview"]["onboarding"]["steps"] if item["code"] == "templates")
+        self.assertEqual(feature_step["status"], "partial")
+        self.assertEqual(feature_step["action_label"], "Завершить workflow функций")
+        self.assertIn("workflow", feature_step["detail"].lower())
+        self.assertEqual(template_step["status"], "partial")
+        self.assertEqual(template_step["action_label"], "Завершить workflow шаблонов")
+        self.assertIn("workflow", template_step["detail"].lower())
 
     def test_runtime_server_issues_endpoint_exposes_runtime_provenance_warning_for_legacy_shell(self):
         with patch.object(
@@ -1609,7 +2107,10 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
 
         before_summary = self.client.get("/api/admin/runtime-servers/blackberry/access-summary")
         self.assertEqual(before_summary.status_code, 200)
-        before_item = next(item for item in before_summary.json()["items"] if item["username"] == "moderator1")
+        before_payload = before_summary.json()
+        self.assertEqual(before_payload["summary"]["status"], "ready")
+        self.assertGreaterEqual(before_payload["summary"]["counts"]["active_users"], 1)
+        before_item = next(item for item in before_payload["items"] if item["username"] == "moderator1")
         self.assertEqual(before_item["assignments"], [])
 
         assigned = self.client.post(
@@ -1627,7 +2128,10 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
 
         after_summary = self.client.get("/api/admin/runtime-servers/blackberry/access-summary")
         self.assertEqual(after_summary.status_code, 200)
-        after_item = next(item for item in after_summary.json()["items"] if item["username"] == "moderator1")
+        after_payload = after_summary.json()
+        self.assertEqual(after_payload["summary"]["status"], "ready")
+        self.assertGreaterEqual(after_payload["summary"]["counts"]["assignments"], 1)
+        after_item = next(item for item in after_payload["items"] if item["username"] == "moderator1")
         self.assertIn("court_claims", after_item["permissions"])
         self.assertTrue(after_item["is_tester"])
 
@@ -1818,6 +2322,8 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertTrue(list_payload["ok"])
         self.assertEqual(list_payload["counts"]["effective"], 1)
         self.assertEqual(list_payload["effective_items"][0]["source_scope"], "server")
+        self.assertEqual(list_payload["summary"]["status"], "ready")
+        self.assertEqual(list_payload["summary"]["counts"]["server_overrides"], 1)
 
         created = self.client.post(
             "/api/admin/runtime-servers/blackberry/features",
@@ -1849,6 +2355,13 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         workflow_payload = workflow.json()
         self.assertEqual(workflow_payload["result"]["change_request"]["status"], "in_review")
 
+        listed_after = self.client.get("/api/admin/runtime-servers/blackberry/features")
+        self.assertEqual(listed_after.status_code, 200)
+        after_payload = listed_after.json()
+        self.assertEqual(after_payload["summary"]["status"], "workflow_pending")
+        self.assertGreaterEqual(after_payload["summary"]["counts"]["active_workflow"], 1)
+        self.assertGreaterEqual(after_payload["summary"]["counts"]["in_review_workflow"], 1)
+
     def test_runtime_server_templates_endpoints_support_effective_list_preview_placeholders_and_reset(self):
         listed = self.client.get("/api/admin/runtime-servers/blackberry/templates")
         self.assertEqual(listed.status_code, 200)
@@ -1856,6 +2369,8 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertTrue(list_payload["ok"])
         self.assertEqual(list_payload["counts"]["effective"], 1)
         self.assertEqual(list_payload["effective_items"][0]["source_scope"], "global")
+        self.assertEqual(list_payload["summary"]["status"], "ready")
+        self.assertEqual(list_payload["summary"]["counts"]["server_overrides"], 0)
 
         created = self.client.post(
             "/api/admin/runtime-servers/blackberry/templates",
@@ -1899,6 +2414,12 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         )
         self.assertEqual(workflow.status_code, 200)
         self.assertEqual(workflow.json()["result"]["change_request"]["status"], "in_review")
+
+        listed_after_workflow = self.client.get("/api/admin/runtime-servers/blackberry/templates")
+        self.assertEqual(listed_after_workflow.status_code, 200)
+        after_workflow_payload = listed_after_workflow.json()
+        self.assertEqual(after_workflow_payload["summary"]["status"], "workflow_pending")
+        self.assertGreaterEqual(after_workflow_payload["summary"]["counts"]["active_workflow"], 1)
 
         reset = self.client.post("/api/admin/runtime-servers/blackberry/templates/complaint_template_v1/reset-to-default")
         self.assertEqual(reset.status_code, 200)
@@ -1948,6 +2469,17 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
                 fingerprint="orange-fp",
                 chunk_count=9,
             ),
+        ), patch(
+            "ogp_web.services.law_context_readiness_service.resolve_active_law_version",
+            return_value=ResolvedLawVersion(
+                id=88,
+                server_code="orange",
+                generated_at_utc="2026-04-16T00:00:00+00:00",
+                effective_from="2026-04-16",
+                effective_to="",
+                fingerprint="orange-fp",
+                chunk_count=9,
+            ),
         ):
             self.client.app.dependency_overrides[get_law_source_sets_store] = lambda: _FakeLawSourceSetsStore()
             response = self.client.get("/api/admin/runtime-servers/orange/health")
@@ -1960,6 +2492,10 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertFalse(payload["onboarding"]["requires_explicit_runtime_pack"])
         self.assertTrue(payload["onboarding"]["resolution"]["is_runtime_addressable"])
         self.assertTrue(payload["checks"]["config_resolution"]["ok"])
+        self.assertTrue(payload["checks"]["law_context"]["ok"])
+        self.assertTrue(payload["checks"]["runtime_requirements"]["ok"])
+        self.assertEqual(payload["checks"]["law_context"]["mode"], "projection_bridge")
+        self.assertEqual(payload["runtime_requirements"]["status"], "ready")
         self.assertEqual(payload["runtime_provenance"]["mode"], "projection_backed")
         self.assertTrue(payload["runtime_provenance"]["is_projection_backed"])
         self.assertEqual(payload["runtime_alignment"]["status"], "aligned")
@@ -1979,10 +2515,37 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
                 fingerprint="orange-fp",
                 chunk_count=9,
             ),
+        ), patch(
+            "ogp_web.services.law_context_readiness_service.resolve_active_law_version",
+            return_value=ResolvedLawVersion(
+                id=88,
+                server_code="orange",
+                generated_at_utc="2026-04-16T00:00:00+00:00",
+                effective_from="2026-04-16",
+                effective_to="",
+                fingerprint="orange-fp",
+                chunk_count=9,
+            ),
         ):
             self.client.app.dependency_overrides[get_law_source_sets_store] = lambda: _FakeLawSourceSetsStore()
             workspace = self.client.get("/api/admin/runtime-servers/orange/workspace")
         self.assertEqual(workspace.status_code, 200)
+        self.assertEqual(workspace.json()["overview"]["laws"]["law_context_readiness"]["status"], "ready")
+        self.assertEqual(workspace.json()["overview"]["laws"]["law_context_readiness"]["mode"], "projection_bridge")
+        self.assertEqual(workspace.json()["overview"]["runtime_truth"]["status"], "ready")
+        self.assertEqual(workspace.json()["overview"]["candidate_runtime_truth"]["status"], "ready")
+        self.assertEqual(workspace.json()["overview"]["runtime_focus"]["status"], "ready")
+        self.assertEqual(workspace.json()["overview"]["runtime_focus"]["next_action"], "No immediate runtime cutover action is required.")
+        self.assertEqual(workspace.json()["overview"]["strict_cutover_candidates"]["status"], "ready")
+        court_claim_candidate = next(
+            item for item in workspace.json()["overview"]["strict_cutover_candidates"]["items"] if item["section_code"] == "court_claim"
+        )
+        self.assertEqual(court_claim_candidate["status"], "strict_active")
+        self.assertEqual(court_claim_candidate["rollback_env"], "OGP_RELAXED_PUBLISHED_RUNTIME_SECTIONS=court_claim")
+        self.assertIn("Strict cutover is already active", court_claim_candidate["next_action"])
+        self.assertEqual(workspace.json()["overview"]["onboarding"]["highest_completed_state"], "rollout-ready")
+        self.assertEqual(workspace.json()["overview"]["onboarding"]["next_required_state"], "production-ready")
+        self.assertEqual(workspace.json()["overview"]["runtime_truth"]["blocked_count"], 0)
         self.assertEqual(workspace.json()["overview"]["laws"]["runtime_version_parity"]["status"], "aligned")
         self.assertTrue(workspace.json()["overview"]["laws"]["runtime_version_parity"]["law_set_observational_only"])
         self.assertTrue(workspace.json()["overview"]["laws"]["runtime_version_parity"]["shell_artifact_present"])
@@ -2060,6 +2623,94 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         self.assertEqual(payload["projection_bridge"]["law_set_id"], 2)
         self.assertEqual(payload["projection_bridge"]["law_version_id"], 88)
         self.assertTrue(payload["projection_bridge"]["matches_active_law_version"])
+
+    def test_runtime_server_health_prefers_explicit_pack_metadata_over_runtime_defaults(self):
+        blackberry_pack = blackberry_published_pack()
+        blackberry_metadata = dict(blackberry_pack.get("metadata") or {})
+        blackberry_metadata["law_qa_sources"] = []
+        blackberry_metadata["law_qa_bundle_path"] = ""
+        blackberry_pack["metadata"] = blackberry_metadata
+
+        with patch(
+            "ogp_web.server_config.registry._load_effective_pack_from_db",
+            side_effect=lambda *, server_code, at_timestamp=None: blackberry_pack if server_code == "blackberry" else None,
+        ):
+            self.client.app.dependency_overrides[get_law_source_sets_store] = lambda: _FakeLawSourceSetsStore()
+            response = self.client.get("/api/admin/runtime-servers/blackberry/health")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["onboarding"]["resolution_mode"], "published_pack")
+        self.assertEqual(payload["onboarding"]["highest_completed_state"], "bootstrap-ready")
+        self.assertFalse(payload["onboarding"]["states"]["workflow-ready"]["ok"])
+        self.assertIn("law source configuration", payload["onboarding"]["states"]["workflow-ready"]["detail"])
+
+        orange_pack = orange_published_pack()
+        orange_metadata = dict(orange_pack.get("metadata") or {})
+        orange_metadata["feature_flags"] = []
+        orange_pack["metadata"] = orange_metadata
+        self.runtime_store.rows["orange"] = {
+            "code": "orange",
+            "title": "Orange City",
+            "is_active": True,
+            "created_at": "2026-04-16T00:00:00+00:00",
+        }
+        self.runtime_law_sets_store.law_sets[2] = {
+            "id": 2,
+            "server_code": "orange",
+            "name": "Orange Draft",
+            "is_active": True,
+            "is_published": True,
+            "item_count": 1,
+        }
+        self.runtime_law_sets_store.bindings["orange"] = [
+            {
+                "law_set_id": 2,
+                "item_id": 1,
+                "law_code": "orange_code",
+                "priority": 100,
+                "effective_from": "",
+                "source_name": "Orange Main",
+                "source_url": "https://example.com/orange/law",
+            }
+        ]
+
+        with patch(
+            "ogp_web.server_config.registry._load_effective_pack_from_db",
+            side_effect=lambda *, server_code, at_timestamp=None: orange_pack if server_code == "orange" else None,
+        ), patch.object(
+            admin_runtime_servers_service,
+            "resolve_active_law_version",
+            return_value=ResolvedLawVersion(
+                id=88,
+                server_code="orange",
+                generated_at_utc="2026-04-16T00:00:00+00:00",
+                effective_from="2026-04-16",
+                effective_to="",
+                fingerprint="orange-fp",
+                chunk_count=9,
+            ),
+        ), patch(
+            "ogp_web.services.law_context_readiness_service.resolve_active_law_version",
+            return_value=ResolvedLawVersion(
+                id=88,
+                server_code="orange",
+                generated_at_utc="2026-04-16T00:00:00+00:00",
+                effective_from="2026-04-16",
+                effective_to="",
+                fingerprint="orange-fp",
+                chunk_count=9,
+            ),
+        ):
+            self.client.app.dependency_overrides[get_law_source_sets_store] = lambda: _FakeLawSourceSetsStore()
+            orange_response = self.client.get("/api/admin/runtime-servers/orange/health")
+
+        self.assertEqual(orange_response.status_code, 200)
+        orange_payload = orange_response.json()
+        self.assertEqual(orange_payload["onboarding"]["resolution_mode"], "published_pack")
+        self.assertEqual(orange_payload["onboarding"]["highest_completed_state"], "workflow-ready")
+        self.assertFalse(orange_payload["onboarding"]["states"]["rollout-ready"]["ok"])
+        self.assertIn("feature flags / rollout defaults", orange_payload["onboarding"]["states"]["rollout-ready"]["detail"])
 
     def test_catalog_audit_accepts_entity_filters(self):
         fake_workflow = _FakeContentWorkflowService()

@@ -8,10 +8,15 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from ogp_web.dependencies import get_exam_answers_store, get_user_store, requires_permission
 from ogp_web.env import is_test_user
 from ogp_web.server_config import PermissionSet, ServerConfig, resolve_default_server_code
-from ogp_web.services.auth_service import AuthError, AuthUser, get_current_user
+from ogp_web.services.auth_service import AuthError, AuthUser, get_current_user, require_user
 from ogp_web.services.pages_runtime_service import (
     build_exam_import_page_data,
     build_law_qa_test_page_data,
+)
+from ogp_web.services.section_capability_context_service import (
+    ensure_section_permission,
+    ensure_section_runtime_requirement,
+    resolve_section_capability_context,
 )
 from ogp_web.services.server_context_service import (
     extract_server_complaint_settings,
@@ -29,6 +34,10 @@ router = APIRouter()
 
 def _server_context(store: UserStore, username: str) -> tuple[ServerConfig, PermissionSet]:
     return resolve_user_server_context(store, username)
+
+
+def _section_context(store: UserStore, username: str, section_code: str):
+    return resolve_section_capability_context(store, username, section_code=section_code)
 
 
 def _request_server_config(request: Request) -> ServerConfig:
@@ -132,17 +141,20 @@ async def reset_password_page(request: Request, token: str = ""):
 @router.get("/complaint", response_class=HTMLResponse)
 async def complaint_page(
     request: Request,
-    user: AuthUser = Depends(requires_permission()),
+    user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ):
-    server_config, permissions = _server_context(store, user.username)
+    context = ensure_section_runtime_requirement(
+        ensure_section_permission(_section_context(store, user.username, "complaint")),
+        route_path="/complaint",
+    )
     return templates.TemplateResponse(
         request,
         "complaint.html",
         _build_page_context(
             user=user,
-            server_config=server_config,
-            permissions=permissions,
+            server_config=context.server_config,
+            permissions=context.permissions,
             nav_active="complaint",
             complaint_mode="default",
             preset_payload_json="",
@@ -156,15 +168,15 @@ async def complaint_test_page(
     user: AuthUser = Depends(requires_permission("court_claims")),
     store: UserStore = Depends(get_user_store),
 ):
-    server_config, permissions = _server_context(store, user.username)
-    complaint_settings = extract_server_complaint_settings(server_config)
+    context = _section_context(store, user.username, "complaint")
+    complaint_settings = extract_server_complaint_settings(context.server_config)
     return templates.TemplateResponse(
         request,
         "complaint.html",
         _build_page_context(
             user=user,
-            server_config=server_config,
-            permissions=permissions,
+            server_config=context.server_config,
+            permissions=context.permissions,
             nav_active="complaint_test",
             complaint_mode="test",
             preset_payload_json=(
@@ -200,17 +212,20 @@ async def exam_import_page(
 @router.get("/court-claim-test", response_class=HTMLResponse)
 async def court_claim_test_page(
     request: Request,
-    user: AuthUser = Depends(requires_permission("court_claims")),
+    user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ):
-    server_config, permissions = _server_context(store, user.username)
+    context = ensure_section_runtime_requirement(
+        ensure_section_permission(_section_context(store, user.username, "court_claim")),
+        route_path="/court-claim-test",
+    )
     return templates.TemplateResponse(
         request,
         "court_claim_test.html",
         _build_page_context(
             user=user,
-            server_config=server_config,
-            permissions=permissions,
+            server_config=context.server_config,
+            permissions=context.permissions,
             nav_active="court_claim_test",
         ),
     )
@@ -219,19 +234,22 @@ async def court_claim_test_page(
 @router.get("/law-qa-test", response_class=HTMLResponse)
 async def law_qa_test_page(
     request: Request,
-    user: AuthUser = Depends(requires_permission("court_claims")),
+    user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
 ):
-    server_config, permissions = _server_context(store, user.username)
+    context = ensure_section_runtime_requirement(
+        ensure_section_permission(_section_context(store, user.username, "law_qa")),
+        route_path="/law-qa-test",
+    )
     return templates.TemplateResponse(
         request,
         "law_qa_test.html",
         _build_page_context(
             user=user,
-            server_config=server_config,
-            permissions=permissions,
+            server_config=context.server_config,
+            permissions=context.permissions,
             nav_active="law_qa_test",
-            **build_law_qa_test_page_data(server_config=server_config),
+            **build_law_qa_test_page_data(server_config=context.server_config),
         ),
     )
 

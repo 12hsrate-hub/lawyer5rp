@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ogp_web.server_config import effective_server_pack
 from ogp_web.services.auth_service import AuthUser
 from ogp_web.services.complaint_draft_schema import form_version_hash
 from ogp_web.services.complaint_service import _template_hash as complaint_template_hash
@@ -14,24 +13,24 @@ from ogp_web.services.generation_snapshot_schema_service import (
     build_generation_server_snapshot,
 )
 from ogp_web.services.law_bundle_service import load_law_bundle_meta
+from ogp_web.services.published_artifact_resolution_service import (
+    COMPLAINT_FORM_CONTENT_KEY,
+    COMPLAINT_TEMPLATE_CONTENT_KEY,
+    COMPLAINT_VALIDATION_CONTENT_KEY,
+    resolve_section_artifact_specs,
+    resolve_section_published_artifacts,
+)
+from ogp_web.services.runtime_pack_reader_service import read_runtime_pack_snapshot
 from ogp_web.storage.content_workflow_repository import ContentWorkflowRepository
 from ogp_web.storage.user_store import UserStore
 
 
-PILOT_SERVER_CODE = "blackberry"
 PILOT_PROCEDURE_CODE = "complaint"
 PILOT_PROCEDURE_CONTENT_KEY = "complaint"
-PILOT_FORM_CONTENT_KEY = "complaint_form"
-PILOT_VALIDATION_CONTENT_KEY = "complaint_default"
-PILOT_TEMPLATE_CONTENT_KEY = "complaint_v1"
+PILOT_FORM_CONTENT_KEY = COMPLAINT_FORM_CONTENT_KEY
+PILOT_VALIDATION_CONTENT_KEY = COMPLAINT_VALIDATION_CONTENT_KEY
+PILOT_TEMPLATE_CONTENT_KEY = COMPLAINT_TEMPLATE_CONTENT_KEY
 PILOT_LAWS_CONTENT_KEY = "law_sources_manifest"
-PILOT_CONTENT_VERSION_SPECS = {
-    "procedure": ("procedures", PILOT_PROCEDURE_CONTENT_KEY),
-    "form": ("forms", PILOT_FORM_CONTENT_KEY),
-    "validation": ("validation_rules", PILOT_VALIDATION_CONTENT_KEY),
-    "template": ("templates", PILOT_TEMPLATE_CONTENT_KEY),
-    "laws": ("laws", PILOT_LAWS_CONTENT_KEY),
-}
 
 
 @dataclass(frozen=True)
@@ -67,10 +66,38 @@ class PilotComplaintRuntimeContext:
         }
 
 
+def _resolve_content_version_specs(*, server_pack_metadata: dict[str, Any]) -> dict[str, tuple[str, str]]:
+    shared_specs = resolve_section_artifact_specs(
+        section_code=PILOT_PROCEDURE_CODE,
+        server_pack_metadata=server_pack_metadata,
+    )
+    validation_spec = shared_specs.get("validation", ("validation_rules", PILOT_VALIDATION_CONTENT_KEY))
+    template_spec = shared_specs.get("template", ("templates", PILOT_TEMPLATE_CONTENT_KEY))
+    return {
+        "procedure": ("procedures", PILOT_PROCEDURE_CONTENT_KEY),
+        "form": shared_specs.get("form", ("forms", PILOT_FORM_CONTENT_KEY)),
+        "validation": validation_spec,
+        "template": template_spec,
+        "laws": ("laws", PILOT_LAWS_CONTENT_KEY),
+    }
+
+
+def _has_complaint_template_binding(*, server_pack_metadata: dict[str, Any]) -> bool:
+    template_bindings = dict(server_pack_metadata.get("template_bindings") or {}) if isinstance(server_pack_metadata, dict) else {}
+    complaint_binding = dict(template_bindings.get(PILOT_PROCEDURE_CODE) or {})
+    return bool(str(complaint_binding.get("template_key") or "").strip())
+
+
 def supports_pilot_runtime_adapter(*, server_code: str, document_kind: str) -> bool:
     normalized_server = str(server_code or "").strip().lower()
     normalized_kind = str(document_kind or "").strip().lower()
-    return normalized_server == PILOT_SERVER_CODE and normalized_kind == PILOT_PROCEDURE_CODE
+    if not normalized_server or normalized_kind != PILOT_PROCEDURE_CODE:
+        return False
+    try:
+        pack_snapshot = read_runtime_pack_snapshot(server_code=normalized_server)
+    except Exception:  # noqa: BLE001
+        return False
+    return _has_complaint_template_binding(server_pack_metadata=pack_snapshot.metadata)
 
 
 def _load_published_content_version(
@@ -105,6 +132,7 @@ def _load_published_content_versions(
     repository: ContentWorkflowRepository,
     *,
     server_code: str,
+    version_specs: dict[str, tuple[str, str]],
 ) -> dict[str, dict[str, Any] | None]:
     return {
         entry_name: _load_published_content_version(
@@ -113,7 +141,7 @@ def _load_published_content_versions(
             content_type=content_type,
             content_key=content_key,
         )
-        for entry_name, (content_type, content_key) in PILOT_CONTENT_VERSION_SPECS.items()
+        for entry_name, (content_type, content_key) in version_specs.items()
     }
 
 
@@ -166,10 +194,20 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
         raise ValueError("pilot_runtime_adapter_not_supported")
 
     repository = ContentWorkflowRepository(store.backend)
-    server_pack = effective_server_pack(server_code)
-    server_pack_metadata = dict(server_pack.get("metadata") or {}) if isinstance(server_pack, dict) else {}
+    pack_snapshot = read_runtime_pack_snapshot(server_code=server_code)
+    server_pack_metadata = dict(pack_snapshot.metadata or {})
+    version_specs = _resolve_content_version_specs(server_pack_metadata=server_pack_metadata)
     bundle_meta = load_law_bundle_meta(server_code)
-    published_versions = _load_published_content_versions(repository, server_code=server_code)
+    published_versions = _load_published_content_versions(
+        repository,
+        server_code=server_code,
+        version_specs=version_specs,
+    )
+    shared_artifacts = resolve_section_published_artifacts(
+        backend=store.backend,
+        server_code=server_code,
+        section_code=PILOT_PROCEDURE_CODE,
+    )
     payloads = _published_payloads(published_versions)
     procedure_version = published_versions["procedure"]
     form_version = published_versions["form"]
@@ -182,11 +220,34 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
     template_payload = payloads["template"]
     law_payload = payloads["laws"]
 
-    server_pack_version = str(server_pack.get("version") or "1")
+    server_pack_version = str(pack_snapshot.pack_version or "1")
     bundle_hash = str(getattr(bundle_meta, "fingerprint", "") or "").strip()
     form_hash = form_version_hash()
     validation_hash = complaint_validation_rules_version(PILOT_PROCEDURE_CODE)
     template_hash = complaint_template_hash(PILOT_PROCEDURE_CODE)
+    validation_content_key = version_specs["validation"][1]
+    template_content_key = version_specs["template"][1]
+    if shared_artifacts.form is not None and shared_artifacts.form.payload_json:
+        form_payload = dict(shared_artifacts.form.payload_json)
+        form_version = {
+            "id": shared_artifacts.form.published_version_id,
+            "version_number": shared_artifacts.form.version_number,
+            "payload_json": form_payload,
+        }
+    if shared_artifacts.validation is not None and shared_artifacts.validation.payload_json:
+        validation_payload = dict(shared_artifacts.validation.payload_json)
+        validation_version = {
+            "id": shared_artifacts.validation.published_version_id,
+            "version_number": shared_artifacts.validation.version_number,
+            "payload_json": validation_payload,
+        }
+    if shared_artifacts.template is not None and shared_artifacts.template.payload_json:
+        template_payload = dict(shared_artifacts.template.payload_json)
+        template_version = {
+            "id": shared_artifacts.template.published_version_id,
+            "version_number": shared_artifacts.template.version_number,
+            "payload_json": template_payload,
+        }
 
     return PilotComplaintRuntimeContext(
         server_code=server_code,
@@ -221,7 +282,7 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
             fallback_id=f"validation:{server_code}:{PILOT_PROCEDURE_CODE}:{validation_hash}",
             payload_field="rule_code",
             runtime_field="rule_set_key",
-            fallback_payload_value=PILOT_VALIDATION_CONTENT_KEY,
+            fallback_payload_value=validation_content_key,
             extra_fields={
                 "hash": validation_hash,
             },
@@ -232,7 +293,7 @@ def resolve_pilot_complaint_runtime_context(store: UserStore, user: AuthUser) ->
             fallback_id="complaint_bbcode_v1",
             payload_field="template_code",
             runtime_field="template_code",
-            fallback_payload_value=PILOT_TEMPLATE_CONTENT_KEY,
+            fallback_payload_value=template_content_key,
             extra_fields={"hash": template_hash},
         ),
         law_set_version=_build_runtime_version(

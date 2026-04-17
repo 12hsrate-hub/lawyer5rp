@@ -181,6 +181,7 @@ window.OGPAdminServerWorkspace = {
     function badgeClass(status) {
       const normalized = String(status || "").trim().toLowerCase();
       if (normalized === "ready") return "admin-badge--success";
+      if (normalized === "ready_with_compatibility") return "admin-badge--warning";
       if (normalized === "error") return "admin-badge--danger";
       if (normalized === "update_required" || normalized === "partial") return "admin-badge--warning";
       return "admin-badge--muted";
@@ -189,6 +190,8 @@ window.OGPAdminServerWorkspace = {
     function statusLabel(status) {
       const normalized = String(status || "").trim().toLowerCase();
       if (normalized === "ready") return "Готов";
+      if (normalized === "ready_with_compatibility") return "Готов с compatibility";
+      if (normalized === "blocked") return "Заблокировано";
       if (normalized === "error") return "Есть ошибки";
       if (normalized === "update_required") return "Требует обновления";
       if (normalized === "partial") return "Настроен частично";
@@ -233,6 +236,23 @@ window.OGPAdminServerWorkspace = {
       return "Проверьте смежную вкладку сервера или «Диагностика», чтобы уточнить источник и следующий шаг.";
     }
 
+    function renderOperationalSummaryCard({ title, summary, actionTab, actionLabel }) {
+      const normalizedStatus = String(summary?.status || "").trim().toLowerCase() || "partial";
+      return `
+        <div class="legal-subcard">
+          <div class="legal-subcard__header">
+            <div>
+              <span class="legal-field__label">${escapeHtml(String(title || "Summary"))}</span>
+              <div><span class="admin-badge ${badgeClass(normalizedStatus)}">${escapeHtml(statusLabel(normalizedStatus))}</span></div>
+            </div>
+            ${actionTab ? `<button type="button" class="ghost-button" data-server-workspace-switch="${escapeHtml(String(actionTab || ""))}">${escapeHtml(String(actionLabel || "Открыть"))}</button>` : ""}
+          </div>
+          <div class="admin-user-cell__secondary">${escapeHtml(String(summary?.detail || "—"))}</div>
+          <div class="admin-user-cell__secondary">${escapeHtml(String(summary?.next_step || "—"))}</div>
+        </div>
+      `;
+    }
+
     function uniqueValues(items, getter) {
       const values = new Set();
       (Array.isArray(items) ? items : []).forEach((item) => {
@@ -253,7 +273,11 @@ window.OGPAdminServerWorkspace = {
       const counters = readiness.counters || {};
       const health = state.workspace?.health?.summary || {};
       const onboarding = state.workspace?.health?.onboarding || {};
+      const runtimeTruth = state.workspace?.health?.runtime_requirements || {};
       const issues = state.issuesData || state.workspace?.issues || {};
+      const accessSummary = state.accessSummary?.summary || state.workspace?.overview?.access?.summary || {};
+      const auditSummary = state.auditData?.summary || {};
+      const issuesSummary = issues.summary || {};
       const latestAudit = Array.isArray(state.auditData?.items) ? state.auditData.items[0] : null;
       summaryHost.innerHTML = `
         <div class="legal-field">
@@ -270,6 +294,11 @@ window.OGPAdminServerWorkspace = {
           <span class="legal-field__label">Health</span>
           <div><strong>${health.is_ready ? "готов" : "нужна проверка"}</strong></div>
           <div class="admin-user-cell__secondary">${escapeHtml(String(health.ready_count || 0))}/${escapeHtml(String(health.total_count || 0))} checks</div>
+        </div>
+        <div class="legal-field">
+          <span class="legal-field__label">Migrated runtime</span>
+          <div><strong>${escapeHtml(String(runtimeTruth.status || "unknown"))}</strong></div>
+          <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeTruth.ready_count || 0))}/${escapeHtml(String(runtimeTruth.total_count || 0))} routes ready • compatibility: ${escapeHtml(String(runtimeTruth.compatibility_count || 0))}</div>
         </div>
         <div class="legal-field">
           <span class="legal-field__label">Runtime source</span>
@@ -292,9 +321,21 @@ window.OGPAdminServerWorkspace = {
             <button type="button" class="ghost-button" data-server-workspace-switch="laws">Законы</button>
             <button type="button" class="ghost-button" data-server-workspace-switch="features">Функции</button>
             <button type="button" class="ghost-button" data-server-workspace-switch="templates">Шаблоны</button>
+            <button type="button" class="ghost-button" data-server-workspace-switch="users">Пользователи</button>
+            <button type="button" class="ghost-button" data-server-workspace-switch="access">Доступ</button>
+            <button type="button" class="ghost-button" data-server-workspace-switch="audit">Аудит</button>
             <button type="button" class="ghost-button" data-server-workspace-switch="errors">Проблемы</button>
             <a class="ghost-button button-link" href="/admin/audit">Global users / audit</a>
           </div>
+        </div>
+        <div class="legal-field">
+          <span class="legal-field__label">Operational loop</span>
+          <div class="admin-section-toolbar">
+            <span class="admin-badge ${badgeClass(accessSummary.status)}">access: ${escapeHtml(statusLabel(accessSummary.status || "partial"))}</span>
+            <span class="admin-badge ${badgeClass(auditSummary.status)}">audit: ${escapeHtml(statusLabel(auditSummary.status || "partial"))}</span>
+            <span class="admin-badge ${badgeClass(issuesSummary.status)}">issues: ${escapeHtml(statusLabel(issuesSummary.status || "partial"))}</span>
+          </div>
+          <div class="admin-user-cell__secondary">${escapeHtml(String(issuesSummary.next_step || accessSummary.next_step || auditSummary.next_step || "Откройте смежные вкладки сервера, чтобы отработать доступ, аудит и проблемы."))}</div>
         </div>
       `;
     }
@@ -306,13 +347,28 @@ window.OGPAdminServerWorkspace = {
       }
       const readiness = state.workspace?.readiness || {};
       const blocks = readiness.blocks || {};
+      const onboardingSummary = state.workspace?.overview?.onboarding || {};
+      const runtimeTruth = state.workspace?.overview?.runtime_truth || state.workspace?.health?.runtime_requirements || {};
+      const candidateRuntimeTruth = state.workspace?.overview?.candidate_runtime_truth || state.workspace?.overview?.runtime_pack?.candidate_runtime_requirements || {};
+      const runtimeFocus = state.workspace?.overview?.runtime_focus || {};
+      const strictCutoverCandidates = state.workspace?.overview?.strict_cutover_candidates || {};
+      const runtimePack = state.workspace?.overview?.runtime_pack || {};
       const dashboard = state.workspace?.overview?.dashboard || {};
       const issues = state.issuesData || state.workspace?.issues || {};
+      const accessSummary = state.accessSummary?.summary || state.workspace?.overview?.access?.summary || {};
+      const auditSummary = state.auditData?.summary || {};
+      const issuesSummary = issues.summary || {};
       const auditItems = Array.isArray(state.auditData?.items) ? state.auditData.items : [];
       const activityItems = Array.isArray(state.workspace?.activity) ? state.workspace.activity.slice(0, 8) : [];
       const warningSignals = Array.isArray(dashboard.release?.warning_signals) ? dashboard.release.warning_signals : [];
       const recentIssues = Array.isArray(issues.items) ? issues.items.slice(0, 4) : [];
       const onboarding = state.workspace?.health?.onboarding || {};
+      const onboardingSteps = Array.isArray(onboardingSummary.steps) ? onboardingSummary.steps : [];
+      const onboardingStates = Array.isArray(onboardingSummary.states) ? onboardingSummary.states : [];
+      const runtimeTruthItems = Array.isArray(runtimeTruth.items) ? runtimeTruth.items : [];
+      const candidateRuntimeTruthItems = Array.isArray(candidateRuntimeTruth.items) ? candidateRuntimeTruth.items : [];
+      const strictCutoverItems = Array.isArray(strictCutoverCandidates.items) ? strictCutoverCandidates.items : [];
+      const onboardingNextFocus = onboardingSummary.next_focus || {};
       const recentChanges = auditItems
         .filter((item) => ["workflow_audit", "content_audit", "law_projection"].includes(String(item.kind || "")))
         .slice(0, 5);
@@ -338,8 +394,8 @@ window.OGPAdminServerWorkspace = {
         {
           key: "access",
           title: "Доступ",
-          status: Number(issues.error_count || 0) > 0 ? "partial" : "ready",
-          detail: `users: ${escapeHtml(String(getAccessItems().length || 0))} • roles: ${escapeHtml(String(state.rolesData?.items?.length || 0))}`,
+          status: accessSummary.status || (Number(issues.error_count || 0) > 0 ? "partial" : "ready"),
+          detail: escapeHtml(String(accessSummary.detail || `users: ${String(getAccessItems().length || 0)} • roles: ${String(state.rolesData?.items?.length || 0)}`)),
         },
       ];
       hostNode.innerHTML = `
@@ -347,6 +403,200 @@ window.OGPAdminServerWorkspace = {
           <div>
             <span class="legal-field__label">Обзор сервера</span>
             <p class="legal-section__description">Понятная сводка по готовности сервера, последним изменениям и проблемам без сырой технички по умолчанию.</p>
+          </div>
+        </div>
+        <div class="legal-subcard">
+          <div class="legal-subcard__header">
+            <div>
+              <span class="legal-field__label">Runtime truth</span>
+              <p class="legal-section__description">Эти verdict’ы должны совпадать с тем, что реально используют migrated runtime routes. Если здесь блокировка, в проде маршрут тоже не должен считаться готовым.</p>
+            </div>
+          </div>
+          <div class="legal-field-grid legal-field-grid--two">
+            <div class="legal-field">
+              <span class="legal-field__label">Summary</span>
+              <div><span class="admin-badge ${badgeClass(runtimeTruth.status)}">${escapeHtml(statusLabel(runtimeTruth.status || "partial"))}</span></div>
+              <div class="admin-user-cell__secondary">ready: ${escapeHtml(String(runtimeTruth.ready_count || 0))}/${escapeHtml(String(runtimeTruth.total_count || 0))} • blocked: ${escapeHtml(String(runtimeTruth.blocked_count || 0))} • compatibility: ${escapeHtml(String(runtimeTruth.compatibility_count || 0))}</div>
+            </div>
+            ${
+              runtimeTruthItems.slice(0, 3).map((item) => `
+                <div class="legal-field">
+                  <span class="legal-field__label">${escapeHtml(String(item.section_code || item.capability_code || "capability"))}</span>
+                  <div><span class="admin-badge ${badgeClass(item.route_status)}">${escapeHtml(statusLabel(item.route_status || "partial"))}</span></div>
+                  <div class="admin-user-cell__secondary">${escapeHtml(String(item.route_reason_code || "—"))}</div>
+                  <div class="admin-user-cell__secondary">${escapeHtml(String(item.route_reason_detail || "—"))}</div>
+                </div>
+              `).join("")
+            }
+          </div>
+          <div class="admin-user-cell__secondary">
+            current published pack: ${escapeHtml(String(runtimePack.published_version || 0))} • rollback available: ${escapeHtml(String(Boolean(runtimePack.rollback?.available)))}
+            ${runtimePack.rollback?.target_version ? ` • target version: ${escapeHtml(String(runtimePack.rollback.target_version))}` : ""}
+          </div>
+        </div>
+        <div class="legal-subcard">
+          <div class="legal-subcard__header">
+            <div>
+              <span class="legal-field__label">Candidate publish truth</span>
+              <p class="legal-section__description">Это прогноз shared runtime gate для кандидата pack publish. Он показывает, что станет доступно после publish, а не только текущее live-состояние.</p>
+            </div>
+          </div>
+          <div class="legal-field-grid legal-field-grid--two">
+            <div class="legal-field">
+              <span class="legal-field__label">Summary</span>
+              <div><span class="admin-badge ${badgeClass(candidateRuntimeTruth.status)}">${escapeHtml(statusLabel(candidateRuntimeTruth.status || "partial"))}</span></div>
+              <div class="admin-user-cell__secondary">ready: ${escapeHtml(String(candidateRuntimeTruth.ready_count || 0))}/${escapeHtml(String(candidateRuntimeTruth.total_count || 0))} • blocked: ${escapeHtml(String(candidateRuntimeTruth.blocked_count || 0))} • compatibility: ${escapeHtml(String(candidateRuntimeTruth.compatibility_count || 0))}</div>
+            </div>
+            ${
+              candidateRuntimeTruthItems.slice(0, 3).map((item) => `
+                <div class="legal-field">
+                  <span class="legal-field__label">${escapeHtml(String(item.section_code || item.capability_code || "capability"))}</span>
+                  <div><span class="admin-badge ${badgeClass(item.route_status)}">${escapeHtml(statusLabel(item.route_status || "partial"))}</span></div>
+                  <div class="admin-user-cell__secondary">${escapeHtml(String(item.route_reason_code || "—"))}</div>
+                  <div class="admin-user-cell__secondary">${escapeHtml(String(item.route_reason_detail || "—"))}</div>
+                </div>
+              `).join("")
+            }
+          </div>
+          <div class="admin-user-cell__secondary">
+            publish blockers: ${escapeHtml(String(runtimePack.count || 0))} • can publish: ${escapeHtml(String(Boolean(runtimePack.can_publish)))}
+          </div>
+        </div>
+        <div class="legal-subcard">
+          <div class="legal-subcard__header">
+            <div>
+              <span class="legal-field__label">Next runtime focus</span>
+              <p class="legal-section__description">Один короткий операторский сигнал: что именно сейчас мешает следующему publish или strict cutover для migrated flows.</p>
+            </div>
+          </div>
+          <div class="legal-field-grid legal-field-grid--two">
+            <div class="legal-field">
+              <span class="legal-field__label">Summary</span>
+              <div><span class="admin-badge ${badgeClass(runtimeFocus.status)}">${escapeHtml(statusLabel(runtimeFocus.status || "partial"))}</span></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeFocus.message || "—"))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Target</span>
+              <div><strong>${escapeHtml(String(runtimeFocus.section_code || "all_migrated_flows"))}</strong></div>
+              <div class="admin-user-cell__secondary">source=${escapeHtml(String(runtimeFocus.source || "current"))} • verdict=${escapeHtml(String(runtimeFocus.route_status || runtimeFocus.status || "ready"))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Reason</span>
+              <div><strong>${escapeHtml(String(runtimeFocus.reason_code || "aligned"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeFocus.reason_detail || "Current runtime truth and candidate publish truth are aligned."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Next action</span>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeFocus.next_action || "No immediate runtime cutover action is required."))}</div>
+            </div>
+          </div>
+        </div>
+        <div class="legal-subcard">
+          <div class="legal-subcard__header">
+            <div>
+              <span class="legal-field__label">Strict cutover candidates</span>
+              <p class="legal-section__description">Derived rollout view for migrated flows: can we already flip strict runtime, is it already active, or is candidate publish truth still blocking the cutover?</p>
+            </div>
+          </div>
+          <div class="legal-field-grid legal-field-grid--two">
+            <div class="legal-field">
+              <span class="legal-field__label">Summary</span>
+              <div><span class="admin-badge ${badgeClass(strictCutoverCandidates.status)}">${escapeHtml(statusLabel(strictCutoverCandidates.status || "partial"))}</span></div>
+              <div class="admin-user-cell__secondary">ready_to_flip: ${escapeHtml(String(strictCutoverCandidates.ready_to_flip_count || 0))} • strict_active: ${escapeHtml(String(strictCutoverCandidates.strict_active_count || 0))} • blocked: ${escapeHtml(String(strictCutoverCandidates.blocked_count || 0))}</div>
+            </div>
+            ${
+              strictCutoverItems.slice(0, 3).map((item) => `
+                <div class="legal-field">
+                  <span class="legal-field__label">${escapeHtml(String(item.section_code || "capability"))}</span>
+                  <div><span class="admin-badge ${badgeClass(item.status)}">${escapeHtml(statusLabel(item.status || "partial"))}</span></div>
+                  <div class="admin-user-cell__secondary">${escapeHtml(String(item.detail || "—"))}</div>
+                  <div class="admin-user-cell__secondary">${escapeHtml(String(item.next_action || "—"))}</div>
+                  <div class="admin-user-cell__secondary">strict: ${escapeHtml(String(item.strict_env || "—"))}</div>
+                  <div class="admin-user-cell__secondary">rollback: ${escapeHtml(String(item.rollback_env || "—"))}</div>
+                </div>
+              `).join("")
+            }
+          </div>
+        </div>
+        <div class="legal-subcard">
+          <div class="legal-subcard__header">
+            <div>
+              <span class="legal-field__label">Onboarding checklist</span>
+              <p class="legal-section__description">Новый сервер нужно доводить до usable state через этот server workspace, а не через `/admin/laws` или разрозненные diagnostics surfaces.</p>
+            </div>
+            ${
+              onboardingNextFocus.action_tab
+                ? `<button type="button" class="ghost-button" data-server-workspace-switch="${escapeHtml(String(onboardingNextFocus.action_tab || ""))}">${escapeHtml(String(onboardingNextFocus.action_label || "Открыть следующий шаг"))}</button>`
+                : ""
+            }
+          </div>
+          <div class="legal-field-grid legal-field-grid--two">
+            <div class="legal-field">
+              <span class="legal-field__label">Usable in admin</span>
+              <div><span class="admin-badge ${onboardingSummary.usable_in_admin ? "admin-badge--success" : "admin-badge--warning"}">${onboardingSummary.usable_in_admin ? "Да" : "Пока нет"}</span></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(onboardingSummary.usable_in_admin_detail || "—"))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">State progression</span>
+              <div><strong>${escapeHtml(String(onboardingSummary.highest_completed_state || "not-ready"))}</strong> → ${escapeHtml(String(onboardingSummary.next_required_state || "—"))}</div>
+              <div class="admin-user-cell__secondary">Primary path: ${escapeHtml(String(onboardingSummary.primary_path || `/admin/servers/${serverCode}`))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Runtime resolution</span>
+              <div><strong>${escapeHtml(String(onboardingSummary.resolution?.label || onboarding.resolution_label || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">
+                published=${escapeHtml(String(Boolean(onboardingSummary.resolution?.has_published_pack)))} • bootstrap=${escapeHtml(String(Boolean(onboardingSummary.resolution?.has_bootstrap_pack)))} • addressable=${escapeHtml(String(Boolean(onboardingSummary.resolution?.is_runtime_addressable)))}
+              </div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Rollback reference</span>
+              <div><strong>${escapeHtml(String(onboardingSummary.rollback_reference || onboarding.rollback_reference || "—"))}</strong></div>
+              <div class="admin-user-cell__secondary">Используйте это как explicit rollback path для onboarding changes.</div>
+            </div>
+          </div>
+          ${
+            onboardingSteps.length
+              ? `<div class="legal-field-grid legal-field-grid--two">
+                  ${onboardingSteps.map((step) => `
+                    <div class="legal-field">
+                      <span class="legal-field__label">${escapeHtml(String(step.title || step.code || "step"))}</span>
+                      <div><span class="admin-badge ${badgeClass(step.status)}">${escapeHtml(statusLabel(step.status))}</span></div>
+                      <div class="admin-user-cell__secondary">${escapeHtml(String(step.detail || "—"))}</div>
+                      ${
+                        step.action_tab
+                          ? `<div class="admin-section-toolbar"><button type="button" class="ghost-button" data-server-workspace-switch="${escapeHtml(String(step.action_tab || ""))}">${escapeHtml(String(step.action_label || "Открыть"))}</button></div>`
+                          : ""
+                      }
+                    </div>
+                  `).join("")}
+                </div>`
+              : ""
+          }
+          ${
+            onboardingStates.length
+              ? `<div class="legal-field-grid legal-field-grid--two">
+                  ${onboardingStates.map((item) => `
+                    <div class="legal-field">
+                      <span class="legal-field__label">${escapeHtml(String(item.code || "state"))}</span>
+                      <div><span class="admin-badge ${badgeClass(item.status)}">${escapeHtml(statusLabel(item.status))}</span></div>
+                      <div class="admin-user-cell__secondary">${escapeHtml(String(item.detail || "—"))}</div>
+                    </div>
+                  `).join("")}
+                </div>`
+              : ""
+          }
+        </div>
+        <div class="legal-subcard">
+          <div class="legal-subcard__header">
+            <div>
+              <span class="legal-field__label">Operational admin layer</span>
+              <p class="legal-section__description">Server-centric доступ, аудит и issue triage должны закрываться внутри этой карточки, а не через разрозненные глобальные поверхности.</p>
+            </div>
+          </div>
+          <div class="legal-grid legal-grid--three">
+            ${renderOperationalSummaryCard({ title: "Access summary", summary: accessSummary, actionTab: "access", actionLabel: "Открыть доступ" })}
+            ${renderOperationalSummaryCard({ title: "Audit summary", summary: auditSummary, actionTab: "audit", actionLabel: "Открыть аудит" })}
+            ${renderOperationalSummaryCard({ title: "Issues summary", summary: issuesSummary, actionTab: "errors", actionLabel: "Открыть проблемы" })}
           </div>
         </div>
         ${
@@ -865,6 +1115,7 @@ window.OGPAdminServerWorkspace = {
       const payload = state.featuresData || {};
       const items = getFeatureItems();
       const editor = state.featureEditorKey ? buildFeatureEditorState() : null;
+      const summary = payload.summary || {};
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
@@ -879,6 +1130,13 @@ window.OGPAdminServerWorkspace = {
         <div class="legal-field-grid legal-field-grid--two">
           <div class="legal-field"><span class="legal-field__label">Effective</span><div><strong>${escapeHtml(String(payload?.counts?.effective || 0))}</strong></div></div>
           <div class="legal-field"><span class="legal-field__label">Server overrides</span><div><strong>${escapeHtml(String(payload?.counts?.server || 0))}</strong></div></div>
+        </div>
+        <div class="legal-subcard">
+          <span class="legal-field__label">Workflow summary</span>
+          <div><span class="admin-badge ${badgeClass(summary.status === "workflow_pending" ? "partial" : summary.status)}">${escapeHtml(statusLabel(summary.status === "workflow_pending" ? "partial" : summary.status || "unknown"))}</span></div>
+          <div class="admin-user-cell__secondary">${escapeHtml(String(summary.detail || "Feature workflow summary is not available yet."))}</div>
+          <div class="admin-user-cell__secondary">pending=${escapeHtml(String(summary?.counts?.active_workflow || 0))} • draft=${escapeHtml(String(summary?.counts?.draft_workflow || 0))} • review=${escapeHtml(String(summary?.counts?.in_review_workflow || 0))}</div>
+          <div class="admin-user-cell__secondary">${escapeHtml(String(summary.next_step || ""))}</div>
         </div>
         ${
           items.length
@@ -969,6 +1227,7 @@ window.OGPAdminServerWorkspace = {
       const editor = state.templateEditorKey ? buildTemplateEditorState() : null;
       const preview = editor ? state.templatePreviewByKey[editor.contentKey] : null;
       const placeholders = editor ? state.templatePlaceholdersByKey[editor.contentKey] : null;
+      const summary = payload.summary || {};
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
@@ -983,6 +1242,13 @@ window.OGPAdminServerWorkspace = {
         <div class="legal-field-grid legal-field-grid--two">
           <div class="legal-field"><span class="legal-field__label">Effective</span><div><strong>${escapeHtml(String(payload?.counts?.effective || 0))}</strong></div></div>
           <div class="legal-field"><span class="legal-field__label">Server overrides</span><div><strong>${escapeHtml(String(payload?.counts?.server || 0))}</strong></div></div>
+        </div>
+        <div class="legal-subcard">
+          <span class="legal-field__label">Workflow summary</span>
+          <div><span class="admin-badge ${badgeClass(summary.status === "workflow_pending" ? "partial" : summary.status)}">${escapeHtml(statusLabel(summary.status === "workflow_pending" ? "partial" : summary.status || "unknown"))}</span></div>
+          <div class="admin-user-cell__secondary">${escapeHtml(String(summary.detail || "Template workflow summary is not available yet."))}</div>
+          <div class="admin-user-cell__secondary">pending=${escapeHtml(String(summary?.counts?.active_workflow || 0))} • draft=${escapeHtml(String(summary?.counts?.draft_workflow || 0))} • review=${escapeHtml(String(summary?.counts?.in_review_workflow || 0))}</div>
+          <div class="admin-user-cell__secondary">${escapeHtml(String(summary.next_step || ""))}</div>
         </div>
         ${
           items.length
@@ -1079,6 +1345,7 @@ window.OGPAdminServerWorkspace = {
         return;
       }
       const users = getAccessItems();
+      const accessSummary = state.accessSummary?.summary || state.workspace?.overview?.access?.summary || {};
       hostNode.innerHTML = `
         <div class="legal-subcard__header">
           <div>
@@ -1090,6 +1357,7 @@ window.OGPAdminServerWorkspace = {
             <a class="ghost-button button-link" href="/admin/audit">Открыть users / audit</a>
           </div>
         </div>
+        ${renderOperationalSummaryCard({ title: "User operations summary", summary: accessSummary, actionTab: "access", actionLabel: "Открыть доступ" })}
         ${
           users.length
             ? `<table class="legal-table admin-table admin-table--compact"><thead><tr><th>User</th><th>Email</th><th>Flags</th><th>Status</th><th>Действия</th></tr></thead><tbody>${users.map((item) => {
@@ -1136,6 +1404,7 @@ window.OGPAdminServerWorkspace = {
       const totals = Array.isArray(access.permission_totals) ? access.permission_totals : [];
       const roles = Array.isArray(state.rolesData?.items) ? state.rolesData.items : [];
       const permissions = Array.isArray(state.permissionsData?.items) ? state.permissionsData.items : [];
+      const accessSummary = access.summary || {};
       const selectedUser = getSelectedAccessUser();
       const selectedAssignments = Array.isArray(selectedUser?.assignments) ? selectedUser.assignments : [];
       const selectedPermissions = Array.isArray(selectedUser?.permissions) ? selectedUser.permissions : [];
@@ -1150,6 +1419,7 @@ window.OGPAdminServerWorkspace = {
             <button type="button" id="admin-server-access-reload" class="ghost-button">Обновить блок</button>
           </div>
         </div>
+        ${renderOperationalSummaryCard({ title: "Access summary", summary: accessSummary, actionTab: "users", actionLabel: "Открыть пользователей" })}
         <div class="legal-subcard">
           <span class="legal-field__label">Permission totals</span>
           ${
@@ -1264,6 +1534,7 @@ window.OGPAdminServerWorkspace = {
         return;
       }
       const items = Array.isArray(state.auditData?.items) ? state.auditData.items : [];
+      const summary = state.auditData?.summary || {};
       const groupedCounts = items.reduce((acc, item) => {
         const kind = String(item?.kind || "event");
         acc[kind] = (acc[kind] || 0) + 1;
@@ -1291,6 +1562,7 @@ window.OGPAdminServerWorkspace = {
             <button type="button" id="admin-server-audit-reload" class="ghost-button">Обновить блок</button>
           </div>
         </div>
+        ${renderOperationalSummaryCard({ title: "Audit summary", summary, actionTab: "errors", actionLabel: "Открыть проблемы" })}
         <div class="legal-subcard">
           <span class="legal-field__label">Сводка событий</span>
           ${
@@ -1329,6 +1601,7 @@ window.OGPAdminServerWorkspace = {
       }
       const issues = state.issuesData || state.workspace?.issues || {};
       const items = Array.isArray(issues.items) ? issues.items : [];
+      const summary = issues.summary || {};
       const actionableCount = items.filter((item) => Array.isArray(item.available_actions) && item.available_actions.length).length;
       const sourceOptions = uniqueValues(items, (item) => item?.source);
       const filteredItems = items.filter((item) => {
@@ -1352,6 +1625,7 @@ window.OGPAdminServerWorkspace = {
             <button type="button" id="admin-server-issues-reload" class="ghost-button">Обновить блок</button>
           </div>
         </div>
+        ${renderOperationalSummaryCard({ title: "Issues summary", summary, actionTab: "audit", actionLabel: "Открыть аудит" })}
         <div class="admin-section-toolbar">
           <span class="admin-badge ${issues.error_count ? "admin-badge--danger" : "admin-badge--muted"}">errors: ${escapeHtml(String(issues.error_count || 0))}</span>
           <span class="admin-badge ${issues.warning_count ? "admin-badge--warning" : "admin-badge--muted"}">warnings: ${escapeHtml(String(issues.warning_count || 0))}</span>

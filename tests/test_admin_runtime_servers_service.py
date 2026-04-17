@@ -48,7 +48,7 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_cutover_guardrails_summary,
 )
 from ogp_web.services.law_version_service import ResolvedLawVersion
-from tests.second_server_fixtures import orange_published_pack
+from tests.second_server_fixtures import blackberry_published_pack, orange_published_pack
 
 
 class _FakeRuntimeServersStore:
@@ -110,10 +110,29 @@ class _NoActiveLawSetStore:
 class _FakeLawSourceSetsStore:
     def list_bindings(self, *, server_code: str):
         if server_code == "orange":
-            return [type("_Binding", (), {"source_set_key": "legacy-orange-default", "priority": 100, "is_active": True})()]
+            return [
+                type(
+                    "_Binding",
+                    (),
+                    {"id": 12, "source_set_key": "legacy-orange-default", "priority": 100, "is_active": True},
+                )()
+            ]
         if server_code != "blackberry":
             return []
-        return [type("_Binding", (), {"source_set_key": "legacy-blackberry-default", "priority": 100, "is_active": True})()]
+        return [
+            type(
+                "_Binding",
+                (),
+                {"id": 11, "source_set_key": "legacy-blackberry-default", "priority": 100, "is_active": True},
+            )()
+        ]
+
+    def list_revisions(self, *, source_set_key: str):
+        revision_map = {
+            "legacy-blackberry-default": [type("Revision", (), {"id": 101, "status": "published"})()],
+            "legacy-orange-default": [type("Revision", (), {"id": 102, "status": "published"})()],
+        }
+        return list(revision_map.get(source_set_key, []))
 
 
 class _FakeProjectionRun:
@@ -225,7 +244,7 @@ def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
     )
 
     assert payload["summary"]["is_ready"] is False
-    assert payload["summary"]["ready_count"] == payload["summary"]["total_count"] - 1
+    assert payload["summary"]["ready_count"] == payload["summary"]["total_count"] - 3
     assert payload["summary"]["observational_checks"] == []
     assert payload["checks"]["law_set"]["observational_only"] is True
     assert payload["checks"]["bindings"]["binding_source"] == "source_set_bindings"
@@ -237,6 +256,15 @@ def test_build_runtime_server_health_payload_reports_ready_state(monkeypatch):
     assert payload["checks"]["config_resolution"]["detail"] == "bootstrap_pack_requires_published_runtime"
     assert payload["checks"]["config_resolution"]["path_role"] == "transitional_runtime_path"
     assert payload["checks"]["config_resolution"]["path_stage"] == "bootstrap"
+    assert payload["checks"]["law_context"]["ok"] is False
+    assert payload["checks"]["law_context"]["reason_code"] == "no_projection"
+    assert payload["checks"]["runtime_requirements"]["ok"] is False
+    assert payload["checks"]["runtime_requirements"]["blocked_count"] == 2
+    assert payload["checks"]["runtime_requirements"]["compatibility_count"] == 1
+    items_by_section = {item["section_code"]: item for item in payload["runtime_requirements"]["items"]}
+    assert items_by_section["court_claim"]["route_reason_code"] == "published_pack_cutover_required"
+    assert items_by_section["law_qa"]["route_reason_code"] == "no_projection"
+    assert payload["law_context_readiness"]["bindings"]["active_binding_ids"] == [11]
     assert payload["runtime_provenance"]["mode"] == "legacy_runtime_shell"
     assert payload["runtime_provenance"]["is_projection_backed"] is False
     assert payload["runtime_provenance"]["law_set_observational_only"] is True
@@ -280,7 +308,7 @@ def test_runtime_server_health_summary_treats_law_set_as_observational_shell_che
     )
 
     assert payload["checks"]["law_set"]["ok"] is False
-    assert payload["summary"]["ready_count"] == payload["summary"]["total_count"] - 1
+    assert payload["summary"]["ready_count"] == payload["summary"]["total_count"] - 3
     assert payload["summary"]["is_ready"] is False
     assert payload["summary"]["observational_checks"] == ["law_set"]
     assert payload["checks"]["law_set"]["observational_only"] is True
@@ -357,6 +385,18 @@ def test_second_server_published_pack_health_payload_reports_release_candidate_s
         ),
     )
     monkeypatch.setattr(
+        "ogp_web.services.law_context_readiness_service.resolve_active_law_version",
+        lambda *, server_code: ResolvedLawVersion(
+            id=88,
+            server_code=server_code,
+            generated_at_utc="2026-04-16T00:00:00+00:00",
+            effective_from="2026-04-16",
+            effective_to="",
+            fingerprint="orange-fp",
+            chunk_count=9,
+        ),
+    )
+    monkeypatch.setattr(
         "ogp_web.services.admin_runtime_servers_service.load_law_bundle_meta",
         lambda server_code: type("BundleMeta", (), {"chunk_count": 9})(),
     )
@@ -378,6 +418,12 @@ def test_second_server_published_pack_health_payload_reports_release_candidate_s
     assert payload["onboarding"]["uses_transitional_fallback"] is False
     assert payload["onboarding"]["resolution"]["is_runtime_addressable"] is True
     assert payload["checks"]["config_resolution"]["ok"] is True
+    assert payload["checks"]["law_context"]["ok"] is True
+    assert payload["checks"]["runtime_requirements"]["ok"] is True
+    assert payload["checks"]["runtime_requirements"]["blocked_count"] == 0
+    assert payload["checks"]["law_context"]["reason_code"] == "ready"
+    assert payload["law_context_readiness"]["mode"] == "projection_bridge"
+    assert payload["runtime_requirements"]["status"] == "ready"
     assert payload["runtime_provenance"]["mode"] == "projection_backed"
     assert payload["runtime_provenance"]["is_projection_backed"] is True
     assert payload["runtime_alignment"]["status"] == "aligned"
@@ -389,6 +435,105 @@ def test_second_server_published_pack_health_payload_reports_release_candidate_s
     assert payload["projection_bridge"]["law_set_id"] == 2
     assert payload["projection_bridge"]["law_version_id"] == 88
     assert payload["projection_bridge"]["matches_active_law_version"] is True
+
+
+def test_published_pack_explicit_empty_law_sources_do_not_count_as_defined_for_onboarding(monkeypatch):
+    pack = blackberry_published_pack()
+    metadata = dict(pack.get("metadata") or {})
+    metadata["law_qa_sources"] = []
+    metadata["law_qa_bundle_path"] = ""
+    pack["metadata"] = metadata
+
+    monkeypatch.setattr(
+        "ogp_web.server_config.registry._load_effective_pack_from_db",
+        lambda *, server_code, at_timestamp=None: pack if server_code == "blackberry" else None,
+    )
+
+    payload = build_runtime_server_health_payload(
+        server_code="blackberry",
+        runtime_servers_store=_FakeRuntimeServersStore(),
+        law_sets_store=_FakeRuntimeLawSetsStore(),
+        source_sets_store=_FakeLawSourceSetsStore(),
+    )
+
+    assert payload["onboarding"]["resolution_mode"] == "published_pack"
+    assert payload["checks"]["config_resolution"]["ok"] is True
+    assert payload["onboarding"]["highest_completed_state"] == "bootstrap-ready"
+    assert payload["onboarding"]["states"]["workflow-ready"]["ok"] is False
+    assert "law source configuration" in payload["onboarding"]["states"]["workflow-ready"]["detail"]
+
+
+def test_published_pack_explicit_empty_feature_flags_keep_rollout_pending(monkeypatch):
+    pack = orange_published_pack()
+    metadata = dict(pack.get("metadata") or {})
+    metadata["feature_flags"] = []
+    pack["metadata"] = metadata
+
+    class OrangeLawSetsStore:
+        def list_law_sets(self, *, server_code: str):
+            if server_code == "orange":
+                return [{"id": 2, "server_code": "orange", "name": "Orange Draft", "is_active": True, "is_published": True}]
+            return [{"id": 1, "server_code": server_code, "name": "Default", "is_active": True, "is_published": True}]
+
+        def list_server_law_bindings(self, *, server_code: str):
+            if server_code == "orange":
+                return [{"law_set_id": 2, "law_code": "orange_code"}]
+            return [{"law_set_id": 1, "law_code": "uk"}]
+
+    store = _FakeRuntimeServersStore()
+    store.rows["orange"] = {
+        "code": "orange",
+        "title": "Orange City",
+        "is_active": True,
+        "created_at": "2026-04-16T00:00:00+00:00",
+    }
+
+    monkeypatch.setattr(
+        "ogp_web.server_config.registry._load_effective_pack_from_db",
+        lambda *, server_code, at_timestamp=None: pack if server_code == "orange" else None,
+    )
+    monkeypatch.setattr(
+        "ogp_web.services.admin_runtime_servers_service.resolve_active_law_version",
+        lambda *, server_code: ResolvedLawVersion(
+            id=88,
+            server_code=server_code,
+            generated_at_utc="2026-04-16T00:00:00+00:00",
+            effective_from="2026-04-16",
+            effective_to="",
+            fingerprint="orange-fp",
+            chunk_count=9,
+        ),
+    )
+    monkeypatch.setattr(
+        "ogp_web.services.law_context_readiness_service.resolve_active_law_version",
+        lambda *, server_code: ResolvedLawVersion(
+            id=88,
+            server_code=server_code,
+            generated_at_utc="2026-04-16T00:00:00+00:00",
+            effective_from="2026-04-16",
+            effective_to="",
+            fingerprint="orange-fp",
+            chunk_count=9,
+        ),
+    )
+    monkeypatch.setattr(
+        "ogp_web.services.admin_runtime_servers_service.load_law_bundle_meta",
+        lambda server_code: type("BundleMeta", (), {"chunk_count": 9})(),
+    )
+
+    payload = build_runtime_server_health_payload(
+        server_code="orange",
+        runtime_servers_store=store,
+        law_sets_store=OrangeLawSetsStore(),
+        source_sets_store=_FakeLawSourceSetsStore(),
+        projections_store=_FakeProjectionsStore(),
+    )
+
+    assert payload["onboarding"]["resolution_mode"] == "published_pack"
+    assert payload["onboarding"]["states"]["workflow-ready"]["ok"] is True
+    assert payload["onboarding"]["states"]["rollout-ready"]["ok"] is False
+    assert payload["onboarding"]["highest_completed_state"] == "workflow-ready"
+    assert "feature flags / rollout defaults" in payload["onboarding"]["states"]["rollout-ready"]["detail"]
 
 
 def test_runtime_config_posture_and_debt_distinguish_published_bootstrap_and_fallback():

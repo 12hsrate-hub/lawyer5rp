@@ -24,6 +24,7 @@ from ogp_web.storage.canonical_law_document_versions_store import CanonicalLawDo
 from ogp_web.storage.law_source_discovery_store import LawSourceDiscoveryStore
 from ogp_web.storage.law_source_sets_store import LawSourceSetsStore
 from ogp_web.storage.runtime_servers_store import RuntimeServersStore
+from ogp_web.storage.runtime_server_packs_store import RuntimeServerPacksStore
 from ogp_web.storage.runtime_law_sets_store import RuntimeLawSetsStore
 from ogp_web.storage.server_effective_law_projections_store import ServerEffectiveLawProjectionsStore
 
@@ -122,6 +123,11 @@ def get_jobs_runtime_service(request: Request) -> JobsRuntimeService:
 def get_runtime_servers_store(_: Request) -> RuntimeServersStore:
     backend = get_database_backend()
     return RuntimeServersStore(backend)
+
+
+def get_runtime_server_packs_store(_: Request) -> RuntimeServerPacksStore:
+    backend = get_database_backend()
+    return RuntimeServerPacksStore(backend)
 
 
 def get_runtime_law_sets_store(_: Request) -> RuntimeLawSetsStore:

@@ -2,6 +2,12 @@
 
 A new server is not considered fully onboarded until it reaches the claimed onboarding state.
 
+Primary operator path for onboarding evidence:
+- `/admin/servers`
+- `/admin/servers/{server_code}`
+
+Do not treat `/admin/laws` as the start of onboarding. It remains an advanced / compatibility diagnostics surface.
+
 ## Onboarding states
 
 ### bootstrap-ready
@@ -22,6 +28,7 @@ Required:
 - feature flags / rollout defaults are defined
 - admin visibility exists
 - server workspace path is confirmed in `/admin/servers/{server_code}`
+- server workspace onboarding checklist is usable as the primary operator path
 - primary operator flow is demonstrated from `/admin/servers/{server_code}`, not from `/admin/laws`
 - smoke tests passed
 

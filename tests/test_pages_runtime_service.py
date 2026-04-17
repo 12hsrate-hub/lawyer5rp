@@ -44,15 +44,29 @@ class PagesRuntimeServiceTests(unittest.TestCase):
         self.assertEqual(store.calls, [("list_entries", 20, 0), ("count",)])
 
     def test_build_law_qa_test_page_data_prefers_workflow_backed_sources(self):
-        snapshot = SimpleNamespace(source_urls=("https://workflow.example/law",))
         with patch.object(
             pages_runtime_service,
-            "_build_law_admin_service",
-            return_value=SimpleNamespace(get_effective_sources=lambda **_: snapshot),
+            "build_law_context_readiness_service",
+            return_value=SimpleNamespace(
+                get_readiness=lambda **_: SimpleNamespace(
+                    to_payload=lambda: {
+                        "status": "ready",
+                        "source_urls": ["https://workflow.example/law"],
+                    }
+                )
+            ),
+        ), patch.object(
+            pages_runtime_service,
+            "get_database_backend",
+            return_value=object(),
         ), patch.object(
             pages_runtime_service,
             "list_servers_with_law_qa_context",
             return_value=[{"code": "blackberry", "name": "BlackBerry"}],
+        ), patch.object(
+            pages_runtime_service,
+            "resolve_runtime_pack_law_sources",
+            return_value=("https://pack.example/law",),
         ), patch.object(
             pages_runtime_service,
             "resolve_server_law_sources",
@@ -68,15 +82,55 @@ class PagesRuntimeServiceTests(unittest.TestCase):
         self.assertEqual(payload["law_qa_servers"], [{"code": "blackberry", "name": "BlackBerry"}])
         self.assertEqual(payload["law_qa_default_model"], "gpt-5.4-mini")
 
-    def test_build_law_qa_test_page_data_falls_back_when_workflow_lookup_fails(self):
+    def test_build_law_qa_test_page_data_falls_back_to_runtime_pack_sources_when_readiness_lookup_fails(self):
         with patch.object(
             pages_runtime_service,
-            "_build_law_admin_service",
-            return_value=SimpleNamespace(get_effective_sources=lambda **_: (_ for _ in ()).throw(RuntimeError("db down"))),
+            "build_law_context_readiness_service",
+            side_effect=RuntimeError("db down"),
+        ), patch.object(
+            pages_runtime_service,
+            "get_database_backend",
+            return_value=object(),
         ), patch.object(
             pages_runtime_service,
             "list_servers_with_law_qa_context",
             return_value=[{"code": "blackberry", "name": "BlackBerry"}],
+        ), patch.object(
+            pages_runtime_service,
+            "resolve_runtime_pack_law_sources",
+            return_value=("https://pack.example/law",),
+        ), patch.object(
+            pages_runtime_service,
+            "resolve_server_law_sources",
+            return_value=("https://fallback.example/law",),
+        ), patch.object(
+            pages_runtime_service,
+            "get_default_law_qa_model",
+            return_value="gpt-5.4-mini",
+        ):
+            payload = pages_runtime_service.build_law_qa_test_page_data(server_config=BLACKBERRY_SERVER_CONFIG)
+
+        self.assertEqual(payload["law_qa_sources"], ["https://pack.example/law"])
+        self.assertEqual(payload["law_qa_servers"], [{"code": "blackberry", "name": "BlackBerry"}])
+        self.assertEqual(payload["law_qa_default_model"], "gpt-5.4-mini")
+
+    def test_build_law_qa_test_page_data_falls_back_to_server_sources_when_runtime_pack_empty(self):
+        with patch.object(
+            pages_runtime_service,
+            "build_law_context_readiness_service",
+            side_effect=RuntimeError("db down"),
+        ), patch.object(
+            pages_runtime_service,
+            "get_database_backend",
+            return_value=object(),
+        ), patch.object(
+            pages_runtime_service,
+            "list_servers_with_law_qa_context",
+            return_value=[{"code": "blackberry", "name": "BlackBerry"}],
+        ), patch.object(
+            pages_runtime_service,
+            "resolve_runtime_pack_law_sources",
+            return_value=(),
         ), patch.object(
             pages_runtime_service,
             "resolve_server_law_sources",
@@ -89,8 +143,6 @@ class PagesRuntimeServiceTests(unittest.TestCase):
             payload = pages_runtime_service.build_law_qa_test_page_data(server_config=BLACKBERRY_SERVER_CONFIG)
 
         self.assertEqual(payload["law_qa_sources"], ["https://fallback.example/law"])
-        self.assertEqual(payload["law_qa_servers"], [{"code": "blackberry", "name": "BlackBerry"}])
-        self.assertEqual(payload["law_qa_default_model"], "gpt-5.4-mini")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -48,6 +49,7 @@ from ogp_web.services.generated_document_trace_service import (
     require_user_generated_document_trace_bundle,
     resolve_generated_document_snapshot_payload_from_bundle,
 )
+from ogp_web.services.law_context_readiness_service import build_law_context_readiness_service
 from ogp_web.services.pilot_runtime_adapter import (
     resolve_pilot_complaint_runtime_context,
     supports_pilot_runtime_adapter,
@@ -58,8 +60,10 @@ from ogp_web.services.regression_metrics import (
     record_generation_latency,
     start_timer,
 )
-from ogp_web.services.server_context_service import (
-    resolve_user_server_config,
+from ogp_web.services.section_capability_context_service import (
+    ensure_section_permission,
+    ensure_section_runtime_requirement,
+    resolve_section_capability_context,
 )
 from ogp_web.services.validation_service import ValidationService
 from ogp_web.services.retrieval_service import run_retrieval
@@ -167,16 +171,85 @@ def _validate_server_payload(store: UserStore, user: AuthUser, *, org: str = "",
     )
 
 
+def _with_selected_server(user: AuthUser, server_code: str) -> AuthUser:
+    return replace(user, server_code=str(server_code or "").strip().lower())
+
+
+def _resolve_complaint_user(
+    store: UserStore,
+    user: AuthUser,
+    *,
+    require_runtime_pack: bool = False,
+    route_path: str = "",
+) -> tuple[AuthUser, object]:
+    context = ensure_section_permission(
+        resolve_section_capability_context(store, user.username, section_code="complaint")
+    )
+    if require_runtime_pack:
+        context = ensure_section_runtime_requirement(context, route_path=route_path)
+    return _with_selected_server(user, context.selected_server_code), context
+
+
+def _resolve_law_qa_user(
+    store: UserStore,
+    user: AuthUser,
+    *,
+    server_code: str = "",
+    require_runtime_pack: bool = False,
+    route_path: str = "",
+) -> tuple[AuthUser, object]:
+    context = ensure_section_permission(
+        resolve_section_capability_context(
+            store,
+            user.username,
+            section_code="law_qa",
+            explicit_server_code=server_code,
+        )
+    )
+    if require_runtime_pack:
+        context = ensure_section_runtime_requirement(context, route_path=route_path)
+    return _with_selected_server(user, context.selected_server_code), context
+
+
+def _require_law_context_readiness(
+    store: UserStore,
+    *,
+    server_code: str,
+    requested_law_version_id: int | None = None,
+) -> dict[str, object]:
+    readiness = build_law_context_readiness_service(backend=getattr(store, "backend", None)).get_readiness(
+        server_code=server_code,
+        requested_law_version_id=requested_law_version_id,
+    )
+    payload = readiness.to_payload()
+    if not readiness.is_ready:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=[
+                f"Law context is not ready for server '{server_code}': {readiness.reason_code}.",
+                readiness.reason_detail,
+            ],
+        )
+    return payload
+
+
 @router.get("/api/complaint-draft", response_model=ComplaintDraftResponse)
 async def get_complaint_draft(
     document_type: str = "complaint",
     user: AuthUser = Depends(requires_permission()),
     store: UserStore = Depends(get_user_store),
 ) -> ComplaintDraftResponse:
-    server_config = resolve_user_server_config(store, user.username, server_code=user.server_code)
-    draft = store.get_complaint_draft(user.username, server_code=user.server_code, document_type=document_type)
+    effective_user, context = _resolve_complaint_user(store, user)
+    draft = store.get_complaint_draft(
+        effective_user.username,
+        server_code=effective_user.server_code,
+        document_type=document_type,
+    )
     metadata = draft.get("_meta", {}) if isinstance(draft.get("_meta"), dict) else {}
-    normalized = normalize_complaint_draft(_flatten_complaint_draft(draft.get("draft", {})), config=server_config)
+    normalized = normalize_complaint_draft(
+        _flatten_complaint_draft(draft.get("draft", {})),
+        config=context.server_config,
+    )
     return ComplaintDraftResponse(
         draft=normalized.draft,
         updated_at=str(draft.get("updated_at", "") or ""),
@@ -185,7 +258,7 @@ async def get_complaint_draft(
         status=str(metadata.get("status", "draft") or "draft"),
         allowed_actions=list(metadata.get("allowed_actions", []) or []),
         document_type=str(draft.get("document_type", document_type) or "complaint"),
-        server_id=str(draft.get("server_id", user.server_code) or ""),
+        server_id=str(draft.get("server_id", effective_user.server_code) or ""),
         message="Черновик жалобы загружен.",
     )
 
@@ -197,8 +270,11 @@ async def save_complaint_draft(
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ComplaintDraftResponse:
-    server_config = resolve_user_server_config(store, user.username, server_code=user.server_code)
-    normalized = normalize_complaint_draft(_flatten_complaint_draft(payload.draft), config=server_config)
+    effective_user, context = _resolve_complaint_user(store, user)
+    normalized = normalize_complaint_draft(
+        _flatten_complaint_draft(payload.draft),
+        config=context.server_config,
+    )
     if normalized.unknown_keys:
         unknown = ", ".join(normalized.unknown_keys)
         raise HTTPException(
@@ -215,20 +291,24 @@ async def save_complaint_draft(
         },
     }
     draft = store.save_complaint_draft(
-        user.username,
+        effective_user.username,
         draft_with_meta,
-        server_code=user.server_code,
+        server_code=effective_user.server_code,
         document_type=payload.document_type,
     )
     metadata = draft.get("_meta", {}) if isinstance(draft.get("_meta"), dict) else {}
     metrics_store.log_event(
         event_type="complaint_draft_saved",
-        username=user.username,
+        username=effective_user.username,
         path="/api/complaint-draft",
         method="PUT",
         status_code=200,
         resource_units=len(str(normalized.draft or {})),
-        meta={"keys_count": len(normalized.draft or {}), "server_code": user.server_code, "draft_actions": normalized.actions or {}},
+        meta={
+            "keys_count": len(normalized.draft or {}),
+            "server_code": effective_user.server_code,
+            "draft_actions": normalized.actions or {},
+        },
     )
     return ComplaintDraftResponse(
         draft=_flatten_complaint_draft(draft.get("draft", {})),
@@ -238,7 +318,7 @@ async def save_complaint_draft(
         status=str(metadata.get("status", "draft") or "draft"),
         allowed_actions=list(metadata.get("allowed_actions", []) or []),
         document_type=str(draft.get("document_type", payload.document_type) or "complaint"),
-        server_id=str(draft.get("server_id", user.server_code) or ""),
+        server_id=str(draft.get("server_id", effective_user.server_code) or ""),
         message="Черновик жалобы сохранён.",
     )
 
@@ -250,21 +330,26 @@ async def clear_complaint_draft(
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
 ) -> ComplaintDraftResponse:
-    store.clear_complaint_draft(user.username, server_code=user.server_code, document_type=document_type)
+    effective_user, _ = _resolve_complaint_user(store, user)
+    store.clear_complaint_draft(
+        effective_user.username,
+        server_code=effective_user.server_code,
+        document_type=document_type,
+    )
     metrics_store.log_event(
         event_type="complaint_draft_cleared",
-        username=user.username,
+        username=effective_user.username,
         path="/api/complaint-draft",
         method="DELETE",
         status_code=200,
-        meta={"server_code": user.server_code},
+        meta={"server_code": effective_user.server_code},
     )
     return ComplaintDraftResponse(
         draft={},
         updated_at="",
         status="draft",
         document_type=document_type,
-        server_id=user.server_code,
+        server_id=effective_user.server_code,
         message="Черновик жалобы очищен.",
     )
 
@@ -277,24 +362,33 @@ async def generate(
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     flag_service: FeatureFlagService = Depends(get_feature_flag_service),
 ) -> GenerateResponse:
+    effective_user, _ = _resolve_complaint_user(
+        store,
+        user,
+        require_runtime_pack=True,
+        route_path="/api/generate",
+    )
     started_at = start_timer()
-    docs_flag = flag_service.evaluate(flag="documents_v2", context=RolloutContext(username=user.username, server_id=user.server_code))
+    docs_flag = flag_service.evaluate(
+        flag="documents_v2",
+        context=RolloutContext(username=effective_user.username, server_id=effective_user.server_code),
+    )
     validation_flag = flag_service.evaluate(
         flag="validation_gate_v1",
-        context=RolloutContext(username=user.username, server_id=user.server_code),
+        context=RolloutContext(username=effective_user.username, server_id=effective_user.server_code),
     )
     adapter_flag = flag_service.evaluate(
         flag="pilot_runtime_adapter_v1",
-        context=RolloutContext(username=user.username, server_id=user.server_code),
+        context=RolloutContext(username=effective_user.username, server_id=effective_user.server_code),
     )
-    _validate_server_payload(store, user, org=payload.org)
+    _validate_server_payload(store, effective_user, org=payload.org)
     context_snapshot = _with_shadow_citations_policy(
-        _build_complaint_generation_context_snapshot(store=store, user=user, adapter_flag=adapter_flag)
+        _build_complaint_generation_context_snapshot(store=store, user=effective_user, adapter_flag=adapter_flag)
     )
-    bbcode = generate_bbcode_text(store, payload, user)
+    bbcode = generate_bbcode_text(store, payload, effective_user)
     bridge_result = _runtime_service().persist_generation_result(
         store=store,
-        user=user,
+        user=effective_user,
         document_kind="complaint",
         payload=payload.model_dump(),
         result_text=bbcode,
@@ -304,20 +398,20 @@ async def generate(
     _runtime_service().maybe_validate_generated_document(
         store=store,
         metrics_store=metrics_store,
-        user=user,
+        user=effective_user,
         path="/api/generate",
         validation_flag=validation_flag,
         bridge_result=bridge_result,
     )
     metrics_store.log_event(
         event_type="complaint_generated",
-        username=user.username,
+        username=effective_user.username,
         path="/api/generate",
         method="POST",
         status_code=200,
         resource_units=len(bbcode),
         meta={
-            "server_code": user.server_code,
+            "server_code": effective_user.server_code,
             "event_dt": payload.event_dt,
             "org": payload.org,
             "subject_names": payload.subject_names,
@@ -327,14 +421,14 @@ async def generate(
     )
     record_generation_latency(
         metrics_store,
-        username=user.username,
+        username=effective_user.username,
         path="/api/generate",
         method="POST",
         labels=build_rollout_labels(
             flag="documents_v2",
             rollout_mode=docs_flag.mode.value,
             cohort=docs_flag.cohort.value,
-            server_id=user.server_code,
+            server_id=effective_user.server_code,
             flow_type="generate",
             status="success",
         ),
@@ -522,20 +616,38 @@ async def extract_principal(
 @router.post("/api/ai/law-qa-test", response_model=LawQaResponse)
 async def law_qa_test(
     payload: LawQaPayload,
-    user: AuthUser = Depends(requires_permission("court_claims")),
+    user: AuthUser = Depends(require_user),
     store: UserStore = Depends(get_user_store),
     metrics_store: AdminMetricsStore = Depends(get_admin_metrics_store),
     flag_service: FeatureFlagService = Depends(get_feature_flag_service),
 ) -> LawQaResponse:
     try:
         started_at = start_timer()
-        effective_server_code = payload.server_code or user.server_code
-        if not str(effective_server_code or "").strip():
+        requested_server_code = str(payload.server_code or "").strip()
+        if not requested_server_code and not str(user.server_code or "").strip():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=["server_code is required."])
-        payload = payload.model_copy(update={"server_code": effective_server_code})
+        effective_user, _ = _resolve_law_qa_user(
+            store,
+            user,
+            server_code=requested_server_code,
+            require_runtime_pack=True,
+            route_path="/api/ai/law-qa-test",
+        )
+        effective_server_code = effective_user.server_code
+        law_context_readiness = _require_law_context_readiness(
+            store,
+            server_code=effective_server_code,
+            requested_law_version_id=payload.law_version_id,
+        )
+        payload = payload.model_copy(
+            update={
+                "server_code": effective_server_code,
+                "law_version_id": law_context_readiness.get("active_law_version_id") or payload.law_version_id,
+            }
+        )
         result = await _run_ai_task(
             metrics_store=metrics_store,
-            user=user,
+            user=effective_user,
             path="/api/ai/law-qa-test",
             operation="answer_law_question_details",
             func=ai_service.answer_law_question_details,
@@ -554,7 +666,7 @@ async def law_qa_test(
         )
         citations_flag = flag_service.evaluate(
             flag="citations_required",
-            context=RolloutContext(username=user.username, server_id=effective_server_code),
+            context=RolloutContext(username=effective_user.username, server_id=effective_server_code),
         )
         response_warnings = _runtime_service().resolve_law_qa_response_warnings(
             warnings=list(getattr(result, "warnings", []) or []),
@@ -563,7 +675,7 @@ async def law_qa_test(
         )
         retrieval, law_qa_run_id, citations = _runtime_service().persist_law_qa_artifacts(
             store=store,
-            user=user,
+            user=effective_user,
             effective_server_code=effective_server_code,
             question=payload.question,
             law_version_id=payload.law_version_id,
@@ -575,7 +687,7 @@ async def law_qa_test(
         )
         metrics_store.log_event(
             event_type="ai_law_qa_test",
-            username=user.username,
+            username=effective_user.username,
             path="/api/ai/law-qa-test",
             method="POST",
             status_code=200,
@@ -592,10 +704,12 @@ async def law_qa_test(
                 "selected_norms_count": len(result.selected_norms),
                 "max_answer_chars": payload.max_answer_chars,
                 "law_version_id": payload.law_version_id,
+                "law_context_mode": law_context_readiness.get("mode"),
+                "projection_run_id": law_context_readiness.get("projection", {}).get("run_id"),
             },
         )
         metrics_store.log_ai_generation(
-            username=user.username,
+            username=effective_user.username,
             server_code=effective_server_code,
             flow="law_qa",
             generation_id=result.generation_id,
@@ -611,12 +725,12 @@ async def law_qa_test(
         try:
             validation_flag = flag_service.evaluate(
                 flag="validation_gate_v1",
-                context=RolloutContext(username=user.username, server_id=effective_server_code),
+                context=RolloutContext(username=effective_user.username, server_id=effective_server_code),
             )
             _runtime_service().maybe_validate_law_qa_result(
                 store=store,
                 metrics_store=metrics_store,
-                user=user,
+                user=effective_user,
                 effective_server_code=effective_server_code,
                 question=payload.question,
                 result=result,
@@ -627,7 +741,7 @@ async def law_qa_test(
                 raise
         record_generation_latency(
             metrics_store,
-            username=user.username,
+            username=effective_user.username,
             path="/api/ai/law-qa-test",
             method="POST",
             labels=build_rollout_labels(

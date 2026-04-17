@@ -11,11 +11,11 @@
 
 ## 2. Карта потока данных
 - Frontend entrypoints:
-  - Страница: `GET /admin`, `/admin/dashboard`, `/admin/users` через [admin.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/routes/admin.py).
-  - Шаблон: [admin.html](/c:/Users/12hs/Desktop/VS/web/ogp_web/templates/admin.html).
-  - JS: [admin.js](/c:/Users/12hs/Desktop/VS/web/ogp_web/static/pages/admin.js).
+  - Страница: `GET /admin`, `/admin/dashboard`, `/admin/users` через [admin.py](../../../web/ogp_web/routes/admin.py).
+  - Шаблон: [admin.html](../../../web/ogp_web/templates/admin.html).
+  - JS: [admin.js](../../../web/ogp_web/static/pages/admin.js).
 - Hooks/stores/clients:
-  - Клиент: `window.OGPWeb.apiFetch` и `parsePayload` в [common.js](/c:/Users/12hs/Desktop/VS/web/ogp_web/static/shared/common.js).
+  - Клиент: `window.OGPWeb.apiFetch` и `parsePayload` в [common.js](../../../web/ogp_web/static/shared/common.js).
   - Главная загрузка: `loadAdminOverview()` + `loadAdminPerformance()` в `admin.js`.
 - Backend endpoints:
   - `GET /api/admin/overview` (ядро данных UI).
@@ -23,10 +23,10 @@
   - Дополнительно: `GET /api/admin/dashboard`, `GET /api/admin/users`, `GET /api/admin/ai-pipeline`, CSV, user actions.
 - Services/queries:
   - `admin_overview()` -> `metrics_store.get_overview(...)` + `exam_store.count_entries_needing_scores/list_entries/list_entries_with_failed_scores` + `user_store.list_users(...)`.
-  - `get_overview()` в [admin_metrics_store.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/storage/admin_metrics_store.py) тянет totals/top_endpoints/recent_events/user_metrics/ai_exam_stats.
+  - `get_overview()` в [admin_metrics_store.py](../../../web/ogp_web/storage/admin_metrics_store.py) тянет totals/top_endpoints/recent_events/user_metrics/ai_exam_stats.
 - External dependencies:
   - DB backend (`PostgresBackend`).
-  - (косвенно) rate limit + quota middleware в [app.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/app.py).
+  - (косвенно) rate limit + quota middleware в [app.py](../../../web/ogp_web/app.py).
 - Где именно ломается цепочка:
   - `require_admin_user` (401/403).
   - middleware quota block (429 на `/api/*` включая admin).
@@ -37,7 +37,7 @@
 
 ### Проблема 1: Общая ошибка в UI скрывает первопричину
 - Критичность: high
-- Где находится: [admin.js](/c:/Users/12hs/Desktop/VS/web/ogp_web/static/pages/admin.js), `loadAdminOverview()`, сообщение `"Не удалось загрузить данные админ-панели."`
+- Где находится: [admin.js](../../../web/ogp_web/static/pages/admin.js), `loadAdminOverview()`, сообщение `"Не удалось загрузить данные админ-панели."`
 - Симптом: пользователь видит один и тот же текст при разных реальных причинах.
 - Причина: fallback используется и для fetch exception, и для непарсимых payload, и для пустого `detail`.
 - Последствие: сложно отличить 403/429/500/502/timeout, растет MTTR.
@@ -47,7 +47,7 @@
 
 ### Проблема 2: Нет graceful-degradation у `/api/admin/overview`
 - Критичность: critical
-- Где находится: [admin.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/routes/admin.py), `admin_overview`
+- Где находится: [admin.py](../../../web/ogp_web/routes/admin.py), `admin_overview`
 - Симптом: падение одной подсистемы валит всю админ-панель.
 - Причина: endpoint собирает единый payload из нескольких storage-источников без частичного fallback.
 - Последствие: total outage админки вместо частичной деградации.
@@ -57,8 +57,8 @@
 ### Проблема 3: Контракт `performance` рассинхронизирован
 - Критичность: high
 - Где находится:
-  - Front: `renderPerformance` в [admin.js](/c:/Users/12hs/Desktop/VS/web/ogp_web/static/pages/admin.js)
-  - Back: `admin_performance` в [admin.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/routes/admin.py), `get_performance_overview` в [admin_metrics_store.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/storage/admin_metrics_store.py)
+  - Front: `renderPerformance` в [admin.js](../../../web/ogp_web/static/pages/admin.js)
+  - Back: `admin_performance` в [admin.py](../../../web/ogp_web/routes/admin.py), `get_performance_overview` в [admin_metrics_store.py](../../../web/ogp_web/storage/admin_metrics_store.py)
 - Симптом: пустые/некорректные значения в блоке производительности.
 - Причина: фронт читает `payload.latency/rates/top_endpoints/totals.failed_requests`, backend отдает `p50_ms/p95_ms/endpoint_overview/error_count/total_api_requests`.
 - Последствие: недостоверная операционная картина.
@@ -67,7 +67,7 @@
 
 ### Проблема 4: 5xx не гарантированно попадают в metric_events
 - Критичность: high
-- Где находится: middleware `capture_admin_metrics` в [app.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/app.py)
+- Где находится: middleware `capture_admin_metrics` в [app.py](../../../web/ogp_web/app.py)
 - Симптом: в админке нет события, хотя пользователь видел падение.
 - Причина: при exception до формирования response middleware re-raise делает без `log_event`.
 - Последствие: нет трассы для разбора аварии.
@@ -76,7 +76,7 @@
 
 ### Проблема 5: Риск 429 для админа из-за квоты API
 - Критичность: medium
-- Где находится: quota logic в `capture_admin_metrics` ([app.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/app.py))
+- Где находится: quota logic в `capture_admin_metrics` ([app.py](../../../web/ogp_web/app.py))
 - Симптом: админ-панель «не грузится» при исчерпанной квоте администратора.
 - Причина: квота проверяется для всех `/api/*` кроме `/api/auth/*`.
 - Последствие: блокируются и админские операции диагностики.
@@ -85,7 +85,7 @@
 
 ### Проблема 6: Роль admin завязана на env/fallback username
 - Критичность: medium
-- Где находится: `is_admin_user` / `require_admin_user` в [auth_service.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/services/auth_service.py)
+- Где находится: `is_admin_user` / `require_admin_user` в [auth_service.py](../../../web/ogp_web/services/auth_service.py)
 - Симптом: внезапные 403 для реального админа после смены окружения/аккаунта.
 - Причина: при пустых env работает fallback `username == "12345"`.
 - Последствие: ложные отказа доступа.
@@ -95,8 +95,8 @@
 ### Проблема 7: Тяжелый synchronous payload + live refresh
 - Критичность: high
 - Где находится:
-  - Front polling в [admin.js](/c:/Users/12hs/Desktop/VS/web/ogp_web/static/pages/admin.js) (`setInterval` + `Promise.all`)
-  - Backend `admin_overview` в [admin.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/routes/admin.py)
+  - Front polling в [admin.js](../../../web/ogp_web/static/pages/admin.js) (`setInterval` + `Promise.all`)
+  - Backend `admin_overview` в [admin.py](../../../web/ogp_web/routes/admin.py)
 - Симптом: просадки/таймауты под ростом users/events.
 - Причина: нет декомпозиции по lightweight endpoints, нет server-side caching overview.
 - Последствие: нестабильная загрузка, особенно через прокси/туннели.
@@ -115,7 +115,7 @@
 
 ### Проблема 9: Неполное покрытие тестами error-path для admin panel
 - Критичность: medium
-- Где находится: [tests/test_web_api.py](/c:/Users/12hs/Desktop/VS/tests/test_web_api.py), [tests/test_web_pages.py](/c:/Users/12hs/Desktop/VS/tests/test_web_pages.py)
+- Где находится: [tests/test_web_api.py](../../../tests/test_web_api.py), [tests/test_web_pages.py](../../../tests/test_web_pages.py)
 - Симптом: регрессии контракта UI<->API проходят незамеченными.
 - Причина: есть smoke/permission тесты, но нет end-to-end тестов на:
   - `/api/admin/performance` schema compatibility с UI,
@@ -127,7 +127,7 @@
 
 ### Проблема 10: Кодировочные артефакты в админ UI
 - Критичность: medium
-- Где находится: [admin.html](/c:/Users/12hs/Desktop/VS/web/ogp_web/templates/admin.html), [admin.js](/c:/Users/12hs/Desktop/VS/web/ogp_web/static/pages/admin.js), [auth_service.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/services/auth_service.py), [README_WEB.md](/c:/Users/12hs/Desktop/VS/web/README_WEB.md)
+- Где находится: [admin.html](../../../web/ogp_web/templates/admin.html), [admin.js](../../../web/ogp_web/static/pages/admin.js), [auth_service.py](../../../web/ogp_web/services/auth_service.py), [README_WEB.md](../../../web/README_WEB.md)
 - Симптом: `Р...`-строки вместо нормального русского текста.
 - Причина: часть файлов сохранена в неверной кодировке/конвертирована с mojibake.
 - Последствие: плохой UX, неоднозначные ошибки, риск неверной интерпретации команд.
@@ -136,7 +136,7 @@
 
 ### Проблема 11: `/api/admin/dashboard` не участвует в реальном рендере страницы
 - Критичность: low
-- Где находится: endpoint в [admin.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/routes/admin.py), текущий JS в [admin.js](/c:/Users/12hs/Desktop/VS/web/ogp_web/static/pages/admin.js)
+- Где находится: endpoint в [admin.py](../../../web/ogp_web/routes/admin.py), текущий JS в [admin.js](../../../web/ogp_web/static/pages/admin.js)
 - Симптом: есть endpoint с KPI/alerts, но UI продолжает жить от legacy `/overview`.
 - Причина: миграция не завершена.
 - Последствие: двойная логика, риск дрейфа контрактов.
@@ -240,14 +240,14 @@
 
 ## 11. Точки изменения в коде
 - Первоочередные:
-  - [web/ogp_web/routes/admin.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/routes/admin.py)
-  - [web/ogp_web/storage/admin_metrics_store.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/storage/admin_metrics_store.py)
-  - [web/ogp_web/app.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/app.py)
-  - [web/ogp_web/static/pages/admin.js](/c:/Users/12hs/Desktop/VS/web/ogp_web/static/pages/admin.js)
-  - [web/ogp_web/static/shared/common.js](/c:/Users/12hs/Desktop/VS/web/ogp_web/static/shared/common.js)
+  - [web/ogp_web/routes/admin.py](../../../web/ogp_web/routes/admin.py)
+  - [web/ogp_web/storage/admin_metrics_store.py](../../../web/ogp_web/storage/admin_metrics_store.py)
+  - [web/ogp_web/app.py](../../../web/ogp_web/app.py)
+  - [web/ogp_web/static/pages/admin.js](../../../web/ogp_web/static/pages/admin.js)
+  - [web/ogp_web/static/shared/common.js](../../../web/ogp_web/static/shared/common.js)
 - По доступам/ролям:
-  - [web/ogp_web/services/auth_service.py](/c:/Users/12hs/Desktop/VS/web/ogp_web/services/auth_service.py)
+  - [web/ogp_web/services/auth_service.py](../../../web/ogp_web/services/auth_service.py)
 - По тестам:
-  - [tests/test_web_api.py](/c:/Users/12hs/Desktop/VS/tests/test_web_api.py)
-  - [tests/test_web_pages.py](/c:/Users/12hs/Desktop/VS/tests/test_web_pages.py)
-  - [tests/test_web_storage.py](/c:/Users/12hs/Desktop/VS/tests/test_web_storage.py)
+  - [tests/test_web_api.py](../../../tests/test_web_api.py)
+  - [tests/test_web_pages.py](../../../tests/test_web_pages.py)
+  - [tests/test_web_storage.py](../../../tests/test_web_storage.py)

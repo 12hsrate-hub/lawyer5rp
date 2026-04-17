@@ -443,17 +443,17 @@ This file remains the canonical migration map and seam inventory, but it is no l
 - current RC candidate recommendation is `orange`
 - second-server complaint runtime remains explicitly out of scope for the first RC
 - Phase C progress:
-  - `UI_ADMIN_STRUCTURE.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
+  - `docs/ADMIN_PANEL.md` added as the read-only admin boundary map for the catalog-oriented admin pages.
   - Read-only page shells are now in place for `/admin/servers|laws|templates|features|rules`.
-  - Initial glossary baseline added in `docs/ADMIN_GLOSSARY.md`.
+  - Initial glossary baseline added in `docs/ADMIN_PANEL.md`.
   - Explicit page-shell subdomains are in place for servers, laws, templates, features, and rules.
 - Phase D progress:
   - `ContentWorkflowService` now exposes explicit change-request validation for pilot editable entities.
   - Submit-for-review and publish paths now revalidate the candidate version before state transition.
-  - `EDITABLE_WORKFLOW_CHECKLIST.md` added as the first editable workflow contract for pilot entities.
+  - `docs/archive/2026-04/EDITABLE_WORKFLOW_CHECKLIST.md` added as the first editable workflow contract for pilot entities.
   - Existing catalog workflow UI now exposes a `validate draft` action path for workflow-backed entities in draft state.
   - High-risk two-person approval is now enforced for `procedures`, `templates`, and `validation_rules`.
-  - `PUBLISH_RELEASE_CHECKLIST.md` added as the first release gate checklist for pilot publish actions.
+  - `docs/PUBLISH_RELEASE_CHECKLIST.md` added as the first release gate checklist for pilot publish actions.
 
 ## Critical user/admin journeys
 
@@ -862,13 +862,13 @@ Fallback criteria:
   - pilot rollout visibility is now exposed in the `admin/dashboard` ops workspace
   - rollout state is derived from `pilot_runtime_adapter_v1` and `pilot_shadow_compare_v1`
   - fallback signals and rollback history are now visible before enabling pilot cutover
-  - pilot preflight gating is now documented in `PILOT_ACTIVATION_CHECKLIST.md`
+  - pilot preflight gating is now documented in `docs/archive/2026-04/PILOT_ACTIVATION_CHECKLIST.md`
   - the same preflight checklist is rendered inline in the `Pilot rollout` dashboard block
-  - `SCALE_OUT_CHECKLIST_TEMPLATE.md` added as the first reusable template for post-pilot server/procedure expansion
-  - `LEGACY_DEPRECATION_CANDIDATES.md` added to track which compatibility seams may become removable after observation
-  - `PILOT_CUTOVER_REPORT_TEMPLATE.md` added to record pilot rollout decisions, observation windows, and rollback outcomes
+  - `docs/templates/SCALE_OUT_CHECKLIST_TEMPLATE.md` added as the first reusable template for post-pilot server/procedure expansion
+  - `docs/LEGACY_COMPATIBILITY.md` added to track which compatibility seams may become removable after observation
+  - `docs/templates/PILOT_CUTOVER_REPORT_TEMPLATE.md` added to record pilot rollout decisions, observation windows, and rollback outcomes
   - the `Pilot rollout` block now surfaces operator playbooks for activation, cutover recording, scale-out, and legacy deprecation follow-up
-  - `PILOT_OBSERVATION_LOG_TEMPLATE.md` added for repeated observation-window reviews before sign-off
+  - `docs/templates/PILOT_OBSERVATION_LOG_TEMPLATE.md` added for repeated observation-window reviews before sign-off
   - the `Pilot rollout` block now includes `Observation guidance` so warning signals, fallback counts, rollback readiness, and review journaling stay visible in one place
   - rollout warning signals now include `severity`, `owner`, and `next action` in the dashboard to support observation-window triage
   - the `Pilot rollout` block now includes an explicit `go / hold / rollback` cutover summary derived from rollout state, warning severity, fallback usage, and rollback history
@@ -880,10 +880,10 @@ Fallback criteria:
   - next work begins with one bounded post-pilot candidate, not broad rollout
   - legacy cleanup should follow the already-published removal gates from the rollout backlog
   - first recommended H.1 candidate is `blackberry + rehab` because it expands only the procedure dimension while keeping the pilot server and rollback surface unchanged
-  - `H.1a` is complete at the code/seed level via `REHAB_ROLLOUT_GAP_MAP.md`
+  - `H.1a` is complete at the code/seed level via `docs/archive/2026-04/REHAB_ROLLOUT_GAP_MAP.md`
   - current H.1b target is runtime verification of effective rehab inventory, validation, and provenance coverage
 - Phase F outcome:
-  - provenance baseline mapped in `PROVENANCE_SCHEMA.md` for `blackberry + complaint`
+  - provenance baseline mapped in `docs/AI_INTEGRATION.md` for `blackberry + complaint`
   - read-only provenance assembler and API added for `document_version_id`
   - generated document snapshot enriched with provenance payload
   - admin dashboard now includes provenance lookup by both `document version id` and `generated document id`

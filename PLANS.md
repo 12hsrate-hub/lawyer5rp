@@ -710,7 +710,7 @@ Status: `done`
 
 ### Deliverables
 - `MIGRATION_MAP.md`
-- `ARCHITECTURE_NOTES.md`
+- `docs/archive/2026-04/ARCHITECTURE_NOTES.md`
 - "legacy adapters list" (where compatibility must stay)
 
 ### Acceptance
@@ -753,7 +753,7 @@ Status: `done`
 - Initial implementation slice completed during pilot observation; compare-only metrics plumbing was later retired during `Phase H.2`.
 
 ### Deliverables
-- `DATA_MODEL_DRAFT.md`
+- `docs/archive/2026-04/DATA_MODEL_DRAFT.md`
 - feature flags matrix (`legacy_only`, `shadow_compare`, `new_runtime_active`)
 - historical drift-report instrumentation for the pilot observation window
 - Implemented pilot adapter seam with workflow-backed published reads + legacy fallback for `blackberry + complaint`
@@ -788,10 +788,10 @@ Status: `done`
 - Ban raw internal identifiers in visible labels by default.
 
 ### Deliverables
-- `UI_ADMIN_STRUCTURE.md`
+- `docs/ADMIN_PANEL.md`
 - read-only pages for pilot domain entities
 - initial glossary
-- `docs/ADMIN_GLOSSARY.md`
+- `docs/ADMIN_PANEL.md`
 
 Current Phase C progress:
 - catalog-domain read-only shell added for `/admin/servers|laws|templates|features|rules`
@@ -824,9 +824,9 @@ For pilot entities, implement:
 Current D.1 progress:
 - server-side `validate_change_request` added for workflow-backed pilot entities
 - submit-for-review and publish now revalidate candidate versions before state transition
-- `EDITABLE_WORKFLOW_CHECKLIST.md` added as the first editable workflow contract
+- `docs/archive/2026-04/EDITABLE_WORKFLOW_CHECKLIST.md` added as the first editable workflow contract
 - existing catalog workflow UI now has a `validate draft` action path wired to the validation endpoint
-- `PUBLISH_RELEASE_CHECKLIST.md` added as the first publish gate checklist for pilot entities
+- `docs/PUBLISH_RELEASE_CHECKLIST.md` added as the first publish gate checklist for pilot entities
 - high-risk two-person approval gate added for `procedures`, `templates`, and `validation_rules`
 
 ### D.2 Publication gates
@@ -838,8 +838,8 @@ Status: `done`
 - publication workflow endpoints + UI
 - audit ledger for config changes
 - release checklist per published bundle
-- `EDITABLE_WORKFLOW_CHECKLIST.md`
-- `PUBLISH_RELEASE_CHECKLIST.md`
+- `docs/archive/2026-04/EDITABLE_WORKFLOW_CHECKLIST.md`
+- `docs/PUBLISH_RELEASE_CHECKLIST.md`
 
 ### Acceptance
 - Admin can safely change pilot scenario without touching code.
@@ -863,7 +863,7 @@ Standardize job states across import/export/law rebuild/generation:
 - queued, running, succeeded, failed, retry_scheduled, cancelled.
 
 Current E.1 progress:
-- `JOB_STATE_MATRIX.md` added as the canonical async state baseline.
+- `docs/ASYNC_JOB_CONTRACTS.md` added as the canonical async state baseline.
 - Current fragmentation documented across:
   - `AsyncJobService`: `pending`, `queued`, `processing`, `succeeded`, `dead_lettered`, `cancelled`
   - `ExamImportTaskRegistry`: `queued`, `running`, `completed`, `failed`
@@ -896,7 +896,7 @@ Status: `done`
 
 Current E.2 progress:
 - `docs/ASYNC_OPERATIONS_RUNBOOK.md` added as the operator runbook for shared async jobs, law rebuild, and exam import flows.
-- `RETRY_IDEMPOTENCY_MATRIX.md` added as the explicit retry/idempotency contract baseline.
+- `docs/ASYNC_JOB_CONTRACTS.md` added as the explicit retry/idempotency contract baseline.
 - `content_reindex` now has a route-level idempotency contract via `/api/admin/reindex`:
   - explicit `idempotency_key` is accepted
   - default dedup key now resolves to `content_reindex:{scope}`
@@ -911,9 +911,9 @@ Status: `done`
 - async operations runbook updates
 - job observability views
 - retry/idempotency matrix
-- `JOB_STATE_MATRIX.md`
+- `docs/ASYNC_JOB_CONTRACTS.md`
 - `docs/ASYNC_OPERATIONS_RUNBOOK.md`
-- `RETRY_IDEMPOTENCY_MATRIX.md`
+- `docs/ASYNC_JOB_CONTRACTS.md`
 
 ### Acceptance
 - No silent duplicate execution for covered job classes.
@@ -947,7 +947,7 @@ Persist minimum explainability metadata for generated outputs:
 
 Status update:
 - `in_progress`
-- provenance baseline documented in `PROVENANCE_SCHEMA.md`
+- provenance baseline documented in `docs/AI_INTEGRATION.md`
 - read-only trace assembler implemented for `document_version_id`
 - read-only API surface added for `GET /api/document-versions/{version_id}/provenance`
 - generated document snapshot now includes provenance as a first traceable read surface
@@ -1012,8 +1012,8 @@ Execution status: `done`
 - Reuse the pilot rollout template instead of inventing a parallel migration path.
 - Record candidate-specific gates before any activation change.
 - Current H.1 recommendation: `blackberry + rehab` as the first same-server / second-procedure candidate.
-- `H.1a` complete: code/seed-level rehab inventory verification is documented in `REHAB_ROLLOUT_GAP_MAP.md`.
-- `H.1b` complete: runtime verification executed on production and recorded in `REHAB_ROLLOUT_GAP_MAP.md`.
+- `H.1a` complete: code/seed-level rehab inventory verification is documented in `docs/archive/2026-04/REHAB_ROLLOUT_GAP_MAP.md`.
+- `H.1b` complete: runtime verification executed on production and recorded in `docs/archive/2026-04/REHAB_ROLLOUT_GAP_MAP.md`.
 - Runtime verification script: `scripts/verify_rehab_runtime_catalog.py` (DB-backed catalog checks for `blackberry + rehab`).
 - `H.1c` complete: production catalog verification now passes after template/validation alignment.
 - `H.1d` complete: rehab generation now mirrors complaint post-generation validation and is reviewable through the same admin provenance workspace.
@@ -1275,13 +1275,13 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
   - the ops workspace now includes a `Pilot rollout` block backed by `/api/admin/dashboard/sections/release`
   - the block derives canonical pilot state (`legacy_only` / `shadow_compare` / `new_runtime_active`) from `pilot_runtime_adapter_v1` and `pilot_shadow_compare_v1`
   - fallback and rollback signals are now visible before any pilot activation change
-  - `PILOT_ACTIVATION_CHECKLIST.md` added as the first explicit preflight gate for `G.1`
+  - `docs/archive/2026-04/PILOT_ACTIVATION_CHECKLIST.md` added as the first explicit preflight gate for `G.1`
   - the dashboard rollout block now includes an inline activation checklist before cutover
-  - `SCALE_OUT_CHECKLIST_TEMPLATE.md` added as the first reusable template for `G.3`
-  - `LEGACY_DEPRECATION_CANDIDATES.md` added as the first cleanup list for post-observation removal work
-  - `PILOT_CUTOVER_REPORT_TEMPLATE.md` added as the first post-decision record template for `G.2`
+  - `docs/templates/SCALE_OUT_CHECKLIST_TEMPLATE.md` added as the first reusable template for `G.3`
+  - `docs/LEGACY_COMPATIBILITY.md` added as the first cleanup list for post-observation removal work
+  - `docs/templates/PILOT_CUTOVER_REPORT_TEMPLATE.md` added as the first post-decision record template for `G.2`
   - the dashboard rollout block now includes `Operator playbooks` so preflight, cutover, scale-out, and deprecation references stay visible in one place
-  - `PILOT_OBSERVATION_LOG_TEMPLATE.md` added for repeated observation-window checkpoints during `G.2`
+  - `docs/templates/PILOT_OBSERVATION_LOG_TEMPLATE.md` added for repeated observation-window checkpoints during `G.2`
   - the dashboard rollout block now includes `Observation guidance` for warning signals, fallback usage, rollback readiness, and review journaling
   - rollout warning signals now expose `severity`, `owner`, and `next action` directly in the dashboard so the observation window has an explicit triage surface
   - the dashboard rollout block now includes a `go / hold / rollback` cutover summary so operators can record an observation-window decision without re-reading every subsection
@@ -1292,7 +1292,7 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - Next phase:
 - `Phase H.1` selects one bounded post-pilot candidate and records its rollout gate before any broader scale-out
 - initial H.1 recommendation is `blackberry + rehab`, not `strawberry + complaint`
-- `H.1a` output is `REHAB_ROLLOUT_GAP_MAP.md`
+- `H.1a` output is `docs/archive/2026-04/REHAB_ROLLOUT_GAP_MAP.md`
 - `H.1d` is complete on production commit `f7c0bb5`
 - `Phase H.1` is accepted
 - `H.2a` is complete on production commit `55accd1`
@@ -1327,7 +1327,7 @@ Only postpone if pilot safety, async stability, and provenance guarantees remain
 - `I.1i` is complete on production commit `ef329f4`: `law_qa_test` page rendering now reuses shared law-context helpers instead of direct `server_config.law_qa_*` reads
 - immediate next step is `I.1j bounded seam selection after the accepted law-QA page context reuse`
 - Phase F completed:
-  - provenance baseline documented in `PROVENANCE_SCHEMA.md`
+  - provenance baseline documented in `docs/AI_INTEGRATION.md`
   - read-only provenance assembler implemented for `document_version_id`
   - read-only provenance API added at `/api/document-versions/{id}/provenance`
   - generated document snapshot now includes `generation_snapshot_id` and `provenance`

@@ -592,6 +592,46 @@ class AdminRuntimeServerPayload(BaseModel):
         return normalized
 
 
+class AdminRuntimeServerPackDraftPayload(BaseModel):
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("metadata")
+    @classmethod
+    def validate_metadata(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise ValueError("server_pack_metadata_must_be_object")
+        return dict(value)
+
+
+class AdminRuntimeServerPackPublishPayload(BaseModel):
+    comment: str = ""
+
+    @field_validator("comment")
+    @classmethod
+    def validate_comment(cls, value: str) -> str:
+        return str(value or "").strip()
+
+
+class AdminRuntimeServerPackRollbackPayload(BaseModel):
+    version: int | None = None
+    comment: str = ""
+
+    @field_validator("version")
+    @classmethod
+    def validate_version(cls, value: int | None) -> int | None:
+        if value is None:
+            return None
+        normalized = int(value)
+        if normalized <= 0:
+            raise ValueError("version_must_be_positive")
+        return normalized
+
+    @field_validator("comment")
+    @classmethod
+    def validate_comment(cls, value: str) -> str:
+        return str(value or "").strip()
+
+
 class AdminUserRoleAssignmentPayload(BaseModel):
     role_code: str = ""
     server_code: str = ""
