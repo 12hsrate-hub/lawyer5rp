@@ -54,6 +54,9 @@ Date: 2026-04-14
   - `L.runtime.37` tighten bootstrap config resolution into a true transitional gate: `bootstrap_pack` remains runtime-addressable for bounded base-config flows, but base runtime health no longer marks it as a green `config_resolution` state; only `published_pack` now satisfies the fully-ready config-resolution check
   - `L.runtime.38` cap bootstrap onboarding at `workflow-ready`: bootstrap remains a bounded transitional path, but server onboarding no longer advances to `rollout-ready` until a `published_pack` exists, so rollout posture and runtime config posture stop disagreeing about what counts as fully stable
   - `L.runtime.39` align server workspace readiness with the stricter bootstrap gate: the `laws` block now requires canonical bindings, health, and green published config resolution together, so bootstrap-backed servers no longer appear fully law-ready in server-centric readiness while the config path is still transitional
+  - `L.runtime.40` rename the remaining shrinking path from `legacy_runtime_shell` to `runtime_shell_artifact` in allowance/controls/matrix planning so the last operator-facing compatibility path reads as a rollback/artifact concern instead of a normal runtime mode
+  - `L.runtime.41` finish the same artifact wording in shell-debt guidance so high-level debt/next-step text also talks about `runtime shell artifact` dependence instead of `legacy shell path`
+  - `L.runtime.42` demote `runtime_shell_artifact` from `active_exception` to `transition_path` inside the compatibility path matrix so the remaining shell artifact no longer reads like a first-class exception path even when compatibility is still being held
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`
