@@ -190,9 +190,7 @@ def _build_runtime_server_onboarding_payload(
     law_sources_defined = bool(
         tuple(getattr(runtime_config, "law_qa_sources", ()) or ())
         or str(getattr(runtime_config, "law_qa_bundle_path", "") or "").strip()
-        or active_law_set
     )
-    law_set_defined = bool(active_law_set)
     bindings_defined = bool(bindings)
     template_bindings_defined = bool(dict(getattr(runtime_config, "template_bindings", {}) or {}))
     validation_profiles_defined = bool(dict(getattr(runtime_config, "validation_profiles", {}) or {}))
@@ -217,8 +215,6 @@ def _build_runtime_server_onboarding_payload(
         workflow_missing.append("published/bootstrap runtime pack")
     if not law_sources_defined:
         workflow_missing.append("law source configuration")
-    if not law_set_defined:
-        workflow_missing.append("law set")
     if not bindings_defined:
         workflow_missing.append("law bindings")
     if not template_bindings_defined:

@@ -527,6 +527,24 @@ class _FakeRuntimeLawSetsStore:
         return {k: row[k] for k in ("id", "server_code", "name", "is_active", "is_published")}
 
 
+class _NoActiveLawSetStore(_FakeRuntimeLawSetsStore):
+    def __init__(self):
+        super().__init__()
+        self.law_sets = {}
+        self.law_set_details = {}
+        self.bindings = {
+            "blackberry": [
+                {
+                    "law_set_id": 999,
+                    "item_id": 1,
+                    "law_code": "uk",
+                    "priority": 100,
+                    "effective_from": "",
+                }
+            ]
+        }
+
+
 class _FakeProjectionRun:
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
@@ -888,6 +906,16 @@ class AdminRuntimeServersApiTests(unittest.TestCase):
         activated = self.client.post("/api/admin/runtime-servers/city2/activate")
         self.assertEqual(activated.status_code, 200)
         self.assertTrue(activated.json()["item"]["is_active"])
+
+    def test_runtime_servers_onboarding_does_not_require_active_law_set_for_workflow_ready(self):
+        self.client.app.dependency_overrides[get_runtime_law_sets_store] = lambda: _NoActiveLawSetStore()
+
+        response = self.client.get("/api/admin/runtime-servers")
+
+        self.assertEqual(response.status_code, 200)
+        blackberry = next(item for item in response.json()["items"] if item["code"] == "blackberry")
+        self.assertEqual(blackberry["onboarding"]["highest_completed_state"], "workflow-ready")
+        self.assertNotIn("law set", blackberry["onboarding"]["states"]["workflow-ready"]["detail"])
 
     def test_runtime_server_update_rejects_code_mismatch(self):
         response = self.client.put("/api/admin/runtime-servers/city2", json={"code": "city3", "title": "Wrong"})

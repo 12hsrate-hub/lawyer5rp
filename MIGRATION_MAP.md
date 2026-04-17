@@ -7,11 +7,11 @@ Date: 2026-04-14
 
 - Execution checkpoint: `2026-04-15`
 - Active phase: `Phase L`
-- Active task: `tighten bootstrap_pack so it remains runtime-addressable only for code-owned base server configs`
+- Active task: `shrink legacy law runtime shell by removing active_law_set from onboarding/workflow readiness truth`
 - Status: `in_progress`
 - Last completed phase: `Phase K`
 - Inventory slices completed: `6`
-- Next slice: `start shrinking the legacy law runtime shell after fallback/bootstrap addressability is narrowed`
+- Next slice: `continue shrinking the legacy law runtime shell after onboarding no longer depends on active_law_set`
 - Last updated: `2026-04-17`
 - Accelerated runtime phase:
   - `L.runtime.1` add a single `runtime_bridge_policy` verdict so runtime cutover posture is no longer inferred from multiple lower-level summaries
@@ -25,6 +25,7 @@ Date: 2026-04-14
   - `L.runtime.9` add `compatibility_path_matrix`, `next_shrink_step`, and `shrink_sequence` so runtime/admin surfaces move from generic shrink posture to bounded per-path execution planning, with an explicit matrix of remaining compatibility paths, the next recommended shrink target, and the ordered sequence for exiting the remaining compatibility shell
   - `L.runtime.10` physically shrink `neutral_fallback` by removing automatic runtime addressability for DB-only servers without a published/bootstrap pack, while preserving the fallback as an explicit admin/runtime compatibility signal and bounded exception path
   - `L.runtime.11` tighten `bootstrap_pack` so it remains runtime-addressable only for code-owned base server configs, instead of acting as a generic steady-state runtime path for arbitrary non-base servers
+  - `L.runtime.12` shrink the legacy law runtime shell by removing `active_law_set` from onboarding/workflow readiness truth; explicit law source configuration plus bindings remain the readiness basis, while `law_set` stays visible only as a runtime shell / rollback artifact in health and provenance surfaces
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`
