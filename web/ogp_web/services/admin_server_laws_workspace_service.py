@@ -880,6 +880,8 @@ def build_runtime_convergence_summary(
     blockers_status = str(blockers.get("status") or "").strip().lower()
     gap_status = str(gap.get("status") or "").strip().lower()
     shell_debt_status = str(shell_debt.get("status") or "").strip().lower()
+    shell_role = str(gap.get("shell_role") or shell_debt.get("shell_role") or "").strip().lower()
+    shell_stage = str(gap.get("shell_stage") or shell_debt.get("shell_stage") or "").strip().lower()
 
     if blockers_status in {"clear", "review"} and gap_status == "closed" and shell_debt_status == "low":
         status = "converged"
@@ -913,6 +915,8 @@ def build_runtime_convergence_summary(
         "blockers_status": blockers_status,
         "activation_gap_status": gap_status,
         "shell_debt_status": shell_debt_status,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -932,6 +936,8 @@ def build_cutover_readiness_summary(
     convergence_status = str(convergence.get("status") or "").strip().lower()
     shell_debt_status = str(shell_debt.get("status") or "").strip().lower()
     gap_status = str(gap.get("status") or "").strip().lower()
+    shell_role = str(convergence.get("shell_role") or gap.get("shell_role") or shell_debt.get("shell_role") or "").strip().lower()
+    shell_stage = str(convergence.get("shell_stage") or gap.get("shell_stage") or shell_debt.get("shell_stage") or "").strip().lower()
 
     if convergence_status == "converged" and shell_debt_status == "low" and gap_status == "closed":
         status = "ready_for_cutover"
@@ -966,6 +972,8 @@ def build_cutover_readiness_summary(
         "convergence_status": convergence_status,
         "shell_debt_status": shell_debt_status,
         "activation_gap_status": gap_status,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -1124,6 +1132,9 @@ def build_cutover_blockers_breakdown_summary(
         detail = "No explicit cutover blockers are visible in the current read model."
         next_step = "Явных cutover blockers не видно."
 
+    shell_role = str(gap.get("shell_role") or shell_debt.get("shell_role") or "").strip().lower()
+    shell_stage = str(gap.get("shell_stage") or shell_debt.get("shell_stage") or "").strip().lower()
+
     return {
         "status": status,
         "detail": detail,
@@ -1131,6 +1142,8 @@ def build_cutover_blockers_breakdown_summary(
         "count": len(deduped),
         "category_counts": category_counts,
         "items": deduped[:10],
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -1150,6 +1163,8 @@ def build_runtime_cutover_mode_summary(
     convergence_status = str(convergence.get("status") or "").strip().lower()
     shell_debt_status = str(shell_debt.get("status") or "").strip().lower()
     config_debt_status = str(config_debt.get("status") or "").strip().lower()
+    shell_role = str(convergence.get("shell_role") or shell_debt.get("shell_role") or "").strip().lower()
+    shell_stage = str(convergence.get("shell_stage") or shell_debt.get("shell_stage") or "").strip().lower()
 
     if cutover_status == "ready_for_cutover" and convergence_status == "converged" and shell_debt_status == "low" and config_debt_status == "low":
         status = "projection_preferred"
@@ -1176,6 +1191,8 @@ def build_runtime_cutover_mode_summary(
         "convergence_status": convergence_status,
         "shell_debt_status": shell_debt_status,
         "config_debt_status": config_debt_status,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -1192,6 +1209,8 @@ def build_runtime_bridge_policy_summary(
     resolution_status = str(resolution.get("status") or "").strip().lower()
     cutover_mode_status = str(cutover_mode.get("status") or "").strip().lower()
     cutover_status = str(cutover.get("status") or "").strip().lower()
+    shell_role = str(cutover_mode.get("shell_role") or cutover.get("shell_role") or "").strip().lower()
+    shell_stage = str(cutover_mode.get("shell_stage") or cutover.get("shell_stage") or "").strip().lower()
 
     if resolution_status == "declared_runtime" and cutover_mode_status == "projection_preferred":
         status = "prefer_projection_runtime"
@@ -1234,6 +1253,8 @@ def build_runtime_bridge_policy_summary(
         "resolution_policy_status": resolution_status,
         "cutover_mode_status": cutover_mode_status,
         "cutover_readiness_status": cutover_status,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -1253,6 +1274,8 @@ def build_runtime_operating_mode_summary(
     config_posture_status = str(config_posture.get("status") or "").strip().lower()
     provenance_mode = str(provenance.get("mode") or "").strip().lower()
     cutover_mode_status = str(cutover_mode.get("status") or "").strip().lower()
+    shell_role = str(cutover_mode.get("shell_role") or provenance.get("shell_role") or "").strip().lower()
+    shell_stage = str(cutover_mode.get("shell_stage") or provenance.get("shell_stage") or "").strip().lower()
 
     if (
         bridge_policy_status == "prefer_projection_runtime"
@@ -1297,6 +1320,8 @@ def build_runtime_operating_mode_summary(
         "config_posture_status": config_posture_status,
         "provenance_mode": provenance_mode,
         "cutover_mode_status": cutover_mode_status,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -1322,6 +1347,8 @@ def build_runtime_policy_violations_summary(
     provenance_mode = str(provenance.get("mode") or "").strip().lower()
     shell_debt_status = str(shell_debt.get("status") or "").strip().lower()
     cutover_status = str(cutover.get("status") or "").strip().lower()
+    shell_role = str(operating_mode.get("shell_role") or shell_debt.get("shell_role") or provenance.get("shell_role") or "").strip().lower()
+    shell_stage = str(operating_mode.get("shell_stage") or shell_debt.get("shell_stage") or provenance.get("shell_stage") or "").strip().lower()
 
     items: list[dict[str, str]] = []
 
@@ -1391,6 +1418,8 @@ def build_runtime_policy_violations_summary(
         "items": deduped[:10],
         "bridge_policy_status": bridge_policy_status,
         "operating_mode_status": operating_mode_status,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -1410,6 +1439,8 @@ def build_cutover_guardrails_summary(
     operating_mode_status = str(operating_mode.get("status") or "").strip().lower()
     violations_status = str(violations.get("status") or "").strip().lower()
     cutover_status = str(cutover.get("status") or "").strip().lower()
+    shell_role = str(operating_mode.get("shell_role") or bridge_policy.get("shell_role") or "").strip().lower()
+    shell_stage = str(operating_mode.get("shell_stage") or bridge_policy.get("shell_stage") or "").strip().lower()
 
     if bridge_policy_status == "prefer_projection_runtime" and violations_status == "clear" and cutover_status == "ready_for_cutover":
         status = "enforced"
@@ -1441,6 +1472,8 @@ def build_cutover_guardrails_summary(
         "operating_mode_status": operating_mode_status,
         "violations_status": violations_status,
         "cutover_status": cutover_status,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -1460,6 +1493,8 @@ def build_runtime_policy_enforcement_summary(
     operating_mode_status = str(operating_mode.get("status") or "").strip().lower()
     violations_status = str(violations.get("status") or "").strip().lower()
     guardrails_status = str(guardrails.get("status") or "").strip().lower()
+    shell_role = str(operating_mode.get("shell_role") or bridge_policy.get("shell_role") or "").strip().lower()
+    shell_stage = str(operating_mode.get("shell_stage") or bridge_policy.get("shell_stage") or "").strip().lower()
 
     if bridge_policy_status == "prefer_projection_runtime" and violations_status == "clear" and guardrails_status == "enforced":
         status = "enforced"
@@ -1502,6 +1537,8 @@ def build_runtime_policy_enforcement_summary(
         "operating_mode_status": operating_mode_status,
         "violations_status": violations_status,
         "guardrails_status": guardrails_status,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -1521,6 +1558,8 @@ def build_policy_breach_summary(
     operating_mode_status = str(operating_mode.get("status") or "").strip().lower()
     violations_status = str(violations.get("status") or "").strip().lower()
     enforcement_status = str(enforcement.get("status") or "").strip().lower()
+    shell_role = str(operating_mode.get("shell_role") or bridge_policy.get("shell_role") or "").strip().lower()
+    shell_stage = str(operating_mode.get("shell_stage") or bridge_policy.get("shell_stage") or "").strip().lower()
 
     if enforcement_status == "violated":
         status = "breached"
@@ -1553,6 +1592,8 @@ def build_policy_breach_summary(
         "operating_mode_status": operating_mode_status,
         "violations_status": violations_status,
         "enforcement_status": enforcement_status,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -1578,6 +1619,8 @@ def build_runtime_risk_register_summary(
     enforcement_status = str(enforcement.get("status") or "").strip().lower()
     breach_status = str(breach.get("status") or "").strip().lower()
     guardrails_status = str(guardrails.get("status") or "").strip().lower()
+    shell_role = str(shell_debt.get("shell_role") or "").strip().lower()
+    shell_stage = str(shell_debt.get("shell_stage") or "").strip().lower()
 
     items: list[dict[str, str]] = []
     if config_debt_status in {"high", "medium"}:
@@ -1625,6 +1668,8 @@ def build_runtime_risk_register_summary(
         "breach_status": breach_status,
         "violations_status": violations_status,
         "enforcement_status": enforcement_status,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 

@@ -459,19 +459,21 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
 
     activation_gap = build_activation_gap_summary(
         projection_bridge_readiness={"status": "ready", "detail": "Bridge readiness signals are green.", "blockers": [], "next_step": ""},
-        runtime_version_parity={"status": "aligned", "detail": "Aligned.", "active_law_version_id": 247, "projected_law_version_id": 247},
-        projection_bridge_lifecycle={"status": "activated", "detail": "Activated."},
+        runtime_version_parity={"status": "aligned", "detail": "Aligned.", "active_law_version_id": 247, "projected_law_version_id": 247, "shell_role": "projection_backed_runtime", "shell_stage": "activated"},
+        projection_bridge_lifecycle={"status": "activated", "detail": "Activated.", "shell_role": "projection_backed_runtime", "shell_stage": "activated"},
         promotion_blockers=promotion_blockers,
     )
     assert activation_gap["status"] == "closed"
+    assert activation_gap["shell_stage"] == "activated"
 
-    runtime_shell_debt = {"status": "low", "detail": "Runtime shell debt looks low in the current read model.", "next_step": ""}
+    runtime_shell_debt = {"status": "low", "detail": "Runtime shell debt looks low in the current read model.", "next_step": "", "shell_role": "projection_backed_runtime", "shell_stage": "activated"}
     runtime_convergence = build_runtime_convergence_summary(
         promotion_blockers=promotion_blockers,
         activation_gap=activation_gap,
         runtime_shell_debt=runtime_shell_debt,
     )
     assert runtime_convergence["status"] == "converged"
+    assert runtime_convergence["shell_stage"] == "activated"
 
     cutover_readiness = build_cutover_readiness_summary(
         projection_bridge_readiness={"status": "ready", "detail": "Bridge readiness signals are green.", "blockers": [], "next_step": ""},
@@ -480,6 +482,7 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         activation_gap=activation_gap,
     )
     assert cutover_readiness["status"] == "ready_for_cutover"
+    assert cutover_readiness["shell_stage"] == "activated"
 
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness={"status": "ready", "detail": "Bridge readiness signals are green.", "blockers": [], "next_step": ""},
@@ -505,28 +508,32 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         runtime_config_debt={"status": "low", "detail": "Low.", "next_step": ""},
     )
     assert runtime_cutover_mode["status"] == "projection_preferred"
+    assert runtime_cutover_mode["shell_stage"] == "activated"
     runtime_bridge_policy = build_runtime_bridge_policy_summary(
         runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": ""},
         runtime_cutover_mode=runtime_cutover_mode,
         cutover_readiness=cutover_readiness,
     )
     assert runtime_bridge_policy["status"] == "prefer_projection_runtime"
+    assert runtime_bridge_policy["shell_stage"] == "activated"
     runtime_operating_mode = build_runtime_operating_mode_summary(
         runtime_bridge_policy=runtime_bridge_policy,
         runtime_config_posture={"status": "declared_ready", "detail": "", "next_step": ""},
-        runtime_provenance={"mode": "projection_backed", "detail": ""},
+        runtime_provenance={"mode": "projection_backed", "detail": "", "shell_role": "projection_backed_runtime", "shell_stage": "activated"},
         runtime_cutover_mode=runtime_cutover_mode,
     )
     assert runtime_operating_mode["status"] == "projection_runtime"
+    assert runtime_operating_mode["shell_stage"] == "activated"
     runtime_policy_violations = build_runtime_policy_violations_summary(
         runtime_bridge_policy=runtime_bridge_policy,
         runtime_operating_mode=runtime_operating_mode,
         runtime_config_posture={"status": "declared_ready", "detail": "", "next_step": ""},
-        runtime_provenance={"mode": "projection_backed", "detail": ""},
+        runtime_provenance={"mode": "projection_backed", "detail": "", "shell_role": "projection_backed_runtime", "shell_stage": "activated"},
         runtime_shell_debt=runtime_shell_debt,
         cutover_readiness=cutover_readiness,
     )
     assert runtime_policy_violations["status"] == "clear"
+    assert runtime_policy_violations["shell_stage"] == "activated"
     cutover_guardrails = build_cutover_guardrails_summary(
         runtime_bridge_policy=runtime_bridge_policy,
         runtime_operating_mode=runtime_operating_mode,
@@ -541,6 +548,7 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         cutover_guardrails=cutover_guardrails,
     )
     assert runtime_policy_enforcement["status"] == "enforced"
+    assert runtime_policy_enforcement["shell_stage"] == "activated"
     policy_breach_summary = build_policy_breach_summary(
         runtime_bridge_policy=runtime_bridge_policy,
         runtime_operating_mode=runtime_operating_mode,
@@ -548,6 +556,7 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         runtime_policy_enforcement=runtime_policy_enforcement,
     )
     assert policy_breach_summary["status"] == "clear"
+    assert policy_breach_summary["shell_stage"] == "activated"
     runtime_risk_register = build_runtime_risk_register_summary(
         runtime_config_debt={"status": "low", "detail": "", "next_step": ""},
         runtime_shell_debt=runtime_shell_debt,
@@ -557,6 +566,7 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         cutover_guardrails=cutover_guardrails,
     )
     assert runtime_risk_register["status"] == "low"
+    assert runtime_risk_register["shell_stage"] == "activated"
     runtime_governance_contract = build_runtime_governance_contract_summary(
         runtime_bridge_policy=runtime_bridge_policy,
         runtime_operating_mode=runtime_operating_mode,
