@@ -1,5 +1,7 @@
 # Feature Flag Matrix
 
+> Superseded by [`FEATURE_FLAGS.md`](../../FEATURE_FLAGS.md).
+
 Status: Phase B complete baseline
 Date: 2026-04-14
 Scope: pilot scenario `blackberry + complaint`

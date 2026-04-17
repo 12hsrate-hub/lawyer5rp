@@ -1,3 +1,5 @@
+> **Status:** Historical / archived
+
 # ARCHITECTURE_NOTES.md
 
 Status: Phase A baseline complete

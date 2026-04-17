@@ -1,7 +1,7 @@
 # Point3 Legal Mode Rollout Plan
 
 > Status: baseline implementation plan for point3.
-> Operational source-of-truth docs are listed in [`OPERATIONS_INDEX.md`](./OPERATIONS_INDEX.md).
+> Operational source-of-truth docs are listed in [`OPERATIONS_INDEX.md`](../../OPERATIONS_INDEX.md).
 
 ## Scope
 This phase establishes the baseline prompt contract and quality gates for point3 legal mode rollout.

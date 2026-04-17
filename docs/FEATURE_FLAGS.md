@@ -80,20 +80,17 @@ Define migration rollout states and map them to concrete backend flags.
 ### Canonical rollout states
 
 #### `legacy_only`
-
 - current route contract remains active
 - pilot adapter read path is disabled
 - shadow compare is disabled
 
 #### `shadow_compare`
-
 - current route contract remains active
 - pilot adapter resolves versioned runtime context in parallel
 - adapter output is compared against legacy context
 - drift is logged, but runtime still uses legacy path
 
 #### `new_runtime_active`
-
 - current route contract remains active
 - pilot adapter output becomes the primary runtime context source for the pilot seam
 - shadow compare stays enabled during the observation window
@@ -118,10 +115,16 @@ Define migration rollout states and map them to concrete backend flags.
 ### Pilot rule
 
 For `blackberry + complaint`, `new_runtime_active` must not be enabled until:
-
 - `shadow_compare` has produced stable low-drift results
 - route compatibility remains unchanged
 - provenance-critical fields still appear in generated document snapshots
+
+### Historical note
+
+The earlier standalone rollout matrix is preserved only in the April 2026 archive for historical reference.
+### Next extension point
+
+When B.1 table design is finalized, these flags should switch from legacy-seeded adapter reads to DB-backed published entity reads without changing the rollout semantics above.
 
 ### Historical note
 

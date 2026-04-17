@@ -1,3 +1,5 @@
+> **Status:** Historical / archived
+
 # REHAB_ROLLOUT_GAP_MAP.md
 
 Status: `H.1 complete; candidate checkpoint accepted`  

@@ -21,7 +21,8 @@ This directory keeps active operational docs plus two active planning-source doc
 - `domain_rollout_su_online.md` - domain and nginx setup
 - `MODEL_POLICY_SLO.md` - policy, KPI, and SLO targets
 - `AI_QUALITY_COST_RUNBOOK_ADMIN.md` - admin quality/cost runbook
-- `FEATURE_FLAGS.md` - active feature-flag reference
+- `FEATURE_FLAGS.md` - canonical feature-flag reference (including rollout state matrix)
+- `archive/2026-04/FEATURE_FLAG_MATRIX.md` - archived matrix doc (superseded by `FEATURE_FLAGS.md`)
 - `ACCEPTANCE_CHECKLIST.md` - release acceptance gates
 - `CODEX_RUN_GUIDE.md` - execution guide for Codex-driven task work
 - `../RETRY_IDEMPOTENCY_MATRIX.md` - current retry/idempotency contract and gaps
@@ -33,7 +34,7 @@ This directory keeps active operational docs plus two active planning-source doc
 - `docs/adr/` - ADRs and active architectural invariants only
 - `docs/archive/YYYY-MM/` - historical plans, superseded planning docs, audits, and one-off materials
 
-Files moved out of active planning in this cleanup live in `docs/archive/2026-04/`.
+Archived materials are intentionally excluded from the active-links lists above.
 
 ## Rules
 
@@ -41,3 +42,4 @@ Files moved out of active planning in this cleanup live in `docs/archive/2026-04
 - There must be only one active root migration map: `MIGRATION_MAP.md`.
 - Product/architecture prompt docs live in `docs/PRODUCT_BRIEF.md` and `docs/ARCHITECT_AGENT_GUIDE.md`.
 - If a document is no longer part of current operations or the canonical planning set, archive it.
+- In `docs/archive/`, use relative links that resolve from the current file's folder (e.g., links from `docs/archive/YYYY-MM/*.md` to docs root should start with `../../`).

@@ -10,6 +10,8 @@ Primary entrypoint for deploy, rollback, and live-operations work.
 
 ## Rollout And Rollback
 
+- [`FEATURE_FLAGS.md`](./FEATURE_FLAGS.md) - canonical feature-flag reference and rollout state matrix
+- [`archive/2026-04/FEATURE_FLAG_MATRIX.md`](./archive/2026-04/FEATURE_FLAG_MATRIX.md) - archived matrix doc (superseded)
 - [`ROLL_OUT.md`](./ROLL_OUT.md) - rollout stages and go/no-go criteria
 - [`ROLLBACK_PLAYBOOK.md`](./ROLLBACK_PLAYBOOK.md) - rollback triggers and procedures
 - [`RUNBOOK.md`](./RUNBOOK.md) - point3 legal mode incident handling
