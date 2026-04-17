@@ -1,8 +1,458 @@
 # PLANS.md — Migration Plan for Multi-Server Legal Platform (Staged, Repo-Aware)
 
-Status: draft v1 (execution-ready baseline)
-Date: 2026-04-14
-Scope: staged migration inside current modular monolith (`web/ogp_web` + `shared`) without full rewrite.
+Status: active source-of-truth execution plan
+Date: 2026-04-17
+Scope: phased server-centric multi-server backlog inside the current modular monolith (`web/ogp_web` + `shared`) without full rewrite.
+
+## 2026-04-17 Source-of-Truth Planning Override
+
+This section is the current execution source of truth.
+
+- It supersedes older priority assumptions below.
+- Historical phase logs remain useful as implementation history, but they do not redefine the active product backlog.
+- `/admin/servers` and `/admin/servers/{server_code}` remain the primary admin/operator path.
+- `/admin/laws` remains an advanced diagnostics and compatibility surface, not the primary product workspace.
+
+### What is already solved and should not be redesigned
+
+- Server-centric admin IA is already established:
+  - `/admin/servers`
+  - `/admin/servers/{server_code}`
+  - `/admin/ops`
+  - `/admin/audit`
+  - `/admin/laws` as diagnostics only
+- Multi-server baseline already exists:
+  - runtime server CRUD
+  - server workspace / activity / audit / issues
+  - runtime health / readiness / access summary
+- Law-domain foundation already exists:
+  - source sets
+  - source-set revisions
+  - server bindings
+  - discovery runs
+  - canonical law documents
+  - canonical law document versions
+  - server effective law projections
+- Server-scoped content foundation already exists:
+  - features per server
+  - templates per server
+  - content workflow with preview / publish / reset / effective-state read paths
+- Operational admin foundation already exists:
+  - users
+  - roles / assignments / revoke / history
+  - audit
+  - issues
+  - global ops surfaces
+- Runtime compatibility observability/governance is already deep enough.
+  - New planning must not keep expanding it unless it unblocks a product step.
+
+### What is still partial / transitional / compatibility-based
+
+- Server-card law management is still incomplete as a product workflow.
+  - The laws tab can preview, recheck, and inspect.
+  - Normal binding/edit/apply work still leans too much on advanced surfaces.
+- Manual law add/edit through admin is not yet a finished operator flow.
+  - Canonical law stores and APIs exist.
+  - Discovery/ingest path exists.
+  - Human-first authoring/editing flow is still missing as a completed product slice.
+- Server-centric safe apply flow for laws is still partial.
+  - Projection/materialize/activate backend exists.
+  - Primary server-card execution path is not yet the complete operator happy path.
+- New-server onboarding is still uneven.
+  - Multi-server is real in the repo.
+  - Deep baseline and some rollout knowledge still lean toward `blackberry`.
+- Runtime still has transitional/compatibility tails:
+  - `bootstrap_pack`
+  - `runtime_shell_artifact`
+  - bounded runtime-binding fallback
+- Complaint/pilot/exam still contain targeted transitional seams.
+  - They should only be touched when they block the next actual multi-server rollout.
+
+### Rewritten priority order
+
+1. Server-centric law management
+2. Multi-server onboarding/completion
+3. Features/templates per server
+4. Users/roles/audit/errors as operational admin layer
+5. Compatibility/cutover work only when it blocks the product path
+6. Blackberry/pilot blocker removal only for the next real rollout
+7. Broad cleanup/polish later
+
+### Phased implementation plan
+
+#### A. Must do now
+
+##### A1. Server-card laws workspace completion
+
+- Goal:
+  - Make the server-card laws tab the normal place to manage server law bindings and safe preview/recheck work.
+- Scope:
+  - Add binding management to `/admin/servers/{server_code}`.
+  - Keep source sets as a supporting layer, not a competing primary IA.
+- Exact deliverables:
+  - list available source sets from the server card
+  - create/update/disable/reprioritize server bindings from the server card
+  - refresh laws summary/effective/diff after binding changes
+  - remove the need to open `/admin/laws` for ordinary binding work
+- Dependencies:
+  - existing source-set/binding stores and admin services
+  - current server workspace laws endpoints
+- Invariants:
+  - do not redesign source sets, revisions, or projections
+  - do not rewrite runtime activation/rollback
+  - do not turn `/admin/laws` back into a primary path
+- Not in phase:
+  - manual law authoring/editing
+  - projection apply/activate UX completion
+  - broad UI polish
+- Likely repo areas affected:
+  - `PLANS.md` drives this phase
+  - `web/ogp_web/routes/admin.py`
+  - `web/ogp_web/services/admin_server_laws_workspace_service.py`
+  - `web/ogp_web/services/admin_server_workspace_service.py`
+  - `web/ogp_web/static/shared/admin_server_workspace.js`
+  - existing law source-set/binding services/stores
+- Backend seams needed:
+  - yes, but thin server-scoped transport/service seams only where the server card still lacks binding mutation access
+- Admin UI changes needed:
+  - yes
+- Tests:
+  - `tests/test_admin_runtime_servers_api.py`
+  - `tests/test_admin_law_source_sets_api.py`
+  - `tests/test_admin_law_sources_service.py`
+  - `tests/test_web_pages.py`
+- Completion criteria:
+  - an admin can manage source-set bindings from the server card and immediately re-run preview/recheck there
+- Why now:
+  - this is the shortest path from current repo state to a usable server-centric product workflow
+- Useless work inside this phase:
+  - polishing `/admin/laws`
+  - reworking discovery internals
+  - expanding runtime governance summaries
+- Side quests not to touch:
+  - activation/rollback bridge rewrite
+  - broad compatibility cleanup
+
+##### A2. Manual law add/edit through admin
+
+- Goal:
+  - Let admins add or edit laws through admin UI without inventing a second law model.
+- Scope:
+  - Use canonical law documents and canonical law document versions as the write target.
+  - Feed the existing source-set/projection path.
+- Exact deliverables:
+  - manual create/resolve flow for canonical law documents
+  - manual create/update flow for canonical law document versions
+  - attach the result to a chosen source-set revision or draft revision
+  - make the new/edited law visible in server preview
+- Dependencies:
+  - A1 preferred
+  - existing canonical-law documents/versions services and stores
+- Invariants:
+  - no parallel admin-only law storage
+  - no redesign of canonical identity model
+  - no rewrite of discovery pipeline
+- Not in phase:
+  - OCR/parser improvements
+  - bulk ingestion refactor
+  - projection apply UX completion
+- Likely repo areas affected:
+  - `web/ogp_web/routes/admin.py`
+  - canonical law document/services
+  - canonical law document version/services
+  - server laws workspace services and JS
+- Backend seams needed:
+  - yes, a manual authoring seam built on top of existing canonical stores
+- Admin UI changes needed:
+  - yes
+- Tests:
+  - `tests/test_admin_canonical_law_documents_service.py`
+  - `tests/test_admin_canonical_law_documents_api.py`
+  - `tests/test_admin_canonical_law_document_versions_service.py`
+  - `tests/test_admin_canonical_law_document_versions_api.py`
+  - `tests/test_admin_runtime_servers_api.py`
+  - `tests/test_admin_law_projection_service.py`
+- Completion criteria:
+  - an admin can add or edit a law from admin and see it appear in server preview without using diagnostics-only flows
+- Why now:
+  - manual law creation/editing is now explicitly in scope and is the biggest remaining product gap in admin
+- Useless work inside this phase:
+  - broad parser/discovery improvements
+  - canonical model redesign
+- Side quests not to touch:
+  - law-domain architecture rewrite
+  - global `/admin/laws` redesign
+
+##### A3. Server-card safe law update/apply flow
+
+- Goal:
+  - Finish the end-to-end server-centric law workflow using the existing projection/materialize/activate bridge.
+- Scope:
+  - Complete preview/diff/status/apply from the server card.
+- Exact deliverables:
+  - server-card preview/diff/projection status
+  - server-scoped approve/hold/materialize/activate actions
+  - post-action reload of runtime/projection state
+  - ordinary apply flow no longer requires `/admin/laws`
+- Dependencies:
+  - A1 required
+  - existing projection / law-set / activate services
+- Invariants:
+  - no deep activation/rollback rewrite
+  - preserve current permission and route contracts where possible
+- Not in phase:
+  - law-shell cleanup for elegance
+  - new runtime policy layers
+- Likely repo areas affected:
+  - `web/ogp_web/routes/admin.py`
+  - server laws workspace services
+  - projection/law-set services
+  - server workspace JS
+- Backend seams needed:
+  - yes, thin server-scoped wrappers around existing projection/materialize/activate actions
+- Admin UI changes needed:
+  - yes
+- Tests:
+  - `tests/test_admin_law_projection_api.py`
+  - `tests/test_admin_law_projection_service.py`
+  - `tests/test_admin_runtime_servers_api.py`
+  - `tests/test_web_pages.py`
+- Completion criteria:
+  - an admin can go preview -> review diff -> apply from `/admin/servers/{server_code}`
+- Why now:
+  - without this, law management remains technically powerful but still incomplete as a product workflow
+- Useless work inside this phase:
+  - more read-only diagnostics
+  - policy-copy cleanup that does not unlock apply flow
+- Side quests not to touch:
+  - rollback contract redesign
+  - broad runtime cutover work
+
+#### B. Next after that
+
+##### B1. New-server onboarding completion
+
+- Goal:
+  - make `/admin/servers` and the server card sufficient for bringing a new server to a clearly usable state
+- Scope:
+  - connect create/update server, config posture, laws readiness, features/templates, and access readiness into one bounded onboarding flow
+- Exact deliverables:
+  - server-card onboarding checklist
+  - bounded readiness states
+  - explicit distinction between admin-usable, workflow-ready, and fully published runtime state
+- Dependencies:
+  - A1-A3 strongly preferred
+- Invariants:
+  - no new mega-wizard by default
+  - no registry redesign
+- Not in phase:
+  - compatibility cleanup that does not change onboarding outcome
+  - deep pilot/exam normalization
+- Likely repo areas affected:
+  - runtime-server services
+  - server workspace services
+  - server config registry surfaces
+  - server workspace UI
+- Backend seams needed:
+  - maybe, only thin aggregation seams if the current workspace payload is insufficient
+- Admin UI changes needed:
+  - yes
+- Tests:
+  - `tests/test_admin_runtime_servers_service.py`
+  - `tests/test_admin_runtime_servers_api.py`
+  - `tests/test_server_config_registry.py`
+  - `tests/test_web_pages.py`
+- Completion criteria:
+  - an admin can add a non-blackberry server and drive it to the intended ready state through the server-centric admin path
+
+##### B2. Features/templates per server completion
+
+- Goal:
+  - finish the already-existing server-specific content workflow as a normal operator flow
+- Scope:
+  - complete feature override and template override day-to-day workflows in the server card
+- Exact deliverables:
+  - clear effective-state visibility
+  - usable add/edit/publish/reset/preview loops from the server card
+  - onboarding/readiness integration
+- Dependencies:
+  - B1 preferred
+- Invariants:
+  - no template engine rewrite
+  - no catalog/content architecture rewrite
+- Not in phase:
+  - rich editor redesign
+  - broad template/catalog cleanup
+- Likely repo areas affected:
+  - content workspace services
+  - server workspace JS
+  - existing template/feature endpoints
+- Backend seams needed:
+  - no major new seam by default
+- Admin UI changes needed:
+  - yes
+- Tests:
+  - `tests/test_content_workflow_service.py`
+  - `tests/test_admin_runtime_servers_api.py`
+  - `tests/test_web_pages.py`
+- Completion criteria:
+  - an admin can finish feature/template work in the server card without dropping into raw catalog internals
+
+##### B3. Users/roles/audit/errors as operational admin layer
+
+- Goal:
+  - finish the operational loop for a server: access, audit, issues, and routine admin actions
+- Scope:
+  - keep global screens for global work, but make server-card access/audit/issues the normal server operation surface
+- Exact deliverables:
+  - role assignment/revoke flow from server card
+  - continued user moderation actions from server card
+  - issue items that clearly map to recheck/fix actions where the backend already supports them
+  - useful server-level audit filtering
+- Dependencies:
+  - B1 preferred
+  - existing user / role / access / audit / issues APIs
+- Invariants:
+  - no RBAC redesign
+  - no global analytics rewrite
+- Not in phase:
+  - platform-wide audit taxonomy cleanup
+  - new cross-platform moderation framework
+- Likely repo areas affected:
+  - access workspace service
+  - users services
+  - observability service
+  - server workspace UI
+- Backend seams needed:
+  - minimal; reuse current user/role/audit APIs where possible
+- Admin UI changes needed:
+  - yes
+- Tests:
+  - `tests/test_admin_users_service.py`
+  - `tests/test_admin_user_mutations_service.py`
+  - `tests/test_admin_bulk_user_mutations_service.py`
+  - `tests/test_admin_runtime_servers_api.py`
+  - `tests/test_web_pages.py`
+- Completion criteria:
+  - an admin can handle day-to-day server access and issue triage without leaving the server-centric workspace except for truly global work
+
+##### B4. Blackberry/pilot blocker removal for the next real multi-server rollout
+
+- Goal:
+  - remove only the concrete blockers that stop the next target non-blackberry rollout
+- Scope:
+  - one target server/use case at a time
+- Exact deliverables:
+  - explicit blocker list
+  - bounded fixes behind existing config/feature-flag/runtime seams
+  - proof that one non-blackberry path works
+- Dependencies:
+  - B1-B3 define the normal admin/operator path first
+- Invariants:
+  - no deep complaint/exam/pilot rewrite
+  - no generic second-server normalization
+- Not in phase:
+  - broad pilot cleanup
+  - rewrite for complaint/exam architecture neatness
+- Likely repo areas affected:
+  - complaint/pilot/exam runtime paths
+  - feature flags
+  - server-context/runtime adapter helpers
+  - only targeted docs
+- Backend seams needed:
+  - yes, but only against named blockers
+- Admin UI changes needed:
+  - usually no
+- Tests:
+  - `tests/test_pilot_runtime_adapter.py`
+  - `tests/test_complaint_runtime_service.py`
+  - `tests/test_point3_contract.py`
+  - `tests/test_feature_flags_rollout.py`
+  - targeted non-blackberry regression coverage
+- Completion criteria:
+  - the chosen next non-blackberry rollout no longer depends on hidden blackberry-era assumptions
+
+#### C. Later / do not touch yet
+
+##### C1. Compatibility/cutover work only on blocker-led slices
+
+- Goal:
+  - shrink compatibility only where it unblocks a visible admin/product step
+- Not in scope now:
+  - continuing runtime governance/read-model expansion as a main track
+- Completion criteria:
+  - one blocker-specific compatibility slice removes a concrete product blocker without expanding the seam
+
+##### C2. Deep complaint/exam/pilot normalization
+
+- Goal:
+  - defer until a concrete target rollout requires it
+- Not in scope now:
+  - platform-wide normalization
+  - architecture cleanup for its own sake
+- Completion criteria:
+  - starts only when attached to a named target flow and blocker
+
+##### C3. Broad cleanup, polish, and documentation consolidation
+
+- Goal:
+  - intentionally delay until product-path phases are materially complete
+- Not in scope now:
+  - broad UI polish
+  - vocabulary-only cleanup
+  - refactors that do not unlock product work
+- Completion criteria:
+  - only enters execution after A/B phases are no longer blocked on functional work
+
+### Recommended execution order
+
+- `A1 -> A2 -> A3 -> B1 -> B2 -> B3 -> B4 -> C1 -> C2 -> C3`
+
+### What not to do now
+
+- Do not pull `/admin/laws` back into the primary operator path.
+- Do not do broad UI polish without direct product effect.
+- Do not redesign the law-domain foundation.
+- Do not rewrite activation/rollback bridge as part of normal admin-product work.
+- Do not expand runtime governance/read-model layers unless a visible blocker requires it.
+- Do not do broad legacy cleanup for aesthetics.
+- Do not refactor for unification when it does not unlock the next bounded block.
+
+### What is intentionally delayed
+
+- full removal of runtime compatibility tails
+- deep complaint/exam/pilot normalization
+- broad cleanup of legacy docs/history
+- broad admin polish
+- generalized architecture cleanup across content/catalog/law internals
+
+### Current main risks
+
+- the server-centric laws workflow is still not a fully finished operator happy path
+- manual law add/edit is still missing as a product feature
+- `bootstrap_pack`, `runtime_shell_artifact`, and bounded runtime-binding fallback still exist as transitional/compatibility tails
+- deeper non-blackberry rollout baselines still risk hidden `blackberry` assumptions in complaint/pilot/exam-adjacent flows
+- continuing the old runtime-shrinking-centric plan would create useless work and delay the actual product path
+
+### Acceptance direction / completion signals
+
+- A new admin starts from `/admin/servers`, not `/admin/laws`.
+- A server can be configured for laws from its card without opening diagnostics.
+- A law can be manually added/edited through admin and appear in preview through the normal server flow.
+- A server admin can preview and apply law updates from the server card.
+- A new non-blackberry server can be onboarded without relying on hidden blackberry-era assumptions.
+- Features/templates/access/audit/issues work from the server-centric workspace as day-to-day operator flows.
+- Compatibility/cutover work is only accepted when tied to a named blocker and a named product phase.
+
+### Recommended first bounded block
+
+- `A1 — Server-card laws workspace completion`
+- User-visible result:
+  - an admin opens `/admin/servers/{server_code}`, manages source-set bindings there, runs preview/recheck there, and no longer needs `/admin/laws` for ordinary binding work.
+
+---
+
+Historical sections below remain useful as execution history and migration background, but they do not override the current priority order and phased backlog above.
 
 ## Current Execution State
 

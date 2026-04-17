@@ -418,6 +418,56 @@ class AdminLawProjectionApiTests(unittest.TestCase):
         self.assertEqual(status_response.status_code, 404)
         self.assertIn("server_effective_law_projection_run_not_found", " ".join(status_response.json().get("detail") or []))
 
+    def test_admin_runtime_server_law_projection_server_scoped_apply_endpoints(self):
+        preview = self.client.post(
+            "/api/admin/runtime-servers/orange/law-projection-runs",
+            json={"trigger_mode": "manual", "safe_rerun": True},
+        )
+        self.assertEqual(preview.status_code, 200)
+
+        approved = self.client.post(
+            "/api/admin/runtime-servers/orange/law-projection-runs/1/approve",
+            json={"reason": "server_workspace_apply_flow"},
+        )
+        self.assertEqual(approved.status_code, 200)
+        self.assertEqual(approved.json()["run"]["status"], "approved")
+
+        materialized = self.client.post(
+            "/api/admin/runtime-servers/orange/law-projection-runs/1/materialize-law-set",
+            json={"safe_rerun": True},
+        )
+        self.assertEqual(materialized.status_code, 200)
+        self.assertEqual(materialized.json()["law_set"]["server_code"], "orange")
+
+        with patch("ogp_web.services.admin_law_projection_service.import_law_snapshot", return_value=91):
+            activated = self.client.post(
+                "/api/admin/runtime-servers/orange/law-projection-runs/1/activate-runtime",
+                json={"safe_rerun": True},
+            )
+        self.assertEqual(activated.status_code, 200)
+        self.assertEqual(activated.json()["activation"]["law_version_id"], 91)
+
+        with patch(
+            "ogp_web.routes.admin.resolve_active_law_version",
+            return_value=type(
+                "_ActiveVersion",
+                (),
+                {
+                    "id": 91,
+                    "server_code": "orange",
+                    "generated_at_utc": "2026-04-16T06:20:00+00:00",
+                    "effective_from": "2026-04-16T06:20:00+00:00",
+                    "effective_to": "",
+                    "fingerprint": "runtime-fingerprint",
+                    "chunk_count": 2,
+                },
+            )(),
+        ):
+            status_payload = self.client.get("/api/admin/runtime-servers/orange/law-projection-runs/1/status")
+        self.assertEqual(status_payload.status_code, 200)
+        self.assertEqual(status_payload.json()["run"]["server_code"], "orange")
+        self.assertEqual(status_payload.json()["activation"]["law_version_id"], 91)
+
     def test_admin_law_projection_materialize_requires_approved_run(self):
         preview = self.client.post(
             "/api/admin/runtime-servers/orange/law-projection-runs",

@@ -325,6 +325,25 @@ class WebPagesSmokeTests(unittest.TestCase):
         self.assertIn("Серверы · Основное", response.text)
         self.assertNotIn("Законы · Диагностика", response.text)
 
+    def test_admin_server_workspace_script_keeps_binding_management_in_server_card(self):
+        script_path = ROOT_DIR / "web" / "ogp_web" / "static" / "shared" / "admin_server_workspace.js"
+        script_text = script_path.read_text(encoding="utf-8")
+
+        self.assertIn('id="admin-server-laws-add-binding"', script_text)
+        self.assertIn('data-server-law-binding-edit="${escapeHtml(String(item.id || ""))}"', script_text)
+        self.assertIn('id="admin-server-law-binding-form"', script_text)
+        self.assertIn('id="admin-server-law-binding-editor-cancel"', script_text)
+        self.assertIn("Добавьте хотя бы один активный binding прямо здесь", script_text)
+        self.assertIn("Обычная настройка binding делается в карточке сервера", script_text)
+        self.assertIn('id="admin-server-laws-add-manual"', script_text)
+        self.assertIn('id="admin-server-law-manual-form"', script_text)
+        self.assertIn('data-server-law-manual-edit="${escapeHtml(String(item.canonical_identity_key || ""))}"', script_text)
+        self.assertIn("Этот flow создаёт новую canonical version", script_text)
+        self.assertIn('id="admin-server-laws-approve-run"', script_text)
+        self.assertIn('id="admin-server-laws-materialize-run"', script_text)
+        self.assertIn('id="admin-server-laws-activate-run"', script_text)
+        self.assertIn("server-centric safe path", script_text)
+
     def test_admin_templates_page_redirects_to_servers(self):
         self.client.post("/api/auth/logout")
         response = self.client.post(

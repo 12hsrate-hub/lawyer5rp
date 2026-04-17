@@ -757,6 +757,27 @@ class AdminCanonicalLawDocumentVersionParsePayload(BaseModel):
     safe_rerun: bool = True
 
 
+class AdminServerManualLawEntryPayload(BaseModel):
+    source_set_key: str = ""
+    canonical_identity_key: str = ""
+    normalized_url: str = ""
+    title: str = ""
+    body_text: str = ""
+
+    @field_validator("source_set_key")
+    @classmethod
+    def validate_source_set_key(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            raise ValueError("source_set_key_required")
+        return normalized
+
+    @field_validator("canonical_identity_key", "normalized_url", "title", "body_text")
+    @classmethod
+    def validate_text_fields(cls, value: str) -> str:
+        return str(value or "").strip()
+
+
 class AdminLawProjectionRunPayload(BaseModel):
     trigger_mode: str = "manual"
     safe_rerun: bool = True

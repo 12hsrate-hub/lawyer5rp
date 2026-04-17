@@ -1,19 +1,100 @@
 # MIGRATION_MAP.md — Baseline route/service/storage map (Phase A start)
 
-Status: initial baseline  
-Date: 2026-04-14
+Status: active migration map
+Date: 2026-04-17
+
+## 2026-04-17 Planning Alignment Override
+
+This file remains the canonical migration map and seam inventory, but it is no longer the place to define the primary product backlog.
+
+- `PLANS.md` is now the canonical phased execution backlog.
+- This migration map should track:
+  - implemented baseline facts
+  - compatibility seams
+  - route/service/storage cutover notes
+  - blocker-driven migration work
+- This migration map should not redefine the product priority order away from the current server-centric plan.
+
+### Current product direction that this map must support
+
+- multi-server is the primary model
+- `/admin/servers` and `/admin/servers/{server_code}` are the primary admin/operator path
+- `/admin/laws` is an advanced diagnostics and compatibility surface only
+- the highest-priority product gap is server-centric law management through admin
+- source sets / revisions / bindings remain a supporting law-management layer
+- features/templates per server remain first-class server-scoped admin capabilities
+- users/roles/audit/errors remain the operational admin layer
+- compatibility/cutover work is blocker-led only and must not expand into useless work
+
+### What is already solved and should not be redesigned
+
+- server-centric admin IA
+- multi-server runtime server baseline
+- law-domain foundation:
+  - source sets
+  - revisions
+  - bindings
+  - discovery
+  - canonical documents / versions
+  - projections
+- server-scoped features/templates foundation
+- users/roles/audit/issues operational foundation
+
+### What is still partial / transitional / compatibility-based
+
+- server-card law management is still incomplete as the primary operator workflow
+- manual law add/edit through admin is still incomplete
+- server-card safe law apply flow is still incomplete
+- new-server onboarding is still uneven across non-blackberry paths
+- runtime still carries transitional/compatibility tails:
+  - `bootstrap_pack`
+  - `runtime_shell_artifact`
+  - bounded runtime-binding fallback
+- deeper complaint/pilot/exam rollout baselines still contain targeted `blackberry`-era assumptions
+
+### Current priority order this map must respect
+
+1. server-centric law management
+2. multi-server onboarding/completion
+3. features/templates per server
+4. users/roles/audit/errors operational admin layer
+5. compatibility/cutover only when it blocks the product path
+6. targeted blackberry/pilot blocker removal for the next real rollout
+
+### Recommended execution order
+
+- `A1 -> A2 -> A3 -> B1 -> B2 -> B3 -> B4 -> C1 -> C2 -> C3`
+
+### Recommended first bounded block
+
+- `A1 — Server-card laws workspace completion`
+- intended user-visible result:
+  - ordinary source-set binding work, safe preview, and recheck happen from `/admin/servers/{server_code}` instead of pushing admins into `/admin/laws`
+
+### What not to do from this map
+
+- do not treat `/admin/laws` as the primary admin path
+- do not reopen broad runtime-governance expansion as the main execution track
+- do not schedule broad legacy cleanup or architecture cleanup for elegance
+- do not treat compatibility/cutover slices as first-priority work unless they unblock the current bounded product phase
+
+---
 
 ## Execution Status
 
 - Execution checkpoint: `2026-04-15`
-- Active phase: `Phase L`
-- Active task: `shrink legacy law runtime shell by removing active_law_set from onboarding/workflow readiness truth`
-- Active task: `prefer canonical source-set bindings across remaining laws summary/diff runtime read models`
+- Active phase: `A1`
+- Active task: `complete server-card laws workspace so source-set binding work no longer depends on /admin/laws`
+- Active task: `keep compatibility/cutover work on blocker-only footing while the server-centric law-management path is completed`
 - Status: `in_progress`
-- Last completed phase: `Phase K`
+- Last completed phase: `runtime shrinking/governance baseline accepted as supporting track`
 - Inventory slices completed: `6`
-- Next slice: `continue shrinking the legacy law runtime shell after onboarding no longer depends on active_law_set`
+- Next slice: `server-card source-set binding management as the first bounded product block`
 - Last updated: `2026-04-17`
+- Planning note:
+  - the long `Phase L / L.runtime.*` stream below remains useful migration history and seam inventory
+  - it no longer defines the top product priority on its own
+  - future entries here should focus on blocker-led compatibility work and factual migration baseline, while `PLANS.md` owns phased execution order
 - Accelerated runtime phase:
   - `L.runtime.1` add a single `runtime_bridge_policy` verdict so runtime cutover posture is no longer inferred from multiple lower-level summaries
   - `L.runtime.2` add declared `runtime_operating_mode` so each server is classified as `projection_runtime`, `transitional_runtime`, or `compatibility_runtime`
