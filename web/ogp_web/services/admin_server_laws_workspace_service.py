@@ -1689,6 +1689,8 @@ def build_runtime_governance_contract_summary(
     operating_mode_status = str(operating_mode.get("status") or "").strip().lower()
     enforcement_status = str(enforcement.get("status") or "").strip().lower()
     resolution_status = str(resolution.get("status") or "").strip().lower()
+    shell_role = str(operating_mode.get("shell_role") or bridge_policy.get("shell_role") or "").strip().lower()
+    shell_stage = str(operating_mode.get("shell_stage") or bridge_policy.get("shell_stage") or "").strip().lower()
 
     if (
         bridge_policy_status == "prefer_projection_runtime"
@@ -1738,6 +1740,8 @@ def build_runtime_governance_contract_summary(
         "operating_mode_status": operating_mode_status,
         "enforcement_status": enforcement_status,
         "resolution_policy_status": resolution_status,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -1760,6 +1764,8 @@ def build_legacy_path_allowance_summary(
     config_posture_status = str(config_posture.get("status") or "").strip().lower()
     operating_mode_status = str(operating_mode.get("status") or "").strip().lower()
     shell_debt_status = str(shell_debt.get("status") or "").strip().lower()
+    shell_role = str(operating_mode.get("shell_role") or shell_debt.get("shell_role") or "").strip().lower()
+    shell_stage = str(operating_mode.get("shell_stage") or shell_debt.get("shell_stage") or "").strip().lower()
 
     allowance_items: list[str] = []
     if resolution_status == "compatibility_exception":
@@ -1805,6 +1811,8 @@ def build_legacy_path_allowance_summary(
         "config_posture_status": config_posture_status,
         "operating_mode_status": operating_mode_status,
         "shell_debt_status": shell_debt_status,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -1827,6 +1835,8 @@ def build_compatibility_exit_scorecard_summary(
     risk_status = str(risk_register.get("status") or "").strip().lower()
     breach_status = str(breach.get("status") or "").strip().lower()
     allowance_status = str(allowance.get("status") or "").strip().lower()
+    shell_role = str(risk_register.get("shell_role") or allowance.get("shell_role") or "").strip().lower()
+    shell_stage = str(risk_register.get("shell_stage") or allowance.get("shell_stage") or "").strip().lower()
 
     if (
         checklist_status == "ready"
@@ -1865,6 +1875,8 @@ def build_compatibility_exit_scorecard_summary(
         "risk_status": risk_status,
         "breach_status": breach_status,
         "allowance_status": allowance_status,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -1944,6 +1956,9 @@ def build_runtime_breach_categories_summary(
         detail = "No explicit runtime breach categories are visible in the current read model."
         next_step = "Явных runtime breach categories не видно."
 
+    shell_role = str(risk_register.get("shell_role") or allowance.get("shell_role") or "").strip().lower()
+    shell_stage = str(risk_register.get("shell_stage") or allowance.get("shell_stage") or "").strip().lower()
+
     return {
         "status": status,
         "detail": detail,
@@ -1951,6 +1966,8 @@ def build_runtime_breach_categories_summary(
         "count": total,
         "category_counts": category_counts,
         "items": items[:10],
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -1970,6 +1987,8 @@ def build_legacy_path_controls_summary(
     resolution_status = str(resolution.get("status") or "").strip().lower()
     operating_mode_status = str(operating_mode.get("status") or "").strip().lower()
     contract_status = str(contract.get("status") or "").strip().lower()
+    shell_role = str(operating_mode.get("shell_role") or allowance.get("shell_role") or "").strip().lower()
+    shell_stage = str(operating_mode.get("shell_stage") or allowance.get("shell_stage") or "").strip().lower()
 
     control_items: list[dict[str, str]] = []
 
@@ -2026,6 +2045,8 @@ def build_legacy_path_controls_summary(
         "transition_only_count": transition_only_count,
         "allowed_count": allowed_count,
         "items": control_items[:10],
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -2045,6 +2066,8 @@ def build_projection_runtime_gate_summary(
     scorecard_status = str(scorecard.get("status") or "").strip().lower()
     enforcement_status = str(enforcement.get("status") or "").strip().lower()
     breach_status = str(breach_categories.get("status") or "").strip().lower()
+    shell_role = str(contract.get("shell_role") or scorecard.get("shell_role") or "").strip().lower()
+    shell_stage = str(contract.get("shell_stage") or scorecard.get("shell_stage") or "").strip().lower()
 
     if (
         contract_status == "projection_contract"
@@ -2076,6 +2099,8 @@ def build_projection_runtime_gate_summary(
         "scorecard_status": scorecard_status,
         "enforcement_status": enforcement_status,
         "breach_status": breach_status,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -2092,6 +2117,8 @@ def build_compatibility_shrink_decision_summary(
     gate_status = str(gate.get("status") or "").strip().lower()
     controls_status = str(controls.get("status") or "").strip().lower()
     risk_status = str(risk_register.get("status") or "").strip().lower()
+    shell_role = str(gate.get("shell_role") or controls.get("shell_role") or risk_register.get("shell_role") or "").strip().lower()
+    shell_stage = str(gate.get("shell_stage") or controls.get("shell_stage") or risk_register.get("shell_stage") or "").strip().lower()
 
     if gate_status == "open" and controls_status == "projection_controls" and risk_status == "low":
         status = "shrink_now"
@@ -2117,6 +2144,8 @@ def build_compatibility_shrink_decision_summary(
         "gate_status": gate_status,
         "controls_status": controls_status,
         "risk_status": risk_status,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -2176,12 +2205,17 @@ def build_runtime_exception_register_summary(
         detail = "No explicit runtime exceptions are visible in the current read model."
         next_step = "Явных runtime exceptions не видно."
 
+    shell_role = str(allowance.get("shell_role") or breach_categories.get("shell_role") or "").strip().lower()
+    shell_stage = str(allowance.get("shell_stage") or breach_categories.get("shell_stage") or "").strip().lower()
+
     return {
         "status": status,
         "detail": detail,
         "next_step": next_step,
         "count": len(deduped),
         "items": deduped[:10],
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -2198,6 +2232,8 @@ def build_compatibility_path_matrix_summary(
     control_items = list(controls.get("items") or [])
     exception_items = list(exception_register.get("items") or [])
     resolution_status = str(resolution.get("status") or "").strip().lower()
+    shell_role = str(controls.get("shell_role") or exception_register.get("shell_role") or "").strip().lower()
+    shell_stage = str(controls.get("shell_stage") or exception_register.get("shell_stage") or "").strip().lower()
 
     def _find_control(path: str) -> dict[str, Any]:
         for item in control_items:
@@ -2273,6 +2309,8 @@ def build_compatibility_path_matrix_summary(
         "transition_count": transition_count,
         "exception_count": exception_count,
         "items": paths,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -2290,6 +2328,8 @@ def build_next_shrink_step_summary(
     matrix_items = list(matrix.get("items") or [])
     exception_count = int(matrix.get("exception_count") or 0)
     transition_count = int(matrix.get("transition_count") or 0)
+    shell_role = str(decision.get("shell_role") or matrix.get("shell_role") or "").strip().lower()
+    shell_stage = str(decision.get("shell_stage") or matrix.get("shell_stage") or "").strip().lower()
 
     candidate: dict[str, Any] | None = None
     for preferred_status in ("active_exception", "transition_path"):
@@ -2328,6 +2368,8 @@ def build_next_shrink_step_summary(
         "target_path": target_path,
         "exception_count": exception_count,
         "transition_count": transition_count,
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
@@ -2356,6 +2398,8 @@ def build_shrink_sequence_summary(
     blocked_count = sum(1 for item in ordered_paths if item["status"] == "blocked")
     total_count = len(ordered_paths)
     ready_count = blocked_count
+    shell_role = str(matrix.get("shell_role") or next_step.get("shell_role") or "").strip().lower()
+    shell_stage = str(matrix.get("shell_stage") or next_step.get("shell_stage") or "").strip().lower()
 
     next_target = str(next_step.get("target_path") or "").strip()
     if next_target:
@@ -2383,6 +2427,8 @@ def build_shrink_sequence_summary(
         "ready_count": ready_count,
         "total_count": total_count,
         "items": ordered_paths[:10],
+        "shell_role": shell_role or None,
+        "shell_stage": shell_stage or None,
     }
 
 
