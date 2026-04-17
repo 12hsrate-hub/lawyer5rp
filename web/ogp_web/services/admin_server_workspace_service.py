@@ -22,6 +22,8 @@ from ogp_web.services.admin_server_laws_workspace_service import build_bridge_sh
 from ogp_web.services.admin_server_laws_workspace_service import build_cutover_blockers_breakdown_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_bridge_policy_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_operating_mode_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_policy_breach_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_runtime_risk_register_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_policy_enforcement_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_policy_violations_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_cutover_mode_summary
@@ -747,6 +749,41 @@ def _build_runtime_policy_enforcement_issue(runtime_policy_enforcement: dict[str
     }
 
 
+def _build_policy_breach_summary_issue(policy_breach_summary: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((policy_breach_summary or {}).get("status") or "").strip().lower()
+    if status in {"", "clear"}:
+        return None
+    return {
+        "issue_id": "runtime_policy_breach_summary",
+        "severity": "error" if status == "breached" else "warn",
+        "source": "laws",
+        "title": "Runtime policy breach требует внимания",
+        "detail": (
+            f"{str((policy_breach_summary or {}).get('detail') or '').strip()} "
+            f"{str((policy_breach_summary or {}).get('next_step') or '').strip()}"
+        ).strip(),
+    }
+
+
+def _build_runtime_risk_register_issue(runtime_risk_register: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((runtime_risk_register or {}).get("status") or "").strip().lower()
+    if status in {"", "low"}:
+        return None
+    detail = (
+        f"{str((runtime_risk_register or {}).get('detail') or '').strip()} "
+        f"count={int((runtime_risk_register or {}).get('count') or 0)}. "
+        f"{str((runtime_risk_register or {}).get('next_step') or '').strip()}"
+    ).strip()
+    severity = "error" if status in {"critical", "high"} else "warn"
+    return {
+        "issue_id": "runtime_risk_register",
+        "severity": severity,
+        "source": "laws",
+        "title": "Есть открытые runtime risks",
+        "detail": detail,
+    }
+
+
 def _build_bridge_shrink_checklist_issue(bridge_shrink_checklist: dict[str, Any]) -> dict[str, Any] | None:
     status = str((bridge_shrink_checklist or {}).get("status") or "").strip().lower()
     if status in {"", "ready"}:
@@ -813,6 +850,8 @@ def _build_issues_payload(
     runtime_policy_violations: dict[str, Any] | None = None,
     cutover_guardrails: dict[str, Any] | None = None,
     runtime_policy_enforcement: dict[str, Any] | None = None,
+    policy_breach_summary: dict[str, Any] | None = None,
+    runtime_risk_register: dict[str, Any] | None = None,
     bridge_shrink_checklist: dict[str, Any] | None = None,
     cutover_blockers_breakdown: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -928,6 +967,12 @@ def _build_issues_payload(
     runtime_policy_enforcement_issue = _build_runtime_policy_enforcement_issue(dict(runtime_policy_enforcement or {}))
     if runtime_policy_enforcement_issue is not None:
         items.append(runtime_policy_enforcement_issue)
+    policy_breach_summary_issue = _build_policy_breach_summary_issue(dict(policy_breach_summary or {}))
+    if policy_breach_summary_issue is not None:
+        items.append(policy_breach_summary_issue)
+    runtime_risk_register_issue = _build_runtime_risk_register_issue(dict(runtime_risk_register or {}))
+    if runtime_risk_register_issue is not None:
+        items.append(runtime_risk_register_issue)
     bridge_shrink_checklist_issue = _build_bridge_shrink_checklist_issue(dict(bridge_shrink_checklist or {}))
     if bridge_shrink_checklist_issue is not None:
         items.append(bridge_shrink_checklist_issue)
@@ -1149,6 +1194,20 @@ def build_server_workspace_payload(
         runtime_policy_violations=runtime_policy_violations,
         cutover_guardrails=cutover_guardrails,
     )
+    policy_breach_summary = build_policy_breach_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+    )
+    runtime_risk_register = build_runtime_risk_register_summary(
+        runtime_config_debt=runtime_config_debt,
+        runtime_shell_debt=runtime_shell_debt,
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+        policy_breach_summary=policy_breach_summary,
+        cutover_guardrails=cutover_guardrails,
+    )
     bridge_shrink_checklist = build_bridge_shrink_checklist_summary(
         projection_bridge_readiness=projection_bridge_readiness,
         activation_gap=activation_gap,
@@ -1199,6 +1258,8 @@ def build_server_workspace_payload(
         "runtime_policy_violations": runtime_policy_violations,
         "cutover_guardrails": cutover_guardrails,
         "runtime_policy_enforcement": runtime_policy_enforcement,
+        "policy_breach_summary": policy_breach_summary,
+        "runtime_risk_register": runtime_risk_register,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "health": (health_payload.get("checks") or {}).get("health", {}),
@@ -1227,6 +1288,8 @@ def build_server_workspace_payload(
         runtime_policy_violations=runtime_policy_violations,
         cutover_guardrails=cutover_guardrails,
         runtime_policy_enforcement=runtime_policy_enforcement,
+        policy_breach_summary=policy_breach_summary,
+        runtime_risk_register=runtime_risk_register,
         bridge_shrink_checklist=bridge_shrink_checklist,
         cutover_blockers_breakdown=cutover_blockers_breakdown,
     )

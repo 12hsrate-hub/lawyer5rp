@@ -28,6 +28,8 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_promotion_review_signal_summary,
     build_runtime_bridge_policy_summary,
     build_runtime_operating_mode_summary,
+    build_policy_breach_summary,
+    build_runtime_risk_register_summary,
     build_runtime_policy_enforcement_summary,
     build_runtime_policy_violations_summary,
     build_runtime_cutover_mode_summary,
@@ -413,6 +415,22 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         cutover_guardrails=cutover_guardrails,
     )
     assert runtime_policy_enforcement["status"] == "enforced"
+    policy_breach_summary = build_policy_breach_summary(
+        runtime_bridge_policy=runtime_bridge_policy,
+        runtime_operating_mode=runtime_operating_mode,
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+    )
+    assert policy_breach_summary["status"] == "clear"
+    runtime_risk_register = build_runtime_risk_register_summary(
+        runtime_config_debt={"status": "low", "detail": "", "next_step": ""},
+        runtime_shell_debt=runtime_shell_debt,
+        runtime_policy_violations=runtime_policy_violations,
+        runtime_policy_enforcement=runtime_policy_enforcement,
+        policy_breach_summary=policy_breach_summary,
+        cutover_guardrails=cutover_guardrails,
+    )
+    assert runtime_risk_register["status"] == "low"
     assert build_runtime_bridge_policy_summary(
         runtime_resolution_policy={"status": "compatibility_exception", "detail": "", "next_step": ""},
         runtime_cutover_mode={"status": "compatibility_mode", "detail": "", "next_step": ""},
