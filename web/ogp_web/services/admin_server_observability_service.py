@@ -192,10 +192,11 @@ def _build_runtime_version_parity(*, health_payload: dict[str, Any]) -> dict[str
             drift_parts.append(f"active_version={active_law_version_id}")
         if projected_law_version_id > 0:
             drift_parts.append(f"projected_version={projected_law_version_id}")
-        if active_law_set_id > 0:
-            drift_parts.append(f"active_law_set={active_law_set_id}")
-        if projected_law_set_id > 0:
-            drift_parts.append(f"projected_law_set={projected_law_set_id}")
+        if not drift_parts:
+            if active_law_set_id > 0:
+                drift_parts.append(f"active_law_set={active_law_set_id}")
+            if projected_law_set_id > 0:
+                drift_parts.append(f"projected_law_set={projected_law_set_id}")
         drift_summary = "; ".join(drift_parts)
 
     return {
@@ -212,6 +213,7 @@ def _build_runtime_version_parity(*, health_payload: dict[str, Any]) -> dict[str
         "matches_active_law_set": (
             projected_law_set_id > 0 and active_law_set_id > 0 and projected_law_set_id == active_law_set_id
         ),
+        "law_set_observational_only": True,
         "drift_summary": drift_summary,
     }
 
@@ -276,6 +278,7 @@ def _build_projection_bridge_lifecycle(*, health_payload: dict[str, Any]) -> dic
         "law_version_id": law_version_id or None,
         "active_law_version_id": active_law_version_id or None,
         "matches_active_law_version": matches_active if law_version_id > 0 else None,
+        "law_set_observational_only": True,
     }
 
 

@@ -39,6 +39,8 @@ Date: 2026-04-14
   - `L.runtime.22` remove runtime-bindings from health binding counts: runtime-server health now reports `checks.bindings.count/detail` from canonical source-set bindings only, while legacy runtime bindings survive only as separate fallback-debt counters
   - `L.runtime.23` remove active-law-set dependence from runtime provenance/alignment interpretation when an active runtime law_version already exists: `law_set` stays only as an observational shell artifact, not as a prerequisite for reading runtime shell state
   - `L.runtime.24` demote `law_set` to a true observational-only check in runtime health summary: it now advertises `observational_only=true` and only appears in `observational_checks` when it is actually missing or requires attention
+  - `L.runtime.25` demote `active_law_set` inside laws summary/diff and issues version-parity messaging: drift/version summaries now stay law_version-first, with `law_set` retained only as observational shell metadata when version ids are absent
+  - `L.runtime.26` mark projection-bridge lifecycle and runtime-version parity as `law_set_observational_only` across server-centric laws/issues surfaces so operators stop reading legacy `law_set` ids as operational readiness truth
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`
