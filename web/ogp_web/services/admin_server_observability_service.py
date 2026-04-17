@@ -31,6 +31,9 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_projection_runtime_gate_summary,
     build_compatibility_shrink_decision_summary,
     build_runtime_exception_register_summary,
+    build_compatibility_path_matrix_summary,
+    build_next_shrink_step_summary,
+    build_shrink_sequence_summary,
     build_policy_breach_summary,
     build_runtime_risk_register_summary,
     build_runtime_policy_enforcement_summary,
@@ -862,6 +865,71 @@ def _build_runtime_exception_register_issue(runtime_exception_register: dict[str
     }
 
 
+def _build_compatibility_path_matrix_issue(compatibility_path_matrix: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((compatibility_path_matrix or {}).get("status") or "").strip().lower()
+    if status in {"", "projection_matrix", "observe"}:
+        return None
+    detail = (
+        f"{str((compatibility_path_matrix or {}).get('detail') or '').strip()} "
+        f"exceptions={int((compatibility_path_matrix or {}).get('exception_count') or 0)} "
+        f"transitions={int((compatibility_path_matrix or {}).get('transition_count') or 0)}. "
+        f"{str((compatibility_path_matrix or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "compatibility_path_matrix",
+        "severity": "error" if status == "compatibility_matrix" else "warn",
+        "source": "laws",
+        "title": "Compatibility path matrix требует внимания",
+        "detail": detail,
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
+def _build_next_shrink_step_issue(next_shrink_step: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((next_shrink_step or {}).get("status") or "").strip().lower()
+    if status in {"", "ready_step", "observe"}:
+        return None
+    detail = (
+        f"{str((next_shrink_step or {}).get('detail') or '').strip()} "
+        f"target={str((next_shrink_step or {}).get('target_path') or '—').strip()}. "
+        f"{str((next_shrink_step or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "next_shrink_step",
+        "severity": "error" if status == "hold" else "warn",
+        "source": "laws",
+        "title": "Next shrink step ещё не готов",
+        "detail": detail,
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
+def _build_shrink_sequence_issue(shrink_sequence: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((shrink_sequence or {}).get("status") or "").strip().lower()
+    if status in {"", "complete", "observe"}:
+        return None
+    detail = (
+        f"{str((shrink_sequence or {}).get('detail') or '').strip()} "
+        f"ready={int((shrink_sequence or {}).get('ready_count') or 0)}/"
+        f"{int((shrink_sequence or {}).get('total_count') or 0)}. "
+        f"{str((shrink_sequence or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "shrink_sequence",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Shrink sequence ещё не завершена",
+        "detail": detail,
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
 def _build_bridge_shrink_checklist_issue(bridge_shrink_checklist: dict[str, Any]) -> dict[str, Any] | None:
     status = str((bridge_shrink_checklist or {}).get("status") or "").strip().lower()
     if status in {"", "ready"}:
@@ -1223,6 +1291,20 @@ def build_server_issues_payload(
         runtime_breach_categories=runtime_breach_categories,
         compatibility_exit_scorecard=compatibility_exit_scorecard,
     )
+    compatibility_path_matrix = build_compatibility_path_matrix_summary(
+        legacy_path_controls=legacy_path_controls,
+        runtime_resolution_policy=runtime_resolution_policy,
+        runtime_exception_register=runtime_exception_register,
+    )
+    next_shrink_step = build_next_shrink_step_summary(
+        compatibility_shrink_decision=compatibility_shrink_decision,
+        compatibility_path_matrix=compatibility_path_matrix,
+        runtime_exception_register=runtime_exception_register,
+    )
+    shrink_sequence = build_shrink_sequence_summary(
+        compatibility_path_matrix=compatibility_path_matrix,
+        next_shrink_step=next_shrink_step,
+    )
     items: list[dict[str, Any]] = []
     if bool(onboarding.get("requires_explicit_runtime_pack")):
         items.append(
@@ -1352,6 +1434,15 @@ def build_server_issues_payload(
     runtime_exception_register_issue = _build_runtime_exception_register_issue(runtime_exception_register)
     if runtime_exception_register_issue is not None:
         items.append(runtime_exception_register_issue)
+    compatibility_path_matrix_issue = _build_compatibility_path_matrix_issue(compatibility_path_matrix)
+    if compatibility_path_matrix_issue is not None:
+        items.append(compatibility_path_matrix_issue)
+    next_shrink_step_issue = _build_next_shrink_step_issue(next_shrink_step)
+    if next_shrink_step_issue is not None:
+        items.append(next_shrink_step_issue)
+    shrink_sequence_issue = _build_shrink_sequence_issue(shrink_sequence)
+    if shrink_sequence_issue is not None:
+        items.append(shrink_sequence_issue)
     bridge_shrink_checklist_issue = _build_bridge_shrink_checklist_issue(bridge_shrink_checklist)
     if bridge_shrink_checklist_issue is not None:
         items.append(bridge_shrink_checklist_issue)
@@ -1426,7 +1517,7 @@ def execute_server_issue_action_payload(
     normalized_server = normalize_runtime_server_code(server_code)
     normalized_issue = str(issue_id or "").strip().lower()
     normalized_action = str(action or "").strip().lower()
-    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_review_signal", "laws_promotion_blockers", "laws_activation_gap", "laws_runtime_shell_debt", "laws_runtime_convergence", "laws_cutover_readiness", "laws_runtime_cutover_mode", "runtime_bridge_policy", "runtime_operating_mode", "runtime_policy_violations", "laws_cutover_guardrails", "runtime_policy_enforcement", "runtime_policy_breach_summary", "runtime_risk_register", "runtime_governance_contract", "legacy_path_allowance", "compatibility_exit_scorecard", "runtime_breach_categories", "legacy_path_controls", "projection_runtime_gate", "compatibility_shrink_decision", "runtime_exception_register", "laws_bridge_shrink_checklist", "laws_cutover_blockers_breakdown"} and normalized_action == "recheck":
+    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_review_signal", "laws_promotion_blockers", "laws_activation_gap", "laws_runtime_shell_debt", "laws_runtime_convergence", "laws_cutover_readiness", "laws_runtime_cutover_mode", "runtime_bridge_policy", "runtime_operating_mode", "runtime_policy_violations", "laws_cutover_guardrails", "runtime_policy_enforcement", "runtime_policy_breach_summary", "runtime_risk_register", "runtime_governance_contract", "legacy_path_allowance", "compatibility_exit_scorecard", "runtime_breach_categories", "legacy_path_controls", "projection_runtime_gate", "compatibility_shrink_decision", "runtime_exception_register", "compatibility_path_matrix", "next_shrink_step", "shrink_sequence", "laws_bridge_shrink_checklist", "laws_cutover_blockers_breakdown"} and normalized_action == "recheck":
         result = build_server_laws_recheck_payload(
             server_code=normalized_server,
             runtime_servers_store=runtime_servers_store,
