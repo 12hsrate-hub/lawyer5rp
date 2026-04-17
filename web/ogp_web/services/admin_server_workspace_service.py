@@ -1112,6 +1112,16 @@ def _build_issues_payload(
                 "detail": str((checks.get("bindings") or {}).get("detail") or "law bindings are missing"),
             }
         )
+    elif str((checks.get("bindings") or {}).get("binding_source") or "").strip().lower() == "runtime_bindings":
+        items.append(
+            {
+                "issue_id": "laws_bindings_runtime_fallback",
+                "severity": "warn",
+                "source": "laws",
+                "title": "Законы всё ещё опираются на legacy runtime bindings",
+                "detail": "Переведите сервер на canonical source-set bindings, чтобы runtime readiness больше не опирался на legacy law bindings fallback.",
+            }
+        )
     runtime_mode = str(runtime_provenance.get("mode") or "").strip().lower()
     if runtime_mode in {"projection_drift", "legacy_runtime_shell", "materialized_shell_only"}:
         title = {

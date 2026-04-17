@@ -1347,6 +1347,17 @@ def build_server_issues_payload(
                 "available_actions": [],
             }
         )
+    elif str((checks.get("bindings") or {}).get("binding_source") or "").strip().lower() == "runtime_bindings":
+        items.append(
+            {
+                "issue_id": "laws_bindings_runtime_fallback",
+                "severity": "warn",
+                "source": "laws",
+                "title": "Законы всё ещё используют legacy runtime bindings",
+                "detail": "Canonical source-set bindings ещё не закреплены, поэтому server issues/readiness пока используют legacy runtime bindings fallback.",
+                "available_actions": [],
+            }
+        )
     runtime_provenance_issue = _build_runtime_provenance_issue(runtime_provenance)
     if runtime_provenance_issue is not None:
         items.append(runtime_provenance_issue)

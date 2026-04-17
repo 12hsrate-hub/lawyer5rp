@@ -28,6 +28,7 @@ Date: 2026-04-14
   - `L.runtime.12` shrink the legacy law runtime shell by removing `active_law_set` from onboarding/workflow readiness truth; explicit law source configuration plus bindings remain the readiness basis, while `law_set` stays visible only as a runtime shell / rollback artifact in health and provenance surfaces
   - `L.runtime.13` shrink the legacy law runtime shell further by treating `law_set` as an observational shell-check in runtime health summary instead of a required readiness gate; shell visibility remains, but top-level readiness now follows server/bindings/activation/health/config checks
   - `L.runtime.14` switch runtime-server onboarding and health to prefer canonical `source-set bindings` as the readiness basis whenever they exist, while keeping legacy runtime law bindings only as a bounded fallback/observability path
+  - `L.runtime.15` surface legacy runtime law bindings as explicit compatibility debt: runtime-server/workspace/issues now mark `runtime_bindings` as non-canonical fallback and emit a dedicated operator warning until canonical source-set bindings are in place
 - Phase H progress:
   - `H.1a` selected `blackberry + rehab` as the bounded next candidate and recorded the rollout gate
   - `H.1b` runtime catalog verification executed on production commit `1e74a26`
