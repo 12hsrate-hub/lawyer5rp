@@ -12,6 +12,7 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_promotion_blockers_summary,
     build_promotion_candidate_summary,
     build_promotion_delta_summary,
+    build_promotion_review_signal_summary,
     build_cutover_readiness_summary,
     build_runtime_convergence_summary,
     build_runtime_shell_debt_summary,
@@ -300,7 +301,7 @@ def _build_projection_bridge_readiness_issue(projection_bridge_readiness: dict[s
 
 def _build_promotion_candidate_issue(promotion_candidate: dict[str, Any]) -> dict[str, Any] | None:
     status = str((promotion_candidate or {}).get("status") or "").strip().lower()
-    if status in {"", "ready"}:
+    if status in {"", "ready", "review_needed"}:
         return None
     counts = dict((promotion_candidate or {}).get("counts") or {})
     next_step = str((promotion_candidate or {}).get("next_step") or "").strip()
@@ -324,7 +325,7 @@ def _build_promotion_candidate_issue(promotion_candidate: dict[str, Any]) -> dic
 
 def _build_promotion_delta_issue(promotion_delta: dict[str, Any]) -> dict[str, Any] | None:
     status = str((promotion_delta or {}).get("status") or "").strip().lower()
-    if status in {"", "stable", "empty"}:
+    if status in {"", "stable", "empty", "attention"}:
         return None
     counts = dict((promotion_delta or {}).get("counts") or {})
     detail = (
@@ -347,9 +348,34 @@ def _build_promotion_delta_issue(promotion_delta: dict[str, Any]) -> dict[str, A
     }
 
 
+def _build_promotion_review_signal_issue(promotion_review_signal: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((promotion_review_signal or {}).get("status") or "").strip().lower()
+    if status != "review":
+        return None
+    counts = dict((promotion_review_signal or {}).get("counts") or {})
+    detail = (
+        f"{str((promotion_review_signal or {}).get('detail') or '').strip()} "
+        f"advisory={int(counts.get('advisory_count') or 0)} "
+        f"added={int(counts.get('delta_added') or 0)} "
+        f"removed={int(counts.get('delta_removed') or 0)} "
+        f"changed={int(counts.get('delta_changed') or 0)}. "
+        f"{str((promotion_review_signal or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "laws_promotion_review_signal",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Promotion review остаётся advisory signal",
+        "detail": detail,
+        "available_actions": [
+            {"kind": "recheck", "label": "Проверить наполнение"},
+        ],
+    }
+
+
 def _build_promotion_blockers_issue(promotion_blockers: dict[str, Any]) -> dict[str, Any] | None:
     status = str((promotion_blockers or {}).get("status") or "").strip().lower()
-    if status in {"", "clear"}:
+    if status in {"", "clear", "review"}:
         return None
     items = list((promotion_blockers or {}).get("items") or [])
     sample = ", ".join(str(item.get("kind") or "").strip() for item in items[:3] if str(item.get("kind") or "").strip())
@@ -678,6 +704,11 @@ def build_server_issues_payload(
         runtime_version_parity=runtime_version_parity,
         projection_bridge_lifecycle=projection_bridge_lifecycle,
     )
+    promotion_review_signal = build_promotion_review_signal_summary(
+        promotion_candidate=promotion_candidate,
+        promotion_delta=promotion_delta,
+        promotion_blockers=promotion_blockers,
+    )
     activation_gap = build_activation_gap_summary(
         projection_bridge_readiness=projection_bridge_readiness,
         runtime_version_parity=runtime_version_parity,
@@ -771,6 +802,9 @@ def build_server_issues_payload(
     promotion_delta_issue = _build_promotion_delta_issue(promotion_delta)
     if promotion_delta_issue is not None:
         items.append(promotion_delta_issue)
+    promotion_review_signal_issue = _build_promotion_review_signal_issue(promotion_review_signal)
+    if promotion_review_signal_issue is not None:
+        items.append(promotion_review_signal_issue)
     promotion_blockers_issue = _build_promotion_blockers_issue(promotion_blockers)
     if promotion_blockers_issue is not None:
         items.append(promotion_blockers_issue)
@@ -860,7 +894,7 @@ def execute_server_issue_action_payload(
     normalized_server = normalize_runtime_server_code(server_code)
     normalized_issue = str(issue_id or "").strip().lower()
     normalized_action = str(action or "").strip().lower()
-    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_blockers", "laws_activation_gap", "laws_runtime_shell_debt", "laws_runtime_convergence", "laws_cutover_readiness", "laws_bridge_shrink_checklist", "laws_cutover_blockers_breakdown"} and normalized_action == "recheck":
+    if normalized_issue in {"laws_runtime_health", "laws_runtime_provenance", "laws_runtime_item_parity", "laws_runtime_version_parity", "laws_projection_bridge_lifecycle", "laws_projection_bridge_readiness", "laws_promotion_candidate", "laws_promotion_delta", "laws_promotion_review_signal", "laws_promotion_blockers", "laws_activation_gap", "laws_runtime_shell_debt", "laws_runtime_convergence", "laws_cutover_readiness", "laws_bridge_shrink_checklist", "laws_cutover_blockers_breakdown"} and normalized_action == "recheck":
         result = build_server_laws_recheck_payload(
             server_code=normalized_server,
             runtime_servers_store=runtime_servers_store,

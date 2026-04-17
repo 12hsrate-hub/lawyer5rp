@@ -378,6 +378,7 @@ window.OGPAdminServerWorkspace = {
         const promotionCandidate = laws.promotion_candidate || state.lawsDiff?.promotion_candidate || {};
         const promotionDelta = laws.promotion_delta || state.lawsDiff?.promotion_delta || {};
         const promotionBlockers = laws.promotion_blockers || state.lawsDiff?.promotion_blockers || {};
+        const promotionReviewSignal = laws.promotion_review_signal || state.lawsDiff?.promotion_review_signal || {};
         const activationGap = laws.activation_gap || state.lawsDiff?.activation_gap || {};
         const runtimeShellDebt = laws.runtime_shell_debt || state.lawsDiff?.runtime_shell_debt || {};
         const runtimeConvergence = laws.runtime_convergence || state.lawsDiff?.runtime_convergence || {};
@@ -458,6 +459,11 @@ window.OGPAdminServerWorkspace = {
               <span class="legal-field__label">Promotion blockers</span>
               <div><strong>${escapeHtml(String(promotionBlockers.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">${escapeHtml(String(promotionBlockers.detail || "Promotion blockers summary is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Promotion review</span>
+              <div><strong>${escapeHtml(String(promotionReviewSignal.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(promotionReviewSignal.next_step || promotionReviewSignal.detail || "Promotion review signal is not available yet."))}</div>
             </div>
             <div class="legal-field">
               <span class="legal-field__label">Activation gap</span>
