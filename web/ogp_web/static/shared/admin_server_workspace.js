@@ -402,6 +402,9 @@ window.OGPAdminServerWorkspace = {
         const projectionRuntimeGate = laws.projection_runtime_gate || state.lawsDiff?.projection_runtime_gate || {};
         const compatibilityShrinkDecision = laws.compatibility_shrink_decision || state.lawsDiff?.compatibility_shrink_decision || {};
         const runtimeExceptionRegister = laws.runtime_exception_register || state.lawsDiff?.runtime_exception_register || {};
+        const compatibilityPathMatrix = laws.compatibility_path_matrix || state.lawsDiff?.compatibility_path_matrix || {};
+        const nextShrinkStep = laws.next_shrink_step || state.lawsDiff?.next_shrink_step || {};
+        const shrinkSequence = laws.shrink_sequence || state.lawsDiff?.shrink_sequence || {};
         const bridgeShrinkChecklist = laws.bridge_shrink_checklist || state.lawsDiff?.bridge_shrink_checklist || {};
         const cutoverBlockersBreakdown = laws.cutover_blockers_breakdown || state.lawsDiff?.cutover_blockers_breakdown || {};
         const effective = state.lawsEffective || {};
@@ -598,6 +601,21 @@ window.OGPAdminServerWorkspace = {
               <span class="legal-field__label">Exception register</span>
               <div><strong>${escapeHtml(String(runtimeExceptionRegister.status || "unknown"))}</strong></div>
               <div class="admin-user-cell__secondary">${escapeHtml(String(runtimeExceptionRegister.detail || "Runtime exception register is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Path matrix</span>
+              <div><strong>${escapeHtml(String(compatibilityPathMatrix.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">exceptions: ${escapeHtml(String(compatibilityPathMatrix.exception_count || 0))} • transitions: ${escapeHtml(String(compatibilityPathMatrix.transition_count || 0))} • blocked: ${escapeHtml(String(compatibilityPathMatrix.blocked_count || 0))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Next shrink step</span>
+              <div><strong>${escapeHtml(String(nextShrinkStep.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">${escapeHtml(String(nextShrinkStep.target_path || "—"))} • ${escapeHtml(String(nextShrinkStep.next_step || nextShrinkStep.detail || "Next shrink step is not available yet."))}</div>
+            </div>
+            <div class="legal-field">
+              <span class="legal-field__label">Shrink sequence</span>
+              <div><strong>${escapeHtml(String(shrinkSequence.status || "unknown"))}</strong></div>
+              <div class="admin-user-cell__secondary">ready: ${escapeHtml(String(shrinkSequence.ready_count || 0))}/${escapeHtml(String(shrinkSequence.total_count || 0))} • ${escapeHtml(String(shrinkSequence.next_step || shrinkSequence.detail || "Shrink sequence is not available yet."))}</div>
             </div>
             <div class="legal-field">
               <span class="legal-field__label">Bridge shrink checklist</span>

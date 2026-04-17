@@ -2126,6 +2126,207 @@ def build_runtime_exception_register_summary(
     }
 
 
+def build_compatibility_path_matrix_summary(
+    *,
+    legacy_path_controls: dict[str, Any],
+    runtime_resolution_policy: dict[str, Any],
+    runtime_exception_register: dict[str, Any],
+) -> dict[str, Any]:
+    controls = dict(legacy_path_controls or {})
+    resolution = dict(runtime_resolution_policy or {})
+    exception_register = dict(runtime_exception_register or {})
+
+    control_items = list(controls.get("items") or [])
+    exception_items = list(exception_register.get("items") or [])
+    resolution_status = str(resolution.get("status") or "").strip().lower()
+
+    def _find_control(path: str) -> dict[str, Any]:
+        for item in control_items:
+            if str((item or {}).get("path") or "").strip().lower() == path:
+                return dict(item or {})
+        return {}
+
+    def _has_exception_fragment(fragment: str) -> bool:
+        normalized_fragment = fragment.strip().lower()
+        return any(normalized_fragment in str((item or {}).get("detail") or "").strip().lower() for item in exception_items)
+
+    paths: list[dict[str, str]] = []
+
+    for path_name in ("neutral_fallback", "bootstrap_pack", "legacy_runtime_shell"):
+        control = _find_control(path_name)
+        control_status = str(control.get("status") or "observe").strip().lower()
+        detail = str(control.get("detail") or "").strip()
+
+        if path_name == "neutral_fallback" and resolution_status == "compatibility_exception":
+            path_status = "active_exception"
+        elif path_name == "bootstrap_pack" and resolution_status == "transitional_bootstrap":
+            path_status = "transition_path"
+        elif control_status == "allowed":
+            path_status = "active_exception"
+        elif control_status == "transition_only":
+            path_status = "transition_path"
+        elif control_status == "blocked":
+            path_status = "blocked"
+        else:
+            path_status = "observe"
+
+        if path_name == "neutral_fallback" and _has_exception_fragment("fallback"):
+            detail = detail or "Neutral fallback still appears in the carried runtime exceptions."
+        if path_name == "bootstrap_pack" and _has_exception_fragment("bootstrap"):
+            detail = detail or "Bootstrap pack still appears in the carried runtime exceptions."
+        if path_name == "legacy_runtime_shell" and _has_exception_fragment("legacy"):
+            detail = detail or "Legacy runtime shell still appears in the carried runtime exceptions."
+
+        paths.append(
+            {
+                "path": path_name,
+                "status": path_status,
+                "detail": detail or "No explicit detail is available for this compatibility path.",
+            }
+        )
+
+    blocked_count = sum(1 for item in paths if item["status"] == "blocked")
+    transition_count = sum(1 for item in paths if item["status"] == "transition_path")
+    exception_count = sum(1 for item in paths if item["status"] == "active_exception")
+
+    if exception_count > 0:
+        status = "compatibility_matrix"
+        detail = "Some compatibility paths are still active exceptions for this server."
+        next_step = str(exception_register.get("next_step") or controls.get("next_step") or "Сначала снимите active exceptions из runtime paths.").strip()
+    elif transition_count > 0:
+        status = "transition_matrix"
+        detail = "Compatibility paths are limited to bounded transitional use."
+        next_step = str(controls.get("next_step") or "Доведите transitional paths до blocked state.").strip()
+    elif blocked_count > 0:
+        status = "projection_matrix"
+        detail = "Compatibility paths are already blocked by the current runtime contract."
+        next_step = "Поддерживайте blocked matrix и отслеживайте regressions."
+    else:
+        status = "observe"
+        detail = "Compatibility-path matrix is not decisive yet in the current read model."
+        next_step = "Продолжайте наблюдать compatibility-path controls."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "blocked_count": blocked_count,
+        "transition_count": transition_count,
+        "exception_count": exception_count,
+        "items": paths,
+    }
+
+
+def build_next_shrink_step_summary(
+    *,
+    compatibility_shrink_decision: dict[str, Any],
+    compatibility_path_matrix: dict[str, Any],
+    runtime_exception_register: dict[str, Any],
+) -> dict[str, Any]:
+    decision = dict(compatibility_shrink_decision or {})
+    matrix = dict(compatibility_path_matrix or {})
+    exception_register = dict(runtime_exception_register or {})
+
+    decision_status = str(decision.get("status") or "").strip().lower()
+    matrix_items = list(matrix.get("items") or [])
+    exception_count = int(matrix.get("exception_count") or 0)
+    transition_count = int(matrix.get("transition_count") or 0)
+
+    candidate: dict[str, Any] | None = None
+    for preferred_status in ("active_exception", "transition_path"):
+        for item in matrix_items:
+            if str((item or {}).get("status") or "").strip().lower() == preferred_status:
+                candidate = dict(item or {})
+                break
+        if candidate is not None:
+            break
+
+    if decision_status == "shrink_now" and candidate is not None:
+        status = "ready_step"
+        target_path = str(candidate.get("path") or "").strip()
+        detail = f"Next bounded shrink step should target `{target_path}` first."
+        next_step = f"Планируйте следующий bounded shrink step для `{target_path}`."
+    elif decision_status == "shrink_after_stabilization" and candidate is not None:
+        status = "stabilize_then_step"
+        target_path = str(candidate.get("path") or "").strip()
+        detail = f"Next shrink target is already visible, but `{target_path}` still needs stabilization first."
+        next_step = str(decision.get("next_step") or matrix.get("next_step") or "Сначала стабилизируйте transitional path.").strip()
+    elif decision_status == "hold_compatibility":
+        status = "hold"
+        target_path = ""
+        detail = "No bounded shrink step should be taken yet while compatibility must still be held."
+        next_step = str(decision.get("next_step") or exception_register.get("next_step") or "Сначала снимите compatibility hold.").strip()
+    else:
+        status = "observe"
+        target_path = ""
+        detail = "Next shrink step is not decisive yet in the current read model."
+        next_step = "Продолжайте наблюдать matrix и shrink decision."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step,
+        "target_path": target_path,
+        "exception_count": exception_count,
+        "transition_count": transition_count,
+    }
+
+
+def build_shrink_sequence_summary(
+    *,
+    compatibility_path_matrix: dict[str, Any],
+    next_shrink_step: dict[str, Any],
+) -> dict[str, Any]:
+    matrix = dict(compatibility_path_matrix or {})
+    next_step = dict(next_shrink_step or {})
+
+    matrix_items = list(matrix.get("items") or [])
+    ordered_paths: list[dict[str, str]] = []
+    for status_name in ("active_exception", "transition_path", "blocked", "observe"):
+        for item in matrix_items:
+            if str((item or {}).get("status") or "").strip().lower() != status_name:
+                continue
+            ordered_paths.append(
+                {
+                    "path": str((item or {}).get("path") or "").strip(),
+                    "status": status_name,
+                    "detail": str((item or {}).get("detail") or "").strip(),
+                }
+            )
+
+    blocked_count = sum(1 for item in ordered_paths if item["status"] == "blocked")
+    total_count = len(ordered_paths)
+    ready_count = blocked_count
+
+    next_target = str(next_step.get("target_path") or "").strip()
+    if next_target:
+        detail = f"Shrink sequence is ordered and the next bounded target is `{next_target}`."
+    else:
+        detail = "Shrink sequence is ordered from carried exceptions to blocked paths."
+
+    if total_count > 0 and ready_count == total_count:
+        status = "complete"
+        next_step_text = "Совместимость уже сведена к blocked paths в текущей матрице."
+    elif next_target:
+        status = "planned"
+        next_step_text = str(next_step.get("next_step") or "Следуйте следующему bounded shrink step из sequence.").strip()
+    elif any(item["status"] in {"active_exception", "transition_path"} for item in ordered_paths):
+        status = "queued"
+        next_step_text = str(matrix.get("next_step") or "Сначала соберите bounded shrink step по открытым paths.").strip()
+    else:
+        status = "observe"
+        next_step_text = "Продолжайте наблюдать shrink sequence."
+
+    return {
+        "status": status,
+        "detail": detail,
+        "next_step": next_step_text,
+        "ready_count": ready_count,
+        "total_count": total_count,
+        "items": ordered_paths[:10],
+    }
+
+
 def build_server_laws_summary_payload(
     *,
     server_code: str,
@@ -2350,6 +2551,20 @@ def build_server_laws_summary_payload(
         runtime_breach_categories=runtime_breach_categories,
         compatibility_exit_scorecard=compatibility_exit_scorecard,
     )
+    compatibility_path_matrix = build_compatibility_path_matrix_summary(
+        legacy_path_controls=legacy_path_controls,
+        runtime_resolution_policy=runtime_resolution_policy,
+        runtime_exception_register=runtime_exception_register,
+    )
+    next_shrink_step = build_next_shrink_step_summary(
+        compatibility_shrink_decision=compatibility_shrink_decision,
+        compatibility_path_matrix=compatibility_path_matrix,
+        runtime_exception_register=runtime_exception_register,
+    )
+    shrink_sequence = build_shrink_sequence_summary(
+        compatibility_path_matrix=compatibility_path_matrix,
+        next_shrink_step=next_shrink_step,
+    )
     return {
         "server_code": normalized_server,
         "bindings": bindings,
@@ -2387,6 +2602,9 @@ def build_server_laws_summary_payload(
         "projection_runtime_gate": projection_runtime_gate,
         "compatibility_shrink_decision": compatibility_shrink_decision,
         "runtime_exception_register": runtime_exception_register,
+        "compatibility_path_matrix": compatibility_path_matrix,
+        "next_shrink_step": next_shrink_step,
+        "shrink_sequence": shrink_sequence,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "latest_projection_run": _serialize_run(current_run),
@@ -2710,6 +2928,20 @@ def build_server_laws_diff_payload(
         runtime_breach_categories=runtime_breach_categories,
         compatibility_exit_scorecard=compatibility_exit_scorecard,
     )
+    compatibility_path_matrix = build_compatibility_path_matrix_summary(
+        legacy_path_controls=legacy_path_controls,
+        runtime_resolution_policy=runtime_resolution_policy,
+        runtime_exception_register=runtime_exception_register,
+    )
+    next_shrink_step = build_next_shrink_step_summary(
+        compatibility_shrink_decision=compatibility_shrink_decision,
+        compatibility_path_matrix=compatibility_path_matrix,
+        runtime_exception_register=runtime_exception_register,
+    )
+    shrink_sequence = build_shrink_sequence_summary(
+        compatibility_path_matrix=compatibility_path_matrix,
+        next_shrink_step=next_shrink_step,
+    )
     return {
         "server_code": normalized_server,
         "current_run": _serialize_run(current_run),
@@ -2744,6 +2976,9 @@ def build_server_laws_diff_payload(
         "projection_runtime_gate": projection_runtime_gate,
         "compatibility_shrink_decision": compatibility_shrink_decision,
         "runtime_exception_register": runtime_exception_register,
+        "compatibility_path_matrix": compatibility_path_matrix,
+        "next_shrink_step": next_shrink_step,
+        "shrink_sequence": shrink_sequence,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "summary": diff_summary,

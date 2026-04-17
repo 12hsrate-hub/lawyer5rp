@@ -36,6 +36,9 @@ from ogp_web.services.admin_server_laws_workspace_service import (
     build_projection_runtime_gate_summary,
     build_compatibility_shrink_decision_summary,
     build_runtime_exception_register_summary,
+    build_compatibility_path_matrix_summary,
+    build_next_shrink_step_summary,
+    build_shrink_sequence_summary,
     build_policy_breach_summary,
     build_runtime_risk_register_summary,
     build_runtime_policy_enforcement_summary,
@@ -497,6 +500,23 @@ def test_advisory_review_delta_does_not_block_runtime_convergence_or_cutover():
         compatibility_exit_scorecard=compatibility_exit_scorecard,
     )
     assert runtime_exception_register["status"] == "clear"
+    compatibility_path_matrix = build_compatibility_path_matrix_summary(
+        legacy_path_controls=legacy_path_controls,
+        runtime_resolution_policy={"status": "declared_runtime", "detail": "", "next_step": ""},
+        runtime_exception_register=runtime_exception_register,
+    )
+    assert compatibility_path_matrix["status"] == "projection_matrix"
+    next_shrink_step = build_next_shrink_step_summary(
+        compatibility_shrink_decision=compatibility_shrink_decision,
+        compatibility_path_matrix=compatibility_path_matrix,
+        runtime_exception_register=runtime_exception_register,
+    )
+    assert next_shrink_step["status"] == "observe"
+    shrink_sequence = build_shrink_sequence_summary(
+        compatibility_path_matrix=compatibility_path_matrix,
+        next_shrink_step=next_shrink_step,
+    )
+    assert shrink_sequence["status"] == "complete"
     assert build_runtime_bridge_policy_summary(
         runtime_resolution_policy={"status": "compatibility_exception", "detail": "", "next_step": ""},
         runtime_cutover_mode={"status": "compatibility_mode", "detail": "", "next_step": ""},

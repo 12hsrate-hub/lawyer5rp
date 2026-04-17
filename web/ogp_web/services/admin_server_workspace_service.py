@@ -30,6 +30,9 @@ from ogp_web.services.admin_server_laws_workspace_service import build_legacy_pa
 from ogp_web.services.admin_server_laws_workspace_service import build_projection_runtime_gate_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_compatibility_shrink_decision_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_exception_register_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_compatibility_path_matrix_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_next_shrink_step_summary
+from ogp_web.services.admin_server_laws_workspace_service import build_shrink_sequence_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_policy_breach_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_risk_register_summary
 from ogp_web.services.admin_server_laws_workspace_service import build_runtime_policy_enforcement_summary
@@ -932,6 +935,62 @@ def _build_runtime_exception_register_issue(runtime_exception_register: dict[str
     }
 
 
+def _build_compatibility_path_matrix_issue(compatibility_path_matrix: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((compatibility_path_matrix or {}).get("status") or "").strip().lower()
+    if status in {"", "projection_matrix", "observe"}:
+        return None
+    detail = (
+        f"{str((compatibility_path_matrix or {}).get('detail') or '').strip()} "
+        f"exceptions={int((compatibility_path_matrix or {}).get('exception_count') or 0)} "
+        f"transitions={int((compatibility_path_matrix or {}).get('transition_count') or 0)}. "
+        f"{str((compatibility_path_matrix or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "compatibility_path_matrix",
+        "severity": "error" if status == "compatibility_matrix" else "warn",
+        "source": "laws",
+        "title": "Compatibility path matrix требует внимания",
+        "detail": detail,
+    }
+
+
+def _build_next_shrink_step_issue(next_shrink_step: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((next_shrink_step or {}).get("status") or "").strip().lower()
+    if status in {"", "ready_step", "observe"}:
+        return None
+    detail = (
+        f"{str((next_shrink_step or {}).get('detail') or '').strip()} "
+        f"target={str((next_shrink_step or {}).get('target_path') or '—').strip()}. "
+        f"{str((next_shrink_step or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "next_shrink_step",
+        "severity": "error" if status == "hold" else "warn",
+        "source": "laws",
+        "title": "Next shrink step ещё не готов",
+        "detail": detail,
+    }
+
+
+def _build_shrink_sequence_issue(shrink_sequence: dict[str, Any]) -> dict[str, Any] | None:
+    status = str((shrink_sequence or {}).get("status") or "").strip().lower()
+    if status in {"", "complete", "observe"}:
+        return None
+    detail = (
+        f"{str((shrink_sequence or {}).get('detail') or '').strip()} "
+        f"ready={int((shrink_sequence or {}).get('ready_count') or 0)}/"
+        f"{int((shrink_sequence or {}).get('total_count') or 0)}. "
+        f"{str((shrink_sequence or {}).get('next_step') or '').strip()}"
+    ).strip()
+    return {
+        "issue_id": "shrink_sequence",
+        "severity": "warn",
+        "source": "laws",
+        "title": "Shrink sequence ещё не завершена",
+        "detail": detail,
+    }
+
+
 def _build_bridge_shrink_checklist_issue(bridge_shrink_checklist: dict[str, Any]) -> dict[str, Any] | None:
     status = str((bridge_shrink_checklist or {}).get("status") or "").strip().lower()
     if status in {"", "ready"}:
@@ -1008,6 +1067,9 @@ def _build_issues_payload(
     projection_runtime_gate: dict[str, Any] | None = None,
     compatibility_shrink_decision: dict[str, Any] | None = None,
     runtime_exception_register: dict[str, Any] | None = None,
+    compatibility_path_matrix: dict[str, Any] | None = None,
+    next_shrink_step: dict[str, Any] | None = None,
+    shrink_sequence: dict[str, Any] | None = None,
     bridge_shrink_checklist: dict[str, Any] | None = None,
     cutover_blockers_breakdown: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -1153,6 +1215,15 @@ def _build_issues_payload(
     runtime_exception_register_issue = _build_runtime_exception_register_issue(dict(runtime_exception_register or {}))
     if runtime_exception_register_issue is not None:
         items.append(runtime_exception_register_issue)
+    compatibility_path_matrix_issue = _build_compatibility_path_matrix_issue(dict(compatibility_path_matrix or {}))
+    if compatibility_path_matrix_issue is not None:
+        items.append(compatibility_path_matrix_issue)
+    next_shrink_step_issue = _build_next_shrink_step_issue(dict(next_shrink_step or {}))
+    if next_shrink_step_issue is not None:
+        items.append(next_shrink_step_issue)
+    shrink_sequence_issue = _build_shrink_sequence_issue(dict(shrink_sequence or {}))
+    if shrink_sequence_issue is not None:
+        items.append(shrink_sequence_issue)
     bridge_shrink_checklist_issue = _build_bridge_shrink_checklist_issue(dict(bridge_shrink_checklist or {}))
     if bridge_shrink_checklist_issue is not None:
         items.append(bridge_shrink_checklist_issue)
@@ -1451,6 +1522,20 @@ def build_server_workspace_payload(
         runtime_breach_categories=runtime_breach_categories,
         compatibility_exit_scorecard=compatibility_exit_scorecard,
     )
+    compatibility_path_matrix = build_compatibility_path_matrix_summary(
+        legacy_path_controls=legacy_path_controls,
+        runtime_resolution_policy=runtime_resolution_policy,
+        runtime_exception_register=runtime_exception_register,
+    )
+    next_shrink_step = build_next_shrink_step_summary(
+        compatibility_shrink_decision=compatibility_shrink_decision,
+        compatibility_path_matrix=compatibility_path_matrix,
+        runtime_exception_register=runtime_exception_register,
+    )
+    shrink_sequence = build_shrink_sequence_summary(
+        compatibility_path_matrix=compatibility_path_matrix,
+        next_shrink_step=next_shrink_step,
+    )
     laws_summary = {
         "active_source_set_bindings": [
             {
@@ -1498,6 +1583,9 @@ def build_server_workspace_payload(
         "projection_runtime_gate": projection_runtime_gate,
         "compatibility_shrink_decision": compatibility_shrink_decision,
         "runtime_exception_register": runtime_exception_register,
+        "compatibility_path_matrix": compatibility_path_matrix,
+        "next_shrink_step": next_shrink_step,
+        "shrink_sequence": shrink_sequence,
         "bridge_shrink_checklist": bridge_shrink_checklist,
         "cutover_blockers_breakdown": cutover_blockers_breakdown,
         "health": (health_payload.get("checks") or {}).get("health", {}),
@@ -1536,6 +1624,9 @@ def build_server_workspace_payload(
         projection_runtime_gate=projection_runtime_gate,
         compatibility_shrink_decision=compatibility_shrink_decision,
         runtime_exception_register=runtime_exception_register,
+        compatibility_path_matrix=compatibility_path_matrix,
+        next_shrink_step=next_shrink_step,
+        shrink_sequence=shrink_sequence,
         bridge_shrink_checklist=bridge_shrink_checklist,
         cutover_blockers_breakdown=cutover_blockers_breakdown,
     )
